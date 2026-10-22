@@ -66,7 +66,8 @@
         "requests:submit"
       ],
       "consentText": "Autoriser la préparation de cette démarche fictive pour une heure.",
-      "expiresAt": "2099-01-01T00:00:00Z"
+      "expiresAt": "2099-01-01T00:00:00Z",
+      "proofToken": "mock-proof-not-for-production"
     },
     "File": {
       "id": "fil_00000000000000000000000001",

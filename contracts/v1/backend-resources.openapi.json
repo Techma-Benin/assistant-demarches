@@ -603,6 +603,11 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "proofToken": {
+            "type": "string",
+            "minLength": 1,
+            "description": "JWT signé du challenge en production ; opaque pour Interface et le modèle."
           }
         },
         "required": [
@@ -612,7 +617,8 @@
           "procedureId",
           "scopes",
           "consentText",
-          "expiresAt"
+          "expiresAt",
+          "proofToken"
         ]
       },
       "Consent": {
@@ -1151,14 +1157,14 @@
               "conversationId": {
                 "$ref": "#/components/schemas/ConversationId"
               },
-              "message": {
-                "$ref": "#/components/schemas/MessageInput"
+              "messageId": {
+                "$ref": "#/components/schemas/MessageId"
               }
             },
             "required": [
               "kind",
               "conversationId",
-              "message"
+              "messageId"
             ]
           },
           {

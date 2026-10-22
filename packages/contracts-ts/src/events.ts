@@ -116,6 +116,8 @@ export interface components {
             consentText: string;
             /** Format: date-time */
             expiresAt: string;
+            /** @description JWT signé du challenge en production ; opaque pour Interface et le modèle. */
+            proofToken: string;
         };
         Consent: {
             challengeId: components["schemas"]["ChallengeId"];
@@ -243,7 +245,7 @@ export interface components {
             /** @constant */
             kind: "message.received";
             conversationId: components["schemas"]["ConversationId"];
-            message: components["schemas"]["MessageInput"];
+            messageId: components["schemas"]["MessageId"];
         } | {
             /** @constant */
             kind: "message.sent";
