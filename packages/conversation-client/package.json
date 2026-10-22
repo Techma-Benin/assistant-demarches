@@ -1,0 +1,12 @@
+{
+  "name": "@techma/conversation-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@techma/contracts-ts": "workspace:*"
+  }
+}

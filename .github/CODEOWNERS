@@ -1,0 +1,6 @@
+# Remplacer / compléter par les équipes GitHub réelles lorsqu'elles sont connues.
+* @billos-e
+/contracts/ @billos-e
+/CONTRACTS.md @billos-e
+/.github/ @billos-e
+/apps/tooling/ @billos-e

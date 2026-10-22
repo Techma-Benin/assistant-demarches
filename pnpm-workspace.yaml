@@ -1,0 +1,5 @@
+packages:
+  - 'apps/interface/*'
+  - 'apps/backend'
+  - 'apps/tooling'
+  - 'packages/*'

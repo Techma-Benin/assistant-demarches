@@ -1,0 +1,29 @@
+{
+  "name": "assistant-demarches",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.20.0",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "contracts:check": "node scripts/check-contracts.mjs",
+    "contracts:generate": "node scripts/generate-types.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "mocks": "node mocks/server.mjs",
+    "check": "pnpm contracts:check && pnpm contracts:generate && pnpm typecheck && pnpm test",
+    "build": "turbo run build"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "openapi-typescript": "7.13.0",
+    "@apidevtools/swagger-parser": "13.1.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "ws": "8.22.0",
+    "typescript": "5.9.3",
+    "turbo": "2.11.10"
+  }
+}
