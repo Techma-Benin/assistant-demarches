@@ -1,40 +1,102 @@
 # tooling
 
-Service NestJS du groupe Tooling : passerelle MCP, mandats, demandes, journal. Plan et calendrier : [docs/tooling-plan.md](../../docs/tooling-plan.md). Contrats : [CONTRACTS.md](../../CONTRACTS.md).
+Service NestJS du groupe Tooling : passerelle MCP, mandats, demandes, journal d'audit, événements C4. Plan : [docs/tooling-plan.md](../../docs/tooling-plan.md). Contrats : [CONTRACTS.md](../../CONTRACTS.md).
 
-## État
-
-En place : configuration validée au démarrage, `/health`, `traceparent` obligatoire ailleurs, erreurs `application/problem+json`, en-têtes de sécurité. La passerelle `POST /mcp` (Streamable HTTP, sans session) authentifie le client `backend-agent` (scope `tools:call`), valide le contexte transmis en en-têtes et publie le catalogue complet. `procedures.search` et `procedures.get` interrogent l'API privée du Backend sous l'identité `tooling-resources` ; en production, seules les fiches validées sortent.
-
-Pas encore en place : journal d'audit, événements C4, mandats, idempotence et outils d'action. Ces derniers répondent `UPSTREAM_UNAVAILABLE` sans effet.
-
-## Commandes
+## Démarrer
 
 ```sh
-pnpm --filter @techma/tooling test    # compile puis lance node --test
+pnpm --filter @techma/tooling test     # compile puis lance node --test
 pnpm --filter @techma/tooling build
-pnpm --filter @techma/tooling start   # http://127.0.0.1:4030
-```
-
-Avec la simulation Backend du dépôt (`pnpm mocks`) :
-
-```sh
+pnpm mocks                             # Backend simulé sur 4010 (autre terminal)
 AUTH_MODE=mock-tokens pnpm --filter @techma/tooling start
 ```
+
+Le service écoute sur `http://127.0.0.1:4030`. Sans `DATABASE_URL`, il utilise PostgreSQL embarqué en mémoire (PGlite) : rien à installer, données perdues à l'arrêt. La simulation Tooling du dépôt reste sur 4020 ; pointer le Backend vers 4030 pour utiliser le vrai service.
+
+## Intégration pour les autres groupes
+
+### Backend, agent : `POST /mcp`
+
+MCP Streamable HTTP sans session, SDK officiel. Chaque requête porte :
+
+| En-tête | Valeur |
+|---|---|
+| `Authorization` | `Bearer` du client `backend-agent`, audience `techma-tooling`, scope `tools:call` |
+| `traceparent` | W3C v00 |
+| `X-Conversation-Id`, `X-User-Ref` | Contexte construit par le code du Backend, jamais par le modèle |
+| `X-Mandate-Id` | Pour les outils d'action |
+| `Idempotency-Key` | Obligatoire pour les outils d'action ; stable pour une même tentative métier |
+
+Catalogue : `tools/list` renvoie exactement `contracts/v1/mcp.tools.json`. Erreur métier : `isError: true` et un bloc texte JSON `{code, detail, traceId}`.
+
+### Backend, consentement : `POST /internal/v1/mandates` et `POST /internal/v1/mandates/{id}/revoke`
+
+Client `backend-mandates`, scope `mandates:grant`, `Idempotency-Key` obligatoire. Corps `MandateGrant`. Hors mode local, `challenge.proofToken` doit être un JWT RS256 signé par le Backend (audience `techma-mandate`, `jti` = id du challenge, `sub` = `userRef`, `conversationId`, `procedureId`, `scopes`, `exp` = `expiresAt`), publié sur le JWKS indiqué par `PROOF_JWKS_URL`. Un challenge ne sert qu'une fois.
+
+Le Tooling ne publie pas `mandate.granted` ni `mandate.revoked` : le Backend reçoit le mandat en réponse synchrone et le diffuse lui-même, comme le fait la simulation.
+
+### Ce que le Tooling attend du Backend
+
+| Besoin | Route Backend | Identité Tooling |
+|---|---|---|
+| Fiches | `GET /internal/v1/procedures`, `GET /internal/v1/procedures/{id}` | `tooling-resources`, scope `resources:read` |
+| Métadonnées de pièces | `GET /internal/v1/files/{id}` avec `X-User-Ref` | `tooling-resources` |
+| Événements | `POST /internal/v1/events`, `Idempotency-Key` = id d'événement | `tooling-events`, scope `events:publish` |
+
+Événements publiés : `request.created`, `request.status_changed`, `tool.called`. Ordre garanti par conversation, livraison au moins une fois, id stable entre les reprises.
+
+## Organisation du code
+
+| Dossier | Rôle |
+|---|---|
+| `src/gateway` | Passerelle MCP, registre des outils, chemin d'exécution commun (idempotence, mandat, sortie, journal, événements) |
+| `src/procedures`, `src/requests` | Outils, inscrits au registre par leur module ; aucun ne connaît la passerelle |
+| `src/mandates` | Contrôle des mandats et vérification à chaque action |
+| `src/auth` | JWT entrants, jetons client credentials sortants, preuves de consentement |
+| `src/database` | Port `Database` (PostgreSQL ou PGlite), migrations, sécurité au niveau des lignes |
+| `src/events` | Outbox, publication, entretien |
+| `src/runtime` | Superviseur et garde-fous des processus |
+
+Ajouter un outil : un `ToolHandler` dans un module qui l'inscrit au `ToolRegistry` en `onModuleInit`. La passerelle se charge du reste. Un outil d'action qui n'appelle pas `requireMandate` est refusé.
+
+## Tenue en cas de panne
+
+| Panne | Comportement |
+|---|---|
+| Exception non rattrapée | Le processus ferme ce qu'il peut, sort en échec, le superviseur le relance |
+| Processus bloqué | Plus de battement de cœur : tué et remplacé au bout de 30 s |
+| Arrêts répétés | Relance après 1, 2, 4… jusqu'à 30 s ; jamais d'abandon |
+| Superviseur arrêté | Docker relance le conteneur (`restart: unless-stopped`) |
+| Réplique indisponible | Le proxy la retire via `/ready` ; l'autre réplique sert |
+| Base indisponible | Réponses 503, `/ready` en échec, reconnexion automatique ; au démarrage, sortie et relance jusqu'au retour de la base |
+| Backend indisponible | Outils en `UPSTREAM_UNAVAILABLE`, événements gardés et repris pendant 24 h |
+| Processus arrêté en pleine publication | Bail de 60 s : un autre processus reprend les événements |
+
+Aucun état métier n'est gardé en mémoire : idempotence, mandats et événements sont en base, donc n'importe quel processus ou réplique peut servir n'importe quel appel. Avec PGlite, un seul processus est permis ; la redondance demande PostgreSQL.
+
+`/health` : le processus répond. `/ready` : la base répond et le schéma est à jour. Le Backend n'entre pas dans `/ready`, pour que sa panne ne retire pas le Tooling.
+
+## Déploiement de test
+
+`deploy/compose.yaml` : PostgreSQL 16, deux répliques, proxy Caddy sur `127.0.0.1:4030`. Voir l'en-tête du fichier. Le rôle de connexion doit pouvoir créer le rôle `tooling_app` à la première migration. Ces fichiers n'ont pas encore été exécutés : Docker n'était pas disponible sur le poste de développement.
 
 ## Configuration
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `TOOLING_HOST` | `127.0.0.1` | Adresse d'écoute |
-| `TOOLING_PORT` | `4030` | Port ; 4010 et 4020 restent aux simulations |
-| `NODE_ENV` | | `production` interdit `mock-tokens`, exige `BACKEND_URL` et masque les fiches en brouillon |
+| `TOOLING_HOST` / `TOOLING_PORT` | `127.0.0.1` / `4030` | Écoute |
+| `TOOLING_WORKERS` | 2 avec PostgreSQL, 1 avec PGlite | Processus de service sous le superviseur |
+| `NODE_ENV` | | `production` exige PostgreSQL et `BACKEND_URL`, interdit `mock-tokens` et les fiches en brouillon |
+| `DATABASE_URL` | `pglite:memory` hors production | `postgres://…`, `pglite:memory` ou `pglite:/chemin` |
+| `DATABASE_POOL_MAX` | 10 | Connexions par processus |
 | `BACKEND_URL` | `http://127.0.0.1:4010` hors production | API privée du Backend |
-| `AUTH_MODE` | `jwt` | `mock-tokens` accepte les jetons statiques de la suite partagée, seulement en écoute locale hors production |
-| `JWT_ISSUER` | | Realm Keycloak ; mode `jwt` |
-| `JWKS_URL` | | Clés publiques du realm ; mode `jwt` |
-| `OIDC_TOKEN_URL` | | Point de jeton client credentials ; mode `jwt` |
-| `TOOLING_RESOURCES_CLIENT_ID` / `_SECRET` | | Identité sortante vers le Backend ; mode `jwt`, secret jamais commité |
-| `CONTRACTS_DIR` | `contracts/v1` du dépôt | Emplacement des contrats dans une image |
+| `AUTH_MODE` | `jwt` | `mock-tokens` : jetons statiques de la suite partagée, écoute locale hors production seulement |
+| `JWT_ISSUER`, `JWKS_URL`, `OIDC_TOKEN_URL` | | Realm Keycloak ; mode `jwt` |
+| `TOOLING_RESOURCES_CLIENT_ID` / `_SECRET` | | Identité sortante vers les ressources ; mode `jwt` |
+| `TOOLING_EVENTS_CLIENT_ID` / `_SECRET` | | Identité sortante vers les événements ; mode `jwt` |
+| `PROOF_JWKS_URL`, `PROOF_ISSUER` | | Clés des preuves de consentement ; mode `jwt` |
+| `PROCEDURES_ALLOW_DRAFTS` | `true` hors production | Fiches en brouillon visibles |
+| `EVENTS_PUBLISHER`, `EVENTS_INTERVAL_MS` | `on`, 1000 | Publication de l'outbox |
+| `CONTRACTS_DIR` | `contracts/v1` du dépôt | Contrats dans une image |
 
-Toutes les URL de service doivent être en HTTPS hors localhost.
+Toutes les URL de service doivent être en HTTPS hors localhost. Les secrets viennent de l'environnement et ne sont jamais journalisés.

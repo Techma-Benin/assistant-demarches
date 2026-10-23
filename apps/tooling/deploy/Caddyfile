@@ -1,0 +1,14 @@
+# Répartit les appels entre les deux répliques. Une réplique dont /ready échoue
+# est retirée du trafic jusqu'à son rétablissement ; si une connexion échoue avant
+# l'envoi de la requête, l'autre réplique est essayée.
+:4030 {
+	reverse_proxy tooling-a:4030 tooling-b:4030 {
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		health_uri /ready
+		health_interval 5s
+		health_timeout 2s
+		fail_duration 30s
+	}
+}

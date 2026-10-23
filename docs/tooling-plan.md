@@ -28,24 +28,32 @@ Un seul service NestJS, en modules :
 
 ### Base de données
 
-Drizzle ORM avec `pg` en exécution, PGlite (PostgreSQL embarqué) dans les tests pour ne pas dépendre de Docker sur les postes. Tables prévues : `requests`, `mandates`, `consumed_challenges`, `idempotency_keys`, `audit_log`, `outbox`.
+Requêtes SQL paramétrées avec `pg`, sans ORM : la sécurité au niveau des lignes exige de contrôler chaque transaction (rôle `tooling_app`, portée `app.user_ref`). PGlite (PostgreSQL embarqué) sert aux tests et au poste local, sans Docker. Tables : `requests`, `mandates`, `idempotency_keys`, `audit_log`, `outbox`. Migrations embarquées, appliquées au démarrage sous verrou consultatif.
 
-La sécurité au niveau des lignes est activée sur toutes les tables. Pour `requests` et `mandates`, chaque transaction positionne `app.user_ref` et les politiques filtrent dessus : une erreur de filtre dans le code ne peut pas exposer la demande d'un autre usager. `audit_log` est en ajout seul : le rôle applicatif n'a ni `UPDATE` ni `DELETE`. Les tables sans notion d'usager ont une politique limitée au rôle du service. Ce point dépasse ce qu'exige le contrat ; c'est un choix du groupe.
+La sécurité au niveau des lignes est activée et forcée sur toutes les tables. Pour `requests` et `mandates`, chaque transaction positionne `app.user_ref` et les politiques filtrent dessus : une erreur de filtre dans le code ne peut pas exposer la demande d'un autre usager. `audit_log` est en ajout seul, par un déclencheur qui s'applique même au propriétaire. Le journal et l'outbox ne sont lisibles que par les tâches système. Ce point dépasse ce qu'exige le contrat ; c'est un choix du groupe.
+
+### Tenue en cas de panne
+
+Le service ne garde aucun état métier en mémoire. Un superviseur lance plusieurs processus sur le même port, relance ceux qui s'arrêtent et remplace ceux qui ne battent plus. En déploiement, deux répliques tournent derrière un proxy qui écarte celle dont `/ready` échoue. Détail dans [apps/tooling/README.md](../apps/tooling/README.md).
 
 ### Authentification en local
 
 Le service vérifie toujours de vrais JWT. Pour le développement, un script génère une paire de clés et un JWKS locaux, et émet des jetons de test. La suite partagée envoie des jetons statiques (`mock-agent`, `mock-backend-control`) : un mode `AUTH_MODE=mock-tokens` les accepte, uniquement si le service écoute sur `127.0.0.1`. Il refuse de démarrer dans tout autre cas.
 
-## Calendrier
+## Avancement
 
-| Date | Jalon PDF | Livrable Tooling |
+| Branche | Contenu | État |
 |---|---|---|
-| 23 oct. | Jour 2 | Branche, Node 22, `pnpm check` vert. Service NestJS minimal : configuration, `/health`, `traceparent`, erreurs problem+json, tests |
-| 24 au 27 oct. | Jour 6 | Authentification, passerelle MCP, contexte, `procedures.search` et `procedures.get` sur le Backend simulé. Base, migrations, sécurité des lignes |
-| 29 oct. | Jour 8 | Outils de lecture réels de bout en bout, journal d'audit, événements `tool.called` via outbox. Suite de conformité Tooling seule |
-| 31 oct. | Jour 10 | API de contrôle des mandats avec preuve signée, quatre outils d'action, idempotence, machine d'état, événements `request.*`, révocation |
-| 1er au 3 nov. | Jour 13 | Durcissement avant la journée d'attaque : tests négatifs (portée, propriétaire, rejeu, expiration, révocation, idempotence concurrente), limitation de débit, journaux sans donnée personnelle, traces OpenTelemetry |
-| 4 au 6 nov. | Jour 16 | Déploiement de test, fiches synthétiques dans `content`, répétition de la démonstration |
+| `tooling/service-scaffold` | Service NestJS, configuration, `/health`, `traceparent`, erreurs problem+json | Poussée |
+| `tooling/mcp-gateway` | Passerelle MCP authentifiée, `procedures.search` et `procedures.get` | Poussée |
+| `tooling/persistence` | Base, sécurité des lignes, journal, idempotence, mandats, outils d'action | Poussée |
+| `tooling/events-outbox` | Publication des événements avec reprise et ordre par conversation | Poussée |
+| `tooling/resilience` | Superviseur, garde-fous, image, déploiement à deux répliques | En cours |
+| `tooling/hardening` | Limitation de débit, traces OpenTelemetry, tests d'attaque | À faire |
+
+Les branches s'empilent : chacune part de la précédente. Les PR vers `dev` suivent cet ordre.
+
+Jalons du cadre technique : outils de lecture réels au 29 octobre, passerelle mandat et outils d'action au 31 octobre, journée d'attaque le 3 novembre, démonstration le 6 novembre.
 
 ## Décisions à valider avec les autres groupes
 
@@ -53,8 +61,12 @@ La suite `tests/integration.test.mjs` exige les deux URL et fait passer le conse
 
 Le Backend doit nous fournir tôt le JWKS qui signera `proofToken`, et une date pour son API de ressources réelle. Notre jalon du 31 octobre en dépend.
 
+Le Tooling ne publie pas `mandate.granted` ni `mandate.revoked` : le Backend les émet déjà à partir de la réponse synchrone. À confirmer pour éviter un double envoi.
+
+Le contrat n'a pas de code d'erreur pour une panne interne (500). Le service renvoie `INVALID_REQUEST`, comme les simulations ; un code dédié serait plus juste.
+
 La collecte des vraies fiches sourcées passe par le responsable contenu. Jusqu'au pilote, uniquement des données fictives.
 
 ## Suivi
 
-Chaque étape part de `dev` sur une branche `tooling/<tâche>` et revient par PR vers `dev`, avec `pnpm check` vert. Ordre prévu des branches : `tooling/service-scaffold`, `tooling/mcp-gateway`, `tooling/persistence`, `tooling/read-tools`, `tooling/mandates`, `tooling/action-tools`, `tooling/events-outbox`, `tooling/hardening`.
+Chaque étape part sur une branche `tooling/<tâche>` et revient par PR vers `dev`, avec `pnpm check` vert.

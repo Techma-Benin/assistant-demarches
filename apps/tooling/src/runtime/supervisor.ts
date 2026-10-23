@@ -1,0 +1,128 @@
+import cluster, { type Worker } from 'node:cluster';
+
+export interface SupervisorOptions {
+  workers: number;
+  /** Script exécuté par chaque processus de service. */
+  exec: string;
+  /** Sans battement de cœur pendant ce délai, le processus est considéré bloqué et remplacé. */
+  heartbeatTimeoutMs?: number;
+  baseBackoffMs?: number;
+  maxBackoffMs?: number;
+  /** Délai laissé aux processus pour finir leurs requêtes à l'arrêt. */
+  shutdownTimeoutMs?: number;
+  handleSignals?: boolean;
+  log?: (message: string) => void;
+}
+
+export interface WorkerMessage {
+  type: 'heartbeat' | 'ready';
+}
+
+interface Slot {
+  index: number;
+  worker?: Worker;
+  crashes: number[];
+  lastBeat: number;
+  restartTimer?: NodeJS.Timeout;
+}
+
+export interface Supervisor {
+  pids(): number[];
+  stop(): Promise<void>;
+}
+
+const CRASH_WINDOW_MS = 60_000;
+
+/**
+ * Processus principal : il ne sert aucune requête et ne fait que surveiller.
+ * Chaque processus de service qui s'arrête est relancé, avec un délai croissant en cas
+ * d'arrêts répétés ; il n'abandonne jamais. Les autres processus continuent de servir
+ * pendant le remplacement, puisque tous partagent le même port.
+ */
+export function supervise(options: SupervisorOptions): Supervisor {
+  const heartbeatTimeout = options.heartbeatTimeoutMs ?? 30_000;
+  const base = options.baseBackoffMs ?? 1000;
+  const max = options.maxBackoffMs ?? 30_000;
+  const log = options.log ?? ((message: string) => console.log(`[superviseur] ${message}`));
+  let stopping = false;
+
+  cluster.setupPrimary({ exec: options.exec });
+  const slots: Slot[] = Array.from({ length: options.workers }, (_, index) => ({ index, crashes: [], lastBeat: 0 }));
+
+  const spawn = (slot: Slot): void => {
+    const worker = cluster.fork({ TOOLING_WORKER_INDEX: String(slot.index) });
+    slot.worker = worker;
+    slot.lastBeat = Date.now();
+    log(`processus ${slot.index} lancé (pid ${worker.process.pid})`);
+    worker.on('message', (message: WorkerMessage) => {
+      if (message?.type === 'heartbeat' || message?.type === 'ready') slot.lastBeat = Date.now();
+      if (message?.type === 'ready') log(`processus ${slot.index} prêt (pid ${worker.process.pid})`);
+    });
+    // Erreur d'IPC : l'événement exit suit, la relance s'y fait.
+    worker.on('error', (error) => log(`processus ${slot.index} : ${error.message}`));
+    worker.on('exit', (code, signal) => {
+      if (slot.worker !== worker) return;
+      slot.worker = undefined;
+      if (stopping) return;
+      const now = Date.now();
+      slot.crashes = slot.crashes.filter((at) => now - at < CRASH_WINDOW_MS);
+      slot.crashes.push(now);
+      const delay = Math.min(base * 2 ** (slot.crashes.length - 1), max);
+      log(`processus ${slot.index} arrêté (code ${code ?? '-'}, signal ${signal ?? '-'}) ; relance dans ${delay} ms`);
+      slot.restartTimer = setTimeout(() => {
+        if (!stopping) spawn(slot);
+      }, delay);
+    });
+  };
+
+  slots.forEach(spawn);
+
+  const watchdog = setInterval(() => {
+    for (const slot of slots) {
+      if (slot.worker && Date.now() - slot.lastBeat > heartbeatTimeout) {
+        log(`processus ${slot.index} ne répond plus depuis ${heartbeatTimeout} ms : remplacé`);
+        slot.lastBeat = Date.now();
+        slot.worker.process.kill('SIGKILL');
+      }
+    }
+  }, Math.min(1000, heartbeatTimeout / 2));
+
+  const stop = async (): Promise<void> => {
+    if (stopping) return;
+    stopping = true;
+    clearInterval(watchdog);
+    const running = slots.flatMap((slot) => {
+      clearTimeout(slot.restartTimer);
+      return slot.worker ? [slot.worker] : [];
+    });
+    await Promise.all(
+      running.map(
+        (worker) =>
+          new Promise<void>((resolve) => {
+            if (worker.isDead()) return resolve();
+            const force = setTimeout(() => worker.process.kill('SIGKILL'), options.shutdownTimeoutMs ?? 15_000);
+            worker.once('exit', () => {
+              clearTimeout(force);
+              resolve();
+            });
+            worker.process.kill('SIGTERM');
+          }),
+      ),
+    );
+    log('arrêt terminé');
+  };
+
+  if (options.handleSignals ?? true) {
+    for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+      process.once(signal, () => {
+        log(`${signal} reçu : arrêt des processus`);
+        void stop().then(() => process.exit(0));
+      });
+    }
+  }
+
+  return {
+    pids: () => slots.flatMap((slot) => (slot.worker?.process.pid ? [slot.worker.process.pid] : [])),
+    stop,
+  };
+}
