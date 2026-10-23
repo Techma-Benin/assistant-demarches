@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js';
 import addFormatsPlugin from 'ajv-formats';
 
 const contractsDir = process.env.CONTRACTS_DIR
-  ? new URL(`file://${process.env.CONTRACTS_DIR.replace(/\/?$/, '/')}`)
+  ? pathToFileURL(join(resolve(process.env.CONTRACTS_DIR), sep))
   : new URL('../../../../contracts/v1/', import.meta.url);
 
 const load = (file: string) => JSON.parse(readFileSync(new URL(file, contractsDir), 'utf8'));

@@ -15,6 +15,12 @@ export interface WorkerMessage {
   type: 'heartbeat' | 'ready';
 }
 
+export interface ControlMessage {
+  type: 'shutdown';
+}
+
+export const isShutdown = (message: unknown): boolean => (message as ControlMessage | undefined)?.type === 'shutdown';
+
 interface Slot {
   index: number;
   worker?: Worker;
@@ -95,7 +101,8 @@ export function supervise(options: SupervisorOptions): Supervisor {
               clearTimeout(force);
               resolve();
             });
-            worker.process.kill('SIGTERM');
+            if (worker.isConnected()) worker.send({ type: 'shutdown' } satisfies ControlMessage);
+            else worker.process.kill('SIGKILL');
           }),
       ),
     );
@@ -103,10 +110,15 @@ export function supervise(options: SupervisorOptions): Supervisor {
   };
 
   if (options.handleSignals ?? true) {
-    for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-      process.once(signal, () => {
-        log(`${signal} reçu : arrêt des processus`);
-        void stop().then(() => process.exit(0));
+    const shutdown = (reason: string) => {
+      log(`${reason} : arrêt des processus`);
+      void stop().then(() => process.exit(0));
+    };
+    const signals: NodeJS.Signals[] = process.platform === 'win32' ? ['SIGINT', 'SIGBREAK'] : ['SIGTERM', 'SIGINT'];
+    for (const signal of signals) process.once(signal, () => shutdown(`${signal} reçu`));
+    if (process.send) {
+      process.on('message', (message) => {
+        if (isShutdown(message)) shutdown('demande d\'arrêt reçue');
       });
     }
   }

@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { resolve } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 import { ConfigError, loadConfig } from '../src/config.js';
 import { assertSchema, startTooling, TRACEPARENT } from './helpers.js';
 
@@ -79,4 +83,13 @@ test('mode jwt : realm complet exigé, HTTPS obligatoire hors localhost', () => 
   assert.equal(production.workers, 2);
   assert.throws(() => loadConfig({ AUTH_MODE: 'mock-tokens', TOOLING_WORKERS: '2' }), ConfigError, 'PGlite ne se partage pas');
   assert.equal(loadConfig({ ...realm, BACKEND_URL: 'https://backend.internal' }).backendUrl.host, 'backend.internal');
+});
+
+test('CONTRACTS_DIR accepte un chemin natif du système (dont C:\\… sous Windows)', async () => {
+  const dir = resolve(fileURLToPath(new URL('../../../../contracts/v1', import.meta.url)));
+  const module = pathToFileURL(fileURLToPath(new URL('../src/contracts.js', import.meta.url))).href;
+  const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `const c = await import(${JSON.stringify(module)}); console.log(c.catalog.tools.length)`], {
+    env: { ...process.env, CONTRACTS_DIR: dir },
+  });
+  assert.equal(stdout.trim(), '8');
 });

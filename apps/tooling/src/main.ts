@@ -2,7 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import type { Server } from 'node:http';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
-import { installFatalHandlers, notifyReady, startHeartbeat } from './runtime/worker-guards.js';
+import { installFatalHandlers, notifyReady, onShutdownRequest, startHeartbeat } from './runtime/worker-guards.js';
 
 let app: INestApplication | undefined;
 const worker = process.env.TOOLING_WORKER_INDEX ?? '0';
@@ -10,6 +10,13 @@ const log = (message: string) => console.error(`[tooling ${worker}] ${message}`)
 
 startHeartbeat();
 installFatalHandlers(() => app, log);
+onShutdownRequest(() => {
+  setTimeout(() => process.exit(1), 10_000).unref();
+  void (app ? app.close() : Promise.resolve()).then(
+    () => process.exit(0),
+    () => process.exit(1),
+  );
+});
 
 try {
   const config = loadConfig();

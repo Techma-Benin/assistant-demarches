@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import type { WorkerMessage } from './supervisor.js';
+import { isShutdown, type WorkerMessage } from './supervisor.js';
 
 export function startHeartbeat(intervalMs = 5000): void {
   if (!process.send) return;
@@ -24,4 +24,18 @@ export function installFatalHandlers(getApp: () => INestApplication | undefined,
   };
   process.on('uncaughtException', (error) => fatal('Exception non rattrapée', error));
   process.on('unhandledRejection', (reason) => fatal('Promesse rejetée sans gestionnaire', reason));
+}
+
+export function onShutdownRequest(handler: () => void): void {
+  if (!process.send) return;
+  let requested = false;
+  const once = () => {
+    if (requested) return;
+    requested = true;
+    handler();
+  };
+  process.on('message', (message) => {
+    if (isShutdown(message)) once();
+  });
+  process.on('disconnect', once);
 }

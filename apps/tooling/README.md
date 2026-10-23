@@ -15,6 +15,8 @@ AUTH_MODE=mock-tokens pnpm --filter @techma/tooling start
 
 Le service écoute sur `http://127.0.0.1:4030`. Sans `DATABASE_URL`, il utilise PostgreSQL embarqué en mémoire (PGlite) : rien à installer, données perdues à l'arrêt. La simulation Tooling du dépôt reste sur 4020 ; pointer le Backend vers 4030 pour utiliser le vrai service.
 
+Systèmes pris en charge : Linux, macOS et Windows, avec Node.js 22. La CI exécute `pnpm check` sur les trois. Le superviseur demande l'arrêt à ses processus par IPC, ce qui fonctionne partout ; il s'arrête proprement sur `SIGTERM` ou `SIGINT` (Linux, macOS, Docker), sur `Ctrl+C` ou `SIGBREAK` (Windows), ou sur un message `{ "type": "shutdown" }` de son processus parent. Un processus de service dont le superviseur disparaît s'arrête de lui-même.
+
 ## Intégration pour les autres groupes
 
 ### Backend, agent : `POST /mcp`

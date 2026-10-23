@@ -66,29 +66,48 @@ test('superviseur : processus arrêté relancé, processus bloqué remplacé, se
   assert.equal(supervisor.pids().length, 0);
 });
 
-test('service réel : processus tué relancé par le superviseur, /health de retour', async (t) => {
-  const port = await freePort();
+function startService(port: number, ipc: boolean) {
   const child = spawn(process.execPath, [fileURLToPath(new URL('../src/cluster.js', import.meta.url))], {
     env: { ...process.env, AUTH_MODE: 'mock-tokens', TOOLING_PORT: String(port), DATABASE_URL: 'pglite:memory', EVENTS_PUBLISHER: 'off' },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ipc ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'],
   });
-  let output = '';
-  child.stdout.on('data', (chunk) => (output += chunk));
-  child.stderr.on('data', (chunk) => (output += chunk));
+  const state = { output: '' };
+  child.stdout!.on('data', (chunk) => (state.output += chunk));
+  child.stderr!.on('data', (chunk) => (state.output += chunk));
+  const exited = new Promise<number | null>((resolve) => child.once('exit', resolve));
+  return { child, state, exited };
+}
+
+test('service réel : processus tué relancé, puis arrêt propre demandé par IPC (tous systèmes)', async (t) => {
+  const port = await freePort();
+  const { child, state, exited } = startService(port, true);
   t.after(() => {
-    child.kill('SIGTERM');
+    if (child.exitCode === null) child.kill('SIGKILL');
   });
   const health = `http://127.0.0.1:${port}/health`;
   await until(() => get(health), 20_000);
-  const pid = Number(/prêt \(pid (\d+)\)/.exec(output)?.[1]);
-  assert.ok(pid > 0, output);
+  const pid = Number(/prêt \(pid (\d+)\)/.exec(state.output)?.[1]);
+  assert.ok(pid > 0, state.output);
 
   process.kill(pid, 'SIGKILL');
-  await until(async () => /arrêté \(code -, signal SIGKILL\)/.test(output), 5000);
-  await until(async () => new RegExp(`prêt \\(pid (?!${pid}\\))\\d+\\)`).test(output) && (await get(health)), 20_000);
+  await until(async () => /processus 0 arrêté/.test(state.output), 5000);
+  await until(async () => new RegExp(`prêt \\(pid (?!${pid}\\))\\d+\\)`).test(state.output) && (await get(health)), 20_000);
 
-  const exited = new Promise<number | null>((resolve) => child.once('exit', resolve));
+  child.send({ type: 'shutdown' });
+  assert.equal(await exited, 0);
+  assert.match(state.output, /arrêt terminé/);
+  assert.equal(await get(health), undefined);
+});
+
+test('service réel : arrêt propre sur SIGTERM, comme Docker', { skip: process.platform === 'win32' && 'SIGTERM non pris en charge par Windows' }, async (t) => {
+  const port = await freePort();
+  const { child, state, exited } = startService(port, false);
+  t.after(() => {
+    if (child.exitCode === null) child.kill('SIGKILL');
+  });
+  await until(() => get(`http://127.0.0.1:${port}/health`), 20_000);
   child.kill('SIGTERM');
   assert.equal(await exited, 0);
-  assert.match(output, /arrêt terminé/);
+  assert.match(state.output, /SIGTERM reçu/);
+  assert.match(state.output, /arrêt terminé/);
 });
