@@ -3,7 +3,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Request, Response } from 'express';
-import { ServiceAuth } from '../auth/service-auth.js';
+import { RequestGuard } from '../auth/request-guard.js';
 import { ProblemError, toProblem } from '../common/problem.js';
 import { traceOf } from '../common/trace.js';
 import { catalog, domainValidator, type ToolContext } from '../contracts.js';
@@ -23,13 +23,13 @@ function singleHeader(req: Request, name: string): string | undefined {
 @Controller('mcp')
 export class McpController {
   constructor(
-    private readonly auth: ServiceAuth,
+    private readonly guard: RequestGuard,
     private readonly executor: ToolExecutor,
   ) {}
 
   @Post()
   async post(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const principal = await this.auth.require(singleHeader(req, 'authorization'), 'backend-agent', 'tools:call');
+    const principal = await this.guard.authorize(req, 'backend-agent', 'tools:call');
     const trace = traceOf(req);
     const mandateId = singleHeader(req, 'x-mandate-id');
     const context: ToolContext = {
@@ -56,8 +56,9 @@ export class McpController {
         return { content: [{ type: 'text' as const, text: JSON.stringify(output) }], structuredContent: output };
       } catch (error) {
         // Erreur métier visible par l'agent ; jamais transformée en succès.
-        const { code, detail } = toProblem(error);
-        return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ code, detail, traceId: trace.traceId }) }] };
+        const { code, detail, retryAfter } = toProblem(error);
+        const body = { code, detail, traceId: trace.traceId, ...(retryAfter === undefined ? {} : { retryAfter }) };
+        return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(body) }] };
       }
     });
 

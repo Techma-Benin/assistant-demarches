@@ -5,7 +5,7 @@ import { OutboxPublisher } from './outbox-publisher.js';
 
 /**
  * Entretien périodique, sûr en parallèle sur plusieurs répliques :
- * les clés d'idempotence sont gardées au moins 24 h, puis purgées.
+ * les clés d'idempotence sont gardées au moins 24 h, les compteurs de débit 10 minutes.
  */
 @Injectable()
 export class Housekeeping implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -26,8 +26,11 @@ export class Housekeeping implements OnApplicationBootstrap, OnApplicationShutdo
   }
 
   async purge(): Promise<number> {
-    const rows = await this.db.transaction('system', (tx) => tx.query("delete from idempotency_keys where created_at < now() - interval '25 hours' returning key_hash"));
-    return rows.length;
+    return this.db.transaction('system', async (tx) => {
+      const keys = await tx.query("delete from idempotency_keys where created_at < now() - interval '25 hours' returning key_hash");
+      const windows = await tx.query("delete from rate_limits where window_start < now() - interval '10 minutes' returning bucket");
+      return keys.length + windows.length;
+    });
   }
 }
 

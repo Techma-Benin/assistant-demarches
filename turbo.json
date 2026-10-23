@@ -11,7 +11,10 @@
       ]
     },
     "test": {
-      "outputs": []
+      "cache": false,
+      "passThroughEnv": [
+        "TEST_DATABASE_URL"
+      ]
     }
   }
 }

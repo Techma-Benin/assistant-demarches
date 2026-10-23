@@ -5,7 +5,9 @@ Service NestJS du groupe Tooling : passerelle MCP, mandats, demandes, journal d'
 ## Démarrer
 
 ```sh
-pnpm --filter @techma/tooling test     # compile puis lance node --test
+pnpm --filter @techma/tooling test     # compile puis lance node --test (PGlite)
+TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres \
+  pnpm --filter @techma/tooling test   # même suite sur un PostgreSQL réel, plus les tests à deux répliques
 pnpm --filter @techma/tooling build
 pnpm mocks                             # Backend simulé sur 4010 (autre terminal)
 AUTH_MODE=mock-tokens pnpm --filter @techma/tooling start
@@ -71,14 +73,20 @@ Ajouter un outil : un `ToolHandler` dans un module qui l'inscrit au `ToolRegistr
 | Base indisponible | Réponses 503, `/ready` en échec, reconnexion automatique ; au démarrage, sortie et relance jusqu'au retour de la base |
 | Backend indisponible | Outils en `UPSTREAM_UNAVAILABLE`, événements gardés et repris pendant 24 h |
 | Processus arrêté en pleine publication | Bail de 60 s : un autre processus reprend les événements |
+| Agent qui boucle | 60 appels d'outils par minute et par usager, puis `RATE_LIMITED` avec délai |
+| Essais de jetons | 20 échecs d'authentification par minute et par adresse, puis 429 pour cette adresse |
 
 Aucun état métier n'est gardé en mémoire : idempotence, mandats et événements sont en base, donc n'importe quel processus ou réplique peut servir n'importe quel appel. Avec PGlite, un seul processus est permis ; la redondance demande PostgreSQL.
 
 `/health` : le processus répond. `/ready` : la base répond et le schéma est à jour. Le Backend n'entre pas dans `/ready`, pour que sa panne ne retire pas le Tooling.
 
+Les compteurs de débit sont en base, partagés par tous les processus et répliques ; leurs clés sont hachées. Les réponses 429 et 503 portent `Retry-After`.
+
 ## Déploiement de test
 
-`deploy/compose.yaml` : PostgreSQL 16, deux répliques, proxy Caddy sur `127.0.0.1:4030`. Voir l'en-tête du fichier. Le rôle de connexion doit pouvoir créer le rôle `tooling_app` à la première migration. Ces fichiers n'ont pas encore été exécutés : Docker n'était pas disponible sur le poste de développement.
+`deploy/compose.yaml` : PostgreSQL 16, deux répliques, proxy Caddy en HTTPS sur `127.0.0.1:4443` (HTTP refusé). Voir l'en-tête du fichier. Le rôle de connexion doit pouvoir créer le rôle `tooling_app` à la première migration.
+
+Ce qui a été vérifié sans Docker, avec les binaires officiels : la suite complète sur PostgreSQL 16.14 ; le `Caddyfile` validé par Caddy 2.10 ; deux instances derrière Caddy en TLS 1.3, l'une tuée, 30 requêtes sur 30 servies par l'autre, puis retour automatique de la première. Pas encore exécutés : l'image Docker et le fichier compose eux-mêmes.
 
 ## Configuration
 
@@ -97,6 +105,10 @@ Aucun état métier n'est gardé en mémoire : idempotence, mandats et événeme
 | `PROOF_JWKS_URL`, `PROOF_ISSUER` | | Clés des preuves de consentement ; mode `jwt` |
 | `PROCEDURES_ALLOW_DRAFTS` | `true` hors production | Fiches en brouillon visibles |
 | `EVENTS_PUBLISHER`, `EVENTS_INTERVAL_MS` | `on`, 1000 | Publication de l'outbox |
+| `RATE_LIMIT_USER_PER_MIN` | 60 | Appels d'outils par usager |
+| `RATE_LIMIT_CLIENT_PER_MIN` | 1200 | Requêtes par client de service |
+| `RATE_LIMIT_AUTH_FAILURES_PER_MIN` | 20 | Échecs d'authentification par adresse avant blocage |
+| `TRUST_PROXY` | `false` | Réseaux autorisés à fournir `X-Forwarded-For` (`loopback`, `uniquelocal`…) |
 | `CONTRACTS_DIR` | `contracts/v1` du dépôt | Contrats dans une image |
 
-Toutes les URL de service doivent être en HTTPS hors localhost. Les secrets viennent de l'environnement et ne sont jamais journalisés.
+Toutes les URL de service doivent être en HTTPS hors localhost. Les secrets viennent de l'environnement et ne sont jamais journalisés. Entre le proxy et les répliques, le trafic reste en HTTP sur le réseau privé du déploiement.

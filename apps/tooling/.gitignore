@@ -1,2 +1,5 @@
 # Valeurs réelles du déploiement : jamais versionnées.
 deploy/tooling.env
+deploy/certs/*
+!deploy/certs/README.md
+deploy/tooling-ca.crt

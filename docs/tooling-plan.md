@@ -48,8 +48,9 @@ Le service vérifie toujours de vrais JWT. Pour le développement, un script gé
 | `tooling/mcp-gateway` | Passerelle MCP authentifiée, `procedures.search` et `procedures.get` | Poussée |
 | `tooling/persistence` | Base, sécurité des lignes, journal, idempotence, mandats, outils d'action | Poussée |
 | `tooling/events-outbox` | Publication des événements avec reprise et ordre par conversation | Poussée |
-| `tooling/resilience` | Superviseur, garde-fous, image, déploiement à deux répliques | En cours |
-| `tooling/hardening` | Limitation de débit, traces OpenTelemetry, tests d'attaque | À faire |
+| `tooling/resilience` | Superviseur, garde-fous, image, déploiement à deux répliques | Poussée |
+| `tooling/hardening` | Limitation de débit, `Retry-After`, TLS au proxy, tests sur PostgreSQL réel et à deux répliques, CI avec PostgreSQL | Poussée |
+| `tooling/observability` | Traces OpenTelemetry, métriques, tests d'attaque avant le 3 novembre | À faire |
 
 Les branches s'empilent : chacune part de la précédente. Les PR vers `dev` suivent cet ordre.
 

@@ -127,6 +127,22 @@ grant select, insert, update on outbox to ${APP_ROLE};
 grant usage on all sequences in schema public to ${APP_ROLE};
 `,
   },
+  {
+    version: 2,
+    name: 'shared rate limit counters',
+    sql: `
+create table rate_limits (
+  bucket text not null,
+  window_start timestamptz not null,
+  hits integer not null,
+  primary key (bucket, window_start)
+);
+alter table rate_limits enable row level security;
+alter table rate_limits force row level security;
+create policy rate_limits_service on rate_limits to ${APP_ROLE} using (true) with check (true);
+grant select, insert, update, delete on rate_limits to ${APP_ROLE};
+`,
+  },
 ];
 
 // Verrou consultatif propre au Tooling : un seul processus migre à la fois, les autres attendent.

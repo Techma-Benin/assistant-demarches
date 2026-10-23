@@ -66,6 +66,8 @@ export async function createApp(config: ToolingConfig): Promise<INestApplication
     logger: config.production ? ['error', 'warn', 'log'] : ['error', 'warn'],
   });
   app.disable('x-powered-by');
+  // Adresse client réelle derrière le proxy, pour la limite des échecs d'authentification.
+  app.set('trust proxy', config.trustProxy);
   app.useBodyParser('json', { limit: '100kb' });
   app.use(securityHeaders);
   app.useGlobalFilters(new ProblemFilter());

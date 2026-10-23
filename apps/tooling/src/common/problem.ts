@@ -26,6 +26,8 @@ export class ProblemError extends Error {
     readonly status: number,
     readonly code: ProblemCode,
     detail: string,
+    /** Secondes avant de réessayer ; envoyé en Retry-After pour 429 et 503. */
+    readonly retryAfter?: number,
   ) {
     super(detail);
   }
@@ -43,14 +45,19 @@ const CODE_BY_STATUS: Record<number, ProblemCode> = {
 };
 
 const logger = new Logger('Problem');
+const DEFAULT_RETRY_AFTER = 5;
 
 /**
  * Normalise toute erreur. Les erreurs inattendues sont journalisées côté serveur
  * et ne laissent sortir ni pile ni message interne.
  * Le contrat n'a pas de code pour une erreur interne : 500 + INVALID_REQUEST, comme les simulations.
  */
-export function toProblem(error: unknown): { status: number; code: ProblemCode; detail: string } {
-  if (error instanceof ProblemError) return { status: error.status, code: error.code, detail: error.message };
+export function toProblem(error: unknown): { status: number; code: ProblemCode; detail: string; retryAfter?: number } {
+  if (error instanceof ProblemError) {
+    // Le contrat exige Retry-After sur 429 et 503 : valeur par défaut si l'origine n'en donne pas.
+    const retryAfter = error.retryAfter ?? (error.status === 429 || error.status === 503 ? DEFAULT_RETRY_AFTER : undefined);
+    return { status: error.status, code: error.code, detail: error.message, retryAfter };
+  }
   if (error instanceof HttpException) {
     const status = error.getStatus();
     return { status, code: CODE_BY_STATUS[status] ?? 'INVALID_REQUEST', detail: status === 404 ? 'Route inconnue' : 'Requête refusée' };
@@ -65,9 +72,10 @@ export class ProblemFilter implements ExceptionFilter {
     const http = host.switchToHttp();
     const req = http.getRequest<Request>();
     const res = http.getResponse<Response>();
-    const { status, code, detail } = toProblem(error);
+    const { status, code, detail, retryAfter } = toProblem(error);
     if (res.headersSent) return;
     if (status === 401) res.setHeader('WWW-Authenticate', 'Bearer');
+    if (retryAfter !== undefined) res.setHeader('Retry-After', String(retryAfter));
     res
       .status(status)
       .type('application/problem+json')

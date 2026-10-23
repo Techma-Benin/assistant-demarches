@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormatsPlugin from 'ajv-formats';
+import pg from 'pg';
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWTPayload } from 'jose';
 import type { INestApplication } from '@nestjs/common';
 import { createApp } from '../src/app.js';
@@ -36,8 +37,33 @@ export async function startTooling(t: TestContext, env: NodeJS.ProcessEnv = {}):
   return (await startToolingApp(t, env)).url;
 }
 
+/**
+ * Avec TEST_DATABASE_URL (serveur PostgreSQL réel), chaque service de test reçoit sa
+ * propre base, supprimée ensuite. Sans elle, PGlite en mémoire.
+ */
+async function testDatabase(t: TestContext): Promise<string | undefined> {
+  const admin = process.env.TEST_DATABASE_URL;
+  if (!admin) return undefined;
+  const name = `tooling_test_${randomBytes(6).toString('hex')}`;
+  const run = async (sql: string) => {
+    const client = new pg.Client(admin);
+    await client.connect();
+    try {
+      await client.query(sql);
+    } finally {
+      await client.end();
+    }
+  };
+  await run(`create database ${name}`);
+  t.after(() => run(`drop database if exists ${name} with (force)`));
+  const url = new URL(admin);
+  url.pathname = `/${name}`;
+  return url.href;
+}
+
 export async function startToolingApp(t: TestContext, env: NodeJS.ProcessEnv = {}): Promise<{ url: string; app: INestApplication; db: Database }> {
-  const app = await createApp(loadConfig({ TOOLING_PORT: '0', EVENTS_PUBLISHER: 'off', ...env }));
+  const database = env.DATABASE_URL ?? (await testDatabase(t));
+  const app = await createApp(loadConfig({ TOOLING_PORT: '0', EVENTS_PUBLISHER: 'off', ...(database ? { DATABASE_URL: database } : {}), ...env }));
   await app.listen(0, '127.0.0.1');
   t.after(() => app.close());
   return { url: `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`, app, db: app.get(Database) };
@@ -237,7 +263,7 @@ export async function callTool(client: Client, name: string, args: Record<string
   return (await client.callTool({ name, arguments: args })) as ToolResult;
 }
 
-export function toolError(result: ToolResult): { code: string; detail: string; traceId: string } {
+export function toolError(result: ToolResult): { code: string; detail: string; traceId: string; retryAfter?: number } {
   if (!result.isError) throw new Error(`Succès inattendu : ${JSON.stringify(result.structuredContent)}`);
   return JSON.parse(result.content[0].text);
 }

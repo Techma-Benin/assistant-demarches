@@ -2,7 +2,7 @@ import { Body, Controller, Global, HttpCode, Inject, Logger, Module, Param, Post
 import type { Request } from 'express';
 import { AuditLog } from '../audit/audit-log.js';
 import { ProofVerifier, type Challenge } from '../auth/proof-verifier.js';
-import { ServiceAuth } from '../auth/service-auth.js';
+import { RequestGuard } from '../auth/request-guard.js';
 import { newId } from '../common/ids.js';
 import { ProblemError, toProblem } from '../common/problem.js';
 import { traceOf, type TraceContext } from '../common/trace.js';
@@ -33,7 +33,7 @@ export class MandatesController {
   constructor(
     @Inject(TOOLING_CONFIG) private readonly config: ToolingConfig,
     @Inject(Database) private readonly db: Database,
-    private readonly auth: ServiceAuth,
+    private readonly guard: RequestGuard,
     private readonly proofs: ProofVerifier,
     private readonly mandates: MandatesRepository,
     private readonly idempotency: Idempotency,
@@ -43,7 +43,7 @@ export class MandatesController {
   @Post()
   @HttpCode(201)
   async grant(@Req() req: Request, @Body() body: unknown): Promise<Mandate> {
-    const principal = await this.auth.require(req.headers.authorization, 'backend-mandates', 'mandates:grant');
+    const principal = await this.guard.authorize(req, 'backend-mandates', 'mandates:grant');
     const trace = traceOf(req);
     if (!validateGrant(body)) throw new ProblemError(400, 'INVALID_REQUEST', 'MandateGrant invalide');
     const grant = body as MandateGrant;
@@ -82,7 +82,7 @@ export class MandatesController {
   @Post(':mandateId/revoke')
   @HttpCode(200)
   async revoke(@Req() req: Request, @Param('mandateId') mandateId: string): Promise<Mandate> {
-    const principal = await this.auth.require(req.headers.authorization, 'backend-mandates', 'mandates:grant');
+    const principal = await this.guard.authorize(req, 'backend-mandates', 'mandates:grant');
     const trace = traceOf(req);
     if (!MANDATE_ID.test(mandateId)) throw new ProblemError(404, 'NOT_FOUND', 'Mandat inconnu');
     return this.audited(trace, principal.client, 'mandate.revoke', { mandateId }, async () =>

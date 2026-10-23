@@ -31,6 +31,10 @@ export interface ToolingConfig {
   /** Fiches en brouillon visibles ; toujours faux en production. */
   allowDraftProcedures: boolean;
   events: { publisher: boolean; intervalMs: number };
+  /** Limites par minute ; compteurs partagés en base entre processus et répliques. */
+  rateLimits: { perUser: number; perClient: number; authFailuresPerIp: number };
+  /** Réglage express « trust proxy » : qui peut fournir X-Forwarded-For. */
+  trustProxy: string | false;
   /** Présent seulement en mode jwt. */
   jwt?: JwtConfig;
 }
@@ -108,6 +112,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
   if (drafts !== 'true' && drafts !== 'false') throw new ConfigError('PROCEDURES_ALLOW_DRAFTS doit valoir true ou false');
   if (production && drafts === 'true') throw new ConfigError('Fiches en brouillon interdites en production');
 
+  const trustProxy = env.TRUST_PROXY ?? 'false';
+  if (!/^(false|loopback|linklocal|uniquelocal)(\s*,\s*(loopback|linklocal|uniquelocal))*$/.test(trustProxy)) {
+    throw new ConfigError('TRUST_PROXY doit valoir false ou une liste parmi loopback, linklocal, uniquelocal');
+  }
+
   const base = {
     host,
     port,
@@ -119,6 +128,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
     mandateTtlMs: 3_600_000,
     allowDraftProcedures: drafts === 'true',
     events: { publisher: publisher === 'on', intervalMs: integer(env, 'EVENTS_INTERVAL_MS', 1000, 50, 60_000) },
+    rateLimits: {
+      perUser: integer(env, 'RATE_LIMIT_USER_PER_MIN', 60, 1, 100_000),
+      perClient: integer(env, 'RATE_LIMIT_CLIENT_PER_MIN', 1200, 1, 1_000_000),
+      authFailuresPerIp: integer(env, 'RATE_LIMIT_AUTH_FAILURES_PER_MIN', 20, 1, 10_000),
+    },
+    trustProxy: trustProxy === 'false' ? (false as const) : trustProxy,
   };
   if (authMode === 'mock-tokens') return base;
 

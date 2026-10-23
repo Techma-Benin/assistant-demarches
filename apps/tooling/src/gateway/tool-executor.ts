@@ -1,5 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { AuditLog, type AuditEntry } from '../audit/audit-log.js';
+import { RateLimiter } from '../auth/rate-limiter.js';
+import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
 import { ProblemError, toProblem } from '../common/problem.js';
 import type { TraceContext } from '../common/trace.js';
 import { errorsText, tools, type ToolContext } from '../contracts.js';
@@ -29,7 +31,9 @@ export class ToolExecutor {
   private readonly logger = new Logger(ToolExecutor.name);
 
   constructor(
+    @Inject(TOOLING_CONFIG) private readonly config: ToolingConfig,
     @Inject(Database) private readonly db: Database,
+    private readonly limits: RateLimiter,
     private readonly registry: ToolRegistry,
     private readonly idempotency: Idempotency,
     private readonly mandates: MandatesRepository,
@@ -40,6 +44,9 @@ export class ToolExecutor {
   async execute(call: ToolCall): Promise<Record<string, unknown>> {
     let mandateId: string | undefined;
     try {
+      // Protège contre une boucle de l'agent : limite par usager, tous outils confondus.
+      const quota = await this.limits.hit(`user:${call.context.userRef}`, this.config.rateLimits.perUser);
+      if (!quota.allowed) throw new ProblemError(429, 'RATE_LIMITED', "Trop d'appels d'outils pour cet usager", quota.retryAfter);
       const tool = tools.get(call.name);
       if (!tool) throw new ProblemError(404, 'NOT_FOUND', 'Outil inconnu');
       if (!tool.input(call.args)) throw new ProblemError(400, 'INVALID_REQUEST', errorsText(tool.input));
@@ -99,7 +106,10 @@ export class ToolExecutor {
   private async recordFailure(call: ToolCall, code: string, mandateId: string | undefined): Promise<void> {
     try {
       await this.db.transaction({ userRef: call.context.userRef }, async (tx) => {
-        await this.outbox.enqueue(tx, { kind: 'tool.called', toolName: call.name, conversationId: call.context.conversationId, outcome: 'error', code }, call.trace.traceId);
+        // Un appel refusé pour débit n'est pas relayé au Backend : pas d'amplification.
+        if (code !== 'RATE_LIMITED') {
+          await this.outbox.enqueue(tx, { kind: 'tool.called', toolName: call.name, conversationId: call.context.conversationId, outcome: 'error', code }, call.trace.traceId);
+        }
         await this.audit.record(tx, this.entry(call, 'error', code, mandateId));
       });
     } catch (error) {

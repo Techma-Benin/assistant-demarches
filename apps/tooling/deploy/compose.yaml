@@ -1,7 +1,9 @@
-# Déploiement de test du Tooling : deux répliques derrière un proxy qui écarte
+# Déploiement de test du Tooling : deux répliques derrière un proxy HTTPS qui écarte
 # celle qui n'est pas prête, une base PostgreSQL dédiée. Lancement depuis ce dossier :
 #   cp tooling.env.example tooling.env   # puis renseigner les valeurs
 #   TOOLING_DB_PASSWORD=… docker compose up -d --build
+# Avec TOOLING_TLS=internal (défaut), le Backend doit faire confiance à l'autorité locale :
+#   docker compose cp tooling-proxy:/data/caddy/pki/authorities/local/root.crt ./tooling-ca.crt
 name: techma-tooling
 
 x-tooling: &tooling
@@ -11,6 +13,8 @@ x-tooling: &tooling
   env_file: tooling.env
   environment:
     DATABASE_URL: postgres://tooling_owner:${TOOLING_DB_PASSWORD:?TOOLING_DB_PASSWORD requis}@tooling-db:5432/tooling
+    # Seul le proxy, sur le réseau privé, peut indiquer l'adresse réelle du client.
+    TRUST_PROXY: uniquelocal
   # Le conteneur redémarre si le superviseur lui-même s'arrête.
   restart: unless-stopped
   init: true
@@ -42,17 +46,27 @@ services:
 
   tooling-proxy:
     image: caddy:2-alpine
+    environment:
+      TOOLING_PUBLIC_HOST: ${TOOLING_PUBLIC_HOST:-localhost}
+      TOOLING_HTTPS_PORT: "4443"
+      TOOLING_TLS: ${TOOLING_TLS:-internal}
+      TOOLING_UPSTREAMS: tooling-a:4030 tooling-b:4030
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-    # Exposé en local seulement ; le Backend rejoint le réseau tooling en environnement de test.
+      # Autorité locale et certificats conservés entre les redémarrages.
+      - tooling-proxy-data:/data
+      # Certificat fourni : TOOLING_TLS="/certs/tls.crt /certs/tls.key"
+      - ${TOOLING_CERTS_DIR:-./certs}:/certs:ro
+    # HTTPS seulement. Lier à une autre adresse que 127.0.0.1 pour l'environnement de test partagé.
     ports:
-      - "127.0.0.1:4030:4030"
+      - "${TOOLING_BIND:-127.0.0.1}:4443:4443"
     restart: unless-stopped
     depends_on: [tooling-a, tooling-b]
     networks: [tooling]
 
 volumes:
   tooling-db:
+  tooling-proxy-data:
 
 networks:
   tooling:
