@@ -2,11 +2,15 @@
 # celle qui n'est pas prête, une base PostgreSQL dédiée. Lancement depuis ce dossier :
 #   cp tooling.env.example tooling.env   # puis renseigner les valeurs
 #   TOOLING_DB_PASSWORD=… docker compose up -d --build
+# Avec une image publiée par la CI, sans construction locale :
+#   TOOLING_IMAGE=ghcr.io/techma-benin/assistant-demarches-tooling:sha-<commit> docker compose up -d --no-build
 # Avec TOOLING_TLS=internal (défaut), le Backend doit faire confiance à l'autorité locale :
 #   docker compose cp tooling-proxy:/data/caddy/pki/authorities/local/root.crt ./tooling-ca.crt
 name: techma-tooling
 
 x-tooling: &tooling
+  # Image publiée par la CI (ghcr.io/…:sha-…) ou construite localement.
+  image: ${TOOLING_IMAGE:-techma-tooling:local}
   build:
     context: ../../..
     dockerfile: apps/tooling/Dockerfile

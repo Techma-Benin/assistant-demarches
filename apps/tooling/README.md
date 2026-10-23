@@ -90,6 +90,20 @@ Les compteurs de débit sont en base, partagés par tous les processus et répli
 
 Ce qui a été vérifié sans Docker, avec les binaires officiels : la suite complète sur PostgreSQL 16.14 ; le `Caddyfile` validé par Caddy 2.10 ; deux instances derrière Caddy en TLS 1.3, l'une tuée, 30 requêtes sur 30 servies par l'autre, puis retour automatique de la première. Pas encore exécutés : l'image Docker et le fichier compose eux-mêmes.
 
+## CI/CD
+
+`.github/workflows/tooling.yml` s'exécute à chaque push sur une branche `tooling/…` :
+
+| Étape | Contenu |
+|---|---|
+| `test` | `pnpm check` complet sur Linux, macOS et Windows |
+| `test-postgres` | Suite Tooling sur PostgreSQL 16 réel, tests à deux répliques compris |
+| `image` | Construction de l'image, démarrage en production contre PostgreSQL : `/ready`, `/health`, refus sans jeton, utilisateur non root, aucun source ni test dans l'image |
+| `compose` | Pile complète (base, deux répliques, proxy HTTPS) : entrée HTTPS, HTTP refusé, une réplique arrêtée sans interruption du service |
+| `publish` | Si tout passe : image publiée sur `ghcr.io/techma-benin/assistant-demarches-tooling`, étiquetée `sha-<commit>` et nom de branche |
+
+Le déploiement sur un serveur n'est pas automatisé : aucun environnement cible n'existe encore. L'image publiée se lance avec `deploy/compose.yaml` et `TOOLING_IMAGE`, sans construction locale.
+
 ## Configuration
 
 | Variable | Défaut | Rôle |

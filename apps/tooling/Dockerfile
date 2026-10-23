@@ -4,21 +4,17 @@
 
 FROM node:22-alpine AS build
 WORKDIR /repo
-RUN corepack enable && corepack prepare pnpm@10.20.0 --activate
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
-COPY apps/tooling/package.json apps/tooling/package.json
-RUN pnpm install --frozen-lockfile --ignore-scripts --filter @techma/tooling...
-COPY contracts contracts
-COPY apps/tooling apps/tooling
-RUN pnpm --filter @techma/tooling build \
- && pnpm --filter @techma/tooling deploy --legacy --prod /out \
- && cp -r apps/tooling/dist /out/dist
+RUN npm install -g pnpm@10.20.0
+COPY . .
+RUN pnpm install --frozen-lockfile --ignore-scripts --filter @techma/tooling... \
+ && pnpm --filter @techma/tooling build \
+ && pnpm --filter @techma/tooling deploy --legacy --prod /out
 
 FROM node:22-alpine
-ENV NODE_ENV=production \
-    TOOLING_HOST=0.0.0.0 \
-    TOOLING_PORT=4030 \
-    CONTRACTS_DIR=/app/contracts/v1
+ENV NODE_ENV=production
+ENV TOOLING_HOST=0.0.0.0
+ENV TOOLING_PORT=4030
+ENV CONTRACTS_DIR=/app/contracts/v1
 WORKDIR /app
 COPY --from=build /out /app
 COPY --from=build /repo/contracts/v1 /app/contracts/v1
