@@ -1,32 +1,61 @@
 import 'reflect-metadata';
-import { Module, RequestMethod, type DynamicModule, type INestApplication, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
+import { Global, Module, RequestMethod, type DynamicModule, type INestApplication, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { ServiceAuth } from './auth/service-auth.js';
-import { ServiceTokens } from './auth/service-tokens.js';
-import { TOOLING_CONFIG, type ToolingConfig } from './config.js';
+import { AuditModule } from './audit/audit-log.js';
+import { AuthModule } from './auth/auth.module.js';
 import { ProblemFilter } from './common/problem.js';
 import { securityHeaders } from './common/security-headers.js';
 import { TraceMiddleware } from './common/trace.js';
-import { McpController } from './gateway/mcp.controller.js';
-import { ToolExecutor } from './gateway/tool-executor.js';
+import { TOOLING_CONFIG, type ToolingConfig } from './config.js';
+import { DatabaseModule } from './database/database.module.js';
+import { EventsModule } from './events/events.module.js';
+import { GatewayModule } from './gateway/mcp.controller.js';
+import { ToolRegistryModule } from './gateway/tool-registry.js';
 import { HealthController } from './health.controller.js';
-import { BackendResourcesClient } from './resources/backend-resources.client.js';
+import { IdempotencyModule } from './idempotency/idempotency.js';
+import { MandatesModule } from './mandates/mandates.module.js';
+import { ProceduresModule } from './procedures/procedures.module.js';
+import { RequestsModule } from './requests/requests.module.js';
 
+@Global()
+@Module({})
+class ConfigModule {
+  static forRoot(config: ToolingConfig): DynamicModule {
+    return { module: ConfigModule, providers: [{ provide: TOOLING_CONFIG, useValue: config }], exports: [TOOLING_CONFIG] };
+  }
+}
+
+/**
+ * Composition du service. Chaque module fonctionnel est autonome : il dépend de ports
+ * (base, journal, outbox, registre d'outils) et non des autres fonctionnalités.
+ */
 @Module({})
 class AppModule implements NestModule {
   static forRoot(config: ToolingConfig): DynamicModule {
     return {
       module: AppModule,
-      controllers: [HealthController, McpController],
-      providers: [{ provide: TOOLING_CONFIG, useValue: config }, ServiceAuth, ServiceTokens, BackendResourcesClient, ToolExecutor],
+      imports: [
+        ConfigModule.forRoot(config),
+        DatabaseModule,
+        AuthModule,
+        AuditModule,
+        IdempotencyModule,
+        EventsModule,
+        ToolRegistryModule,
+        MandatesModule,
+        ProceduresModule,
+        RequestsModule,
+        GatewayModule,
+      ],
+      controllers: [HealthController],
     };
   }
 
   configure(consumer: MiddlewareConsumer): void {
     consumer
       .apply(TraceMiddleware)
-      .exclude({ path: 'health', method: RequestMethod.GET })
+      .exclude({ path: 'health', method: RequestMethod.GET }, { path: 'ready', method: RequestMethod.GET })
       .forRoutes({ path: '{*path}', method: RequestMethod.ALL });
   }
 }

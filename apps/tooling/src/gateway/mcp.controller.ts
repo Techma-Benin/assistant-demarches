@@ -1,4 +1,4 @@
-import { All, Controller, Post, Req, Res } from '@nestjs/common';
+import { All, Controller, Module, Post, Req, Res } from '@nestjs/common';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -29,7 +29,7 @@ export class McpController {
 
   @Post()
   async post(@Req() req: Request, @Res() res: Response): Promise<void> {
-    await this.auth.require(singleHeader(req, 'authorization'), 'backend-agent', 'tools:call');
+    const principal = await this.auth.require(singleHeader(req, 'authorization'), 'backend-agent', 'tools:call');
     const trace = traceOf(req);
     const mandateId = singleHeader(req, 'x-mandate-id');
     const context: ToolContext = {
@@ -39,12 +39,20 @@ export class McpController {
       ...(mandateId === undefined ? {} : { mandateId }),
     };
     if (!validateContext(context)) throw new ProblemError(400, 'INVALID_REQUEST', 'Contexte MCP invalide ou absent');
+    const idempotencyKey = singleHeader(req, 'idempotency-key');
 
     const server = new Server({ name: 'techma-tooling', version: catalog.version }, { capabilities: { tools: {} } });
     server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: catalog.tools }));
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
-        const output = await this.executor.execute(request.params.name, request.params.arguments ?? {}, { context, trace });
+        const output = await this.executor.execute({
+          name: request.params.name,
+          args: request.params.arguments ?? {},
+          context,
+          trace,
+          actor: principal.client,
+          idempotencyKey,
+        });
         return { content: [{ type: 'text' as const, text: JSON.stringify(output) }], structuredContent: output };
       } catch (error) {
         // Erreur métier visible par l'agent ; jamais transformée en succès.
@@ -69,3 +77,6 @@ export class McpController {
     throw new ProblemError(405, 'INVALID_REQUEST', 'Méthode non prise en charge ; utiliser POST');
   }
 }
+
+@Module({ controllers: [McpController], providers: [ToolExecutor] })
+export class GatewayModule {}

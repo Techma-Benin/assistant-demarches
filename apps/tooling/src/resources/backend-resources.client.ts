@@ -7,7 +7,18 @@ import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
 export interface Procedure {
   id: string;
   validationStatus: 'draft' | 'validated';
+  requiredDocuments: string[];
+  formSchema: Record<string, unknown>;
+  source: { url: string; version: string };
   [field: string]: unknown;
+}
+
+export interface FileMetadata {
+  id: string;
+  mimeType: string;
+  sizeBytes: number;
+  scanStatus: 'pending' | 'clean' | 'rejected';
+  expiresAt: string;
 }
 
 /** Client de l'API privée Backend (backend-resources.openapi.json), identité tooling-resources. */
@@ -31,7 +42,19 @@ export class BackendResourcesClient {
     return (await this.get(`internal/v1/procedures/${encodeURIComponent(procedureId)}`, trace, 'Fiche inconnue')) as Procedure;
   }
 
-  private async get(path: string, trace: TraceContext, notFound = 'Ressource inconnue'): Promise<unknown> {
+  /** Métadonnées d'une pièce de l'usager ; 404 si elle appartient à un autre usager. */
+  async getFile(fileId: string, userRef: string, trace: TraceContext): Promise<FileMetadata> {
+    const access = (await this.get(`internal/v1/files/${encodeURIComponent(fileId)}`, trace, 'Pièce inconnue', { 'X-User-Ref': userRef })) as {
+      file?: FileMetadata;
+      userRef?: string;
+    };
+    if (!access.file || access.file.id !== fileId) throw this.nonConforming('FileAccess');
+    // Défense en profondeur : la propriété est revérifiée ici, pas seulement côté Backend.
+    if (access.userRef !== userRef) throw new ProblemError(404, 'NOT_FOUND', 'Pièce inconnue');
+    return access.file;
+  }
+
+  private async get(path: string, trace: TraceContext, notFound = 'Ressource inconnue', extraHeaders: Record<string, string> = {}): Promise<unknown> {
     const url = new URL(path, this.config.backendUrl.href.replace(/\/?$/, '/'));
     let res: Response;
     try {
@@ -40,6 +63,7 @@ export class BackendResourcesClient {
           Authorization: `Bearer ${await this.tokens.get('tooling-resources')}`,
           traceparent: childTraceparent(trace),
           Accept: 'application/json',
+          ...extraHeaders,
         },
         redirect: 'error',
         signal: AbortSignal.timeout(5000),

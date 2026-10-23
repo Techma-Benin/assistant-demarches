@@ -26,12 +26,14 @@ export class ServiceAuth {
     if (config.jwt) this.jwks = createRemoteJWKSet(config.jwt.jwksUrl, { timeoutDuration: 5000, cooldownDuration: 30000 });
   }
 
-  /** 401 si l'identité est invalide, 403 si le client ou le scope ne correspond pas. */
+  /**
+   * 401 si l'identité est invalide ou n'est pas celle attendue sur cette route
+   * (comportement de la suite partagée), 403 si le scope manque.
+   */
   async require(authorization: string | undefined, client: InboundClient, scope: string): Promise<Principal> {
     const principal = await this.authenticate(authorization);
-    if (principal.client !== client || !principal.scopes.has(scope)) {
-      throw new ProblemError(403, 'FORBIDDEN', 'Client de service non autorisé sur cette route');
-    }
+    if (principal.client !== client) throw new ProblemError(401, 'UNAUTHORIZED', 'Identité de service non acceptée sur cette route');
+    if (!principal.scopes.has(scope)) throw new ProblemError(403, 'FORBIDDEN', 'Scope requis absent');
     return principal;
   }
 

@@ -47,8 +47,8 @@ test('erreurs métier rendues en isError avec code et traceId, jamais en succès
   assert.equal(toolError(await callTool(client, 'procedures.search', { query: 'demo', locale: 'en' })).code, 'INVALID_REQUEST');
   assert.equal(toolError(await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr', userRef: USER_REF })).code, 'INVALID_REQUEST');
   assert.equal(toolError(await callTool(client, 'tools.unknown', {})).code, 'NOT_FOUND');
-  // Outils d'action pas encore branchés : refus explicite, aucun effet.
-  assert.equal(toolError(await callTool(client, 'request.create', { procedureId: 'demo-procedure' })).code, 'UPSTREAM_UNAVAILABLE');
+  // Outil d'action sans clé d'idempotence : refus avant tout effet.
+  assert.equal(toolError(await callTool(client, 'request.create', { procedureId: 'demo-procedure' })).code, 'INVALID_REQUEST');
 });
 
 test('Backend injoignable : UPSTREAM_UNAVAILABLE sans détail interne', async (t) => {
@@ -63,7 +63,7 @@ test('transport : identité, client, contexte et méthode contrôlés avant MCP'
   const cases: [Record<string, string>, number, string][] = [
     [{ ...agentHeaders, Authorization: '' }, 401, 'UNAUTHORIZED'],
     [{ ...agentHeaders, Authorization: 'Bearer unknown' }, 401, 'UNAUTHORIZED'],
-    [{ ...agentHeaders, Authorization: 'Bearer mock-backend-control' }, 403, 'FORBIDDEN'],
+    [{ ...agentHeaders, Authorization: 'Bearer mock-backend-control' }, 401, 'UNAUTHORIZED'],
     [{ Authorization: 'Bearer mock-agent', 'X-Conversation-Id': CONVERSATION_ID }, 400, 'INVALID_REQUEST'],
     [{ ...agentHeaders, 'X-User-Ref': 'usr_invalid' }, 400, 'INVALID_REQUEST'],
     [{ ...agentHeaders, 'X-Mandate-Id': 'mdt_invalid' }, 400, 'INVALID_REQUEST'],
@@ -90,7 +90,7 @@ test('JWT : signature, émetteur, audience, expiration, algorithme et scope vér
     ['autre émetteur', await oidc.sign({ iss: 'http://127.0.0.1/realms/other' }), 401],
     ['clé inconnue', await oidc.sign({}, { key: other.privateKey }), 401],
     ['sans scope', await oidc.sign({ scope: 'profile' }), 403],
-    ['client contrôle mandat', await oidc.sign({ azp: 'backend-mandates', scope: 'mandates:grant' }), 403],
+    ['client contrôle mandat', await oidc.sign({ azp: 'backend-mandates', scope: 'mandates:grant' }), 401],
   ];
   for (const [label, token, status] of rejected) {
     const res = await rawInitialize(tooling, { ...agentHeaders, Authorization: `Bearer ${token}` });
@@ -112,11 +112,10 @@ test('JWT : appel complet, jeton tooling-resources obtenu une fois puis réutili
   assert.equal(oidc.tokenRequests, 1);
 });
 
-test('production : fiches en brouillon jamais exposées', async (t) => {
-  const oidc = await startFakeOidc(t);
+test('fiches en brouillon masquées quand elles ne sont pas autorisées (règle de production)', async (t) => {
   const backend = await startBackendMock(t);
-  const tooling = await startTooling(t, { ...oidc.env, NODE_ENV: 'production', BACKEND_URL: backend });
-  const client = await mcpClient(t, tooling, await oidc.sign());
+  const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', PROCEDURES_ALLOW_DRAFTS: 'false', BACKEND_URL: backend });
+  const client = await mcpClient(t, tooling, 'mock-agent');
   const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
   assert.deepEqual(search.structuredContent, { items: [] });
   assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: 'demo-procedure' })).code, 'NOT_FOUND');

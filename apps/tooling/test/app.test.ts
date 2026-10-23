@@ -3,11 +3,14 @@ import { test } from 'node:test';
 import { ConfigError, loadConfig } from '../src/config.js';
 import { assertSchema, startTooling, TRACEPARENT } from './helpers.js';
 
-test('la sonde de santé répond sans traceparent', async (t) => {
+test('sondes : /health (processus) et /ready (base et schéma) sans traceparent', async (t) => {
   const url = await startTooling(t, { AUTH_MODE: 'mock-tokens' });
   const res = await fetch(`${url}/health`);
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { status: 'ok' });
+  const ready = await fetch(`${url}/ready`);
+  assert.equal(ready.status, 200);
+  assert.deepEqual(await ready.json(), { status: 'ready' });
 });
 
 test('traceparent absent, mal formé ou nul : 400 problem+json', async (t) => {
@@ -57,6 +60,9 @@ test('mode jwt : realm complet exigé, HTTPS obligatoire hors localhost', () => 
     OIDC_TOKEN_URL: 'https://idp.example/realms/techma/protocol/openid-connect/token',
     TOOLING_RESOURCES_CLIENT_ID: 'tooling-resources',
     TOOLING_RESOURCES_CLIENT_SECRET: 'secret',
+    TOOLING_EVENTS_CLIENT_ID: 'tooling-events',
+    TOOLING_EVENTS_CLIENT_SECRET: 'secret',
+    PROOF_JWKS_URL: 'https://backend.example/.well-known/mandate-jwks.json',
   };
   assert.equal(loadConfig(realm).authMode, 'jwt');
   assert.throws(() => loadConfig({}), ConfigError);
@@ -64,5 +70,13 @@ test('mode jwt : realm complet exigé, HTTPS obligatoire hors localhost', () => 
   assert.throws(() => loadConfig({ ...realm, JWKS_URL: 'http://idp.example/certs' }), ConfigError);
   assert.throws(() => loadConfig({ ...realm, BACKEND_URL: 'http://backend.internal' }), ConfigError);
   assert.throws(() => loadConfig({ ...realm, NODE_ENV: 'production' }), ConfigError, 'BACKEND_URL requis en production');
+  const prod = { ...realm, NODE_ENV: 'production', BACKEND_URL: 'https://backend.internal' };
+  assert.throws(() => loadConfig(prod), ConfigError, 'DATABASE_URL requis en production');
+  assert.throws(() => loadConfig({ ...prod, DATABASE_URL: 'pglite:memory' }), ConfigError);
+  assert.throws(() => loadConfig({ ...prod, DATABASE_URL: 'postgres://u:p@db/tooling', PROCEDURES_ALLOW_DRAFTS: 'true' }), ConfigError);
+  const production = loadConfig({ ...prod, DATABASE_URL: 'postgres://u:p@db/tooling' });
+  assert.equal(production.allowDraftProcedures, false);
+  assert.equal(production.workers, 2);
+  assert.throws(() => loadConfig({ AUTH_MODE: 'mock-tokens', TOOLING_WORKERS: '2' }), ConfigError, 'PGlite ne se partage pas');
   assert.equal(loadConfig({ ...realm, BACKEND_URL: 'https://backend.internal' }).backendUrl.host, 'backend.internal');
 });
