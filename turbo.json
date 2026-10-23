@@ -9,6 +9,9 @@
         "dist/**",
         ".next/**"
       ]
+    },
+    "test": {
+      "outputs": []
     }
   }
 }
