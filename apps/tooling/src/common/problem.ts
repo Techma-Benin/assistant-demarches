@@ -20,7 +20,7 @@ export type ProblemCode =
   | 'FILE_TOO_LARGE'
   | 'REPLAY_EXPIRED';
 
-/** Erreur métier ou de transport, rendue en application/problem+json. */
+/** Erreur métier ou de transport, rendue en application/problem+json ou en erreur d'outil MCP. */
 export class ProblemError extends Error {
   constructor(
     readonly status: number,
@@ -42,30 +42,32 @@ const CODE_BY_STATUS: Record<number, ProblemCode> = {
   503: 'UPSTREAM_UNAVAILABLE',
 };
 
+const logger = new Logger('Problem');
+
+/**
+ * Normalise toute erreur. Les erreurs inattendues sont journalisées côté serveur
+ * et ne laissent sortir ni pile ni message interne.
+ * Le contrat n'a pas de code pour une erreur interne : 500 + INVALID_REQUEST, comme les simulations.
+ */
+export function toProblem(error: unknown): { status: number; code: ProblemCode; detail: string } {
+  if (error instanceof ProblemError) return { status: error.status, code: error.code, detail: error.message };
+  if (error instanceof HttpException) {
+    const status = error.getStatus();
+    return { status, code: CODE_BY_STATUS[status] ?? 'INVALID_REQUEST', detail: status === 404 ? 'Route inconnue' : 'Requête refusée' };
+  }
+  logger.error(error instanceof Error ? error.stack : String(error));
+  return { status: 500, code: 'INVALID_REQUEST', detail: 'Erreur interne' };
+}
+
 @Catch()
 export class ProblemFilter implements ExceptionFilter {
-  private readonly logger = new Logger('Problem');
-
   catch(error: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
     const req = http.getRequest<Request>();
     const res = http.getResponse<Response>();
-    let status = 500;
-    let code: ProblemCode = 'INVALID_REQUEST';
-    let detail = 'Erreur interne';
-
-    if (error instanceof ProblemError) {
-      ({ status, code } = error);
-      detail = error.message;
-    } else if (error instanceof HttpException) {
-      status = error.getStatus();
-      code = CODE_BY_STATUS[status] ?? 'INVALID_REQUEST';
-      detail = status === 404 ? 'Route inconnue' : 'Requête refusée';
-    } else {
-      // Ni pile ni message interne dans la réponse ; seulement dans le journal serveur.
-      this.logger.error(error instanceof Error ? error.stack : String(error));
-    }
-
+    const { status, code, detail } = toProblem(error);
+    if (res.headersSent) return;
+    if (status === 401) res.setHeader('WWW-Authenticate', 'Bearer');
     res
       .status(status)
       .type('application/problem+json')

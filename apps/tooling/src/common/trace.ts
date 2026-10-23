@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Injectable, type NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { ProblemError } from './problem.js';
@@ -24,6 +25,11 @@ export function traceOf(req: Request): TraceContext {
   const trace = parseTraceparent(req.headers.traceparent);
   if (!trace) throw new ProblemError(400, 'INVALID_REQUEST', 'traceparent W3C v00 requis');
   return trace;
+}
+
+/** traceparent d'un appel sortant : même trace, nouveau span. */
+export function childTraceparent(trace: Pick<TraceContext, 'traceId'>): string {
+  return `00-${trace.traceId}-${randomBytes(8).toString('hex')}-01`;
 }
 
 /** Identifiant de trace pour les erreurs, y compris quand l'en-tête est invalide. */

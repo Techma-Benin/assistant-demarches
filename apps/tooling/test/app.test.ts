@@ -4,14 +4,14 @@ import { ConfigError, loadConfig } from '../src/config.js';
 import { assertSchema, startTooling, TRACEPARENT } from './helpers.js';
 
 test('la sonde de santé répond sans traceparent', async (t) => {
-  const url = await startTooling(t);
+  const url = await startTooling(t, { AUTH_MODE: 'mock-tokens' });
   const res = await fetch(`${url}/health`);
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { status: 'ok' });
 });
 
 test('traceparent absent, mal formé ou nul : 400 problem+json', async (t) => {
-  const url = await startTooling(t);
+  const url = await startTooling(t, { AUTH_MODE: 'mock-tokens' });
   for (const traceparent of [undefined, 'invalid', `00-${'0'.repeat(32)}-${'2'.repeat(16)}-01`, `00-${'1'.repeat(32)}-${'0'.repeat(16)}-01`]) {
     const res = await fetch(`${url}/internal/v1/unknown`, { headers: traceparent ? { traceparent } : {} });
     assert.equal(res.status, 400, String(traceparent));
@@ -23,7 +23,7 @@ test('traceparent absent, mal formé ou nul : 400 problem+json', async (t) => {
 });
 
 test('route inconnue : 404 avec le traceId de la requête, sans détail interne', async (t) => {
-  const url = await startTooling(t);
+  const url = await startTooling(t, { AUTH_MODE: 'mock-tokens' });
   const res = await fetch(`${url}/nothing-here`, { headers: { traceparent: TRACEPARENT } });
   assert.equal(res.status, 404);
   const problem = (await res.json()) as { code: string; traceId: string };
@@ -33,7 +33,7 @@ test('route inconnue : 404 avec le traceId de la requête, sans détail interne'
 });
 
 test('en-têtes de sécurité présents, X-Powered-By absent', async (t) => {
-  const url = await startTooling(t);
+  const url = await startTooling(t, { AUTH_MODE: 'mock-tokens' });
   const res = await fetch(`${url}/health`);
   assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(res.headers.get('cache-control'), 'no-store');
@@ -48,5 +48,21 @@ test('jetons de simulation refusés hors écoute locale ou en production', () =>
   assert.throws(() => loadConfig({ AUTH_MODE: 'other' }), ConfigError);
   assert.throws(() => loadConfig({ TOOLING_PORT: '99999' }), ConfigError);
   assert.equal(loadConfig({ AUTH_MODE: 'mock-tokens' }).authMode, 'mock-tokens');
-  assert.equal(loadConfig({}).authMode, 'jwt');
+});
+
+test('mode jwt : realm complet exigé, HTTPS obligatoire hors localhost', () => {
+  const realm = {
+    JWT_ISSUER: 'https://idp.example/realms/techma',
+    JWKS_URL: 'https://idp.example/realms/techma/protocol/openid-connect/certs',
+    OIDC_TOKEN_URL: 'https://idp.example/realms/techma/protocol/openid-connect/token',
+    TOOLING_RESOURCES_CLIENT_ID: 'tooling-resources',
+    TOOLING_RESOURCES_CLIENT_SECRET: 'secret',
+  };
+  assert.equal(loadConfig(realm).authMode, 'jwt');
+  assert.throws(() => loadConfig({}), ConfigError);
+  assert.throws(() => loadConfig({ ...realm, TOOLING_RESOURCES_CLIENT_SECRET: '' }), ConfigError);
+  assert.throws(() => loadConfig({ ...realm, JWKS_URL: 'http://idp.example/certs' }), ConfigError);
+  assert.throws(() => loadConfig({ ...realm, BACKEND_URL: 'http://backend.internal' }), ConfigError);
+  assert.throws(() => loadConfig({ ...realm, NODE_ENV: 'production' }), ConfigError, 'BACKEND_URL requis en production');
+  assert.equal(loadConfig({ ...realm, BACKEND_URL: 'https://backend.internal' }).backendUrl.host, 'backend.internal');
 });
