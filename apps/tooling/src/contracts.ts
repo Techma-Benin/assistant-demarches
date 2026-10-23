@@ -2,10 +2,6 @@ import { readFileSync } from 'node:fs';
 import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js';
 import addFormatsPlugin from 'ajv-formats';
 
-/**
- * Contrats v1 lus au démarrage. Compilé dans apps/tooling/dist/src : la racine
- * du dépôt est quatre niveaux plus haut. CONTRACTS_DIR le remplace en image.
- */
 const contractsDir = process.env.CONTRACTS_DIR
   ? new URL(`file://${process.env.CONTRACTS_DIR.replace(/\/?$/, '/')}`)
   : new URL('../../../../contracts/v1/', import.meta.url);
@@ -38,7 +34,6 @@ export const catalog = load('mcp.tools.json') as { version: string; tools: ToolD
 const addFormats = addFormatsPlugin as unknown as (ajv: Ajv2020) => Ajv2020;
 const ajv = addFormats(new Ajv2020({ allErrors: true, strict: false }));
 ajv.addSchema(domain);
-// Lecture tolérante des réponses amont : les champs futurs sont retirés avant contrôle strict.
 const sanitizer = addFormats(new Ajv2020({ allErrors: true, strict: false, removeAdditional: true }));
 
 export function domainValidator(name: string): ValidateFunction {
@@ -50,7 +45,6 @@ export function domainValidator(name: string): ValidateFunction {
 export interface CompiledTool {
   definition: ToolDefinition;
   input: ValidateFunction;
-  /** Retire les champs inconnus puis valide ; modifie la valeur reçue. */
   output: ValidateFunction;
 }
 

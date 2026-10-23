@@ -22,10 +22,6 @@ interface MandateGrant {
   evidenceRef: string;
 }
 
-/**
- * Contrôle des mandats hors agent (tooling-internal.openapi.json). Seul le client
- * backend-mandates y accède ; accorder un mandat n'est jamais un outil MCP.
- */
 @Controller('internal/v1/mandates')
 export class MandatesController {
   private readonly logger = new Logger(MandatesController.name);
@@ -103,7 +99,6 @@ export class MandatesController {
     return typeof value === 'string' ? value : undefined;
   }
 
-  /** Les refus sont journalisés à part : la transaction de l'opération a été annulée. */
   private async audited<T>(trace: TraceContext, actor: string, action: string, subject: { conversationId?: string; userRef?: string; mandateId?: string }, run: () => Promise<T>): Promise<T> {
     try {
       return await run();

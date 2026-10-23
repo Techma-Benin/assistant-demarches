@@ -13,10 +13,6 @@ export interface AuditEntry {
   requestId?: string;
 }
 
-/**
- * Journal d'audit en ajout seul. Il ne contient que des identifiants et des codes :
- * ni arguments, ni champs de formulaire, ni contenu de pièce.
- */
 @Injectable()
 export class AuditLog {
   async record(tx: Tx, entry: AuditEntry): Promise<void> {

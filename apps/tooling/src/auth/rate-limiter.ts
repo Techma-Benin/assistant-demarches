@@ -4,19 +4,11 @@ import { Database } from '../database/database.js';
 
 export interface RateDecision {
   allowed: boolean;
-  /** Secondes jusqu'à la fenêtre suivante. */
   retryAfter: number;
 }
 
 const WINDOW_MS = 60_000;
 
-/**
- * Compteurs à fenêtre fixe d'une minute, partagés en base : la limite vaut pour
- * l'ensemble des processus et des répliques et survit aux redémarrages. Les clés
- * sont hachées : ni adresse IP ni userRef en clair dans la table.
- * Si la base ne répond pas, la limite laisse passer : le service est de toute façon
- * en 503 sur les opérations qui touchent la base.
- */
 @Injectable()
 export class RateLimiter {
   private readonly logger = new Logger(RateLimiter.name);
@@ -41,7 +33,6 @@ export class RateLimiter {
     }
   }
 
-  /** Lecture sans incrément, pour bloquer avant même de vérifier une identité. */
   async exceeded(bucket: string, limit: number): Promise<RateDecision> {
     const { windowStart, retryAfter } = this.window();
     try {

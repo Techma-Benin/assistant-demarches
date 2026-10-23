@@ -21,7 +21,6 @@ export interface FileMetadata {
   expiresAt: string;
 }
 
-/** Client de l'API privée Backend (backend-resources.openapi.json), identité tooling-resources. */
 @Injectable()
 export class BackendResourcesClient {
   private readonly logger = new Logger(BackendResourcesClient.name);
@@ -42,14 +41,12 @@ export class BackendResourcesClient {
     return (await this.get(`internal/v1/procedures/${encodeURIComponent(procedureId)}`, trace, 'Fiche inconnue')) as Procedure;
   }
 
-  /** Métadonnées d'une pièce de l'usager ; 404 si elle appartient à un autre usager. */
   async getFile(fileId: string, userRef: string, trace: TraceContext): Promise<FileMetadata> {
     const access = (await this.get(`internal/v1/files/${encodeURIComponent(fileId)}`, trace, 'Pièce inconnue', { 'X-User-Ref': userRef })) as {
       file?: FileMetadata;
       userRef?: string;
     };
     if (!access.file || access.file.id !== fileId) throw this.nonConforming('FileAccess');
-    // Défense en profondeur : la propriété est revérifiée ici, pas seulement côté Backend.
     if (access.userRef !== userRef) throw new ProblemError(404, 'NOT_FOUND', 'Pièce inconnue');
     return access.file;
   }
@@ -75,7 +72,6 @@ export class BackendResourcesClient {
     }
     if (res.status === 404) throw new ProblemError(404, 'NOT_FOUND', notFound);
     if (res.status === 401 || res.status === 403) {
-      // Erreur de configuration d'identité : alerte côté serveur, jeton redemandé au prochain appel.
       this.tokens.invalidate('tooling-resources');
       this.logger.error(`Backend refuse l'identité tooling-resources : HTTP ${res.status}`);
       throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', 'Service Backend indisponible');

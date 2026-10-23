@@ -26,10 +26,6 @@ class ConfigModule {
   }
 }
 
-/**
- * Composition du service. Chaque module fonctionnel est autonome : il dépend de ports
- * (base, journal, outbox, registre d'outils) et non des autres fonctionnalités.
- */
 @Module({})
 class AppModule implements NestModule {
   static forRoot(config: ToolingConfig): DynamicModule {
@@ -60,13 +56,11 @@ class AppModule implements NestModule {
   }
 }
 
-/** Construit l'application sans l'écouter, pour main.ts et pour les tests. */
 export async function createApp(config: ToolingConfig): Promise<INestApplication> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(config), {
     logger: config.production ? ['error', 'warn', 'log'] : ['error', 'warn'],
   });
   app.disable('x-powered-by');
-  // Adresse client réelle derrière le proxy, pour la limite des échecs d'authentification.
   app.set('trust proxy', config.trustProxy);
   app.useBodyParser('json', { limit: '100kb' });
   app.use(securityHeaders);

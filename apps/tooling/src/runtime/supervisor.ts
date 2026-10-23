@@ -2,13 +2,10 @@ import cluster, { type Worker } from 'node:cluster';
 
 export interface SupervisorOptions {
   workers: number;
-  /** Script exécuté par chaque processus de service. */
   exec: string;
-  /** Sans battement de cœur pendant ce délai, le processus est considéré bloqué et remplacé. */
   heartbeatTimeoutMs?: number;
   baseBackoffMs?: number;
   maxBackoffMs?: number;
-  /** Délai laissé aux processus pour finir leurs requêtes à l'arrêt. */
   shutdownTimeoutMs?: number;
   handleSignals?: boolean;
   log?: (message: string) => void;
@@ -33,12 +30,6 @@ export interface Supervisor {
 
 const CRASH_WINDOW_MS = 60_000;
 
-/**
- * Processus principal : il ne sert aucune requête et ne fait que surveiller.
- * Chaque processus de service qui s'arrête est relancé, avec un délai croissant en cas
- * d'arrêts répétés ; il n'abandonne jamais. Les autres processus continuent de servir
- * pendant le remplacement, puisque tous partagent le même port.
- */
 export function supervise(options: SupervisorOptions): Supervisor {
   const heartbeatTimeout = options.heartbeatTimeoutMs ?? 30_000;
   const base = options.baseBackoffMs ?? 1000;
@@ -58,7 +49,6 @@ export function supervise(options: SupervisorOptions): Supervisor {
       if (message?.type === 'heartbeat' || message?.type === 'ready') slot.lastBeat = Date.now();
       if (message?.type === 'ready') log(`processus ${slot.index} prêt (pid ${worker.process.pid})`);
     });
-    // Erreur d'IPC : l'événement exit suit, la relance s'y fait.
     worker.on('error', (error) => log(`processus ${slot.index} : ${error.message}`));
     worker.on('exit', (code, signal) => {
       if (slot.worker !== worker) return;

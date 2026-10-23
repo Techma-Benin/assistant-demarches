@@ -13,11 +13,6 @@ export interface Challenge {
   proofToken: string;
 }
 
-/**
- * Vérifie le JWT challenge.proofToken signé par le Backend (CONTRACTS.md §6) et compare
- * chaque claim à l'objet transmis. La preuve seule ne vaut pas consentement : l'appel doit
- * aussi venir du client backend-mandates, et le jti n'est consommable qu'une fois.
- */
 @Injectable()
 export class ProofVerifier {
   private readonly logger = new Logger(ProofVerifier.name);
@@ -28,7 +23,6 @@ export class ProofVerifier {
   }
 
   async verify(challenge: Challenge): Promise<void> {
-    // Mode local : les simulations émettent des preuves opaques, non signées.
     if (!this.config.jwt || !this.jwks) return;
     let payload: Record<string, unknown>;
     try {

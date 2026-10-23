@@ -47,7 +47,6 @@ const fromRow = (row: RequestRow): RequestRecord => ({
   updatedAt: new Date(row.updated_at).toISOString(),
 });
 
-/** Forme publique du contrat : les pièces ne sortent que comme références opaques. */
 export const toContract = (request: RequestRecord) => ({
   id: request.id,
   conversationId: request.conversationId,
@@ -60,7 +59,6 @@ export const toContract = (request: RequestRecord) => ({
   updatedAt: request.updatedAt,
 });
 
-/** Demandes : la sécurité au niveau des lignes limite déjà chaque transaction à son usager. */
 @Injectable()
 export class RequestsRepository {
   async insert(tx: Tx, request: Omit<RequestRecord, 'updatedAt'>): Promise<RequestRecord> {
@@ -72,7 +70,6 @@ export class RequestsRepository {
     return fromRow(row);
   }
 
-  /** Demande de cet usager dans cette conversation ; sinon 404, sans dire si elle existe ailleurs. */
   async findOwned(tx: Tx, id: string, owner: { userRef: string; conversationId: string }, lock = false): Promise<RequestRecord> {
     const [row] = await tx.query<RequestRow>(`select ${COLUMNS} from requests where id = $1 and user_ref = $2 and conversation_id = $3${lock ? ' for update' : ''}`, [
       id,

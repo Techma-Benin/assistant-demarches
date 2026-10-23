@@ -9,7 +9,6 @@ interface CachedToken {
 
 const REFRESH_MARGIN_MS = 30_000;
 
-/** Jetons des identités sortantes du Tooling, obtenus par client credentials et mis en cache. */
 @Injectable()
 export class ServiceTokens {
   private readonly logger = new Logger(ServiceTokens.name);
@@ -22,7 +21,6 @@ export class ServiceTokens {
     if (!this.config.jwt) return `mock-${client}`;
     const cached = this.cache.get(client);
     if (cached && cached.expiresAt - REFRESH_MARGIN_MS > Date.now()) return cached.value;
-    // Une seule requête au fournisseur pour des appels concurrents.
     let pending = this.pending.get(client);
     if (!pending) {
       pending = this.fetchToken(client).finally(() => this.pending.delete(client));
@@ -31,7 +29,6 @@ export class ServiceTokens {
     return pending;
   }
 
-  /** À appeler quand l'aval refuse le jeton : le suivant sera redemandé. */
   invalidate(client: OutboundClient): void {
     this.cache.delete(client);
   }
@@ -59,7 +56,6 @@ export class ServiceTokens {
     }
     const body = (await res.json().catch(() => undefined)) as { access_token?: unknown; expires_in?: unknown } | undefined;
     if (!res.ok || typeof body?.access_token !== 'string' || typeof body.expires_in !== 'number') {
-      // Ne jamais journaliser le corps : il peut contenir un jeton.
       this.logger.error(`Jeton refusé pour ${client} : HTTP ${res.status}`);
       throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', "Fournisseur d'identité indisponible");
     }

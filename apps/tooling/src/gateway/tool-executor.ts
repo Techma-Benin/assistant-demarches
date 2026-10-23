@@ -16,16 +16,10 @@ export interface ToolCall {
   args: unknown;
   context: ToolContext;
   trace: TraceContext;
-  /** Client de service authentifié. */
   actor: string;
   idempotencyKey?: string;
 }
 
-/**
- * Chemin unique de tout appel d'outil : validation, idempotence, mandat, exécution,
- * contrôle de sortie, puis journal et événements dans la même transaction.
- * Un échec annule l'effet ; il est journalisé dans une transaction séparée.
- */
 @Injectable()
 export class ToolExecutor {
   private readonly logger = new Logger(ToolExecutor.name);
@@ -44,7 +38,6 @@ export class ToolExecutor {
   async execute(call: ToolCall): Promise<Record<string, unknown>> {
     let mandateId: string | undefined;
     try {
-      // Protège contre une boucle de l'agent : limite par usager, tous outils confondus.
       const quota = await this.limits.hit(`user:${call.context.userRef}`, this.config.rateLimits.perUser);
       if (!quota.allowed) throw new ProblemError(429, 'RATE_LIMITED', "Trop d'appels d'outils pour cet usager", quota.retryAfter);
       const tool = tools.get(call.name);
@@ -106,14 +99,12 @@ export class ToolExecutor {
   private async recordFailure(call: ToolCall, code: string, mandateId: string | undefined): Promise<void> {
     try {
       await this.db.transaction({ userRef: call.context.userRef }, async (tx) => {
-        // Un appel refusé pour débit n'est pas relayé au Backend : pas d'amplification.
         if (code !== 'RATE_LIMITED') {
           await this.outbox.enqueue(tx, { kind: 'tool.called', toolName: call.name, conversationId: call.context.conversationId, outcome: 'error', code }, call.trace.traceId);
         }
         await this.audit.record(tx, this.entry(call, 'error', code, mandateId));
       });
     } catch (error) {
-      // Base indisponible : l'échec reste visible dans les journaux du processus.
       this.logger.error(`Échec non journalisé (${call.name}, ${code}, trace ${call.trace.traceId}) : ${error instanceof Error ? error.message : String(error)}`);
     }
   }

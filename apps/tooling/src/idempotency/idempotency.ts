@@ -7,14 +7,8 @@ export type Reservation = { kind: 'fresh'; keyHash: string } | { kind: 'replay';
 
 const KEY = /^[\x21-\x7e]{8,128}$/;
 
-/**
- * Idempotence partagée entre processus et répliques. La réservation est une insertion
- * dans la transaction métier : un doublon concurrent attend la validation de la première,
- * puis rejoue sa réponse. Une erreur annule la transaction et libère la clé, sans effet.
- */
 @Injectable()
 export class Idempotency {
-  /** Portée = identité authentifiée + méthode + route + clé ; contenu comparé par empreinte. */
   async reserve(tx: Tx, scope: { actor: string; method: string; route: string; key: string | undefined }, payload: unknown): Promise<Reservation> {
     if (typeof scope.key !== 'string' || !KEY.test(scope.key)) {
       throw new ProblemError(400, 'INVALID_REQUEST', 'Idempotency-Key de 8 à 128 caractères requis');

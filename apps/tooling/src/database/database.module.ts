@@ -21,7 +21,6 @@ async function openDatabase(config: ToolingConfig): Promise<Database> {
   );
 }
 
-/** Ouvre la base, applique les migrations au démarrage et ferme proprement à l'arrêt. */
 @Global()
 @Module({
   providers: [{ provide: Database, inject: [TOOLING_CONFIG], useFactory: openDatabase }],

@@ -1,10 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { APP_ROLE, type Database } from './database.js';
 
-/**
- * Migrations ordonnées, jamais modifiées une fois publiées : toute évolution
- * ajoute une nouvelle entrée. Le SQL est embarqué pour être livré avec la compilation.
- */
 export const MIGRATIONS: { version: number; name: string; sql: string }[] = [
   {
     version: 1,
@@ -101,7 +97,6 @@ alter table audit_log force row level security;
 alter table outbox enable row level security;
 alter table outbox force row level security;
 
--- Données d'usager : la portée de la transaction doit correspondre au propriétaire.
 create policy requests_owner on requests to ${APP_ROLE}
   using (user_ref = current_setting('app.user_ref', true) or current_setting('app.scope', true) = 'system')
   with check (user_ref = current_setting('app.user_ref', true) or current_setting('app.scope', true) = 'system');
@@ -109,10 +104,8 @@ create policy mandates_owner on mandates to ${APP_ROLE}
   using (user_ref = current_setting('app.user_ref', true) or current_setting('app.scope', true) = 'system')
   with check (user_ref = current_setting('app.user_ref', true) or current_setting('app.scope', true) = 'system');
 
--- Clés d'idempotence : la portée (client, méthode, route, clé) est dans le hachage.
 create policy idempotency_service on idempotency_keys to ${APP_ROLE} using (true) with check (true);
 
--- Journal et outbox : écriture depuis tout appel, lecture et reprise réservées aux tâches système.
 create policy audit_insert on audit_log for insert to ${APP_ROLE} with check (true);
 create policy audit_read on audit_log for select to ${APP_ROLE} using (current_setting('app.scope', true) = 'system');
 create policy outbox_insert on outbox for insert to ${APP_ROLE} with check (true);
@@ -145,7 +138,6 @@ grant select, insert, update, delete on rate_limits to ${APP_ROLE};
   },
 ];
 
-// Verrou consultatif propre au Tooling : un seul processus migre à la fois, les autres attendent.
 const MIGRATION_LOCK = 7_304_221_001;
 
 export async function migrate(db: Database, logger = new Logger('Migrations')): Promise<number[]> {

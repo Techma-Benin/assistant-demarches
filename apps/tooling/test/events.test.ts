@@ -9,7 +9,6 @@ import { act, fakeId, grantMandate, startBackendMock, startToolingApp, TRACEPARE
 
 const TRACE = '1'.repeat(32);
 
-/** Backend scripté : chaque réception renvoie le statut suivant de la liste de l'événement. */
 async function scriptedBackend(t: TestContext, script: (eventId: string, attempt: number) => number | Promise<number>) {
   const received: string[] = [];
   const attempts = new Map<string, number>();
@@ -53,7 +52,6 @@ test('publication vers le Backend simulé : événements reçus dans l’ordre e
   await act(tooling.url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string, conversationId });
 
   const publisher = tooling.app.get(OutboxPublisher);
-  // Ordre par conversation : un seul événement de tête par passage.
   assert.equal(await publisher.tick(), 1);
   assert.equal(await publisher.tick(), 1);
   assert.equal(await publisher.tick(), 0);
@@ -82,7 +80,6 @@ test('reprise : échec temporaire retenté avec délai, ordre conservé, refus d
   assert.equal(row.attempts, 1);
   assert.equal(row.last_error, 'HTTP 503');
   assert.ok(row.wait > 0 && row.wait <= 1.5, `délai ${row.wait}`);
-  // Tant que le premier n'est pas passé, le second attend : ordre par conversation.
   assert.equal(await publisher.tick(), 0);
   await makeAvailable(tooling);
   await publisher.tick();
@@ -112,7 +109,6 @@ test('bail : un lot en cours de livraison n’est pas repris par un second publi
   const publisher = tooling.app.get(OutboxPublisher);
   await enqueue(tooling, fakeId('cnv'), 1);
   const inFlight = publisher.tick();
-  // Laisse le premier passage réserver son lot avant le second.
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(await publisher.tick(), 0);
   release();

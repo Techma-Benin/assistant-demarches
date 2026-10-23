@@ -10,10 +10,6 @@ import { RequestsRepository, toContract, type Fields, type RequestRecord, type R
 
 const EDITABLE: ReadonlySet<RequestStatus> = new Set(['draft', 'ready']);
 
-/**
- * Machine d'état v1 : draft → ready (champs et pièces requis présents) → awaiting_user_validation.
- * Les états submitted et suivants sont réservés aux connecteurs réels : jamais produits ici.
- */
 @Injectable()
 class RequestTools implements OnModuleInit {
   constructor(
@@ -78,12 +74,10 @@ class RequestTools implements OnModuleInit {
   private async submit(requestId: string, call: ToolInvocation) {
     const { request, procedure } = await this.editable(requestId, call);
     if (this.statusOf(procedure, request.fields, request) !== 'ready') throw new ProblemError(409, 'REQUEST_INCOMPLETE', 'Champs ou pièces manquants');
-    // Les pièces sont revérifiées au moment de la préparation finale : scan et péremption.
     for (const document of request.documents) {
       const file = await this.resources.getFile(document.fileId, call.context.userRef, call.trace);
       if (this.fileProblems(file).length) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Pièce ${document.documentType} à remplacer`);
     }
-    // v1 : préparation seulement. L'usager termine sur le portail officiel de la fiche.
     return this.save(request, { ...request, status: 'awaiting_user_validation', officialLink: procedure.source.url }, call);
   }
 
@@ -91,7 +85,6 @@ class RequestTools implements OnModuleInit {
     const request = await this.requests.findOwned(call.tx, requestId, call.context);
     if (!request.documents.some((document) => document.fileId === fileId)) throw new ProblemError(404, 'NOT_FOUND', 'Pièce non attachée à cette demande');
     const file = await this.resources.getFile(fileId, call.context.userRef, call.trace);
-    // Vérification technique seulement : aucune certification administrative.
     if (file.scanStatus === 'pending') return { fileId, status: 'pending', reasons: ['Analyse antivirus en cours'] };
     const reasons = this.fileProblems(file);
     return { fileId, status: reasons.length ? 'invalid' : 'valid', reasons };

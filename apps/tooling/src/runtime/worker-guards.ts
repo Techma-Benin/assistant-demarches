@@ -1,7 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import type { WorkerMessage } from './supervisor.js';
 
-/** Battement de cœur vers le superviseur : il s'arrête si la boucle d'événements est bloquée. */
 export function startHeartbeat(intervalMs = 5000): void {
   if (!process.send) return;
   const beat = () => process.send?.({ type: 'heartbeat' } satisfies WorkerMessage);
@@ -13,10 +12,6 @@ export function notifyReady(): void {
   process.send?.({ type: 'ready' } satisfies WorkerMessage);
 }
 
-/**
- * Après une exception non rattrapée, l'état du processus n'est plus fiable : on ferme
- * proprement ce qui peut l'être, puis on sort en échec pour être remplacé.
- */
 export function installFatalHandlers(getApp: () => INestApplication | undefined, log: (message: string) => void): void {
   let exiting = false;
   const fatal = (kind: string, error: unknown) => {

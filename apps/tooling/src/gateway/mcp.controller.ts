@@ -16,10 +16,6 @@ function singleHeader(req: Request, name: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-/**
- * Passerelle MCP Streamable HTTP, sans session : chaque POST est authentifié et porte
- * son contexte en en-têtes, construits par le Backend hors du modèle.
- */
 @Controller('mcp')
 export class McpController {
   constructor(
@@ -55,7 +51,6 @@ export class McpController {
         });
         return { content: [{ type: 'text' as const, text: JSON.stringify(output) }], structuredContent: output };
       } catch (error) {
-        // Erreur métier visible par l'agent ; jamais transformée en succès.
         const { code, detail, retryAfter } = toProblem(error);
         const body = { code, detail, traceId: trace.traceId, ...(retryAfter === undefined ? {} : { retryAfter }) };
         return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(body) }] };
@@ -71,7 +66,6 @@ export class McpController {
     await transport.handleRequest(req, res, req.body);
   }
 
-  /** Pas de flux SSE ni de session à fermer : seul POST est servi. */
   @All()
   other(@Res() res: Response): void {
     res.setHeader('Allow', 'POST');

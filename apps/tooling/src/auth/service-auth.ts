@@ -10,13 +10,11 @@ export interface Principal {
   scopes: ReadonlySet<string>;
 }
 
-/** Jetons publics de la suite partagée ; acceptés seulement en mode mock-tokens (local, hors production). */
 const MOCK_PRINCIPALS: Record<string, Principal> = {
   'mock-agent': { client: 'backend-agent', scopes: new Set(['tools:call']) },
   'mock-backend-control': { client: 'backend-mandates', scopes: new Set(['mandates:grant']) },
 };
 
-/** Authentifie les clients de service entrants : JWT RS256 vérifié contre le JWKS du realm. */
 @Injectable()
 export class ServiceAuth {
   private readonly logger = new Logger(ServiceAuth.name);
@@ -26,10 +24,6 @@ export class ServiceAuth {
     if (config.jwt) this.jwks = createRemoteJWKSet(config.jwt.jwksUrl, { timeoutDuration: 5000, cooldownDuration: 30000 });
   }
 
-  /**
-   * 401 si l'identité est invalide ou n'est pas celle attendue sur cette route
-   * (comportement de la suite partagée), 403 si le scope manque.
-   */
   async require(authorization: string | undefined, client: InboundClient, scope: string): Promise<Principal> {
     const principal = await this.authenticate(authorization);
     if (principal.client !== client) throw new ProblemError(401, 'UNAUTHORIZED', 'Identité de service non acceptée sur cette route');
@@ -55,7 +49,6 @@ export class ServiceAuth {
         clockTolerance: 30,
         requiredClaims: ['exp'],
       });
-      // Keycloak place l'identifiant du client de service dans azp.
       const client = payload.azp ?? payload.client_id;
       if (typeof client !== 'string') throw new ProblemError(401, 'UNAUTHORIZED', 'Jeton invalide');
       const scopes = typeof payload.scope === 'string' ? payload.scope.split(' ').filter(Boolean) : [];

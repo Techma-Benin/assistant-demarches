@@ -51,13 +51,11 @@ test('superviseur : processus arrêté relancé, processus bloqué remplacé, se
   await until(async () => supervisor.pids().length === 2 && (await get(`${base}/pid`)));
   const initial = supervisor.pids();
 
-  // Arrêt brutal d'un processus : l'autre sert pendant la relance.
   await get(`${base}/crash`);
   await until(async () => (await get(`${base}/pid`)) !== undefined);
   await until(async () => supervisor.pids().length === 2 && supervisor.pids().some((pid) => !initial.includes(pid)));
   assert.ok(logs.some((line) => /arrêté \(code 1/.test(line)));
 
-  // Boucle bloquée : plus de battement de cœur, le chien de garde le remplace.
   const beforeHang = supervisor.pids();
   void get(`${base}/hang`, 100);
   await until(async () => logs.some((line) => /ne répond plus/.test(line)), 8000);

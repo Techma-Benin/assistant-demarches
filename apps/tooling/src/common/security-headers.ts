@@ -1,6 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
 
-/** Service API uniquement : aucune page, aucun cache, aucune intégration en cadre. */
 export function securityHeaders(_req: Request, res: Response, next: NextFunction): void {
   res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');

@@ -15,10 +15,6 @@ function conversationOf(data: EventData): string {
   return id;
 }
 
-/**
- * Écrit l'événement C4 dans la même transaction que le changement qu'il décrit :
- * pas de changement sans événement durable, pas d'événement sans changement.
- */
 @Injectable()
 export class Outbox {
   async enqueue(tx: Tx, data: EventData, traceId: string): Promise<string> {

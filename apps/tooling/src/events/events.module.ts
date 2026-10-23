@@ -3,10 +3,6 @@ import { Database } from '../database/database.js';
 import { Outbox } from './outbox.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 
-/**
- * Entretien périodique, sûr en parallèle sur plusieurs répliques :
- * les clés d'idempotence sont gardées au moins 24 h, les compteurs de débit 10 minutes.
- */
 @Injectable()
 export class Housekeeping implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(Housekeeping.name);

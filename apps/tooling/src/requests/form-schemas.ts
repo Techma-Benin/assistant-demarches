@@ -5,21 +5,14 @@ import type { Procedure } from '../resources/backend-resources.client.js';
 
 const addFormats = addFormatsPlugin as unknown as (ajv: Ajv2020) => Ajv2020;
 
-// Identifiants et secrets d'État : jamais dans les champs v1, même si une fiche les déclarait.
 const FORBIDDEN_FIELD = /^(npi|nip|otp|pin|password|mot_?de_?passe|code_?sms|ifu)$/i;
 const MAX_CACHE = 200;
 
 export interface FormCheck {
-  /** Champs connus et bien typés, obligatoires non exigés (brouillon). */
   partial: ValidateFunction;
-  /** Formulaire complet. */
   complete: ValidateFunction;
 }
 
-/**
- * Validateurs compilés depuis Procedure.formSchema (JSON Schema 2020-12), mis en cache
- * par fiche et version. Les schémas viennent du Backend, service de confiance authentifié.
- */
 @Injectable()
 export class FormSchemas {
   private readonly ajv = addFormats(new Ajv2020({ allErrors: true, strict: false }));

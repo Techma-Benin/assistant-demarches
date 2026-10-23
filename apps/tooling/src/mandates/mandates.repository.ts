@@ -49,13 +49,8 @@ export interface NewMandate {
 
 const COLUMNS = 'id, conversation_id, user_ref, procedure_id, scopes, status, expires_at';
 
-/** Accès aux mandats. Le Tooling est la source autoritative ; aucune suppression. */
 @Injectable()
 export class MandatesRepository {
-  /**
-   * Contrôle d'un outil d'action. Le verrou partagé fait attendre une révocation
-   * concurrente : après sa validation, plus aucune nouvelle action ne passe.
-   */
   async requireForTool(tx: Tx, ctx: { mandateId?: string; conversationId: string; userRef: string }, scopes: string[], procedureId: string): Promise<Mandate> {
     if (!ctx.mandateId) throw new ProblemError(403, 'MANDATE_MISSING', 'Mandat requis pour cette action');
     const [row] = await tx.query<MandateRow>(`select ${COLUMNS} from mandates where id = $1 for share`, [ctx.mandateId]);
@@ -69,7 +64,6 @@ export class MandatesRepository {
     return mandate;
   }
 
-  /** Échoue si le challenge a déjà servi : la contrainte d'unicité consomme le jti atomiquement. */
   async insert(tx: Tx, mandate: NewMandate): Promise<Mandate | undefined> {
     const [row] = await tx.query<MandateRow>(
       `insert into mandates (id, challenge_id, conversation_id, user_ref, procedure_id, scopes, status, evidence_ref, accepted_at, expires_at)
@@ -81,7 +75,6 @@ export class MandatesRepository {
     return row ? toMandate(row) : undefined;
   }
 
-  /** Révocation immédiate et sans retour ; révoquer deux fois rend le même état. */
   async revoke(tx: Tx, id: string): Promise<Mandate | undefined> {
     const [row] = await tx.query<MandateRow>(
       `update mandates set status = 'revoked', revoked_at = coalesce(revoked_at, now()) where id = $1 returning ${COLUMNS}`,

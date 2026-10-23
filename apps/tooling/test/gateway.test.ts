@@ -47,7 +47,6 @@ test('erreurs métier rendues en isError avec code et traceId, jamais en succès
   assert.equal(toolError(await callTool(client, 'procedures.search', { query: 'demo', locale: 'en' })).code, 'INVALID_REQUEST');
   assert.equal(toolError(await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr', userRef: USER_REF })).code, 'INVALID_REQUEST');
   assert.equal(toolError(await callTool(client, 'tools.unknown', {})).code, 'NOT_FOUND');
-  // Outil d'action sans clé d'idempotence : refus avant tout effet.
   assert.equal(toolError(await callTool(client, 'request.create', { procedureId: 'demo-procedure' })).code, 'INVALID_REQUEST');
 });
 

@@ -17,15 +17,8 @@ const BATCH = 50;
 const LEASE_SECONDS = 60;
 const MAX_BACKOFF_SECONDS = 60;
 const GIVE_UP_MS = 24 * 3600 * 1000;
-// Refus définitifs : l'événement ne passera jamais tel quel.
 const PERMANENT = new Set([400, 409, 413, 415, 422]);
 
-/**
- * Livre l'outbox au Backend (events.openapi.json). Plusieurs processus peuvent tourner :
- * chaque lot est réservé par SKIP LOCKED puis protégé par un bail ; si un processus
- * s'arrête en cours de route, le bail expire et un autre reprend. Seul l'événement le plus
- * ancien de chaque conversation est éligible, ce qui conserve l'ordre par conversation.
- */
 @Injectable()
 export class OutboxPublisher implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(OutboxPublisher.name);
@@ -49,7 +42,6 @@ export class OutboxPublisher implements OnApplicationBootstrap, OnApplicationShu
     await this.running;
   }
 
-  /** Un passage complet ; exposé pour les tests et l'exploitation. */
   async tick(): Promise<number> {
     const batch = await this.claim();
     await Promise.all(batch.map(async (row) => this.settle(row, await this.deliver(row))));
@@ -62,7 +54,6 @@ export class OutboxPublisher implements OnApplicationBootstrap, OnApplicationShu
       this.running = this.tick()
         .then((count) => this.schedule(count === BATCH ? 0 : this.config.events.intervalMs))
         .catch((error: unknown) => {
-          // Une panne (base, réseau) ne doit jamais arrêter la boucle : on réessaie plus tard.
           this.logger.error(`Publication interrompue : ${error instanceof Error ? error.message : String(error)}`);
           this.schedule(Math.max(this.config.events.intervalMs, 5000));
         });
@@ -105,7 +96,6 @@ export class OutboxPublisher implements OnApplicationBootstrap, OnApplicationShu
           Authorization: `Bearer ${await this.tokens.get('tooling-events')}`,
           'Content-Type': 'application/json',
           traceparent: row.event.traceparent,
-          // L'identifiant d'événement est stable : le Backend déduplique les reprises.
           'Idempotency-Key': row.id,
         },
         body: JSON.stringify(row.event),

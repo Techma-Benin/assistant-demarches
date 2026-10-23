@@ -10,7 +10,6 @@ import { act, fakeId, grantMandate, startBackendMock, startToolingApp } from './
 
 const admin = process.env.TEST_DATABASE_URL;
 
-/** Deux répliques sur une même base PostgreSQL réelle, comme en déploiement. */
 async function twoReplicas(t: Parameters<typeof startToolingApp>[0], backendUrl: string) {
   const name = `tooling_replicas_${randomBytes(6).toString('hex')}`;
   const run = async (sql: string) => {
@@ -27,7 +26,6 @@ async function twoReplicas(t: Parameters<typeof startToolingApp>[0], backendUrl:
   const url = new URL(admin!);
   url.pathname = `/${name}`;
   const env = { AUTH_MODE: 'mock-tokens', BACKEND_URL: backendUrl, DATABASE_URL: url.href };
-  // Démarrage simultané : les migrations se sérialisent sous le verrou consultatif.
   return Promise.all([startToolingApp(t, env), startToolingApp(t, env)]);
 }
 
@@ -43,7 +41,6 @@ test('répliques : même clé d’idempotence envoyée aux deux, une seule deman
   const [{ n }] = await a.db.transaction('system', (tx) => tx.query<{ n: number }>('select count(*)::int as n from requests'));
   assert.equal(n, 1);
 
-  // Révocation reçue par une réplique : effet immédiat sur l'autre.
   await fetch(`${b.url}/internal/v1/mandates/${body.id}/revoke`, {
     method: 'POST',
     headers: { Authorization: 'Bearer mock-backend-control', traceparent: `00-${'1'.repeat(32)}-${'2'.repeat(16)}-01`, 'Idempotency-Key': randomUUID() },

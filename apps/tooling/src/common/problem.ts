@@ -20,13 +20,11 @@ export type ProblemCode =
   | 'FILE_TOO_LARGE'
   | 'REPLAY_EXPIRED';
 
-/** Erreur métier ou de transport, rendue en application/problem+json ou en erreur d'outil MCP. */
 export class ProblemError extends Error {
   constructor(
     readonly status: number,
     readonly code: ProblemCode,
     detail: string,
-    /** Secondes avant de réessayer ; envoyé en Retry-After pour 429 et 503. */
     readonly retryAfter?: number,
   ) {
     super(detail);
@@ -47,14 +45,8 @@ const CODE_BY_STATUS: Record<number, ProblemCode> = {
 const logger = new Logger('Problem');
 const DEFAULT_RETRY_AFTER = 5;
 
-/**
- * Normalise toute erreur. Les erreurs inattendues sont journalisées côté serveur
- * et ne laissent sortir ni pile ni message interne.
- * Le contrat n'a pas de code pour une erreur interne : 500 + INVALID_REQUEST, comme les simulations.
- */
 export function toProblem(error: unknown): { status: number; code: ProblemCode; detail: string; retryAfter?: number } {
   if (error instanceof ProblemError) {
-    // Le contrat exige Retry-After sur 429 et 503 : valeur par défaut si l'origine n'en donne pas.
     const retryAfter = error.retryAfter ?? (error.status === 429 || error.status === 503 ? DEFAULT_RETRY_AFTER : undefined);
     return { status: error.status, code: error.code, detail: error.message, retryAfter };
   }

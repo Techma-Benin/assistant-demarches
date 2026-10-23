@@ -12,7 +12,6 @@ export interface JwtConfig {
   jwksUrl: URL;
   tokenUrl: URL;
   clients: Record<OutboundClient, OidcClient>;
-  /** JWKS dédié aux preuves de consentement signées par le Backend. */
   proof: { jwksUrl: URL; issuer?: string };
 }
 
@@ -25,17 +24,12 @@ export interface ToolingConfig {
   authMode: AuthMode;
   backendUrl: URL;
   database: DatabaseConfig;
-  /** Processus de service sous le superviseur ; 1 avec PGlite, qui ne se partage pas. */
   workers: number;
   mandateTtlMs: number;
-  /** Fiches en brouillon visibles ; toujours faux en production. */
   allowDraftProcedures: boolean;
   events: { publisher: boolean; intervalMs: number };
-  /** Limites par minute ; compteurs partagés en base entre processus et répliques. */
   rateLimits: { perUser: number; perClient: number; authFailuresPerIp: number };
-  /** Réglage express « trust proxy » : qui peut fournir X-Forwarded-For. */
   trustProxy: string | false;
-  /** Présent seulement en mode jwt. */
   jwt?: JwtConfig;
 }
 
@@ -59,7 +53,6 @@ function integer(env: NodeJS.ProcessEnv, name: string, fallback: number, min: nu
   return value;
 }
 
-/** HTTPS obligatoire hors localhost. */
 function serviceUrl(env: NodeJS.ProcessEnv, name: string, fallback?: string): URL {
   const raw = env[name] ?? fallback;
   if (!raw) throw new ConfigError(`${name} requis`);
@@ -83,12 +76,10 @@ function database(env: NodeJS.ProcessEnv, production: boolean): DatabaseConfig {
     const path = raw.slice('pglite:'.length);
     return path === 'memory' ? { kind: 'pglite' } : { kind: 'pglite', dataDir: path };
   }
-  // Le message ne reprend jamais l'URL : elle contient le mot de passe.
   if (!/^postgres(ql)?:\/\//.test(raw)) throw new ConfigError('DATABASE_URL doit être postgres://… ou pglite:…');
   return { kind: 'postgres', url: raw, poolMax: integer(env, 'DATABASE_POOL_MAX', 10, 1, 100) };
 }
 
-/** Lit et valide l'environnement. Toute incohérence empêche le démarrage. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig {
   const production = env.NODE_ENV === 'production';
   const host = env.TOOLING_HOST ?? '127.0.0.1';

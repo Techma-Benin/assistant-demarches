@@ -6,7 +6,6 @@ import { ToolRegistry, type ToolHandler, type ToolInvocation } from '../gateway/
 import { BackendResourcesClient, type Procedure } from '../resources/backend-resources.client.js';
 import { ResourcesModule } from '../resources/resources.module.js';
 
-/** Fiches vues par le Tooling. En production, seules les fiches validées existent. */
 @Injectable()
 export class ProcedureCatalog {
   constructor(

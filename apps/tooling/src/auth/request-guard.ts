@@ -5,10 +5,6 @@ import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
 import { RateLimiter } from './rate-limiter.js';
 import { ServiceAuth, type InboundClient, type Principal } from './service-auth.js';
 
-/**
- * Entrée commune des routes authentifiées : blocage des adresses qui accumulent
- * les échecs d'authentification, vérification de l'identité, puis limite par client.
- */
 @Injectable()
 export class RequestGuard {
   constructor(

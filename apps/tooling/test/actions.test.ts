@@ -41,7 +41,6 @@ test('parcours complet : mandat → demande → pièce → lien officiel, puis r
   const request = created.structuredContent!;
   assertSchema('Request', request);
   assert.equal(request.status, 'draft');
-  // Rejeu : même réponse, aucune seconde demande. Autre contenu sous la même clé : conflit.
   assert.deepEqual((await act(url, 'request.create', { procedureId: 'demo-procedure' }, { ...options, key })).structuredContent, request);
   assert.equal(toolError(await act(url, 'request.create', { procedureId: 'other' }, { ...options, key })).code, 'IDEMPOTENCY_CONFLICT');
 
@@ -70,7 +69,6 @@ test('parcours complet : mandat → demande → pièce → lien officiel, puis r
   assert.equal(revoked.body.status, 'revoked');
   assert.equal(toolError(await act(url, 'request.create', { procedureId: 'demo-procedure' }, options)).code, 'MANDATE_REVOKED');
 
-  // Lecture toujours possible pour le propriétaire, refusée depuis une autre conversation.
   assert.ok(!(await act(url, 'request.status', { requestId })).isError);
   assert.equal(toolError(await act(url, 'request.status', { requestId }, { conversationId: fakeId('cnv') })).code, 'NOT_FOUND');
   assert.equal(toolError(await act(url, 'request.status', { requestId }, { userRef: OTHER_USER })).code, 'NOT_FOUND');
@@ -84,10 +82,8 @@ test('mandat : portée, propriétaire, démarche et expiration contrôlés à ch
   const requestId = created.structuredContent!.id as string;
   assert.equal(toolError(await act(url, 'request.submit', { requestId }, { mandateId: limited.body.id as string })).code, 'MANDATE_SCOPE_DENIED');
 
-  // Mandat d'une autre conversation : refusé même pour le même usager.
   const elsewhere = await grantMandate(url, { conversationId: fakeId('cnv') });
   assert.equal(toolError(await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: elsewhere.body.id as string })).code, 'MANDATE_SCOPE_DENIED');
-  // Mandat d'un autre usager : invisible (sécurité au niveau des lignes), donc absent.
   const foreign = await grantMandate(url, { userRef: OTHER_USER });
   assert.equal(toolError(await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: foreign.body.id as string })).code, 'MANDATE_MISSING');
 
@@ -154,7 +150,6 @@ test('sécurité au niveau des lignes : une transaction ne voit que les données
   const other = await db.transaction({ userRef: OTHER_USER }, (tx) => tx.query('select id from requests union all select id from mandates'));
   assert.equal(own.length, 1);
   assert.equal(other.length, 0);
-  // Une portée usager ne lit ni le journal ni l'outbox, et ne peut rien effacer.
   assert.equal((await db.transaction({ userRef: USER_REF }, (tx) => tx.query('select id from audit_log'))).length, 0);
   await assert.rejects(db.transaction({ userRef: USER_REF }, (tx) => tx.query('delete from requests')), /permission denied/);
   await assert.rejects(

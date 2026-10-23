@@ -3,26 +3,17 @@ import type { PGlite } from '@electric-sql/pglite';
 import type { Pool, PoolClient } from 'pg';
 import { ProblemError } from '../common/problem.js';
 
-/** Requêtes paramétrées uniquement : jamais de valeur concaténée dans le SQL. */
 export interface Tx {
   query<R = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<R[]>;
-  /** Script SQL fixe à plusieurs instructions, sans paramètre (migrations). */
   script(sql: string): Promise<void>;
 }
 
-/**
- * Portée appliquée par la sécurité au niveau des lignes :
- * un usager ne voit que ses lignes, `system` sert aux tâches internes authentifiées.
- */
 export type DbScope = { userRef: string } | 'system';
 
 export const APP_ROLE = 'tooling_app';
 
-/** Port de persistance : PostgreSQL en exécution, PGlite pour les tests et le poste local. */
 export abstract class Database {
-  /** Transaction sous le rôle applicatif, soumise aux politiques RLS de la portée donnée. */
   abstract transaction<T>(scope: DbScope, fn: (tx: Tx) => Promise<T>): Promise<T>;
-  /** Transaction propriétaire, réservée aux migrations. */
   abstract ownerTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
   abstract ping(): Promise<void>;
   abstract close(): Promise<void>;
@@ -36,9 +27,7 @@ async function enterScope(tx: Tx, scope: DbScope): Promise<void> {
   ]);
 }
 
-// Codes PostgreSQL pour lesquels rejouer la transaction est sûr.
 const RETRYABLE = new Set(['40001', '40P01']);
-// Classe 08 (connexion) et arrêt du serveur : base momentanément indisponible.
 const UNAVAILABLE = /^(08|57P0)/;
 
 function unavailable(error: unknown): boolean {
@@ -52,7 +41,6 @@ export class PgDatabase extends Database {
 
   constructor(private readonly pool: Pool) {
     super();
-    // Sans ce gestionnaire, la coupure d'une connexion inactive arrête le processus.
     pool.on('error', (error: Error) => this.logger.error(`Connexion inactive perdue : ${error.message}`));
   }
 
@@ -110,7 +98,6 @@ export class PgDatabase extends Database {
       if (unavailable(error)) destroy = true;
       throw error;
     } finally {
-      // Une connexion douteuse est détruite plutôt que rendue au pool.
       client.release(destroy);
     }
   }
