@@ -104,6 +104,21 @@ describe('proxyToBackend', () => {
   });
 });
 
+describe('proxyToBackend JSON body limit', () => {
+  it('rejects a JSON body over 64 Kio with 400 INVALID_REQUEST', async () => {
+    const { fake, deps } = setup();
+    const request = new Request('http://localhost/api/backend/v1/conversations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', traceparent: TRACE },
+      body: JSON.stringify({ padding: 'x'.repeat(70 * 1024) }),
+    });
+    const response = await proxyToBackend(request, ['v1', 'conversations'], deps);
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe('INVALID_REQUEST');
+    expect(fake).not.toHaveBeenCalled();
+  });
+});
+
 describe('proxyToBackend POST /v1/files', () => {
   const upload = (body: BodyInit, headers: Record<string, string> = {}) =>
     new Request('http://localhost/api/backend/v1/files', {
@@ -131,6 +146,29 @@ describe('proxyToBackend POST /v1/files', () => {
     const { fake, deps } = setup();
     const response = await proxyToBackend(upload(new Uint8Array(10485761)), ['v1', 'files'], deps);
     expect(response.status).toBe(413);
+    expect(fake).not.toHaveBeenCalled();
+  });
+
+  it('stops reading a streamed body without content-length once over the limit', async () => {
+    const { fake, deps } = setup();
+    const chunk = new Uint8Array(1024 * 1024);
+    let pulled = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(chunk); // never closes: an endless upload
+      },
+    });
+    const request = new Request('http://localhost/api/backend/v1/files', {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream', 'x-file-mime-type': 'application/pdf', traceparent: TRACE },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    expect(request.headers.get('content-length')).toBeNull();
+    const response = await proxyToBackend(request, ['v1', 'files'], deps);
+    expect(response.status).toBe(413);
+    expect(pulled).toBeLessThanOrEqual(12);
     expect(fake).not.toHaveBeenCalled();
   });
 

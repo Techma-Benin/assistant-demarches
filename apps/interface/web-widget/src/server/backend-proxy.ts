@@ -33,6 +33,34 @@ function problem(status: number, code: string, detail: string, request: Request,
 
 const notFound = (request: Request) => problem(404, 'NOT_FOUND', 'Route inconnue', request);
 
+// JSON routes carry small payloads (message text ≤ 4000 chars, form answers, consent).
+const MAX_JSON_BYTES = 64 * 1024;
+
+/** Reads the body chunk by chunk and stops as soon as `limit` is exceeded (null), never buffering more. */
+async function readCapped(request: Request, limit: number): Promise<ArrayBuffer | null> {
+  if (!request.body) return new ArrayBuffer(0);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body.buffer;
+}
+
 export async function proxyToBackend(request: Request, path: string[], deps: ProxyDeps): Promise<Response> {
   if (path.some((segment) => segment === '' || segment.includes('..') || /[/\\%]/.test(segment))) {
     return notFound(request);
@@ -44,9 +72,13 @@ export async function proxyToBackend(request: Request, path: string[], deps: Pro
   }
 
   const isUpload = method === 'POST' && pathname === '/v1/files';
-  const tooLarge = () => problem(413, 'FILE_TOO_LARGE', '10 Mio maximum', request);
-  // Reject early from the declared size, before reading the body.
-  if (isUpload && Number(request.headers.get('content-length')) > MAX_FILE_BYTES) return tooLarge();
+  const bodyLimit = isUpload ? MAX_FILE_BYTES : MAX_JSON_BYTES;
+  const tooLarge = () =>
+    isUpload
+      ? problem(413, 'FILE_TOO_LARGE', '10 Mio maximum', request)
+      : problem(400, 'INVALID_REQUEST', 'Corps de requête trop volumineux', request);
+  // Reject early from the declared size; the streamed read below enforces the cap when it is absent or wrong.
+  if (method === 'POST' && Number(request.headers.get('content-length')) > bodyLimit) return tooLarge();
 
   const headers = new Headers();
   for (const name of FORWARDED_REQUEST_HEADERS) {
@@ -66,8 +98,8 @@ export async function proxyToBackend(request: Request, path: string[], deps: Pro
 
   let upstream: Response;
   try {
-    const body = method === 'POST' ? await request.arrayBuffer() : undefined;
-    if (isUpload && body && body.byteLength > MAX_FILE_BYTES) return tooLarge();
+    const body = method === 'POST' ? await readCapped(request, bodyLimit) : undefined;
+    if (body === null) return tooLarge();
     const url = new URL(pathname, deps.backendUrl);
     url.search = new URL(request.url).search;
     upstream = await deps.fetch(url, { method, headers, body });
