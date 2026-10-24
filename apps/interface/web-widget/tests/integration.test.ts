@@ -2,7 +2,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain ESM mock server without types
 import { startMocks } from '../../../../mocks/server.mjs';
-import { C1Client, C1Error } from '@/lib/c1-client';
+import { C1Client, C1Error, type ConversationEvent } from '@/lib/c1-client';
+import { ConversationStream, type StreamStatus } from '@/lib/conversation-stream';
 import { conversationReducer, initialState } from '@/lib/conversation-state';
 import { newId } from '@/lib/ids';
 import { proxyToBackend } from '@/server/backend-proxy';
@@ -107,5 +108,78 @@ describe('widget <-> proxy <-> mock backend', () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(C1Error);
     expect((error as C1Error).status).toBe(415);
+  });
+
+  it('streams over the WebSocket, resumes with the cursor after a drop and never duplicates', async () => {
+    const client = new C1Client(shim);
+    const conversation = await client.createConversation({ channel: 'web', locale: 'fr' }, crypto.randomUUID());
+    let state = conversationReducer(initialState, { type: 'conversationStarted', conversationId: conversation.id });
+    const delivered: ConversationEvent[] = [];
+    const statuses: StreamStatus[] = [];
+    const sockets: WebSocket[] = [];
+    class RecordingWebSocket extends WebSocket {
+      constructor(url: string | URL) {
+        super(url);
+        sockets.push(this);
+      }
+    }
+    const stream = new ConversationStream({
+      client,
+      conversationId: conversation.id,
+      onEvents: (items) => {
+        delivered.push(...items);
+        state = conversationReducer(state, { type: 'eventsReceived', page: { items, nextCursor: items[items.length - 1].id } });
+      },
+      onReplayExpired: () => {
+        state = conversationReducer(state, { type: 'replayExpired' });
+      },
+      onStatus: (status) => statuses.push(status),
+      onFatal: (status) => {
+        throw new Error(`unexpected fatal ${status}`);
+      },
+      WebSocketImpl: RecordingWebSocket,
+    });
+    const until = async (condition: () => boolean) => {
+      for (let i = 0; i < 100 && !condition(); i++) await new Promise((r) => setTimeout(r, 50));
+      expect(condition()).toBe(true);
+    };
+    const send = async (text: string) => {
+      const input = { id: newId('msg'), content: { type: 'text' as const, text }, sentAt: new Date().toISOString() };
+      state = conversationReducer(state, {
+        type: 'userMessageQueued',
+        id: input.id,
+        content: input.content,
+        display: text,
+        sentAt: input.sentAt,
+      });
+      await client.sendMessage(conversation.id, input);
+      state = conversationReducer(state, { type: 'userMessageAccepted', id: input.id });
+    };
+    const agents = () => state.timeline.filter((e) => e.kind === 'agent').length;
+
+    try {
+      stream.start();
+      await until(() => statuses.includes('live'));
+      expect(sockets).toHaveLength(1);
+
+      await send('Bonjour');
+      await until(() => delivered.some((e) => e.data.kind === 'message.sent'));
+      await until(() => state.timeline.some((e) => e.kind === 'user' && e.delivery === 'received'));
+      expect(agents()).toBe(1);
+
+      // Drop the connection from the client side, then send while disconnected.
+      sockets[0].close(4000);
+      await send('Merci');
+      await until(() => sockets.length === 2 && statuses.at(-1) === 'live');
+      await until(() => agents() === 2);
+      await until(() => state.timeline.filter((e) => e.kind === 'user' && e.delivery === 'received').length === 2);
+
+      expect(statuses).toContain('polling');
+      const ids = delivered.map((e) => e.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(agents()).toBe(2);
+    } finally {
+      stream.stop();
+    }
   });
 });

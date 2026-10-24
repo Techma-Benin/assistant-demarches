@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { C1Client, C1Error, type MessageInput } from '@/lib/c1-client';
+import { ConversationStream, type StreamStatus } from '@/lib/conversation-stream';
 import { conversationReducer, initialState } from '@/lib/conversation-state';
 import { CONTRACT_MIME_TYPES, contentTypeFor, validateFile, type ContractMimeType } from '@/lib/files';
 import { newId } from '@/lib/ids';
@@ -15,21 +16,6 @@ interface PendingUpload {
 }
 
 const MAX_TEXT_LENGTH = 4000;
-const POLL_INTERVAL_MS = 1000;
-const PAGE_SIZE = 100;
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) return resolve();
-    const timer = setTimeout(done, ms);
-    function done() {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', done);
-      resolve();
-    }
-    signal.addEventListener('abort', done);
-  });
-}
 
 export function useConversation(client?: C1Client) {
   const c1 = useMemo(() => client ?? new C1Client(), [client]);
@@ -56,36 +42,29 @@ export function useConversation(client?: C1Client) {
     };
   }, [c1]);
 
-  // Polling fallback (CONTRACTS.md §5). TODO: WebSocket (socket-ticket) in a later task.
+  // Realtime (CONTRACTS.md §5): WebSocket with polling fallback, owned by ConversationStream.
   const conversationId = state.conversationId;
+  const [connection, setConnection] = useState<StreamStatus>('connecting');
   useEffect(() => {
     if (!conversationId) return;
-    const controller = new AbortController();
-    const { signal } = controller;
-    (async () => {
-      let cursor: string | null = null;
-      while (!signal.aborted) {
-        let delay = POLL_INTERVAL_MS;
-        try {
-          const page = await c1.listEvents(conversationId, cursor, signal);
-          if (signal.aborted) return;
-          dispatch({ type: 'eventsReceived', page });
-          cursor = page.nextCursor ?? cursor;
-          if (page.items.length === PAGE_SIZE) delay = 0;
-        } catch (error) {
-          if (signal.aborted) return;
-          if (error instanceof C1Error && error.status === 410) {
-            cursor = null;
-            dispatch({ type: 'replayExpired' });
-            delay = 0;
-          } else if (error instanceof C1Error && (error.status === 429 || error.status === 503)) {
-            delay = (error.retryAfterSeconds ?? 1) * 1000;
-          }
-        }
-        if (delay > 0) await sleep(delay, signal);
-      }
-    })();
-    return () => controller.abort();
+    const stream = new ConversationStream({
+      client: c1,
+      conversationId,
+      onEvents: (items) =>
+        dispatch({ type: 'eventsReceived', page: { items, nextCursor: items[items.length - 1].id } }),
+      onReplayExpired: () => dispatch({ type: 'replayExpired' }),
+      onStatus: setConnection,
+      onFatal: (status) =>
+        dispatch({
+          type: 'conversationLost',
+          error:
+            status === 401
+              ? 'Votre session a expiré. Commencez une nouvelle conversation.'
+              : 'Cette conversation n’est plus disponible. Commencez-en une nouvelle.',
+        }),
+    });
+    stream.start();
+    return () => stream.stop();
   }, [c1, conversationId]);
 
   const post = useCallback(
@@ -217,5 +196,5 @@ export function useConversation(client?: C1Client) {
     [post, upload, state.timeline],
   );
 
-  return { state, sendText, sendButton, sendForm, sendFile, retry };
+  return { state, connection, sendText, sendButton, sendForm, sendFile, retry };
 }

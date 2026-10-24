@@ -8,6 +8,7 @@ import { useConversation } from '@/hooks/use-conversation';
 import type { TimelineEntry } from '@/lib/conversation-state';
 import { formatFileSize, mimeLabel } from '@/lib/files';
 import { Composer } from './Composer';
+import { ConnectionNotice } from './ConnectionNotice';
 
 const SUGGESTIONS = ['Quelles démarches pouvez-vous m’expliquer ?', 'Comment ça marche ?'];
 
@@ -80,7 +81,7 @@ function AgentRow({ avatar, children }: { avatar: boolean; children: ReactNode }
 }
 
 function Conversation({ onRestart }: { onRestart: () => void }) {
-  const { state, sendText, sendButton, sendForm, sendFile, retry } = useConversation();
+  const { state, connection, sendText, sendButton, sendForm, sendFile, retry } = useConversation();
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -93,7 +94,13 @@ function Conversation({ onRestart }: { onRestart: () => void }) {
   });
 
   if (state.status === 'error') {
-    return <ErrorPanel message={state.error ?? 'Une erreur est survenue.'} onRetry={onRestart} />;
+    return (
+      <ErrorPanel
+        message={state.error ?? 'Une erreur est survenue.'}
+        actionLabel={state.lost ? 'Nouvelle conversation' : 'Réessayer'}
+        onRetry={onRestart}
+      />
+    );
   }
 
   const last = state.timeline[state.timeline.length - 1];
@@ -102,6 +109,7 @@ function Conversation({ onRestart }: { onRestart: () => void }) {
 
   return (
     <>
+      {ready && <ConnectionNotice connection={connection} />}
       <div className="min-h-0 flex-1 overflow-y-auto bg-canvas p-3">
         {state.status === 'starting' && (
           <div className="flex items-center gap-2 text-ink-muted">
@@ -201,12 +209,12 @@ function AttachmentRow({ attachment }: { attachment: NonNullable<UserEntry['atta
   );
 }
 
-function ErrorPanel({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorPanel({ message, actionLabel, onRetry }: { message: string; actionLabel: string; onRetry: () => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-canvas p-6 text-center">
       <InlineAlert>{message}</InlineAlert>
       <Button variant="secondary" onClick={onRetry}>
-        Réessayer
+        {actionLabel}
       </Button>
     </div>
   );

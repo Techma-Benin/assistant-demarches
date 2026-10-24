@@ -47,6 +47,8 @@ export interface ConversationState {
   seenEventIds: string[];
   timeline: TimelineEntry[];
   error?: string;
+  /** The conversation can't be resumed (session expired, access denied, gone): only a new one helps. */
+  lost?: boolean;
 }
 
 export const initialState: ConversationState = {
@@ -60,6 +62,7 @@ export const initialState: ConversationState = {
 export type ConversationAction =
   | { type: 'conversationStarted'; conversationId: string }
   | { type: 'startFailed'; error: string }
+  | { type: 'conversationLost'; error: string }
   | { type: 'userMessageQueued'; id: string; content: Content; display: string; sentAt: string }
   | { type: 'userMessageAccepted'; id: string }
   | { type: 'userMessageFailed'; id: string }
@@ -96,6 +99,8 @@ export function conversationReducer(state: ConversationState, action: Conversati
       return { ...state, status: 'ready', conversationId: action.conversationId, error: undefined };
     case 'startFailed':
       return { ...state, status: 'error', error: action.error };
+    case 'conversationLost':
+      return { ...state, status: 'error', error: action.error, lost: true };
     case 'userMessageQueued':
       if (state.timeline.some((e) => e.kind === 'user' && e.id === action.id)) {
         // Retry of a failed message: same id, back to "sending".

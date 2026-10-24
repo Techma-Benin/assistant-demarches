@@ -8,6 +8,8 @@ export type Conversation = Schemas['Conversation'];
 export type MessageInput = Schemas['MessageInput'];
 export type MessageAccepted = Schemas['MessageAccepted'];
 export type EventPage = Schemas['EventPage'];
+export type ConversationEvent = Schemas['Event'];
+export type SocketTicket = Schemas['SocketTicket'];
 export type Problem = Schemas['Problem'];
 export type UploadedFile = Schemas['File'];
 
@@ -46,6 +48,11 @@ export class C1Client {
   listEvents(conversationId: string, cursor?: string | null, signal?: AbortSignal): Promise<EventPage> {
     const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
     return this.request('GET', `/v1/conversations/${conversationId}/events${query}`, { signal });
+  }
+
+  // Single-use ticket (60 s): every call needs a NEW Idempotency-Key, or a consumed ticket is replayed.
+  createSocketTicket(conversationId: string, idempotencyKey: string): Promise<SocketTicket> {
+    return this.request('POST', `/v1/conversations/${conversationId}/socket-ticket`, { idempotencyKey });
   }
 
   uploadFile(body: Blob, mimeType: ContractMimeType, idempotencyKey: string, signal?: AbortSignal): Promise<UploadedFile> {
