@@ -1,3 +1,5 @@
+import { Badge } from '@techma/ui';
+import { BadgeCheck, ExternalLink } from 'lucide-react';
 import type { components } from '@techma/contracts-ts';
 import { formatDateFr, safeHttpUrl } from '@/lib/safe-url';
 
@@ -7,35 +9,34 @@ type Props = { block: Extract<Block, { type: 'text' }> };
 export function TextBlock({ block }: Props) {
   return (
     <div>
-      <p className="whitespace-pre-wrap break-words">{block.text}</p>
+      <p className="whitespace-pre-wrap break-words text-base">{block.text}</p>
       {block.sources.length > 0 && (
-        <div className="mt-2 border-t border-slate-200 pt-2 text-xs text-slate-600">
-          <p className="font-semibold">Sources</p>
-          <ul className="mt-1 space-y-1">
-            {block.sources.map((source, index) => {
-              const url = safeHttpUrl(source.url);
-              const meta = `version ${source.version}, consultée le ${formatDateFr(source.retrievedAt)}`;
-              return (
-                <li key={`${source.url}-${index}`}>
+        <ul aria-label="Sources" className="mt-3 space-y-2 border-t border-line pt-3">
+          {block.sources.map((source, index) => {
+            const url = safeHttpUrl(source.url);
+            const meta = `version ${source.version} · consultée le ${formatDateFr(source.retrievedAt)}`;
+            return (
+              <li key={`${source.url}-${index}`} className="flex flex-col items-start gap-1">
+                <Badge tone="trust" icon={<BadgeCheck aria-hidden="true" className="size-4 shrink-0" />} className="max-w-full">
                   {url ? (
                     <a
                       href={url.href}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-700 underline"
+                      className="inline-flex min-w-0 items-center gap-1 underline underline-offset-2"
                     >
-                      {url.hostname}
+                      <span className="truncate">Source : {url.hostname}</span>
+                      <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
                     </a>
                   ) : (
-                    <span>{source.url}</span>
+                    <span className="truncate">Source : {source.url}</span>
                   )}
-                  {' — '}
-                  {meta}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+                </Badge>
+                <span className="text-[13px] text-ink-subtle">{meta}</span>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

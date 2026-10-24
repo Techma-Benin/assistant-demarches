@@ -1,3 +1,5 @@
+import { MAX_FILE_BYTES } from '@/lib/files';
+
 const ID = '[0-9A-HJKMNP-TV-Z]{26}';
 
 const ALLOWLIST: ReadonlyArray<{ method: 'GET' | 'POST'; path: RegExp }> = [
@@ -41,6 +43,11 @@ export async function proxyToBackend(request: Request, path: string[], deps: Pro
     return notFound(request);
   }
 
+  const isUpload = method === 'POST' && pathname === '/v1/files';
+  const tooLarge = () => problem(413, 'FILE_TOO_LARGE', '10 Mio maximum', request);
+  // Reject early from the declared size, before reading the body.
+  if (isUpload && Number(request.headers.get('content-length')) > MAX_FILE_BYTES) return tooLarge();
+
   const headers = new Headers();
   for (const name of FORWARDED_REQUEST_HEADERS) {
     const value = request.headers.get(name);
@@ -60,6 +67,7 @@ export async function proxyToBackend(request: Request, path: string[], deps: Pro
   let upstream: Response;
   try {
     const body = method === 'POST' ? await request.arrayBuffer() : undefined;
+    if (isUpload && body && body.byteLength > MAX_FILE_BYTES) return tooLarge();
     const url = new URL(pathname, deps.backendUrl);
     url.search = new URL(request.url).search;
     upstream = await deps.fetch(url, { method, headers, body });

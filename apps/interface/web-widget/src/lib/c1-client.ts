@@ -1,4 +1,5 @@
 import type { components } from '@techma/contracts-ts';
+import type { ContractMimeType } from './files';
 import { newTraceparent } from './trace';
 
 type Schemas = components['schemas'];
@@ -8,6 +9,7 @@ export type MessageInput = Schemas['MessageInput'];
 export type MessageAccepted = Schemas['MessageAccepted'];
 export type EventPage = Schemas['EventPage'];
 export type Problem = Schemas['Problem'];
+export type UploadedFile = Schemas['File'];
 
 export class C1Error extends Error {
   readonly status: number;
@@ -46,18 +48,33 @@ export class C1Client {
     return this.request('GET', `/v1/conversations/${conversationId}/events${query}`, { signal });
   }
 
+  uploadFile(body: Blob, mimeType: ContractMimeType, idempotencyKey: string, signal?: AbortSignal): Promise<UploadedFile> {
+    return this.request('POST', '/v1/files', {
+      rawBody: body,
+      headers: { 'content-type': 'application/octet-stream', 'x-file-mime-type': mimeType },
+      idempotencyKey,
+      signal,
+    });
+  }
+
   private async request<T>(
     method: 'GET' | 'POST',
     path: string,
-    options: { body?: unknown; idempotencyKey?: string; signal?: AbortSignal },
+    options: {
+      body?: unknown;
+      rawBody?: Blob;
+      headers?: Record<string, string>;
+      idempotencyKey?: string;
+      signal?: AbortSignal;
+    },
   ): Promise<T> {
-    const headers: Record<string, string> = { traceparent: newTraceparent() };
+    const headers: Record<string, string> = { traceparent: newTraceparent(), ...options.headers };
     if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
     if (options.body !== undefined) headers['content-type'] = 'application/json';
     const response = await this.fetchImpl(this.basePath + path, {
       method,
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body: options.rawBody ?? (options.body !== undefined ? JSON.stringify(options.body) : undefined),
       signal: options.signal,
     });
     if (!response.ok) throw await toError(response);

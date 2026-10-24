@@ -3,8 +3,16 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { C1Client, C1Error, type MessageInput } from '@/lib/c1-client';
 import { conversationReducer, initialState } from '@/lib/conversation-state';
+import { CONTRACT_MIME_TYPES, contentTypeFor, validateFile, type ContractMimeType } from '@/lib/files';
 import { newId } from '@/lib/ids';
 import { buttonInteraction, formInteraction } from '@/lib/interactions';
+
+interface PendingUpload {
+  file: File;
+  mimeType: ContractMimeType;
+  uploadKey: string;
+  sentAt: string;
+}
 
 const MAX_TEXT_LENGTH = 4000;
 const POLL_INTERVAL_MS = 1000;
@@ -29,6 +37,8 @@ export function useConversation(client?: C1Client) {
   // Stable across StrictMode's double effect: the second create hits the same idempotent result.
   const idempotencyKey = useRef<string>(crypto.randomUUID());
   const pending = useRef(new Map<string, MessageInput>());
+  // Message id -> file and upload Idempotency-Key, kept so retries reuse both.
+  const uploads = useRef(new Map<string, PendingUpload>());
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +101,60 @@ export function useConversation(client?: C1Client) {
     [c1, conversationId],
   );
 
+  const upload = useCallback(
+    async (id: string, entry: PendingUpload) => {
+      try {
+        const uploaded = await c1.uploadFile(entry.file, entry.mimeType, entry.uploadKey);
+        dispatch({ type: 'fileUploadSucceeded', id, file: uploaded });
+        if (uploaded.scanStatus === 'rejected') return;
+        // Pending files are sent anyway: v1 has no scan-status endpoint, the Backend owns usability
+        // (open question in README).
+        const input: MessageInput = {
+          id,
+          content: { type: contentTypeFor(uploaded.mimeType), fileId: uploaded.id },
+          sentAt: entry.sentAt,
+        };
+        pending.current.set(id, input);
+        await post(input);
+      } catch (error) {
+        const status = error instanceof C1Error ? error.status : undefined;
+        if (status === 413) {
+          dispatch({ type: 'fileUploadFailed', id, error: 'Fichier trop volumineux (10 Mo maximum).', retryable: false });
+        } else if (status === 415) {
+          dispatch({ type: 'fileUploadFailed', id, error: 'Format non accepté.', retryable: false });
+        } else {
+          dispatch({ type: 'fileUploadFailed', id, error: 'Échec de l’envoi de la pièce.', retryable: true });
+        }
+      }
+    },
+    [c1, post],
+  );
+
+  const sendFile = useCallback(
+    (file: File) => {
+      if (!conversationId) return;
+      const validation = validateFile(file, CONTRACT_MIME_TYPES);
+      if (!validation.ok) return;
+      const id = newId('msg');
+      const entry: PendingUpload = {
+        file,
+        mimeType: validation.mimeType,
+        uploadKey: crypto.randomUUID(),
+        sentAt: new Date().toISOString(),
+      };
+      uploads.current.set(id, entry);
+      // The file name stays local: it is never sent to the backend.
+      dispatch({
+        type: 'fileUploadStarted',
+        id,
+        attachment: { name: file.name, sizeBytes: file.size, mimeType: validation.mimeType },
+        sentAt: entry.sentAt,
+      });
+      void upload(id, entry);
+    },
+    [conversationId, upload],
+  );
+
   const enqueue = useCallback(
     (content: MessageInput['content'], display: string) => {
       if (!conversationId) return;
@@ -125,6 +189,20 @@ export function useConversation(client?: C1Client) {
   const retry = useCallback(
     (entryId: string) => {
       const input = pending.current.get(entryId);
+      const entry = uploads.current.get(entryId);
+      if (!input && entry) {
+        // Upload step failed: redo it with the same Idempotency-Key.
+        const current = state.timeline.find((e) => e.kind === 'user' && e.id === entryId);
+        if (current?.kind !== 'user' || current.delivery !== 'uploadFailed' || !current.retryable) return;
+        dispatch({
+          type: 'fileUploadStarted',
+          id: entryId,
+          attachment: current.attachment!,
+          sentAt: entry.sentAt,
+        });
+        void upload(entryId, entry);
+        return;
+      }
       if (!input) return;
       // Same MessageInput => same id => same Idempotency-Key.
       dispatch({
@@ -136,8 +214,8 @@ export function useConversation(client?: C1Client) {
       });
       void post(input);
     },
-    [post],
+    [post, upload, state.timeline],
   );
 
-  return { state, sendText, sendButton, sendForm, retry };
+  return { state, sendText, sendButton, sendForm, sendFile, retry };
 }

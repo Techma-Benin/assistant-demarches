@@ -103,3 +103,46 @@ describe('proxyToBackend', () => {
     expect((await response.json()).code).toBe('UPSTREAM_UNAVAILABLE');
   });
 });
+
+describe('proxyToBackend POST /v1/files', () => {
+  const upload = (body: BodyInit, headers: Record<string, string> = {}) =>
+    new Request('http://localhost/api/backend/v1/files', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-file-mime-type': 'application/pdf',
+        'idempotency-key': 'abcdefgh',
+        traceparent: TRACE,
+        ...headers,
+      },
+      body,
+    });
+
+  it('returns 413 from content-length without calling fetch', async () => {
+    const { fake, deps } = setup();
+    const response = await proxyToBackend(upload('x', { 'content-length': '10485761' }), ['v1', 'files'], deps);
+    expect(response.status).toBe(413);
+    expect(response.headers.get('content-type')).toBe('application/problem+json');
+    expect(await response.json()).toMatchObject({ code: 'FILE_TOO_LARGE', detail: '10 Mio maximum' });
+    expect(fake).not.toHaveBeenCalled();
+  });
+
+  it('returns 413 from the actual body size', async () => {
+    const { fake, deps } = setup();
+    const response = await proxyToBackend(upload(new Uint8Array(10485761)), ['v1', 'files'], deps);
+    expect(response.status).toBe(413);
+    expect(fake).not.toHaveBeenCalled();
+  });
+
+  it('forwards body bytes and x-file-mime-type', async () => {
+    const { fake, deps } = setup();
+    const bytes = new TextEncoder().encode('%PDF-1.4');
+    const response = await proxyToBackend(upload(bytes), ['v1', 'files'], deps);
+    expect(response.status).toBe(202);
+    const [, init] = fake.mock.calls[0] as unknown as [URL, RequestInit];
+    expect(new Uint8Array(init.body as ArrayBuffer)).toEqual(bytes);
+    const headers = init.headers as Headers;
+    expect(headers.get('x-file-mime-type')).toBe('application/pdf');
+    expect(headers.get('content-type')).toBe('application/octet-stream');
+  });
+});

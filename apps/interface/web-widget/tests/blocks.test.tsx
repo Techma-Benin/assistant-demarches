@@ -10,7 +10,7 @@ type RequestStatus = components['schemas']['RequestStatus'];
 
 const noop = () => {};
 function renderBlock(block: Block, props: Partial<Parameters<typeof BlockRenderer>[0]> = {}) {
-  return render(<BlockRenderer block={block} interactive onButton={noop} onForm={noop} {...props} />);
+  return render(<BlockRenderer block={block} interactive onButton={noop} onForm={noop} onFile={noop} {...props} />);
 }
 const source = (url: string) => ({
   procedureId: 'p',
@@ -36,11 +36,11 @@ describe('BlockRenderer', () => {
 
   it('renders sources as safe external links', () => {
     renderBlock({ type: 'text', text: 'Info', sources: [source('https://example.org/page')] });
-    const link = screen.getByRole('link', { name: 'example.org' });
+    const link = screen.getByRole('link', { name: 'Source : example.org' });
     expect(link).toHaveAttribute('href', 'https://example.org/page');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link.getAttribute('rel')).toContain('noopener');
-    expect(screen.getByText(/version v9, consultée le 22\/10\/2026/)).toBeInTheDocument();
+    expect(screen.getByText(/version v9 · consultée le 22\/10\/2026/)).toBeInTheDocument();
   });
 
   it('does not render a javascript: source as a link', () => {
@@ -84,11 +84,43 @@ describe('BlockRenderer', () => {
     expect(screen.getByLabelText(/Nom affiché/)).toBeDisabled();
   });
 
-  it('renders the file request with a disabled upload button', () => {
-    renderBlock(fixtures[4].blocks[0]);
-    expect(screen.getByText(/PDF, JPEG, PNG/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Joindre une pièce' })).toBeDisabled();
-    expect(screen.getByText('Envoi de pièces : bientôt disponible')).toBeInTheDocument();
+  describe('fileRequest', () => {
+    const block = fixtures[4].blocks[0];
+    const pdf = () => new File(['%PDF-1.4'], 'doc.pdf', { type: 'application/pdf' });
+
+    it('shows accepted formats and the effective accept attribute', () => {
+      renderBlock(block);
+      expect(screen.getByText(/PDF, JPEG, PNG/)).toBeInTheDocument();
+      expect(screen.queryByText(/bientôt disponible/)).toBeNull();
+      const accepted = (block as Extract<Block, { type: 'fileRequest' }>).acceptedMimeTypes;
+      expect(screen.getByLabelText('Joindre une pièce')).toHaveAttribute('accept', accepted.join(','));
+    });
+
+    it('shows an alert for an invalid type and stays usable', async () => {
+      const onFile = vi.fn();
+      renderBlock(block, { onFile });
+      const user = userEvent.setup({ applyAccept: false });
+      await user.upload(screen.getByLabelText('Joindre une pièce'), new File(['x'], 'a.txt', { type: 'text/plain' }));
+      expect(screen.getByRole('alert')).toHaveTextContent('Format non accepté');
+      expect(onFile).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Joindre une pièce' })).toBeEnabled();
+    });
+
+    it('calls onFile once then disables', async () => {
+      const onFile = vi.fn();
+      renderBlock(block, { onFile });
+      const user = userEvent.setup();
+      const file = pdf();
+      await user.upload(screen.getByLabelText('Joindre une pièce'), file);
+      expect(onFile).toHaveBeenCalledTimes(1);
+      expect(onFile).toHaveBeenCalledWith(file);
+      expect(screen.getByRole('button', { name: 'Joindre une pièce' })).toBeDisabled();
+    });
+
+    it('is disabled when not interactive', () => {
+      renderBlock(block, { interactive: false });
+      expect(screen.getByRole('button', { name: 'Joindre une pièce' })).toBeDisabled();
+    });
   });
 
   it.each([

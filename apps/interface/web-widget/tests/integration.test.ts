@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain ESM mock server without types
 import { startMocks } from '../../../../mocks/server.mjs';
-import { C1Client } from '@/lib/c1-client';
+import { C1Client, C1Error } from '@/lib/c1-client';
 import { conversationReducer, initialState } from '@/lib/conversation-state';
 import { newId } from '@/lib/ids';
 import { proxyToBackend } from '@/server/backend-proxy';
@@ -17,17 +17,18 @@ afterAll(async () => {
   await mocks.close();
 });
 
+const shim: typeof fetch = async (input, init) => {
+  const url = new URL(String(input), 'http://widget.local');
+  const path = url.pathname.replace(/^\/api\/backend\//, '').split('/');
+  return proxyToBackend(new Request(url, init), path, {
+    backendUrl: mocks.backendUrl,
+    getUserToken: () => 'mock-user',
+    fetch,
+  });
+};
+
 describe('widget <-> proxy <-> mock backend', () => {
   it('creates a conversation, sends a message and receives the agent reply', async () => {
-    const shim: typeof fetch = async (input, init) => {
-      const url = new URL(String(input), 'http://widget.local');
-      const path = url.pathname.replace(/^\/api\/backend\//, '').split('/');
-      return proxyToBackend(new Request(url, init), path, {
-        backendUrl: mocks.backendUrl,
-        getUserToken: () => 'mock-user',
-        fetch,
-      });
-    };
     const client = new C1Client(shim);
 
     const conversation = await client.createConversation({ channel: 'web', locale: 'fr' }, crypto.randomUUID());
@@ -64,5 +65,47 @@ describe('widget <-> proxy <-> mock backend', () => {
     const replay = await client.listEvents(conversation.id);
     const again = conversationReducer(state, { type: 'eventsReceived', page: replay });
     expect(again.timeline).toEqual(state.timeline);
+  });
+
+  it('uploads a file, sends it as a message and receives message.received', async () => {
+    const client = new C1Client(shim);
+    const conversation = await client.createConversation({ channel: 'web', locale: 'fr' }, crypto.randomUUID());
+    let state = conversationReducer(initialState, { type: 'conversationStarted', conversationId: conversation.id });
+    const id = newId('msg');
+    const sentAt = new Date().toISOString();
+    const attachment = { name: 'doc.pdf', sizeBytes: 8, mimeType: 'application/pdf' };
+    state = conversationReducer(state, { type: 'fileUploadStarted', id, attachment, sentAt });
+
+    const uploaded = await client.uploadFile(
+      new Blob([new TextEncoder().encode('%PDF-1.4')]),
+      'application/pdf',
+      crypto.randomUUID(),
+    );
+    expect(uploaded).toMatchObject({ scanStatus: 'clean', mimeType: 'application/pdf' });
+    expect(uploaded.id).toMatch(/^fil_/);
+    state = conversationReducer(state, { type: 'fileUploadSucceeded', id, file: uploaded });
+
+    await client.sendMessage(conversation.id, { id, content: { type: 'file', fileId: uploaded.id }, sentAt });
+    state = conversationReducer(state, { type: 'userMessageAccepted', id });
+
+    for (let i = 0; i < 20 && state.timeline[0]?.kind === 'user' && state.timeline[0].delivery !== 'received'; i++) {
+      state = conversationReducer(state, { type: 'eventsReceived', page: await client.listEvents(conversation.id, state.cursor) });
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(state.timeline[0]).toMatchObject({
+      kind: 'user',
+      delivery: 'received',
+      attachment: { name: 'doc.pdf', scanStatus: 'clean' },
+      content: { type: 'file', fileId: uploaded.id },
+    });
+  });
+
+  it('maps a wrong x-file-mime-type to a 415 C1Error', async () => {
+    const client = new C1Client(shim);
+    const error = await client
+      .uploadFile(new Blob(['hello']), 'text/plain' as never, crypto.randomUUID())
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(C1Error);
+    expect((error as C1Error).status).toBe(415);
   });
 });

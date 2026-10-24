@@ -12,9 +12,15 @@ export type BlockRendererProps = {
   interactive: boolean;
   onButton: (item: { id: string; label: string }) => void;
   onForm: (formId: string, values: Record<string, string>, summary: string) => void;
+  onFile: (file: File) => void;
 };
 
-export function BlockRenderer({ block, interactive, onButton, onForm }: BlockRendererProps) {
+/** Blocks that carry their own container (card, quick replies): rendered without a chat bubble. */
+export function isBareBlock(block: Block): boolean {
+  return block.type === 'buttons' || block.type === 'fileRequest' || block.type === 'statusCard';
+}
+
+export function BlockRenderer({ block, interactive, onButton, onForm, onFile }: BlockRendererProps) {
   switch (block.type) {
     case 'text':
       return <TextBlock block={block} />;
@@ -23,7 +29,7 @@ export function BlockRenderer({ block, interactive, onButton, onForm }: BlockRen
     case 'form':
       return <FormBlock block={block} interactive={interactive} onForm={onForm} />;
     case 'fileRequest':
-      return <FileRequestBlock block={block} />;
+      return <FileRequestBlock block={block} interactive={interactive} onFile={onFile} />;
     case 'statusCard':
       return <StatusCardBlock block={block} />;
     default: {

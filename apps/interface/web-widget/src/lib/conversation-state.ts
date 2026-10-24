@@ -1,14 +1,43 @@
 import type { components } from '@techma/contracts-ts';
+import type { UploadedFile } from './c1-client';
+import { contentTypeFor } from './files';
 
 type Schemas = components['schemas'];
 export type Content = Schemas['Content'];
 export type AgentMessage = Schemas['AgentMessage'];
 export type EventPage = Schemas['EventPage'];
 
-export type Delivery = 'sending' | 'accepted' | 'received' | 'failed';
+export type Delivery =
+  | 'uploading'
+  | 'uploadFailed'
+  | 'scanRejected'
+  | 'sending'
+  | 'accepted'
+  | 'received'
+  | 'failed';
+
+export type ScanStatus = UploadedFile['scanStatus'];
+
+export interface Attachment {
+  name: string;
+  sizeBytes: number;
+  mimeType: string;
+  scanStatus?: ScanStatus;
+}
 
 export type TimelineEntry =
-  | { kind: 'user'; id: string; content: Content; display: string; sentAt: string; delivery: Delivery }
+  | {
+      kind: 'user';
+      id: string;
+      // null while an attached file is not uploaded yet.
+      content: Content | null;
+      display: string;
+      sentAt: string;
+      delivery: Delivery;
+      attachment?: Attachment;
+      error?: string;
+      retryable?: boolean;
+    }
   | { kind: 'agent'; message: AgentMessage };
 
 export interface ConversationState {
@@ -34,6 +63,9 @@ export type ConversationAction =
   | { type: 'userMessageQueued'; id: string; content: Content; display: string; sentAt: string }
   | { type: 'userMessageAccepted'; id: string }
   | { type: 'userMessageFailed'; id: string }
+  | { type: 'fileUploadStarted'; id: string; attachment: Attachment; sentAt: string }
+  | { type: 'fileUploadSucceeded'; id: string; file: UploadedFile }
+  | { type: 'fileUploadFailed'; id: string; error: string; retryable: boolean }
   | { type: 'eventsReceived'; page: EventPage }
   | { type: 'replayExpired' };
 
@@ -48,6 +80,14 @@ function setDelivery(
       ? { ...entry, delivery }
       : entry,
   );
+}
+
+function updateUser(
+  timeline: TimelineEntry[],
+  id: string,
+  update: (entry: Extract<TimelineEntry, { kind: 'user' }>) => Extract<TimelineEntry, { kind: 'user' }>,
+): TimelineEntry[] {
+  return timeline.map((entry) => (entry.kind === 'user' && entry.id === id ? update(entry) : entry));
 }
 
 export function conversationReducer(state: ConversationState, action: ConversationAction): ConversationState {
@@ -74,6 +114,59 @@ export function conversationReducer(state: ConversationState, action: Conversati
             delivery: 'sending',
           },
         ],
+      };
+    case 'fileUploadStarted':
+      if (state.timeline.some((e) => e.kind === 'user' && e.id === action.id)) {
+        // Retry of a failed upload: same id, back to "uploading".
+        return {
+          ...state,
+          timeline: updateUser(state.timeline, action.id, (e) => ({
+            ...e,
+            delivery: 'uploading',
+            error: undefined,
+            retryable: undefined,
+          })),
+        };
+      }
+      return {
+        ...state,
+        timeline: [
+          ...state.timeline,
+          {
+            kind: 'user',
+            id: action.id,
+            content: null,
+            display: action.attachment.name,
+            sentAt: action.sentAt,
+            delivery: 'uploading',
+            attachment: action.attachment,
+          },
+        ],
+      };
+    case 'fileUploadSucceeded': {
+      const { file } = action;
+      const rejected = file.scanStatus === 'rejected';
+      return {
+        ...state,
+        timeline: updateUser(state.timeline, action.id, (e) => ({
+          ...e,
+          content: { type: contentTypeFor(file.mimeType), fileId: file.id },
+          attachment: e.attachment && { ...e.attachment, scanStatus: file.scanStatus },
+          delivery: rejected ? 'scanRejected' : 'sending',
+          error: rejected ? 'Pièce refusée par l’analyse de sécurité.' : undefined,
+          retryable: undefined,
+        })),
+      };
+    }
+    case 'fileUploadFailed':
+      return {
+        ...state,
+        timeline: updateUser(state.timeline, action.id, (e) => ({
+          ...e,
+          delivery: 'uploadFailed',
+          error: action.error,
+          retryable: action.retryable,
+        })),
       };
     case 'userMessageAccepted':
       // The message.received event may already have been applied: never downgrade.

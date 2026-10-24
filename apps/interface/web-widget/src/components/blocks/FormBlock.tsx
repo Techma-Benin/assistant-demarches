@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, useState, type FormEvent } from 'react';
+import { Button, TextField } from '@techma/ui';
 import type { components } from '@techma/contracts-ts';
 
 type Block = components['schemas']['Block'];
@@ -28,32 +29,21 @@ export function FormBlock({ block, interactive, onForm }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
-      <fieldset disabled={disabled} className="space-y-3">
-        {block.fields.map((field) => {
-          const inputId = `${baseId}-${field.name}`;
-          return (
-            <div key={field.name}>
-              <label htmlFor={inputId} className="block text-sm font-medium">
-                {field.label}
-                {field.required && <span aria-hidden="true"> *</span>}
-              </label>
-              <input
-                id={inputId}
-                name={field.name}
-                type={field.type}
-                required={field.required}
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100"
-              />
-            </div>
-          );
-        })}
-        <button
-          type="submit"
-          className="rounded bg-blue-700 px-3 py-1 text-sm text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+    <form onSubmit={handleSubmit}>
+      <fieldset disabled={disabled} className="min-w-0 space-y-4">
+        {block.fields.map((field) => (
+          <TextField
+            key={field.name}
+            id={`${baseId}-${field.name}`}
+            name={field.name}
+            type={field.type}
+            label={field.label}
+            required={field.required}
+          />
+        ))}
+        <Button type="submit" className="w-full sm:w-auto">
           Valider
-        </button>
+        </Button>
       </fieldset>
     </form>
   );
