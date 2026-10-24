@@ -1,0 +1,104 @@
+/* Source unique des tokens de design (direction « Sceau »). Préfixe --ui-. */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+  --ui-canvas: #fbfaf7;
+  --ui-surface: #ffffff;
+  --ui-sunken: #f3f1ec;
+  --ui-border: #e7e4dc;
+  --ui-border-strong: #d9d5cb;
+  --ui-field-border: #8a918c;
+  --ui-text: #17201a;
+  --ui-text-muted: #56605a;
+  --ui-text-subtle: #6b736d;
+  --ui-action: #17201a;
+  --ui-action-hover: #2a352d;
+  --ui-on-action: #ffffff;
+  --ui-trust: #0b6b3a;
+  --ui-trust-text: #0b5a31;
+  --ui-trust-soft: #e6f2ea;
+  --ui-trust-line: #b9dcc6;
+  --ui-on-trust: #ffffff;
+  --ui-sun: #fcd116;
+  --ui-danger-text: #b42318;
+  --ui-danger-soft: #fdecea;
+  --ui-warning-text: #7a4f00;
+  --ui-warning-soft: #fff4d6;
+  --ui-focus: #17201a;
+
+  --ui-radius-sm: 10px;
+  --ui-radius-field: 14px;
+  --ui-radius-card: 20px;
+  --ui-radius-pill: 9999px;
+
+  --ui-shadow-pop: 0 8px 24px rgb(23 32 26 / 0.1), 0 2px 6px rgb(23 32 26 / 0.06);
+
+  --ui-dur-fast: 120ms;
+  --ui-dur-base: 200ms;
+  --ui-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --ui-canvas: #121614;
+  --ui-surface: #1a1f1c;
+  --ui-sunken: #0e110f;
+  --ui-border: rgba(255, 255, 255, 0.1);
+  --ui-border-strong: rgba(255, 255, 255, 0.16);
+  --ui-field-border: #6a726c;
+  --ui-text: #eef1ee;
+  --ui-text-muted: #a9b2ac;
+  --ui-text-subtle: #87908a;
+  --ui-action: #f1efe8;
+  --ui-action-hover: #dad7ce;
+  --ui-on-action: #121614;
+  --ui-trust: #3fae6e;
+  --ui-trust-text: #7fd3a0;
+  --ui-trust-soft: #173323;
+  --ui-trust-line: #2c5a3e;
+  --ui-on-trust: #0e110f;
+  --ui-sun: #fcd116;
+  --ui-danger-text: #ff8a80;
+  --ui-danger-soft: #3a1714;
+  --ui-warning-text: #f5c451;
+  --ui-warning-soft: #33270b;
+  --ui-focus: #f1efe8;
+  --ui-shadow-pop: 0 8px 24px rgb(0 0 0 / 0.4), 0 2px 6px rgb(0 0 0 / 0.3);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --ui-canvas: #121614;
+    --ui-surface: #1a1f1c;
+    --ui-sunken: #0e110f;
+    --ui-border: rgba(255, 255, 255, 0.1);
+    --ui-border-strong: rgba(255, 255, 255, 0.16);
+    --ui-field-border: #6a726c;
+    --ui-text: #eef1ee;
+    --ui-text-muted: #a9b2ac;
+    --ui-text-subtle: #87908a;
+    --ui-action: #f1efe8;
+    --ui-action-hover: #dad7ce;
+    --ui-on-action: #121614;
+    --ui-trust: #3fae6e;
+    --ui-trust-text: #7fd3a0;
+    --ui-trust-soft: #173323;
+    --ui-trust-line: #2c5a3e;
+    --ui-on-trust: #0e110f;
+    --ui-sun: #fcd116;
+    --ui-danger-text: #ff8a80;
+    --ui-danger-soft: #3a1714;
+    --ui-warning-text: #f5c451;
+    --ui-warning-soft: #33270b;
+    --ui-focus: #f1efe8;
+    --ui-shadow-pop: 0 8px 24px rgb(0 0 0 / 0.4), 0 2px 6px rgb(0 0 0 / 0.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ui-dur-fast: 0ms;
+    --ui-dur-base: 0ms;
+  }
+}

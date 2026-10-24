@@ -1,0 +1,94 @@
+@import './tokens.css';
+
+/* Les classes utilisées dans le package sont générées chez les consommateurs. */
+@source "../";
+
+@theme inline {
+  --color-canvas: var(--ui-canvas);
+  --color-surface: var(--ui-surface);
+  --color-sunken: var(--ui-sunken);
+  --color-line: var(--ui-border);
+  --color-line-strong: var(--ui-border-strong);
+  --color-field: var(--ui-field-border);
+  --color-ink: var(--ui-text);
+  --color-ink-muted: var(--ui-text-muted);
+  --color-ink-subtle: var(--ui-text-subtle);
+  --color-action: var(--ui-action);
+  --color-action-hover: var(--ui-action-hover);
+  --color-on-action: var(--ui-on-action);
+  --color-trust: var(--ui-trust);
+  --color-trust-text: var(--ui-trust-text);
+  --color-trust-soft: var(--ui-trust-soft);
+  --color-trust-line: var(--ui-trust-line);
+  --color-on-trust: var(--ui-on-trust);
+  --color-sun: var(--ui-sun);
+  --color-danger: var(--ui-danger-text);
+  --color-danger-soft: var(--ui-danger-soft);
+  --color-warning: var(--ui-warning-text);
+  --color-warning-soft: var(--ui-warning-soft);
+  --color-focus: var(--ui-focus);
+
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-field: var(--ui-radius-field);
+  --radius-card: var(--ui-radius-card);
+  --radius-pill: var(--ui-radius-pill);
+}
+
+@layer base {
+  html {
+    background: var(--ui-canvas);
+    color: var(--ui-text);
+  }
+
+  body {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+  }
+}
+
+@keyframes ui-typing {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes ui-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Entrée des éléments de liste (opacité + 4px), désactivée si l'utilisateur réduit les animations. */
+.ui-enter {
+  animation: ui-enter var(--ui-dur-base) var(--ui-ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-enter {
+    animation: none;
+  }
+}
