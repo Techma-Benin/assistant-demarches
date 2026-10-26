@@ -49,6 +49,14 @@ describe('ModelEdit', () => {
     expect(screen.getByRole('button', { name: 'Enregistrer' })).toBeDisabled();
   });
 
+  it('shows the unsaved-changes status only when dirty', async () => {
+    const { user } = await setup();
+    expect(screen.getByText('Aucune modification')).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/Fournisseur/), 'x');
+    expect(screen.getByText('Modifications non enregistrées')).toBeInTheDocument();
+    expect(screen.queryByText('Aucune modification')).toBeNull();
+  });
+
   it('PUTs the full model with the edits and rebases on the response', async () => {
     const { user, puts } = await setup();
     const temperature = screen.getByLabelText(/Température/);

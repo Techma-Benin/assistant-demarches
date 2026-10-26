@@ -13,6 +13,7 @@ import {
   TableRow,
   TextArea,
   TextField,
+  cn,
 } from '@techma/ui';
 import { X } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -168,12 +169,14 @@ function RequiredDocuments({
   onChange: (documents: string[]) => void;
 }) {
   const [entry, setEntry] = useState('');
+  const [justAdded, setJustAdded] = useState<string | null>(null); // only a new item animates in
   const value = entry.trim();
   const duplicate = value !== '' && documents.some((item) => item.trim() === value);
 
   const add = () => {
     if (value === '' || duplicate) return;
     onChange([...documents, value]);
+    setJustAdded(value);
     setEntry('');
   };
 
@@ -184,7 +187,13 @@ function RequiredDocuments({
       ) : (
         <ul aria-label="Pièces requises" className="flex flex-col gap-2">
           {documents.map((item) => (
-            <li key={item} className="flex items-center justify-between gap-2 rounded-field border border-line px-4">
+            <li
+              key={item}
+              className={cn(
+                'flex items-center justify-between gap-2 rounded-field border border-line px-4',
+                item === justAdded && 'ui-pop',
+              )}
+            >
               <span className="py-2">{item}</span>
               <IconButton label={`Retirer ${item}`} onClick={() => onChange(documents.filter((d) => d !== item))}>
                 <X aria-hidden="true" className="size-4" />
@@ -239,7 +248,7 @@ function ValidationControl({
         ) : null}
       </div>
       {confirming ? (
-        <Card role="group" aria-label="Confirmation" className="flex flex-col gap-3">
+        <Card role="group" aria-label="Confirmation" className="ui-pop flex flex-col gap-3">
           <p className="text-sm">
             {validated
               ? 'Repasser en brouillon retire cette fiche de ce qui est montré aux usagers en production.'

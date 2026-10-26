@@ -11,19 +11,26 @@ function MetricCard({
   value,
   tone = 'default',
   valueClassName,
+  index,
 }: {
   label: string;
   value: string | null;
   tone?: 'default' | 'trust';
   valueClassName?: string;
+  index: number;
 }) {
   return (
-    <Card tone={tone} className="flex flex-col gap-2" aria-busy={value === null}>
+    <Card
+      tone={tone}
+      className="ui-rise flex flex-col gap-2"
+      style={{ transitionDelay: `${index * 40}ms` }}
+      aria-busy={value === null}
+    >
       <p className="text-sm text-ink-muted">{label}</p>
       {value === null ? (
         <span aria-hidden="true" className="block h-8 w-1/2 animate-pulse rounded-pill bg-sunken" />
       ) : (
-        <p className={cn('text-[28px] leading-tight font-extrabold tracking-tight', valueClassName)}>{value}</p>
+        <p key="value" className={cn('ui-swap text-[28px] leading-tight font-extrabold tracking-tight', valueClassName)}>{value}</p>
       )}
     </Card>
   );
@@ -59,16 +66,18 @@ export function Dashboard({ load = () => c3.getMetrics() }: { load?: () => Promi
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="Conversations" value={metrics && formatInteger(metrics.conversationCount)} />
-          <MetricCard label="Latence p95" value={metrics && formatMs(metrics.p95LatencyMs)} />
+          <MetricCard label="Conversations" index={0} value={metrics && formatInteger(metrics.conversationCount)} />
+          <MetricCard label="Latence p95" index={1} value={metrics && formatMs(metrics.p95LatencyMs)} />
           <MetricCard
             label="Réponses sourcées"
+            index={2}
             tone="trust"
             valueClassName="text-trust-text"
             value={metrics && formatRate(metrics.sourcedAnswerRate)}
           />
           <MetricCard
             label="Erreurs"
+            index={3}
             value={metrics && formatInteger(metrics.errorCount)}
             valueClassName={metrics && metrics.errorCount > 0 ? 'text-danger' : undefined}
           />

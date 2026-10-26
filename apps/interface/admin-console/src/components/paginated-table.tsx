@@ -45,6 +45,8 @@ export function PaginatedTable<T>({ label, noun, columns, rowKey, load }: Pagina
   const [error, setError] = useState<unknown>(null);
   const cursorRef = useRef<string | null>(null); // cursor of the page being (re)tried
   const generation = useRef(0);
+  const countRef = useRef(0); // rows currently loaded
+  const [batchStart, setBatchStart] = useState(0); // index of the first row of the latest batch
 
   const fetchPage = useCallback(
     async (cursor: string | null) => {
@@ -54,6 +56,7 @@ export function PaginatedTable<T>({ label, noun, columns, rowKey, load }: Pagina
       try {
         const page = await load(cursor);
         if (current !== generation.current) return;
+        setBatchStart(cursor === null ? 0 : countRef.current);
         setItems((previous) => (cursor === null ? page.items : [...previous, ...page.items]));
         setNextCursor(page.nextCursor);
         setStatus('idle');
@@ -75,6 +78,7 @@ export function PaginatedTable<T>({ label, noun, columns, rowKey, load }: Pagina
     };
   }, [fetchPage]);
 
+  countRef.current = items.length;
   const firstLoad = items.length === 0;
 
   return (
@@ -88,8 +92,8 @@ export function PaginatedTable<T>({ label, noun, columns, rowKey, load }: Pagina
           </TableRow>
         </TableHead>
         <TableBody>
-          {items.map((item) => (
-            <TableRow key={rowKey(item)}>
+          {items.map((item, index) => (
+            <TableRow key={rowKey(item)} enterIndex={Math.max(0, index - batchStart)}>
               {columns.map((column) => (
                 <TableCell key={column.header} className={column.className}>
                   {column.cell(item)}
@@ -132,10 +136,13 @@ export function PaginatedTable<T>({ label, noun, columns, rowKey, load }: Pagina
           <Button
             variant="secondary"
             size="sm"
+            className="min-w-36"
             disabled={status === 'loading'}
             onClick={() => void fetchPage(nextCursor)}
           >
-            {status === 'loading' ? 'Chargement…' : 'Charger plus'}
+            <span key={status === 'loading' ? 'loading' : 'idle'} className="ui-swap">
+              {status === 'loading' ? 'Chargement…' : 'Charger plus'}
+            </span>
           </Button>
         </div>
       ) : null}

@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Card, InlineAlert } from '@techma/ui';
+import { Button, Card, InlineAlert, cn } from '@techma/ui';
 import { Check } from 'lucide-react';
 import Link from 'next/link';
 import type { FormEvent, ReactNode } from 'react';
@@ -64,19 +64,38 @@ export function EditForm<T, D>({ editor, title, fallbackTitle, backHref, backLab
             </div>
           ) : null}
           {result?.kind === 'saved' ? (
-            <p role="status" className="flex items-center gap-2 text-sm font-semibold">
-              <Check aria-hidden="true" className="size-4 shrink-0" />
+            <p role="status" className="ui-rise flex items-center gap-2 text-sm font-semibold">
+              <Check aria-hidden="true" className="ui-draw size-4 shrink-0" />
               Modifications enregistrées.
             </p>
           ) : null}
 
-          <div className="flex flex-wrap gap-3">
-            <Button type="submit" disabled={!canSave}>
-              {saving ? 'Enregistrement…' : 'Enregistrer'}
-            </Button>
-            <Button variant="secondary" disabled={!dirty || saving} onClick={editor.reset}>
-              Annuler les modifications
-            </Button>
+          <div
+            className={cn(
+              'sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-card border-t border-line bg-surface px-4 py-3 transition-shadow duration-(--ui-dur-base) ease-(--ui-ease-out)',
+              dirty && 'shadow-(--ui-shadow-pop)',
+            )}
+          >
+            <p
+              key={dirty ? 'dirty' : 'clean'}
+              className={cn(
+                'ui-swap flex items-center gap-2 text-sm',
+                dirty ? 'font-semibold text-ink' : 'text-ink-muted',
+              )}
+            >
+              {dirty ? <span aria-hidden="true" className="size-2 shrink-0 rounded-pill bg-warning" /> : null}
+              {dirty ? 'Modifications non enregistrées' : 'Aucune modification'}
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <Button type="submit" className="min-w-40" disabled={!canSave}>
+                <span key={saving ? 'saving' : 'idle'} className="ui-swap">
+                  {saving ? 'Enregistrement…' : 'Enregistrer'}
+                </span>
+              </Button>
+              <Button variant="secondary" disabled={!dirty || saving} onClick={editor.reset}>
+                Annuler les modifications
+              </Button>
+            </div>
           </div>
         </form>
       ) : null}

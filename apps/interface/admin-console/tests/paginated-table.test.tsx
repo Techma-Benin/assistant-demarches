@@ -82,4 +82,18 @@ describe('PaginatedTable', () => {
     await waitFor(() => expect(screen.getByText('b')).toBeInTheDocument());
     expect(load).toHaveBeenLastCalledWith('c1');
   });
+
+  it('shows « Chargement… » on the load more button while loading', async () => {
+    let resolve!: (page: { items: Row[]; nextCursor: null }) => void;
+    const load = vi
+      .fn<(cursor: string | null) => Promise<{ items: Row[]; nextCursor: string | null }>>()
+      .mockResolvedValueOnce({ items: [{ id: 'a' }], nextCursor: 'c1' })
+      .mockImplementationOnce(() => new Promise((r) => (resolve = r)));
+    renderTable(load);
+    await screen.findByText('a');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Charger plus' }));
+    expect(screen.getByRole('button', { name: 'Chargement…' })).toBeDisabled();
+    resolve({ items: [{ id: 'b' }], nextCursor: null });
+    expect(await screen.findByText('b')).toBeInTheDocument();
+  });
 });

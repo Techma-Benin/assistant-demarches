@@ -33,10 +33,12 @@ describe('AppShell', () => {
     render(<AppShell>x</AppShell>);
     const button = screen.getByRole('button', { name: 'Ouvrir le menu' });
     expect(button).toHaveAttribute('aria-expanded', 'false');
-    expect(document.getElementById('console-nav')?.className).toContain('hidden');
+    // The closed panel stays mounted but is out of the tab order and the a11y tree (inert).
+    expect(document.getElementById('console-nav')).toHaveAttribute('inert');
     await userEvent.setup().click(button);
     const open = screen.getByRole('button', { name: 'Fermer le menu' });
     expect(open).toHaveAttribute('aria-expanded', 'true');
-    expect(document.getElementById('console-nav')?.className).not.toContain('hidden');
+    expect(document.getElementById('console-nav')).not.toHaveAttribute('inert');
+    expect(screen.getByRole('navigation', { name: 'Navigation principale' })).toBeInTheDocument();
   });
 });
