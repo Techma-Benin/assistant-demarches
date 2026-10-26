@@ -19,3 +19,21 @@ export function formatDateTime(iso: string): string {
 /** Shortens an identifier for display; callers keep the full value in a `title`. */
 export const shorten = (value: string, length: number): string =>
   value.length > length ? `${value.slice(0, length)}…` : value;
+
+const percentRounded = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 0 });
+
+/** Share in [0, 1] shown as a whole percentage (« 67 % »). */
+export const formatShare = (value: number): string => percentRounded.format(value);
+
+const shortDay = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
+const longDay = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+
+/** « 26 oct. » */
+export const formatShortDay = (date: Date): string => shortDay.format(date);
+
+/** « dim. 26 oct. » */
+export const formatLongDay = (date: Date): string => longDay.format(date);
+
+/** « 1 conversation », « 6 conversations ». */
+export const formatConversations = (count: number): string =>
+  `${integer.format(count)} conversation${count > 1 ? 's' : ''}`;
