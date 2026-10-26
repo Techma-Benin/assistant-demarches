@@ -67,6 +67,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter @techma/tooling test
+      - name: Démonstration agent → pont → Tooling
+        run: pnpm --filter @techma/tooling demo
 
   image:
     name: image (construction et démarrage en production)

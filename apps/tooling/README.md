@@ -17,6 +17,19 @@ Le service écoute sur `http://127.0.0.1:4030`. Sans `DATABASE_URL`, il utilise 
 
 Systèmes pris en charge : Linux, macOS et Windows, avec Node.js 22. La CI exécute `pnpm check` sur les trois. Le superviseur demande l'arrêt à ses processus par IPC, ce qui fonctionne partout ; il s'arrête proprement sur `SIGTERM` ou `SIGINT` (Linux, macOS, Docker), sur `Ctrl+C` ou `SIGBREAK` (Windows), ou sur un message `{ "type": "shutdown" }` de son processus parent. Un processus de service dont le superviseur disparaît s'arrête de lui-même.
 
+## Tester avec un agent
+
+Le pont `dev/agent-bridge.ts` est un serveur MCP en stdio, réservé au développement et absent de l'image. Il joue le rôle du Backend : à son démarrage il ouvre une conversation, simule le clic de consentement (mandat), dépose une pièce synthétique sur le Backend simulé, puis relaie chaque appel d'outil avec un `traceparent` et une `Idempotency-Key` neufs. Il refuse toute cible hors localhost.
+
+```sh
+pnpm --filter @techma/tooling demo        # parcours complet scripté, échoue si une étape casse
+pnpm --filter @techma/tooling dev:stack   # Backend simulé (4010) + Tooling (4030), pour un agent
+node apps/tooling/dist/dev/agent-bridge.js                              # commande stdio à déclarer dans le client MCP
+npx @modelcontextprotocol/inspector node apps/tooling/dist/dev/agent-bridge.js   # exploration manuelle
+```
+
+Variables du pont : `TOOLING_URL` (défaut `http://127.0.0.1:4030`), `BACKEND_URL` (défaut `http://127.0.0.1:4010`, vide pour ne pas déposer de pièce), `BRIDGE_PROCEDURE_ID`, `BRIDGE_SCOPES`, `BRIDGE_USER_REF`.
+
 ## Intégration pour les autres groupes
 
 ### Backend, agent : `POST /mcp`
