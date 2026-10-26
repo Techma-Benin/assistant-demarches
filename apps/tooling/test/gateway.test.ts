@@ -54,7 +54,7 @@ test('Backend injoignable : UPSTREAM_UNAVAILABLE sans détail interne', async (t
   const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: 'http://127.0.0.1:9' });
   const client = await mcpClient(t, tooling, 'mock-agent');
   const error = toolError(await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' }));
-  assert.deepEqual(error, { code: 'UPSTREAM_UNAVAILABLE', detail: 'Service Backend indisponible', traceId: '1'.repeat(32), retryAfter: 5 });
+  assert.deepEqual(error, { code: 'UPSTREAM_UNAVAILABLE', detail: 'Service Backend indisponible', traceId: '1'.repeat(32) });
 });
 
 test('transport : identité, client, contexte et méthode contrôlés avant MCP', async (t) => {

@@ -10,7 +10,7 @@ test('débit par usager : l’agent reçoit RATE_LIMITED, les autres usagers con
   for (let n = 0; n < 3; n += 1) assert.ok(!(await act(url, 'procedures.get', { procedureId: 'demo-procedure' })).isError);
   const limited = JSON.parse((await act(url, 'procedures.get', { procedureId: 'demo-procedure' })).content[0].text);
   assert.equal(limited.code, 'RATE_LIMITED');
-  assert.ok(limited.retryAfter >= 1 && limited.retryAfter <= 60);
+  assert.deepEqual(Object.keys(limited).sort(), ['code', 'detail', 'traceId']);
   assert.ok(!(await act(url, 'procedures.get', { procedureId: 'demo-procedure' }, { userRef: `usr_${'0'.repeat(25)}2` })).isError);
 
   const audit = await db.transaction('system', (tx) => tx.query<{ code: string }>("select code from audit_log where code = 'RATE_LIMITED'"));

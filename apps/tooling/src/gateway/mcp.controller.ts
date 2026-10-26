@@ -51,8 +51,8 @@ export class McpController {
         });
         return { content: [{ type: 'text' as const, text: JSON.stringify(output) }], structuredContent: output };
       } catch (error) {
-        const { code, detail, retryAfter } = toProblem(error);
-        const body = { code, detail, traceId: trace.traceId, ...(retryAfter === undefined ? {} : { retryAfter }) };
+        const { code, detail } = toProblem(error);
+        const body = { code, detail, traceId: trace.traceId };
         return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(body) }] };
       }
     });

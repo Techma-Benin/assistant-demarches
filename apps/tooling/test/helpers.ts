@@ -247,7 +247,7 @@ export async function callTool(client: Client, name: string, args: Record<string
   return (await client.callTool({ name, arguments: args })) as ToolResult;
 }
 
-export function toolError(result: ToolResult): { code: string; detail: string; traceId: string; retryAfter?: number } {
+export function toolError(result: ToolResult): { code: string; detail: string; traceId: string } {
   if (!result.isError) throw new Error(`Succès inattendu : ${JSON.stringify(result.structuredContent)}`);
   return JSON.parse(result.content[0].text);
 }
