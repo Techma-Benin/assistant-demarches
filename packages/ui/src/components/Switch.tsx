@@ -21,7 +21,7 @@ export function Switch({ checked, onCheckedChange, className, type, children, di
         if (!event.defaultPrevented) onCheckedChange?.(!checked);
       }}
       className={cn(
-        'inline-flex min-h-11 items-center gap-3 text-[15px] font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50',
+        'group inline-flex min-h-11 items-center gap-3 text-[15px] font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
       {...props}
@@ -29,13 +29,13 @@ export function Switch({ checked, onCheckedChange, className, type, children, di
       <span
         aria-hidden="true"
         className={cn(
-          'relative inline-flex h-6 w-11 shrink-0 items-center rounded-pill border transition-colors duration-(--ui-dur-fast)',
+          'relative inline-flex h-6 w-11 shrink-0 items-center rounded-pill border transition-colors duration-150 ease-[ease]',
           checked ? 'border-action bg-action' : 'border-line-strong bg-sunken',
         )}
       >
         <span
           className={cn(
-            'absolute left-0.5 size-4.5 rounded-pill transition-transform duration-(--ui-dur-fast)',
+            'absolute left-0.5 size-4.5 rounded-pill transition-transform duration-(--ui-dur-base) ease-(--ui-ease-out) group-enabled:group-active:scale-[0.92]',
             checked ? 'translate-x-5 bg-on-action' : 'translate-x-0 bg-ink-muted',
           )}
         />

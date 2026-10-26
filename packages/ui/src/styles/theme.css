@@ -95,8 +95,146 @@
   animation: ui-enter var(--ui-dur-base) var(--ui-ease-out) both;
 }
 
+/* Appui : léger retrait au clic (pas sur les éléments désactivés).
+   Ne fixe pas `transition` : l'élément déclare la sienne (couleurs + transform), sinon elle serait écrasée. */
+.ui-press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Entrée d'un petit élément : opacité + échelle 0.96 (jamais depuis 0). */
+.ui-pop {
+  transition:
+    opacity var(--ui-dur-base) var(--ui-ease-out),
+    transform var(--ui-dur-base) var(--ui-ease-out);
+  transform-origin: top center;
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* Entrée d'un bloc : opacité + 4px. */
+.ui-rise {
+  transition:
+    opacity var(--ui-dur-base) var(--ui-ease-out),
+    transform var(--ui-dur-base) var(--ui-ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Fondu enchaîné d'un contenu qui change (à utiliser avec une `key` React). */
+.ui-swap {
+  transition:
+    opacity var(--ui-dur-base) var(--ui-ease-out),
+    filter var(--ui-dur-base) var(--ui-ease-out);
+  @starting-style {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+/* Enfants en cascade ; `--i` (plafonné à 9 par les composants) règle le retard. */
+.ui-stagger > * {
+  transition:
+    opacity var(--ui-dur-base) var(--ui-ease-out),
+    transform var(--ui-dur-base) var(--ui-ease-out);
+  transition-delay: calc(var(--i, 0) * 30ms);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Ligne de tableau en cascade : le retard ne touche pas la couleur de survol. */
+.ui-row-enter {
+  transition:
+    opacity var(--ui-dur-base) var(--ui-ease-out),
+    transform var(--ui-dur-base) var(--ui-ease-out),
+    background-color var(--ui-dur-fast) ease;
+  transition-delay: calc(var(--i, 0) * 30ms), calc(var(--i, 0) * 30ms), 0s;
+  @starting-style {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Icône du thème : légère rotation à l'entrée (retirée si mouvement réduit). */
+.ui-theme-icon {
+  transition-property: opacity, filter, transform;
+  @starting-style {
+    opacity: 0;
+    filter: blur(2px);
+    transform: rotate(-30deg);
+  }
+}
+
+/* Tracé unique d'une coche SVG (lucide Check ≈ 22.6 de longueur). */
+.ui-draw {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 300ms var(--ui-ease-out);
+  @starting-style {
+    stroke-dashoffset: 24;
+  }
+}
+
+@keyframes ui-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+  75% {
+    transform: translateX(-3px);
+  }
+}
+
+/* Retour d'erreur uniquement : 2 cycles de ±3px. */
+.ui-shake {
+  animation: ui-shake 220ms var(--ui-ease-in-out);
+}
+
+/* Mouvement réduit : plus de déplacement ni de flou, l'opacité et les couleurs restent animées. */
 @media (prefers-reduced-motion: reduce) {
   .ui-enter {
+    animation: none;
+  }
+  .ui-press:active:not(:disabled) {
+    transform: none;
+  }
+  .ui-pop,
+  .ui-rise,
+  .ui-stagger > *,
+  .ui-row-enter {
+    transition-property: opacity;
+    @starting-style {
+      opacity: 0;
+      transform: none;
+    }
+  }
+  .ui-swap,
+  .ui-theme-icon {
+    transition-property: opacity;
+    @starting-style {
+      opacity: 0;
+      filter: none;
+      transform: none;
+    }
+  }
+  .ui-draw {
+    transition: none;
+    @starting-style {
+      stroke-dashoffset: 0;
+    }
+  }
+  .ui-shake {
     animation: none;
   }
 }

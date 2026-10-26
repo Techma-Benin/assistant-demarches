@@ -52,7 +52,7 @@ export function ThemeToggle({ className }: { className?: string }) {
   const Icon = ICONS[preference];
   return (
     <IconButton label={LABELS[preference]} variant="ghost" className={className} onClick={cycle}>
-      <Icon aria-hidden="true" className="size-5" />
+      <Icon key={preference} aria-hidden="true" className="ui-swap ui-theme-icon size-5" />
     </IconButton>
   );
 }

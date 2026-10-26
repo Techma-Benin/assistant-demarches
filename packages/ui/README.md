@@ -41,7 +41,19 @@ Source unique : `src/styles/tokens.css` (préfixe `--ui-`). Clair sur `:root` ; 
 | warning-soft | #FFF4D6 | #33270B | fond d’attention |
 | focus | #17201A | #F1EFE8 | anneau de focus |
 
-Autres tokens : rayons `--ui-radius-sm` 10 px, `--ui-radius-field` 14 px, `--ui-radius-card` 20 px, `--ui-radius-pill` 9999 px ; ombre `--ui-shadow-pop` (éléments flottants uniquement) ; mouvement `--ui-dur-fast` 120 ms, `--ui-dur-base` 200 ms, `--ui-ease-out` (durées à 0 si `prefers-reduced-motion`).
+Autres tokens : rayons `--ui-radius-sm` 10 px, `--ui-radius-field` 14 px, `--ui-radius-card` 20 px, `--ui-radius-pill` 9999 px ; ombre `--ui-shadow-pop` (éléments flottants uniquement) ; mouvement (voir ci-dessous).
+
+Tokens de mouvement :
+
+- `--ui-dur-fast` 120 ms : survols, couleurs.
+- `--ui-dur-base` 200 ms : entrées et fondus.
+- `--ui-dur-press` 160 ms : retour d’appui (`scale(0.97)`).
+- `--ui-dur-exit` 150 ms : sorties (plus rapides que les entrées).
+- `--ui-ease-out` `cubic-bezier(0.23, 1, 0.32, 1)` : courbe par défaut des entrées.
+- `--ui-ease-in-out` `cubic-bezier(0.77, 0, 0.175, 1)` : mouvements sur place (`.ui-shake`).
+- `--ui-ease-drawer` `cubic-bezier(0.32, 0.72, 0, 1)` : panneaux et tiroirs.
+
+Utilitaires de mouvement (`theme.css`) : `.ui-press`, `.ui-pop`, `.ui-rise`, `.ui-swap` (avec une `key` React), `.ui-stagger` (`--i` sur les enfants, plafonné à 9), `.ui-row-enter` (ligne de tableau, via `TableRow enterIndex`), `.ui-shake` (erreur uniquement). Avec `prefers-reduced-motion`, ils ne gardent que l’opacité et les couleurs : plus de translation, d’échelle, de flou ni de secousse.
 
 Les contrastes WCAG sont vérifiés par `tests/contrast.test.tsx` (clair et sombre).
 

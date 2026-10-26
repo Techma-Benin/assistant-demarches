@@ -1,4 +1,4 @@
-import type { HTMLAttributes, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react';
+import type { CSSProperties, HTMLAttributes, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react';
 import { cn } from '../cn';
 
 /** Dense data table (console). The wrapper scrolls horizontally on small screens. */
@@ -15,11 +15,30 @@ export function TableHead({ className, ...props }: HTMLAttributes<HTMLTableSecti
 }
 
 export function TableBody({ className, ...props }: HTMLAttributes<HTMLTableSectionElement>) {
-  return <tbody className={cn('[&>tr:last-child]:border-b-0', className)} {...props} />;
+  return (
+    <tbody
+      className={cn(
+        '[&>tr]:transition-colors [&>tr]:duration-(--ui-dur-fast) [&>tr]:ease-[ease] [&>tr]:hover:bg-sunken/60 [&>tr:last-child]:border-b-0',
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
-export function TableRow({ className, ...props }: HTMLAttributes<HTMLTableRowElement>) {
-  return <tr className={cn('h-11 border-b border-line', className)} {...props} />;
+export type TableRowProps = HTMLAttributes<HTMLTableRowElement> & {
+  /** Position in the entering batch: the row enters staggered (delay capped at index 9). */
+  enterIndex?: number;
+};
+
+export function TableRow({ className, enterIndex, style, ...props }: TableRowProps) {
+  return (
+    <tr
+      className={cn('h-11 border-b border-line', enterIndex !== undefined && 'ui-row-enter', className)}
+      style={enterIndex === undefined ? style : ({ '--i': Math.min(enterIndex, 9), ...style } as CSSProperties)}
+      {...props}
+    />
+  );
 }
 
 export function TableHeaderCell({ className, scope = 'col', ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
