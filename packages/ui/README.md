@@ -71,10 +71,12 @@ Tous exportés depuis `@techma/ui`.
 - `TextField`, `TextArea` : `label`, `hint`, `error`, `required` (marqueur « * » + « (obligatoire) » pour lecteurs d’écran).
 - `Card` : `tone` `default | trust | warning | danger`.
 - `Badge` : `tone` `neutral | trust | warning | danger`, `icon`.
+- `Switch` : bouton `role="switch"` (`checked`, `onCheckedChange`, libellé en enfant ou `aria-label`) ; activé = `action`, désactivé = `sunken` avec bordure.
 - `BrandMark` : `size` `sm` (32 px) | `lg` (64 px), `aria-hidden` par défaut.
 - `InlineAlert` : `role="alert"`, `tone` `danger | warning`.
 - `TypingIndicator` : trois points animés, statique si mouvement réduit.
 - `ThemeScript`, `ThemeToggle` : thème système, clair ou sombre, stocké dans `localStorage['techma-theme']`.
+- `Table`, `TableHead`, `TableBody`, `TableRow`, `TableHeaderCell`, `TableCell` : tableau dense (texte 14 px, lignes de 44 px) dans un conteneur à défilement horizontal.
 - `VisuallyHidden`.
 
 ```tsx
