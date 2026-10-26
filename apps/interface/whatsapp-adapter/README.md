@@ -63,7 +63,7 @@ Le rendu suit les cinq blocs du contrat : texte (+ « Sources : »), boutons (le
 
 ## Règles de confidentialité
 
-- Aucun numéro (`wa_id`, `from`), texte de message, octet de média, jeton, secret d’application ni signature n’est journalisé. Les journaux portent la clé d’abonné (`subjectKey` = 12 premiers caractères hex de HMAC-SHA256(`SUBJECT_HMAC_KEY`, `wa_id`)), le `wamid`, des identifiants et des codes d’erreur (test dédié).
+- Aucun numéro (`wa_id`, `from`), texte de message, octet de média, jeton, secret d’application ni signature n’est journalisé. Les journaux portent la clé d’abonné (`subjectKey` = HMAC-SHA256(`SUBJECT_HMAC_KEY`, `wa_id`) complet, en hex), le `wamid`, des identifiants et des codes d’erreur (test dédié).
 - Le numéro n’est jamais envoyé au Backend (ni corps, ni URL) : le Backend identifie l’usager par le jeton fourni par `SubjectTokenProvider`.
 - Signature Meta vérifiée à temps constant sur les octets bruts, avant tout parsing JSON.
 - Jeton de rappel jamais renvoyé dans une réponse d’erreur.

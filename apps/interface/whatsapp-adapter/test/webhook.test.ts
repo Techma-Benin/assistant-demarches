@@ -79,7 +79,7 @@ describe('webhook Meta (HTTP)', () => {
     expect(res.status).toBe(200);
     expect(enqueue).toHaveBeenCalledTimes(1);
     const item = enqueue.mock.calls[0]![0];
-    expect(item.subjectKey).toMatch(/^[0-9a-f]{12}$/);
+    expect(item.subjectKey).toMatch(/^[0-9a-f]{64}$/);
     expect(item.message.id).toBe('wamid.TEST1');
     expect(item.traceparent).toMatch(/^00-[a-f0-9]{32}-[a-f0-9]{16}-01$/);
   });

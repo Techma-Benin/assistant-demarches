@@ -12,8 +12,8 @@ export function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(ha, hb);
 }
 
-/** Clé d’abonné : 12 premiers caractères hex de HMAC-SHA256(clé, wa_id). Jamais le numéro lui-même. */
-export const subjectKeyFor = (hmacKey: string, waId: string): string => hmacSha256Hex(hmacKey, waId).slice(0, 12);
+/** Clé d’abonné : HMAC-SHA256(clé, wa_id) complet (256 bits, aucune collision réaliste). Jamais le numéro lui-même. */
+export const subjectKeyFor = (hmacKey: string, waId: string): string => hmacSha256Hex(hmacKey, waId);
 
 /** JSON canonique (clés triées) pour comparer des corps indépendamment de l’ordre des clés. */
 export function canonicalJson(value: unknown): string {
