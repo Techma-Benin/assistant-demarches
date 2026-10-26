@@ -1,0 +1,589 @@
+import type { Pool } from "pg";
+import {
+  canonical,
+  validate,
+  Problem,
+  type Schemas,
+  type ToolConfig,
+  type ModelConfig,
+} from "./domain.js";
+import {
+  Conversations,
+  appendEvent,
+  envelope,
+  type Conversation,
+  type MessageInput,
+} from "./conversations.js";
+import { transaction } from "./transactions.js";
+import {
+  catalog,
+  type ToolingPort,
+  type ToolDefinition,
+  type ToolResult,
+} from "./tooling.js";
+import { redact, type ModelPort, type Turn } from "./model.js";
+import type { Consent } from "./consent.js";
+
+const unavailable =
+  "Je ne dispose pas d’une source administrative validée pour répondre à cette demande. Veuillez consulter le portail officiel.";
+function modelData(value: unknown): string {
+  const privateFields = new Set([
+    "userRef",
+    "conversationId",
+    "proofToken",
+    "evidenceRef",
+    "mandateId",
+    "traceId",
+  ]);
+  const technicalFields = new Set([
+    "id",
+    "requestId",
+    "procedureId",
+    "fileId",
+    "url",
+    "officialLink",
+    "version",
+    "retrievedAt",
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+  ]);
+  return JSON.stringify(value, (key, item) =>
+    privateFields.has(key)
+      ? undefined
+      : typeof item === "string" && !technicalFields.has(key)
+        ? redact(item)
+        : item,
+  );
+}
+function toolErrorCode(result: ToolResult): string {
+  try {
+    const code = JSON.parse(
+      result.content.find((item) => item.type === "text")?.text ?? "{}",
+    ).code;
+    return typeof code === "string" && /^[A-Z_]{1,64}$/.test(code)
+      ? code
+      : "TOOL_ERROR";
+  } catch {
+    return "TOOL_ERROR";
+  }
+}
+type State = {
+  history: Turn[];
+  step: number;
+  pending?: {
+    calls: { id: string; name: string; arguments: string }[];
+    next: number;
+  };
+  sources: Schemas["Source"][];
+  requests: Schemas["Request"][];
+  config: ModelConfig;
+};
+export class Agent {
+  constructor(
+    private pool: Pool,
+    private conversations: Conversations,
+    private models: ModelPort,
+    private tooling: ToolingPort,
+    private consent?: Consent,
+  ) {}
+  async process(conversationId: string): Promise<void> {
+    // Session lock survives checkpoint transactions, but is released on connection loss/crash.
+    const lock = await this.pool.connect();
+    const acquired = (
+      await lock.query(
+        "SELECT pg_try_advisory_lock(hashtextextended($1,1)) AS acquired",
+        [conversationId],
+      )
+    ).rows[0].acquired;
+    if (!acquired) {
+      lock.release();
+      throw new Problem(
+        503,
+        "UPSTREAM_UNAVAILABLE",
+        "Conversation déjà en traitement.",
+      );
+    }
+    try {
+      for (let count = 0; count < 50; count++) {
+        const row = (
+          await this.pool.query(
+            "SELECT m.*,c.body AS conversation,c.administration_id FROM backend_messages m JOIN backend_conversations c ON c.id=m.conversation_id WHERE m.conversation_id=$1 AND m.processed_at IS NULL ORDER BY m.seq LIMIT 1",
+            [conversationId],
+          )
+        ).rows[0];
+        if (!row) return;
+        if (
+          row.attempts >= 12 ||
+          Date.now() - row.created_at.getTime() >= 86400000
+        ) {
+          await this.finish(
+            row.conversation,
+            row.body,
+            [
+              {
+                type: "text",
+                text: "Le traitement n’a pas pu être terminé. Vérifiez le statut de votre demande avant de relancer une action.",
+                sources: [],
+              },
+            ],
+            row.traceparent,
+          );
+          continue;
+        }
+        try {
+          await this.run(
+            row.conversation,
+            row.body,
+            row.traceparent,
+            row.administration_id,
+          );
+        } catch (error) {
+          await this.pool.query(
+            "UPDATE backend_messages SET attempts=attempts+1,last_error=$3 WHERE conversation_id=$1 AND id=$2",
+            [
+              conversationId,
+              row.id,
+              error instanceof Problem ? error.code : "UPSTREAM_UNAVAILABLE",
+            ],
+          );
+          throw error;
+        }
+      }
+    } finally {
+      await lock.query("SELECT pg_advisory_unlock(hashtextextended($1,1))", [
+        conversationId,
+      ]);
+      lock.release();
+    }
+  }
+  private async run(
+    conversation: Conversation,
+    input: MessageInput,
+    traceparent: string,
+    administrationId: string,
+  ) {
+    if (
+      input.content.type === "text" &&
+      input.content.text.trim().toUpperCase() === "STOP"
+    ) {
+      const mandates = (
+        await this.pool.query(
+          "SELECT id FROM backend_mandates WHERE conversation_id=$1 AND user_ref=$2 AND body->>'status'='active'",
+          [conversation.id, conversation.userRef],
+        )
+      ).rows;
+      if (mandates.length && !this.consent)
+        throw new Problem(
+          503,
+          "UPSTREAM_UNAVAILABLE",
+          "Révocation indisponible ; nouvelles actions suspendues.",
+        );
+      for (const mandate of mandates)
+        await this.consent!.revoke(
+          {
+            userRef: conversation.userRef,
+            administrationId,
+            channel:
+              conversation.channel === "whatsapp" ? "whatsapp" : "portal",
+            expiresAt: Date.now() + 60000,
+          },
+          conversation.id,
+          mandate.id,
+          "stop-" + input.id + "-" + mandate.id,
+          traceparent,
+        );
+      await this.finish(
+        conversation,
+        input,
+        [
+          {
+            type: "text",
+            text: "Les autorisations actives de cette conversation sont révoquées. Les nouvelles actions sont suspendues.",
+            sources: [],
+          },
+        ],
+        traceparent,
+      );
+      return;
+    }
+    if (
+      input.content.type === "text" &&
+      input.content.text.trim().toUpperCase() === "HISTORIQUE"
+    ) {
+      const actions = (
+        await this.pool.query(
+          "SELECT body->'data' AS action FROM backend_conversation_events WHERE conversation_id=$1 AND body->'data'->>'kind'='tool.called' ORDER BY seq DESC LIMIT 20",
+          [conversation.id],
+        )
+      ).rows;
+      const text = actions.length
+        ? "Actions de cette conversation : " +
+          actions
+            .map((row) => row.action.toolName + " (" + row.action.outcome + ")")
+            .join(", ")
+        : "Aucune action enregistrée pour cette conversation.";
+      await this.finish(
+        conversation,
+        input,
+        [{ type: "text", text, sources: [] }],
+        traceparent,
+      );
+      return;
+    }
+    if (
+      input.content.type === "interaction" &&
+      input.content.actionId === "mandate.accept"
+    ) {
+      await this.finish(
+        conversation,
+        input,
+        [
+          {
+            type: "text",
+            text: "Veuillez confirmer l’autorisation avec le bouton et le texte de consentement présentés par l’interface.",
+            sources: [],
+          },
+        ],
+        traceparent,
+      );
+      return;
+    }
+    if (input.content.type !== "text") {
+      await this.finish(
+        conversation,
+        input,
+        [
+          {
+            type: "text",
+            text: "La référence a été reçue. Veuillez décrire votre demande par écrit ; le contenu brut des pièces n’est pas envoyé au modèle.",
+            sources: [],
+          },
+        ],
+        traceparent,
+      );
+      return;
+    }
+    const saved = (
+      await this.pool.query(
+        "SELECT state FROM backend_agent_checkpoints WHERE conversation_id=$1 AND message_id=$2",
+        [conversation.id, input.id],
+      )
+    ).rows[0];
+    let state: State;
+    if (saved) state = saved.state;
+    else {
+      const configs = (
+        await this.pool.query(
+          "SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource='models' AND body->>'active'='true' ORDER BY resource_id",
+          [administrationId],
+        )
+      ).rows;
+      if (configs.length !== 1)
+        throw new Problem(
+          503,
+          "UPSTREAM_UNAVAILABLE",
+          "Un unique modèle actif est requis pour cette administration.",
+        );
+      const previous = (
+        await this.pool.query(
+          "SELECT e.body,m.body AS input FROM backend_conversation_events e LEFT JOIN backend_messages m ON m.conversation_id=e.conversation_id AND m.id=e.body->'data'->>'messageId' WHERE e.conversation_id=$1 AND e.expires_at>now() AND (e.body->'data'->>'kind'='message.sent' OR (e.body->'data'->>'kind'='message.received' AND m.id<>$2)) ORDER BY e.seq DESC LIMIT 20",
+          [conversation.id, input.id],
+        )
+      ).rows.reverse();
+      const history: Turn[] = previous
+        .filter(
+          (row) =>
+            row.body.data.kind === "message.sent" ||
+            row.input?.content?.type === "text",
+        )
+        .map((row) =>
+          row.body.data.kind === "message.sent"
+            ? {
+                role: "assistant",
+                content: modelData(row.body.data.message.blocks),
+              }
+            : { role: "user", content: redact(row.input.content.text) },
+        );
+      state = {
+        history: [
+          ...history,
+          { role: "user", content: redact(input.content.text) },
+        ],
+        step: 0,
+        sources: [],
+        requests: [],
+        config: configs[0].body,
+      };
+      await this.save(conversation.id, input.id, state);
+    }
+    const configs = (
+      await this.pool.query(
+        "SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource='tools' AND body->>'enabled'='true' ORDER BY resource_id",
+        [administrationId],
+      )
+    ).rows.map((row) => row.body) as ToolConfig[];
+    const context = {
+      conversationId: conversation.id,
+      userRef: conversation.userRef,
+      traceparent,
+    };
+    const advertised: ToolDefinition[] = [];
+    for (const config of configs) {
+      if (!catalog.some((tool) => tool.name === config.name)) continue;
+      const listed = await this.tooling.discover(
+        config.serverUrl,
+        config.secretRef,
+        context,
+      );
+      if (listed.some((tool) => tool.name === config.name))
+        advertised.push(catalog.find((tool) => tool.name === config.name)!);
+    }
+    while (state.step < 8) {
+      if (!state.pending) {
+        const reply = await this.models.generate(
+          state.config,
+          state.history,
+          advertised,
+        );
+        state.history.push({
+          role: "assistant",
+          content: reply.text,
+          calls: reply.calls,
+          ...(reply.rawOutput ? { rawOutput: reply.rawOutput } : {}),
+        });
+        if (!reply.calls.length) {
+          let blocks: Schemas["AgentMessage"]["blocks"];
+          try {
+            blocks = JSON.parse(reply.text).blocks;
+            if (Array.isArray(blocks))
+              blocks = blocks.map((block) =>
+                block.type === "statusCard"
+                  ? {
+                      type: "statusCard",
+                      request:
+                        state.requests.find(
+                          (request) => request.id === block.request?.id,
+                        ) ?? block.request,
+                    }
+                  : block,
+              );
+            validate("AgentMessage", {
+              id: input.id,
+              conversationId: conversation.id,
+              createdAt: new Date().toISOString(),
+              blocks,
+            });
+          } catch {
+            blocks = [{ type: "text", text: unavailable, sources: [] }];
+          }
+          // Only citations observed in validated Tooling results can leave the service.
+          const provenance = blocks.every((block) =>
+            block.type === "text"
+              ? block.sources.length > 0 &&
+                block.sources.every((source) =>
+                  state.sources.some(
+                    (known) => canonical(known) === canonical(source),
+                  ),
+                )
+              : block.type === "statusCard"
+                ? state.requests.some(
+                    (request) =>
+                      canonical(request) === canonical(block.request),
+                  )
+                : true,
+          );
+          if (!provenance)
+            blocks = [{ type: "text", text: unavailable, sources: [] }];
+          await this.finish(conversation, input, blocks, traceparent);
+          return;
+        }
+        if (
+          reply.calls.length > 8 ||
+          reply.calls.some(
+            (call) =>
+              typeof call.id !== "string" ||
+              typeof call.name !== "string" ||
+              typeof call.arguments !== "string",
+          )
+        )
+          throw new Problem(
+            503,
+            "UPSTREAM_UNAVAILABLE",
+            "Appels modèle invalides.",
+          );
+        state.pending = { calls: reply.calls, next: 0 };
+        await this.save(conversation.id, input.id, state);
+      }
+      while (state.pending.next < state.pending.calls.length) {
+        const index = state.pending.next,
+          call = state.pending.calls[index],
+          operationKey =
+            conversation.id + "-" + input.id + "-" + state.step + "-" + index;
+        const cached = (
+          await this.pool.query(
+            "SELECT result FROM backend_tool_results WHERE conversation_id=$1 AND operation_key=$2",
+            [conversation.id, operationKey],
+          )
+        ).rows[0];
+        let result: ToolResult;
+        if (cached) result = cached.result;
+        else {
+          try {
+            const config = configs.find((config) => config.name === call.name);
+            if (!config)
+              throw new Problem(403, "FORBIDDEN", "Outil non activé.");
+            const definition = catalog.find((tool) => tool.name === call.name)!;
+            const requires = Boolean(
+              definition._meta?.["bj.techma/requiresMandate"],
+            );
+            if (
+              requires &&
+              (
+                await this.pool.query(
+                  "SELECT actions_paused FROM backend_conversations WHERE id=$1",
+                  [conversation.id],
+                )
+              ).rows[0].actions_paused
+            )
+              throw new Problem(
+                403,
+                "MANDATE_REVOKED",
+                "Nouvelles actions suspendues.",
+              );
+            const mandate = requires
+              ? (
+                  await this.pool.query(
+                    "SELECT body FROM backend_mandates WHERE conversation_id=$1 AND user_ref=$2 AND body->>'status'='active' AND (body->>'expiresAt')::timestamptz>now() ORDER BY id LIMIT 1",
+                    [conversation.id, conversation.userRef],
+                  )
+                ).rows[0]?.body
+              : undefined;
+            if (requires && !mandate)
+              throw new Problem(
+                403,
+                "MANDATE_MISSING",
+                "Autorisation explicite requise.",
+              );
+            result = await this.tooling.call(
+              config.serverUrl,
+              config.secretRef,
+              call.name,
+              JSON.parse(call.arguments),
+              { ...context, ...(mandate ? { mandateId: mandate.id } : {}) },
+              operationKey,
+            );
+          } catch (error) {
+            if (!(error instanceof Problem) || error.status >= 500) throw error;
+            result = {
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    code: error.code,
+                    detail: error.message,
+                    traceId: traceparent.split("-")[1],
+                  }),
+                },
+              ],
+            };
+          }
+          // A crash before this commit reuses the same remote idempotency key.
+          await transaction(this.pool, async (db) => {
+            await db.query(
+              "INSERT INTO backend_tool_results(conversation_id,operation_key,tool_name,result) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+              [conversation.id, operationKey, call.name, result],
+            );
+            await appendEvent(
+              db,
+              conversation.id,
+              envelope(
+                {
+                  kind: "tool.called",
+                  toolName: call.name,
+                  conversationId: conversation.id,
+                  outcome: result.isError ? "error" : "success",
+                  code: result.isError ? toolErrorCode(result) : "OK",
+                },
+                traceparent,
+              ),
+            );
+          });
+        }
+        const output = result.structuredContent as any;
+        for (const procedure of output?.items ??
+          (output?.source ? [output] : []))
+          if (procedure.validationStatus === "validated") {
+            try {
+              validate("Source", procedure.source);
+              state.sources.push(procedure.source);
+            } catch {}
+          }
+        if (output?.status && output?.conversationId === conversation.id) {
+          try {
+            validate("Request", output);
+            state.requests.push(output);
+          } catch {}
+        }
+        const sanitized = modelData(
+          result.isError
+            ? {
+                isError: true,
+                code: toolErrorCode(result),
+                detail: "L’outil a échoué.",
+              }
+            : { isError: false, result: result.structuredContent },
+        );
+        state.history.push({
+          role: "tool",
+          callId: call.id,
+          content: sanitized,
+        });
+        state.pending.next = index + 1;
+        await this.save(conversation.id, input.id, state);
+      }
+      state.pending = undefined;
+      state.step++;
+      await this.save(conversation.id, input.id, state);
+    }
+    await this.finish(
+      conversation,
+      input,
+      [
+        {
+          type: "text",
+          text: "La limite de traitement est atteinte. Veuillez préciser votre demande ; aucune réussite supplémentaire n’est présumée.",
+          sources: [],
+        },
+      ],
+      traceparent,
+    );
+  }
+  private save(cid: string, messageId: string, state: State) {
+    return this.pool.query(
+      "INSERT INTO backend_agent_checkpoints(conversation_id,message_id,state) VALUES($1,$2,$3) ON CONFLICT(conversation_id,message_id) DO UPDATE SET state=excluded.state",
+      [cid, messageId, state],
+    );
+  }
+  private async finish(
+    conversation: Conversation,
+    input: MessageInput,
+    blocks: Schemas["AgentMessage"]["blocks"],
+    traceparent: string,
+  ) {
+    await transaction(this.pool, async (db) => {
+      await this.conversations.complete(
+        db,
+        conversation.id,
+        input.id,
+        blocks,
+        traceparent,
+      );
+      await db.query(
+        "DELETE FROM backend_agent_checkpoints WHERE conversation_id=$1 AND message_id=$2",
+        [conversation.id, input.id],
+      );
+    });
+  }
+}

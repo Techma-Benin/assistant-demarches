@@ -1,6 +1,6 @@
 # Assistant démarches — Techma Bénin
 
-Socle de collaboration pour trois équipes. Cette première livraison contient les contrats v1, les types générés, un client TypeScript, des simulations exécutables et leurs tests. Les applications métier NestJS / Next.js restent à implémenter dans les emplacements réservés.
+Socle de collaboration pour trois équipes : contrats v1, types générés, client TypeScript, simulations exécutables et tests. Le Backend NestJS implémente les parcours texte C1/C2/C3/C4, la configuration, les fichiers et un worker BullMQ ; voir [son démarrage et ses limites](apps/backend/README.md). Les autres applications métier restent à implémenter et les intégrations de déploiement restent à valider.
 
 ## Démarrer
 
@@ -28,7 +28,7 @@ Simulations en mémoire : Backend `http://127.0.0.1:4010`, Tooling `http://127.0
 | Tooling | `apps/tooling`, `content` | Client MCP et fixtures dans les tests ; réception C4 simulée |
 | Commun | `contracts`, `packages/contracts-ts`, `packages/observability`, `infra` | Tests et conventions partagés |
 
-Les types C1/C3 sont générés par `pnpm contracts:generate` ; ne pas les modifier à la main. `pnpm check` valide schémas, OpenAPI, exemples, compilation TypeScript et parcours HTTP/MCP/WebSocket.
+Les types C1/C3 sont générés par `pnpm contracts:generate` ; ne pas les modifier à la main. `pnpm check` valide schémas, OpenAPI, exemples, compilation TypeScript, parcours HTTP/MCP/WebSocket et Backend sur PostgreSQL isolé. Les tests Backend nécessitent des binaires PostgreSQL locaux ou une base de test explicitement configurée ; voir [apps/backend/README.md](apps/backend/README.md).
 
 ## Branches
 
