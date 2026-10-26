@@ -82,6 +82,14 @@
   }
 }
 
+/* Zone défilante sans barre visible : le défilement reste possible (molette, tactile, clavier). */
+.ui-scrollbar-none {
+  scrollbar-width: none;
+}
+.ui-scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Entrée des éléments de liste (opacité + 4px), désactivée si l'utilisateur réduit les animations. */
 .ui-enter {
   animation: ui-enter var(--ui-dur-base) var(--ui-ease-out) both;
