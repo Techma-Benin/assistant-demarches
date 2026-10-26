@@ -25,6 +25,9 @@
   --ui-warning-text: #7a4f00;
   --ui-warning-soft: #fff4d6;
   --ui-focus: #17201a;
+  --ui-viz-1: #2a78d6;
+  --ui-viz-2: #eb6834;
+  --ui-viz-3: #1baf7a;
 
   --ui-radius-sm: 10px;
   --ui-radius-field: 14px;
@@ -67,6 +70,9 @@
   --ui-warning-text: #f5c451;
   --ui-warning-soft: #33270b;
   --ui-focus: #f1efe8;
+  --ui-viz-1: #3987e5;
+  --ui-viz-2: #d95926;
+  --ui-viz-3: #199e70;
   --ui-shadow-pop: 0 8px 24px rgb(0 0 0 / 0.4), 0 2px 6px rgb(0 0 0 / 0.3);
 }
 
@@ -96,6 +102,9 @@
     --ui-warning-text: #f5c451;
     --ui-warning-soft: #33270b;
     --ui-focus: #f1efe8;
+    --ui-viz-1: #3987e5;
+    --ui-viz-2: #d95926;
+    --ui-viz-3: #199e70;
     --ui-shadow-pop: 0 8px 24px rgb(0 0 0 / 0.4), 0 2px 6px rgb(0 0 0 / 0.3);
   }
 }

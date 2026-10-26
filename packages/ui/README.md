@@ -40,6 +40,11 @@ Source unique : `src/styles/tokens.css` (préfixe `--ui-`). Clair sur `:root` ; 
 | warning-text | #7A4F00 | #F5C451 | attention |
 | warning-soft | #FFF4D6 | #33270B | fond d’attention |
 | focus | #17201A | #F1EFE8 | anneau de focus |
+| viz-1 | #2A78D6 | #3987E5 | visualisation de données : bleu (Web) |
+| viz-2 | #EB6834 | #D95926 | visualisation de données : orange (WhatsApp) |
+| viz-3 | #1BAF7A | #199E70 | visualisation de données : aqua (Mobile) |
+
+Règle des tokens `viz-1..3` : marques de visualisation de données uniquement (barres, segments, pastilles de légende), attribuées dans cet ordre fixe aux entités (Web = 1, WhatsApp = 2, Mobile = 3) ; la couleur suit l’entité, jamais son rang. Jamais pour l’interface, le texte ou un statut. Textes, valeurs, légendes et axes utilisent toujours les tokens de texte (`ink`, `ink-muted`), jamais une couleur viz.
 
 Autres tokens : rayons `--ui-radius-sm` 10 px, `--ui-radius-field` 14 px, `--ui-radius-card` 20 px, `--ui-radius-pill` 9999 px ; ombre `--ui-shadow-pop` (éléments flottants uniquement) ; mouvement (voir ci-dessous).
 
@@ -68,7 +73,7 @@ Dans la feuille globale de l’application (Tailwind v4) :
 
 Avec Next.js : `transpilePackages: ['@techma/ui']`, police Plus Jakarta Sans via `next/font/google` (`variable: '--font-jakarta'`), `<ThemeScript />` dans `<head>` et `suppressHydrationWarning` sur `<html>`.
 
-Utilitaires générés : couleurs `canvas surface sunken line line-strong field ink ink-muted ink-subtle action action-hover on-action trust trust-text trust-soft trust-line on-trust sun danger danger-soft warning warning-soft focus`, rayons `rounded-field rounded-card rounded-pill`, police `font-sans`. Pas de couleur brute dans les composants.
+Utilitaires générés : couleurs `canvas surface sunken line line-strong field ink ink-muted ink-subtle action action-hover on-action trust trust-text trust-soft trust-line on-trust sun danger danger-soft warning warning-soft focus viz-1 viz-2 viz-3`, rayons `rounded-field rounded-card rounded-pill`, police `font-sans`. Pas de couleur brute dans les composants.
 
 Échelle typographique : légende 13 px, corps 16 px, lead 18 px, titre 22 px/800, display 28 px/800 `tracking-tight`.
 

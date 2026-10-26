@@ -27,6 +27,9 @@
   --color-warning: var(--ui-warning-text);
   --color-warning-soft: var(--ui-warning-soft);
   --color-focus: var(--ui-focus);
+  --color-viz-1: var(--ui-viz-1);
+  --color-viz-2: var(--ui-viz-2);
+  --color-viz-3: var(--ui-viz-3);
 
   --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
 
