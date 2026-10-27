@@ -38,6 +38,8 @@ Variables du pont : `TOOLING_URL` (défaut `http://127.0.0.1:4030`), `BACKEND_UR
 pnpm --filter @techma/tooling console
 ```
 
+La même commande sert aussi `http://127.0.0.1:4321/vitrine`, une vue destinée à un public non technique : conversation de l'usager sur un téléphone, dossier qui se remplit, bouclier de sécurité et compteurs lus dans la base, sans aucun JSON. Les deux vues pilotent la même session : en ouvrir une seule à la fois.
+
 La base est en mémoire et le journal d'audit est en ajout seul : « Recommencer » relance le scénario sans effacer les lignes déjà écrites. Pour repartir d'une base vide, relancer la commande.
 
 ## Intégration pour les autres groupes
