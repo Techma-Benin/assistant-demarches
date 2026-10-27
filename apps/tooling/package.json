@@ -13,6 +13,7 @@
     "test": "tsc -p tsconfig.json && node --test --test-concurrency=1 --enable-source-maps \"dist/test/**/*.test.js\"",
     "demo": "tsc -p tsconfig.json && node dist/dev/demo.js",
     "dev:stack": "tsc -p tsconfig.json && node dist/dev/stack.js",
+    "console": "tsc -p tsconfig.json && node dist/dev/console.js",
     "bridge": "node dist/dev/agent-bridge.js"
   },
   "dependencies": {

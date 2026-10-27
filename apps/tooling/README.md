@@ -30,6 +30,16 @@ npx @modelcontextprotocol/inspector node apps/tooling/dist/dev/agent-bridge.js  
 
 Variables du pont : `TOOLING_URL` (défaut `http://127.0.0.1:4030`), `BACKEND_URL` (défaut `http://127.0.0.1:4010`, vide pour ne pas déposer de pièce), `BRIDGE_PROCEDURE_ID`, `BRIDGE_SCOPES`, `BRIDGE_USER_REF`.
 
+## Console de démonstration
+
+`dev/console.ts` démarre le Backend simulé et le vrai service (PGlite en mémoire, publication des événements active), puis sert une page sur `http://127.0.0.1:4321` (variable `CONSOLE_PORT`). La page déroule un scénario en 16 étapes, de la recherche de fiche jusqu'à la révocation du mandat et à l'accès refusé d'un autre usager. Pour chaque appel, elle affiche la requête et la réponse réelles, le journal d'audit, les demandes, les mandats et l'outbox lus dans la base, et les événements reçus par le Backend. `→` ou Espace : étape suivante.
+
+```sh
+pnpm --filter @techma/tooling console
+```
+
+La base est en mémoire et le journal d'audit est en ajout seul : « Recommencer » relance le scénario sans effacer les lignes déjà écrites. Pour repartir d'une base vide, relancer la commande.
+
 ## Intégration pour les autres groupes
 
 ### Backend, agent : `POST /mcp`
