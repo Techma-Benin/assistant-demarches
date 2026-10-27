@@ -10,7 +10,10 @@ import { loadConfig } from '../src/config.js';
 import { Database } from '../src/database/database.js';
 
 const repoRoot = new URL('../../../../', import.meta.url);
-const page = new URL('../../dev/console.html', import.meta.url);
+const pages: Record<string, URL> = {
+  '/': new URL('../../dev/console.html', import.meta.url),
+  '/vitrine': new URL('../../dev/showcase.html', import.meta.url),
+};
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const USER = `usr_${'0'.repeat(25)}1`;
 const OTHER_USER = `usr_${'0'.repeat(25)}2`;
@@ -342,11 +345,11 @@ function scenario(backendUrl: string, toolingUrl: string): Step[] {
 }
 
 async function snapshot(db: Database, backendUrl: string, session: Session) {
-  const audit = await db.transaction('system', (tx) => tx.query('select id, at, actor, action, outcome, code, request_id, mandate_id from audit_log order by id desc limit 50'));
+  const audit = await db.transaction('system', (tx) => tx.query('select id, at, actor, action, outcome, code, conversation_id, request_id, mandate_id from audit_log order by id desc limit 50'));
   const outbox = await db.transaction('system', (tx) =>
     tx.query("select seq, event->'data'->>'kind' as kind, conversation_id, attempts, published_at, dead_at, last_error from outbox order by seq desc limit 50"),
   );
-  const requests = await db.transaction({ userRef: USER }, (tx) => tx.query('select id, status, fields, documents, official_link, updated_at from requests order by updated_at desc'));
+  const requests = await db.transaction({ userRef: USER }, (tx) => tx.query('select id, conversation_id, status, fields, documents, official_link, updated_at from requests order by updated_at desc'));
   const mandates = await db.transaction({ userRef: USER }, (tx) => tx.query('select id, status, scopes, expires_at, revoked_at from mandates order by created_at desc'));
   let events: unknown[] = [];
   if (session.conversationId) {
@@ -381,7 +384,8 @@ async function main(): Promise<void> {
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
-      if (req.method === 'GET' && url.pathname === '/') {
+      const page = pages[url.pathname];
+      if (req.method === 'GET' && page) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(await readFile(page));
         return;
@@ -413,6 +417,7 @@ async function main(): Promise<void> {
   await new Promise<void>((resolve) => server.listen(consolePort, '127.0.0.1', resolve));
 
   console.log(`Console de démonstration : http://127.0.0.1:${consolePort}`);
+  console.log(`Vue grand public         : http://127.0.0.1:${consolePort}/vitrine`);
   console.log(`Tooling réel : ${toolingUrl} (jetons de simulation, PGlite en mémoire)`);
   console.log(`Backend simulé : ${mocks.backendUrl}`);
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
