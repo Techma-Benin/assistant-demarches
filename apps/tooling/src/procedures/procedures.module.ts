@@ -2,7 +2,7 @@ import { Inject, Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { ProblemError } from '../common/problem.js';
 import type { TraceContext } from '../common/trace.js';
 import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
-import { ToolRegistry, type ToolHandler, type ToolInvocation } from '../gateway/tool-registry.js';
+import { ToolRegistry, type ToolHandler } from '../gateway/tool-registry.js';
 import { BackendResourcesClient, type Procedure } from '../resources/backend-resources.client.js';
 import { ResourcesModule } from '../resources/resources.module.js';
 
@@ -36,13 +36,15 @@ class ProcedureTools implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    const search: ToolHandler = {
+    const search: ToolHandler<Procedure[]> = {
       name: 'procedures.search',
-      run: async (args, call: ToolInvocation) => ({ items: await this.catalog.search(args.query as string, call.trace) }),
+      prepare: (args, call) => this.catalog.search(args.query as string, call.trace),
+      run: async (_args, call) => ({ items: call.prepared }),
     };
-    const get: ToolHandler = {
+    const get: ToolHandler<Procedure> = {
       name: 'procedures.get',
-      run: (args, call) => this.catalog.get(args.procedureId as string, call.trace),
+      prepare: (args, call) => this.catalog.get(args.procedureId as string, call.trace),
+      run: async (_args, call) => call.prepared,
     };
     this.registry.register(search, get);
   }

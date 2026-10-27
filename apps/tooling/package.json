@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/cluster.js",
     "start:worker": "node dist/src/main.js",
-    "test": "tsc -p tsconfig.json && node --test --enable-source-maps \"dist/test/**/*.test.js\"",
+    "test": "tsc -p tsconfig.json && node --test --test-concurrency=1 --enable-source-maps \"dist/test/**/*.test.js\"",
     "demo": "tsc -p tsconfig.json && node dist/dev/demo.js",
     "dev:stack": "tsc -p tsconfig.json && node dist/dev/stack.js",
     "bridge": "node dist/dev/agent-bridge.js"

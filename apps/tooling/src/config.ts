@@ -99,7 +99,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
   const publisher = (env.EVENTS_PUBLISHER ?? 'on') as string;
   if (publisher !== 'on' && publisher !== 'off') throw new ConfigError('EVENTS_PUBLISHER doit valoir on ou off');
 
-  const drafts = env.PROCEDURES_ALLOW_DRAFTS ?? (production ? 'false' : 'true');
+  const drafts = env.PROCEDURES_ALLOW_DRAFTS ?? (!production && LOCAL_HOSTS.has(host) ? 'true' : 'false');
   if (drafts !== 'true' && drafts !== 'false') throw new ConfigError('PROCEDURES_ALLOW_DRAFTS doit valoir true ou false');
   if (production && drafts === 'true') throw new ConfigError('Fiches en brouillon interdites en production');
 

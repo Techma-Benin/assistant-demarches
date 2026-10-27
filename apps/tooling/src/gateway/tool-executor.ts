@@ -7,7 +7,7 @@ import type { TraceContext } from '../common/trace.js';
 import { errorsText, tools, type ToolContext } from '../contracts.js';
 import { Database } from '../database/database.js';
 import { Outbox, type EventData } from '../events/outbox.js';
-import { Idempotency } from '../idempotency/idempotency.js';
+import { Idempotency, type IdempotencyKey } from '../idempotency/idempotency.js';
 import { MandatesRepository } from '../mandates/mandates.repository.js';
 import { ToolRegistry, type ToolInvocation } from './tool-registry.js';
 
@@ -48,16 +48,24 @@ export class ToolExecutor {
       const args = call.args as Record<string, unknown>;
       const meta = tool.definition._meta;
       const action = meta['bj.techma/requiresMandate'];
+      const scope = { userRef: call.context.userRef };
 
-      return await this.db.transaction({ userRef: call.context.userRef }, async (tx) => {
+      let key: IdempotencyKey | undefined;
+      if (action) {
+        const { traceId: _trace, ...context } = call.context;
+        key = this.idempotency.keyFor({ actor: call.actor, method: 'tools/call', route: `/mcp#${call.name}`, key: call.idempotencyKey }, { name: call.name, args, context });
+        const prior = await this.db.transaction(scope, (tx) => this.idempotency.lookup(tx, key!));
+        if (prior) return prior.response as Record<string, unknown>;
+      }
+
+      const prepared = handler.prepare
+        ? await handler.prepare(args, { context: call.context, trace: call.trace, read: (fn) => this.db.transaction(scope, fn) })
+        : undefined;
+
+      return await this.db.transaction(scope, async (tx) => {
         let keyHash: string | undefined;
-        if (action) {
-          const { traceId: _trace, ...context } = call.context;
-          const reservation = await this.idempotency.reserve(
-            tx,
-            { actor: call.actor, method: 'tools/call', route: `/mcp#${call.name}`, key: call.idempotencyKey },
-            { name: call.name, args, context },
-          );
+        if (key) {
+          const reservation = await this.idempotency.reserve(tx, key);
           if (reservation.kind === 'replay') return reservation.response as Record<string, unknown>;
           keyHash = reservation.keyHash;
         }
@@ -68,6 +76,7 @@ export class ToolExecutor {
           context: call.context,
           trace: call.trace,
           tx,
+          prepared,
           requireMandate: async (procedureId) => {
             const mandate = await this.mandates.requireForTool(tx, call.context, meta['bj.techma/scopes'], procedureId);
             mandateChecked = true;

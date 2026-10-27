@@ -9,24 +9,32 @@ export interface MandateGrantView {
   scopes: string[];
 }
 
-export interface ToolInvocation {
+export interface PreparationContext {
+  context: ToolContext;
+  trace: TraceContext;
+  read<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
+}
+
+export interface ToolInvocation<P = unknown> {
   context: ToolContext;
   trace: TraceContext;
   tx: Tx;
+  prepared: P;
   requireMandate(procedureId: string): Promise<MandateGrantView>;
   emit(data: EventData): void;
 }
 
-export interface ToolHandler {
+export interface ToolHandler<P = unknown> {
   readonly name: string;
-  run(args: Record<string, unknown>, call: ToolInvocation): Promise<unknown>;
+  prepare?(args: Record<string, unknown>, call: PreparationContext): Promise<P>;
+  run(args: Record<string, unknown>, call: ToolInvocation<P>): Promise<unknown>;
 }
 
 @Injectable()
 export class ToolRegistry {
-  private readonly handlers = new Map<string, ToolHandler>();
+  private readonly handlers = new Map<string, ToolHandler<any>>();
 
-  register(...handlers: ToolHandler[]): void {
+  register(...handlers: ToolHandler<any>[]): void {
     for (const handler of handlers) {
       if (!tools.has(handler.name)) throw new Error(`Outil hors catalogue : ${handler.name}`);
       if (this.handlers.has(handler.name)) throw new Error(`Outil inscrit deux fois : ${handler.name}`);
@@ -34,7 +42,7 @@ export class ToolRegistry {
     }
   }
 
-  get(name: string): ToolHandler | undefined {
+  get(name: string): ToolHandler<any> | undefined {
     return this.handlers.get(name);
   }
 }
