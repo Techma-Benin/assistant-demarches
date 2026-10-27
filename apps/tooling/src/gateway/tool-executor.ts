@@ -48,17 +48,22 @@ export class ToolExecutor {
       const args = call.args as Record<string, unknown>;
       const meta = tool.definition._meta;
       const action = meta['bj.techma/requiresMandate'];
+      const scope = { actor: call.actor, method: 'tools/call', route: `/mcp#${call.name}`, key: call.idempotencyKey };
+      const owner = { userRef: call.context.userRef };
 
-      return await this.db.transaction({ userRef: call.context.userRef }, async (tx) => {
+      const replaying = action && (await this.db.transaction(owner, (tx) => this.idempotency.seen(tx, scope)));
+      const prepared =
+        handler.prepare && !replaying ? await handler.prepare(args, { context: call.context, trace: call.trace, read: (fn) => this.db.transaction(owner, fn) }) : undefined;
+
+      return await this.db.transaction(owner, async (tx) => {
         let keyHash: string | undefined;
         if (action) {
           const { traceId: _trace, ...context } = call.context;
-          const reservation = await this.idempotency.reserve(
-            tx,
-            { actor: call.actor, method: 'tools/call', route: `/mcp#${call.name}`, key: call.idempotencyKey },
-            { name: call.name, args, context },
-          );
-          if (reservation.kind === 'replay') return reservation.response as Record<string, unknown>;
+          const reservation = await this.idempotency.reserve(tx, scope, { name: call.name, args, context });
+          if (reservation.kind === 'replay') {
+            await this.audit.record(tx, this.entry(call, 'success', 'REPLAY', undefined, reservation.response));
+            return reservation.response as Record<string, unknown>;
+          }
           keyHash = reservation.keyHash;
         }
 
@@ -68,6 +73,7 @@ export class ToolExecutor {
           context: call.context,
           trace: call.trace,
           tx,
+          prepared,
           requireMandate: async (procedureId) => {
             const mandate = await this.mandates.requireForTool(tx, call.context, meta['bj.techma/scopes'], procedureId);
             mandateChecked = true;

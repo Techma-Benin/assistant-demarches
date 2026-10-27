@@ -9,17 +9,44 @@ export interface MandateGrantView {
   scopes: string[];
 }
 
+export interface ToolPreparation {
+  context: ToolContext;
+  trace: TraceContext;
+  read<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
+}
+
 export interface ToolInvocation {
   context: ToolContext;
   trace: TraceContext;
   tx: Tx;
+  prepared?: unknown;
   requireMandate(procedureId: string): Promise<MandateGrantView>;
   emit(data: EventData): void;
 }
 
 export interface ToolHandler {
   readonly name: string;
+  prepare?(args: Record<string, unknown>, call: ToolPreparation): Promise<unknown>;
   run(args: Record<string, unknown>, call: ToolInvocation): Promise<unknown>;
+}
+
+export type Settled<T> = { value: T } | { error: unknown };
+
+export async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
+  try {
+    return { value: await promise };
+  } catch (error) {
+    return { error };
+  }
+}
+
+export function unwrap<T>(settled: Settled<T>): T {
+  if ('error' in settled) throw settled.error;
+  return settled.value;
+}
+
+export function inTransaction(call: ToolInvocation): ToolPreparation {
+  return { context: call.context, trace: call.trace, read: (fn) => fn(call.tx) };
 }
 
 @Injectable()

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { test } from 'node:test';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { test, type TestContext } from 'node:test';
 import {
   act,
   assertSchema,
@@ -140,6 +142,49 @@ test('idempotence concurrente : une seule demande créée pour la même clé', a
   assert.equal(ids.size, 1);
   const rows = await db.transaction('system', (tx) => tx.query('select count(*)::int as n from requests'));
   assert.equal(rows[0].n, 1);
+});
+
+test('rejeu idempotent : inscrit au journal sans nouvel événement', async (t) => {
+  const { url, db } = await setup(t);
+  const { body } = await grantMandate(url);
+  const key = randomUUID();
+  const first = await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string, key });
+  const outboxBefore = await db.transaction('system', (tx) => tx.query('select seq from outbox'));
+  const again = await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string, key });
+  assert.equal(again.structuredContent?.id, first.structuredContent?.id);
+  const audit = await db.transaction('system', (tx) => tx.query<{ code: string; request_id: string }>("select code, request_id from audit_log where action = 'request.create' order by id"));
+  assert.deepEqual(audit.map((row) => row.code), ['OK', 'REPLAY']);
+  assert.equal(audit[1].request_id, first.structuredContent?.id);
+  assert.equal((await db.transaction('system', (tx) => tx.query('select seq from outbox'))).length, outboxBefore.length);
+});
+
+async function slowProxy(t: TestContext, target: string, slowPrefix: string, delayMs: number): Promise<string> {
+  const server = http.createServer(async (req, res) => {
+    if (req.url?.startsWith(slowPrefix)) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    const upstream = await fetch(new URL(req.url ?? '/', target), { method: req.method, headers: req.headers as Record<string, string> });
+    res.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' }).end(Buffer.from(await upstream.arrayBuffer()));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+test('appels au Backend hors transaction : un Backend lent ne bloque pas la base', { skip: !!process.env.TEST_DATABASE_URL && 'PGlite seulement : une seule connexion rend le blocage observable' }, async (t) => {
+  const backend = await startBackendMock(t);
+  const slow = await slowProxy(t, backend, '/internal/v1/files/', 1500);
+  const { url } = await setup(t, { BACKEND_URL: slow });
+  const mandateId = (await grantMandate(url)).body.id as string;
+  const requestId = (await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId })).structuredContent!.id as string;
+  const fileId = await uploadFile(backend);
+
+  const attaching = act(url, 'documents.attach', { requestId, fileId, documentType: 'demo-document' }, { mandateId });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const started = Date.now();
+  const status = await act(url, 'request.status', { requestId });
+  const elapsed = Date.now() - started;
+  assert.ok(!status.isError, status.content[0].text);
+  assert.ok(elapsed < 1000, `request.status a attendu ${elapsed} ms derrière l'appel au Backend`);
+  assert.ok(!(await attaching).isError);
 });
 
 test('sécurité au niveau des lignes : une transaction ne voit que les données de son usager', async (t) => {

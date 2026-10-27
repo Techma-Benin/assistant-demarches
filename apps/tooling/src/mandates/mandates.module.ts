@@ -8,7 +8,7 @@ import { ProblemError, toProblem } from '../common/problem.js';
 import { traceOf, type TraceContext } from '../common/trace.js';
 import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
 import { domainValidator } from '../contracts.js';
-import { Database } from '../database/database.js';
+import { Database, type Tx } from '../database/database.js';
 import { Idempotency } from '../idempotency/idempotency.js';
 import { MandatesRepository, type Mandate } from './mandates.repository.js';
 
@@ -47,7 +47,7 @@ export class MandatesController {
     return this.audited(trace, principal.client, 'mandate.grant', challenge, async () =>
       this.db.transaction('system', async (tx) => {
         const reservation = await this.idempotency.reserve(tx, { actor: principal.client, method: 'POST', route: '/internal/v1/mandates', key: this.key(req) }, grant);
-        if (reservation.kind === 'replay') return reservation.response as Mandate;
+        if (reservation.kind === 'replay') return this.replayed(tx, trace, principal.client, 'mandate.grant', reservation.response as Mandate);
 
         const now = Date.now();
         if (!challenge.scopes.length || new Set(challenge.scopes).size !== challenge.scopes.length) throw new ProblemError(400, 'INVALID_REQUEST', 'Scopes vides ou répétés');
@@ -84,7 +84,7 @@ export class MandatesController {
     return this.audited(trace, principal.client, 'mandate.revoke', { mandateId }, async () =>
       this.db.transaction('system', async (tx) => {
         const reservation = await this.idempotency.reserve(tx, { actor: principal.client, method: 'POST', route: `/internal/v1/mandates/${mandateId}/revoke`, key: this.key(req) }, { mandateId });
-        if (reservation.kind === 'replay') return reservation.response as Mandate;
+        if (reservation.kind === 'replay') return this.replayed(tx, trace, principal.client, 'mandate.revoke', reservation.response as Mandate);
         const mandate = await this.mandates.revoke(tx, mandateId);
         if (!mandate) throw new ProblemError(404, 'NOT_FOUND', 'Mandat inconnu');
         await this.audit.record(tx, { traceId: trace.traceId, actor: principal.client, action: 'mandate.revoke', outcome: 'success', code: 'OK', conversationId: mandate.conversationId, userRef: mandate.userRef, mandateId: mandate.id });
@@ -92,6 +92,11 @@ export class MandatesController {
         return mandate;
       }),
     );
+  }
+
+  private async replayed(tx: Tx, trace: TraceContext, actor: string, action: string, mandate: Mandate): Promise<Mandate> {
+    await this.audit.record(tx, { traceId: trace.traceId, actor, action, outcome: 'success', code: 'REPLAY', conversationId: mandate.conversationId, userRef: mandate.userRef, mandateId: mandate.id });
+    return mandate;
   }
 
   private key(req: Request): string | undefined {

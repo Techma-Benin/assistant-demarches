@@ -38,11 +38,13 @@ class ProcedureTools implements OnModuleInit {
   onModuleInit(): void {
     const search: ToolHandler = {
       name: 'procedures.search',
-      run: async (args, call: ToolInvocation) => ({ items: await this.catalog.search(args.query as string, call.trace) }),
+      prepare: async (args, call) => ({ items: await this.catalog.search(args.query as string, call.trace) }),
+      run: async (args, call: ToolInvocation) => call.prepared ?? { items: await this.catalog.search(args.query as string, call.trace) },
     };
     const get: ToolHandler = {
       name: 'procedures.get',
-      run: (args, call) => this.catalog.get(args.procedureId as string, call.trace),
+      prepare: (args, call) => this.catalog.get(args.procedureId as string, call.trace),
+      run: async (args, call) => call.prepared ?? this.catalog.get(args.procedureId as string, call.trace),
     };
     this.registry.register(search, get);
   }

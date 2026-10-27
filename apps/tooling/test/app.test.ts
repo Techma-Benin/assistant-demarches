@@ -80,6 +80,8 @@ test('mode jwt : realm complet exigé, HTTPS obligatoire hors localhost', () => 
   assert.throws(() => loadConfig({ ...prod, DATABASE_URL: 'postgres://u:p@db/tooling', PROCEDURES_ALLOW_DRAFTS: 'true' }), ConfigError);
   const production = loadConfig({ ...prod, DATABASE_URL: 'postgres://u:p@db/tooling' });
   assert.equal(production.allowDraftProcedures, false);
+  assert.equal(loadConfig({ ...realm, BACKEND_URL: 'https://backend.staging.example' }).allowDraftProcedures, false, 'brouillons refusés par défaut hors poste local');
+  assert.equal(loadConfig({ ...realm }).allowDraftProcedures, true, 'brouillons acceptés sur le poste local');
   assert.equal(production.workers, 2);
   assert.throws(() => loadConfig({ AUTH_MODE: 'mock-tokens', TOOLING_WORKERS: '2' }), ConfigError, 'PGlite ne se partage pas');
   assert.equal(loadConfig({ ...realm, BACKEND_URL: 'https://backend.internal' }).backendUrl.host, 'backend.internal');

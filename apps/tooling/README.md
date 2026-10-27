@@ -142,7 +142,7 @@ Le déploiement sur un serveur n'est pas automatisé : aucun environnement cible
 | `TOOLING_RESOURCES_CLIENT_ID` / `_SECRET` | | Identité sortante vers les ressources ; mode `jwt` |
 | `TOOLING_EVENTS_CLIENT_ID` / `_SECRET` | | Identité sortante vers les événements ; mode `jwt` |
 | `PROOF_JWKS_URL`, `PROOF_ISSUER` | | Clés des preuves de consentement ; mode `jwt` |
-| `PROCEDURES_ALLOW_DRAFTS` | `true` hors production | Fiches en brouillon visibles |
+| `PROCEDURES_ALLOW_DRAFTS` | `true` seulement hors production avec un Backend local | Fiches en brouillon visibles ; interdit en production |
 | `EVENTS_PUBLISHER`, `EVENTS_INTERVAL_MS` | `on`, 1000 | Publication de l'outbox |
 | `RATE_LIMIT_USER_PER_MIN` | 60 | Appels d'outils par usager |
 | `RATE_LIMIT_CLIENT_PER_MIN` | 1200 | Requêtes par client de service |

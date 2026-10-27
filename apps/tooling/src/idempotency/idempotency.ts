@@ -5,15 +5,28 @@ import type { Tx } from '../database/database.js';
 
 export type Reservation = { kind: 'fresh'; keyHash: string } | { kind: 'replay'; response: unknown };
 
+export interface IdempotencyScope {
+  actor: string;
+  method: string;
+  route: string;
+  key: string | undefined;
+}
+
 const KEY = /^[\x21-\x7e]{8,128}$/;
+const hashOf = (scope: IdempotencyScope) => sha256(canonicalJson([scope.actor, scope.method, scope.route, scope.key]));
 
 @Injectable()
 export class Idempotency {
-  async reserve(tx: Tx, scope: { actor: string; method: string; route: string; key: string | undefined }, payload: unknown): Promise<Reservation> {
+  async seen(tx: Tx, scope: IdempotencyScope): Promise<boolean> {
+    if (typeof scope.key !== 'string' || !KEY.test(scope.key)) return false;
+    return (await tx.query('select 1 from idempotency_keys where key_hash = $1', [hashOf(scope)])).length > 0;
+  }
+
+  async reserve(tx: Tx, scope: IdempotencyScope, payload: unknown): Promise<Reservation> {
     if (typeof scope.key !== 'string' || !KEY.test(scope.key)) {
       throw new ProblemError(400, 'INVALID_REQUEST', 'Idempotency-Key de 8 à 128 caractères requis');
     }
-    const keyHash = sha256(canonicalJson([scope.actor, scope.method, scope.route, scope.key]));
+    const keyHash = hashOf(scope);
     const digest = sha256(canonicalJson(payload));
     const inserted = await tx.query('insert into idempotency_keys (key_hash, request_digest) values ($1, $2) on conflict do nothing returning key_hash', [keyHash, digest]);
     if (inserted.length) return { kind: 'fresh', keyHash };
