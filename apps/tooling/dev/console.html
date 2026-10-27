@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Console Tooling</title>
+<style>
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #f8f9fb;
+  --border: #e2e5ea;
+  --text: #17202e;
+  --muted: #5d6878;
+  --accent: #2f5bea;
+  --accent-soft: #e8eeff;
+  --ok: #157f4c;
+  --ok-soft: #e3f5ec;
+  --refusal: #b4430f;
+  --refusal-soft: #fdeee4;
+  --fail: #c0262d;
+  --fail-soft: #fde7e8;
+  --pending: #8a93a3;
+  --code-bg: #f3f5f9;
+  --key: #7a3fb0;
+  --string: #0f6b5a;
+  --number: #b4430f;
+  --radius: 10px;
+  --mono: ui-monospace, "Cascadia Code", Consolas, "SF Mono", monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.top { position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 0 var(--border); }
+header { display: flex; align-items: center; gap: 20px; padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+header h1 { margin: 0; font-size: 19px; font-weight: 650; }
+header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.controls { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.progress { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+button { font: inherit; font-size: 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 8px 14px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.flow { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.node { padding: 7px 14px; border-radius: 999px; border: 1.5px solid var(--border); color: var(--muted); font-size: 13px; font-weight: 550; transition: all .25s; background: var(--surface-2); }
+.node.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 4px var(--accent-soft); }
+.node.pulse { animation: pulse .9s ease-out; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(21,127,76,.45); border-color: var(--ok); color: var(--ok); } 100% { box-shadow: 0 0 0 10px rgba(21,127,76,0); } }
+.arrow { color: var(--pending); font-size: 13px; }
+main { display: grid; grid-template-columns: minmax(260px, 330px) minmax(0, 1fr) minmax(320px, 440px); gap: 16px; padding: 16px 24px 24px; align-items: start; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.card > h2 { margin: 0; padding: 12px 16px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600; }
+.steps { list-style: none; margin: 0; padding: 6px; }
+.steps li { display: grid; grid-template-columns: 26px 1fr; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; align-items: start; }
+.steps li:hover { background: var(--surface-2); }
+.steps li.current { background: var(--accent-soft); }
+.steps .num { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); }
+.steps li.ok .num { background: var(--ok); border-color: var(--ok); color: #fff; }
+.steps li.fail .num { background: var(--fail); border-color: var(--fail); color: #fff; }
+.steps li.running .num { border-color: var(--accent); color: var(--accent); animation: spin 1s linear infinite; border-style: dashed; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.steps .title { font-size: 14px; }
+.steps .expect { font-size: 11.5px; color: var(--muted); }
+.steps .expect.refusal { color: var(--refusal); }
+.stage { padding: 20px 22px; min-height: 420px; }
+.stage .who { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
+.stage h3 { margin: 4px 0 8px; font-size: 22px; line-height: 1.25; }
+.stage .story { margin: 0 0 16px; color: var(--muted); font-size: 16px; max-width: 70ch; }
+.verdict { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 8px; font-weight: 600; margin-bottom: 18px; font-size: 15px; }
+.verdict.ok { background: var(--ok-soft); color: var(--ok); }
+.verdict.refusal { background: var(--refusal-soft); color: var(--refusal); }
+.verdict.fail { background: var(--fail-soft); color: var(--fail); }
+.verdict small { font-weight: 450; color: var(--text); }
+.empty { color: var(--muted); padding: 40px 0; text-align: center; }
+.exchange { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 14px; overflow: hidden; }
+.exchange-head { display: flex; gap: 10px; align-items: center; padding: 9px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); font-size: 13.5px; flex-wrap: wrap; }
+.exchange-head .op { font-family: var(--mono); font-weight: 600; }
+.exchange-head .target { color: var(--muted); }
+.exchange-head .status { margin-left: auto; font-family: var(--mono); font-size: 12.5px; padding: 2px 8px; border-radius: 6px; }
+.status.ok { background: var(--ok-soft); color: var(--ok); }
+.status.ko { background: var(--refusal-soft); color: var(--refusal); }
+.exchange-body { display: grid; grid-template-columns: 1fr 1fr; }
+.exchange-body > div { padding: 10px 12px; min-width: 0; }
+.exchange-body > div + div { border-left: 1px solid var(--border); }
+.label { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+.headers { font-family: var(--mono); font-size: 12px; margin-bottom: 10px; }
+.headers div { word-break: break-all; padding: 1px 0; }
+.headers .hidden-from-model { color: var(--key); font-weight: 600; }
+.headers .hidden-from-model::after { content: "  · invisible pour le modèle"; color: var(--muted); font-weight: 400; font-family: system-ui, sans-serif; font-size: 11px; }
+pre { margin: 0; font: 12.5px/1.5 var(--mono); background: var(--code-bg); border-radius: 6px; padding: 8px 10px; overflow: auto; max-height: 260px; white-space: pre-wrap; word-break: break-word; }
+.k { color: var(--key); } .s { color: var(--string); } .n { color: var(--number); }
+aside { display: grid; gap: 16px; }
+.tabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 10px; color: var(--muted); background: none; font-size: 13.5px; white-space: nowrap; }
+.tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tabs .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+.table-wrap { max-height: 360px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { text-align: left; font-weight: 600; color: var(--muted); padding: 7px 10px; position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+td.mono { font-family: var(--mono); font-size: 11.5px; }
+tr.fresh td { animation: fresh 2.5s ease-out; }
+@keyframes fresh { 0% { background: #fff4c2; } 100% { background: transparent; } }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.ko { background: var(--refusal-soft); color: var(--refusal); }
+.pill.wait { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+.pill.info { background: var(--accent-soft); color: var(--accent); }
+.note { padding: 10px 14px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--border); }
+.none { padding: 18px 14px; color: var(--muted); font-size: 13px; }
+.error-banner { margin: 12px 24px 0; padding: 10px 14px; border-radius: 8px; background: var(--fail-soft); color: var(--fail); display: none; }
+@media (max-width: 1200px) { main { grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); } aside { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; } }
+@media (max-width: 800px) { main { grid-template-columns: 1fr; padding: 12px 16px; } aside { grid-template-columns: 1fr; } .exchange-body { grid-template-columns: 1fr; } .exchange-body > div + div { border-left: none; border-top: 1px solid var(--border); } header, .flow { padding-left: 16px; padding-right: 16px; } }
+</style>
+</head>
+<body>
+<div class="top">
+<header>
+  <div>
+    <h1>Service Tooling : ce qui se passe vraiment</h1>
+    <p>Vrai service Tooling et vraie base de données. Backend et agent IA simulés, données fictives.</p>
+  </div>
+  <div class="controls">
+    <span class="progress" id="progress">0 / 0</span>
+    <button id="reset">Recommencer</button>
+    <button id="all">Tout jouer</button>
+    <button id="next" class="primary">Étape suivante</button>
+  </div>
+</header>
+<div class="flow" aria-label="Chemin des appels">
+  <span class="node" data-node="backend">Usager et Backend</span>
+  <span class="node" data-node="agent">Agent IA</span>
+  <span class="arrow">→ MCP →</span>
+  <span class="node" data-node="tooling">Tooling</span>
+  <span class="arrow">→</span>
+  <span class="node" data-node="db">Base du Tooling</span>
+  <span class="arrow">→ événements →</span>
+  <span class="node" data-node="events">Backend</span>
+</div>
+</div>
+<div class="error-banner" id="error"></div>
+<main>
+  <section class="card">
+    <h2>Scénario</h2>
+    <ol class="steps" id="steps"></ol>
+  </section>
+  <section class="card stage" id="stage">
+    <div class="empty">Cliquez sur « Étape suivante » pour commencer.</div>
+  </section>
+  <aside>
+    <section class="card">
+      <h2>Dans la base du Tooling</h2>
+      <div class="tabs" id="tabs"></div>
+      <div class="table-wrap" id="table"></div>
+      <div class="note" id="table-note"></div>
+    </section>
+    <section class="card">
+      <h2>Reçu par le Backend</h2>
+      <div class="table-wrap" id="events"></div>
+      <div class="note">Le Tooling écrit chaque événement dans son outbox, dans la même transaction que le changement, puis le publie au Backend. Le Backend le relaie au widget ou à WhatsApp.</div>
+    </section>
+  </aside>
+</main>
+<script>
+const ACTORS = {
+  backend: { label: 'Usager et Backend', nodes: ['backend'] },
+  agent: { label: 'Agent IA', nodes: ['agent', 'tooling'] },
+  control: { label: 'Consentement (Backend)', nodes: ['backend', 'tooling'] },
+  intruder: { label: 'Un autre usager', nodes: ['agent', 'tooling'] },
+};
+const HIDDEN_FROM_MODEL = ['x-conversation-id', 'x-user-ref', 'x-mandate-id', 'idempotency-key', 'authorization', 'traceparent'];
+const TABS = [
+  { id: 'audit', label: "Journal d'audit", note: 'Chaque appel, accepté ou refusé, est inscrit. Le journal est en ajout seul : même le propriétaire de la base ne peut ni modifier ni effacer une ligne.' },
+  { id: 'requests', label: 'Demandes', note: "Lignes visibles pour l'usager de la démo : la base filtre par usager." },
+  { id: 'mandates', label: 'Mandats', note: 'Mandat = accord de l’usager pour une démarche, une conversation, des droits précis, pendant 1 h.' },
+  { id: 'outbox', label: 'Outbox', note: 'Événements à publier vers le Backend, avec reprise automatique en cas de panne.' },
+];
+
+let steps = [];
+const results = {};
+let current = -1;
+let shown = -1;
+let busy = false;
+let tab = 'audit';
+let state = null;
+const seen = { audit: new Set(), requests: new Map(), mandates: new Map(), outbox: new Map(), events: new Set() };
+let firstLoad = true;
+
+const $ = (id) => document.getElementById(id);
+const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const time = (value) => (value ? new Date(value).toLocaleTimeString('fr-FR') : '');
+const short = (value) => (value && value.length > 16 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value ?? '');
+
+function json(value) {
+  return esc(JSON.stringify(value, null, 2))
+    .replace(/(&quot;[^&]*?&quot;)(\s*:)/g, '<span class="k">$1</span>$2')
+    .replace(/:\s(&quot;.*?&quot;)/g, ': <span class="s">$1</span>')
+    .replace(/:\s(-?\d+(\.\d+)?|true|false|null)/g, ': <span class="n">$1</span>');
+}
+
+function renderSteps() {
+  $('steps').innerHTML = steps.map((step, i) => {
+    const r = results[step.id];
+    const cls = [r?.running ? 'running' : r ? (r.ok ? 'ok' : 'fail') : '', i === shown ? 'current' : ''].join(' ');
+    return `<li class="${cls}" data-i="${i}"><span class="num">${r && !r.running ? (r.ok ? '✓' : '!') : i + 1}</span><span><div class="title">${esc(step.title)}</div><div class="expect ${step.expect}">${step.expect === 'refusal' ? 'Refus attendu' : 'Succès attendu'}</div></span></li>`;
+  }).join('');
+  const done = steps.filter((s) => results[s.id] && !results[s.id].running).length;
+  $('progress').textContent = `${done} / ${steps.length}`;
+  $('next').disabled = busy || current >= steps.length - 1;
+  $('all').disabled = busy || current >= steps.length - 1;
+  $('reset').disabled = busy;
+}
+
+function renderStage() {
+  const step = steps[shown];
+  if (!step) { $('stage').innerHTML = '<div class="empty">Cliquez sur « Étape suivante » pour commencer.</div>'; return; }
+  const r = results[step.id];
+  let verdict = '';
+  if (r?.running) verdict = '<div class="verdict ok" style="background:var(--accent-soft);color:var(--accent)">Appel en cours…</div>';
+  else if (r?.error) verdict = `<div class="verdict fail">Étape impossible <small>${esc(r.error)}</small></div>`;
+  else if (r) {
+    const cls = !r.ok ? 'fail' : step.expect === 'refusal' ? 'refusal' : 'ok';
+    const head = !r.ok ? 'Résultat inattendu' : step.expect === 'refusal' ? 'Refusé, comme prévu' : 'Accepté';
+    verdict = `<div class="verdict ${cls}">${head} <small>${esc(r.summary)}</small></div>`;
+  }
+  const exchanges = (r?.exchanges ?? []).map((ex) => {
+    const ok = ex.status === 'OK' || /^HTTP 2/.test(ex.status);
+    const headers = Object.entries(ex.headers).map(([k, v]) => `<div class="${HIDDEN_FROM_MODEL.includes(k.toLowerCase()) && ex.target.endsWith('/mcp') && k.toLowerCase().startsWith('x-') ? 'hidden-from-model' : ''}">${esc(k)}: ${esc(v)}</div>`).join('');
+    return `<div class="exchange"><div class="exchange-head"><span class="op">${esc(ex.operation)}</span><span class="target">${esc(ACTORS[ex.actor]?.label ?? ex.actor)} → ${esc(ex.target)}</span><span class="status ${ok ? 'ok' : 'ko'}">${esc(ex.status)} · ${ex.ms} ms</span></div>
+      <div class="exchange-body"><div><div class="label">Requête</div><div class="headers">${headers}</div><pre>${json(ex.body)}</pre></div><div><div class="label">Réponse</div><pre>${json(ex.response)}</pre></div></div></div>`;
+  }).join('');
+  $('stage').innerHTML = `<div class="who">${esc(ACTORS[step.actor].label)} · étape ${shown + 1}</div><h3>${esc(step.title)}</h3><p class="story">${esc(step.story)}</p>${verdict}${exchanges}`;
+}
+
+function highlight(actor) {
+  document.querySelectorAll('.node').forEach((n) => n.classList.toggle('active', !!actor && ACTORS[actor].nodes.includes(n.dataset.node)));
+}
+
+function pulse(node) {
+  const el = document.querySelector(`.node[data-node="${node}"]`);
+  el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse');
+}
+
+async function run(i) {
+  const step = steps[i];
+  busy = true; shown = i; results[step.id] = { running: true };
+  highlight(step.actor); renderSteps(); renderStage();
+  try {
+    const res = await fetch(`/api/run/${step.id}`, { method: 'POST' });
+    const body = await res.json();
+    results[step.id] = res.ok ? body : { ok: false, error: body.error, exchanges: [] };
+  } catch (error) {
+    results[step.id] = { ok: false, error: String(error), exchanges: [] };
+  }
+  current = Math.max(current, i);
+  busy = false;
+  renderSteps(); renderStage();
+  await refresh();
+  return results[step.id].ok;
+}
+
+function rowsFor(name) {
+  if (!state) return { head: '', body: '', count: 0 };
+  const fresh = (set, key, value) => { const isNew = !firstLoad && (set instanceof Set ? !set.has(key) : set.get(key) !== value); return isNew ? 'fresh' : ''; };
+  if (name === 'audit') {
+    const rows = state.audit.map((r) => `<tr class="${fresh(seen.audit, r.id)}"><td>${time(r.at)}</td><td class="mono">${esc(r.action)}</td><td><span class="pill ${r.outcome === 'success' ? 'ok' : 'ko'}">${esc(r.code)}</span></td><td class="mono">${esc(r.actor)}</td></tr>`).join('');
+    return { head: '<tr><th>Heure</th><th>Action</th><th>Résultat</th><th>Appelant</th></tr>', body: rows, count: state.audit.length };
+  }
+  if (name === 'requests') {
+    const rows = state.requests.map((r) => `<tr class="${fresh(seen.requests, r.id, r.status + r.updated_at)}"><td class="mono">${esc(short(r.id))}</td><td><span class="pill ${r.status === 'awaiting_user_validation' ? 'ok' : r.status === 'ready' ? 'info' : 'wait'}">${esc(r.status)}</span></td><td class="mono">${esc(JSON.stringify(r.fields))}</td><td>${Object.keys(r.documents ?? {}).length || (Array.isArray(r.documents) ? r.documents.length : 0)}</td></tr>`).join('');
+    return { head: '<tr><th>Demande</th><th>Statut</th><th>Champs</th><th>Pièces</th></tr>', body: rows, count: state.requests.length };
+  }
+  if (name === 'mandates') {
+    const rows = state.mandates.map((r) => `<tr class="${fresh(seen.mandates, r.id, r.status)}"><td class="mono">${esc(short(r.id))}</td><td><span class="pill ${r.status === 'active' ? 'ok' : 'ko'}">${esc(r.status)}</span></td><td class="mono">${esc((r.scopes ?? []).join(' '))}</td><td>${time(r.expires_at)}</td></tr>`).join('');
+    return { head: '<tr><th>Mandat</th><th>Statut</th><th>Droits</th><th>Expire</th></tr>', body: rows, count: state.mandates.length };
+  }
+  const rows = state.outbox.map((r) => {
+    const st = r.published_at ? '<span class="pill ok">publié</span>' : r.dead_at ? `<span class="pill ko" title="${esc(r.last_error)}">abandonné</span>` : `<span class="pill wait">en attente${r.attempts ? ` (${r.attempts})` : ''}</span>`;
+    return `<tr class="${fresh(seen.outbox, r.seq, `${r.published_at}${r.dead_at}`)}"><td>${r.seq}</td><td class="mono">${esc(r.kind)}</td><td>${st}</td></tr>`;
+  }).join('');
+  return { head: '<tr><th>#</th><th>Événement</th><th>État</th></tr>', body: rows, count: state.outbox.length };
+}
+
+function renderTables() {
+  $('tabs').innerHTML = TABS.map((t) => `<button class="${t.id === tab ? 'on' : ''}" data-tab="${t.id}">${t.label}<span class="count">${rowsFor(t.id).count}</span></button>`).join('');
+  const { head, body } = rowsFor(tab);
+  $('table').innerHTML = body ? `<table><thead>${head}</thead><tbody>${body}</tbody></table>` : '<div class="none">Vide pour l’instant.</div>';
+  $('table-note').textContent = TABS.find((t) => t.id === tab).note;
+  const events = (state?.events ?? []).slice().reverse();
+  $('events').innerHTML = events.length
+    ? `<table><thead><tr><th>Heure</th><th>Événement</th><th>Source</th></tr></thead><tbody>${events.map((e) => `<tr class="${!firstLoad && !seen.events.has(e.id) ? 'fresh' : ''}"><td>${time(e.time)}</td><td class="mono">${esc(e.data?.kind)}${e.data?.to ? ` → ${esc(e.data.to)}` : ''}${e.data?.toolName ? ` (${esc(e.data.toolName)}, ${esc(e.data.code)})` : ''}</td><td class="mono">${esc(e.source.replace('urn:techma:', ''))}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="none">Aucun événement pour l’instant.</div>';
+}
+
+function remember() {
+  if (!state) return;
+  const before = seen.audit.size + seen.events.size;
+  state.audit.forEach((r) => seen.audit.add(r.id));
+  state.requests.forEach((r) => seen.requests.set(r.id, r.status + r.updated_at));
+  state.mandates.forEach((r) => seen.mandates.set(r.id, r.status));
+  state.outbox.forEach((r) => seen.outbox.set(r.seq, `${r.published_at}${r.dead_at}`));
+  const newEvents = state.events.filter((e) => !seen.events.has(e.id)).length;
+  state.events.forEach((e) => seen.events.add(e.id));
+  if (!firstLoad && seen.audit.size + seen.events.size - newEvents > before) pulse('db');
+  if (!firstLoad && newEvents) pulse('events');
+  firstLoad = false;
+}
+
+async function refresh() {
+  try {
+    state = await (await fetch('/api/state')).json();
+    renderTables(); remember();
+    $('error').style.display = 'none';
+  } catch {
+    $('error').textContent = 'Console injoignable : le serveur de démonstration est-il lancé ?';
+    $('error').style.display = 'block';
+  }
+}
+
+$('next').onclick = () => run(current + 1);
+$('all').onclick = async () => {
+  for (let i = current + 1; i < steps.length; i++) {
+    if (!(await run(i))) break;
+    await new Promise((r) => setTimeout(r, 1600));
+  }
+};
+$('reset').onclick = async () => {
+  await fetch('/api/reset', { method: 'POST' });
+  for (const k of Object.keys(results)) delete results[k];
+  current = -1; shown = -1; highlight(null); renderSteps(); renderStage(); refresh();
+};
+$('steps').onclick = (e) => {
+  const li = e.target.closest('li'); if (!li) return;
+  const i = Number(li.dataset.i);
+  if (results[steps[i].id]) { shown = i; renderSteps(); renderStage(); highlight(steps[i].actor); }
+  else if (!busy && i === current + 1) run(i);
+};
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest('button') && e.key === ' ') return;
+  if ((e.key === 'ArrowRight' || e.key === ' ') && !$('next').disabled) { e.preventDefault(); $('next').click(); }
+});
+$('tabs').onclick = (e) => { const b = e.target.closest('button'); if (b) { tab = b.dataset.tab; renderTables(); } };
+
+(async () => {
+  steps = (await (await fetch('/api/scenario')).json()).steps;
+  renderSteps(); await refresh();
+  setInterval(refresh, 900);
+})();
+</script>
+</body>
+</html>
