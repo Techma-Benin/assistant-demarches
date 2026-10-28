@@ -143,6 +143,7 @@ Le déploiement sur un serveur n'est pas automatisé : aucun environnement cible
 | `JWT_ISSUER`, `JWKS_URL`, `OIDC_TOKEN_URL` | | Realm Keycloak ; mode `jwt` |
 | `TOOLING_RESOURCES_CLIENT_ID` / `_SECRET` | | Identité sortante vers les ressources ; mode `jwt` |
 | `TOOLING_EVENTS_CLIENT_ID` / `_SECRET` | | Identité sortante vers les événements ; mode `jwt` |
+| `TOOLING_RESOURCES_TOKEN`, `TOOLING_EVENTS_TOKEN` | | Jeton préémis à la place du flux client credentials, comme `TOOLING_AGENT_TOKEN` côté Backend ; jamais renouvelé, interdit en production |
 | `PROOF_JWKS_URL`, `PROOF_ISSUER` | | Clés des preuves de consentement ; mode `jwt` |
 | `PROCEDURES_ALLOW_DRAFTS` | `true` seulement en écoute locale hors production | Fiches en brouillon visibles ; un serveur déployé les refuse sauf réglage explicite |
 | `EVENTS_PUBLISHER`, `EVENTS_INTERVAL_MS` | `on`, 1000 | Publication de l'outbox |

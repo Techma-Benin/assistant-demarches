@@ -83,6 +83,13 @@ test('mode jwt : realm complet exigé, HTTPS obligatoire hors localhost', () => 
   assert.equal(production.workers, 2);
   assert.throws(() => loadConfig({ AUTH_MODE: 'mock-tokens', TOOLING_WORKERS: '2' }), ConfigError, 'PGlite ne se partage pas');
   assert.equal(loadConfig({ ...realm, BACKEND_URL: 'https://backend.internal' }).backendUrl.host, 'backend.internal');
+
+  const { OIDC_TOKEN_URL: _url, TOOLING_RESOURCES_CLIENT_SECRET: _secret, ...withoutCredentials } = realm;
+  const preissued = loadConfig({ ...withoutCredentials, TOOLING_RESOURCES_TOKEN: 'a.b.c', TOOLING_EVENTS_CLIENT_SECRET: 'secret', OIDC_TOKEN_URL: realm.OIDC_TOKEN_URL });
+  assert.deepEqual(preissued.jwt?.clients['tooling-resources'], { scope: 'resources:read', token: 'a.b.c' });
+  assert.throws(() => loadConfig({ ...withoutCredentials, TOOLING_RESOURCES_TOKEN: 'a.b.c' }), ConfigError, 'OIDC_TOKEN_URL reste requis pour tooling-events');
+  assert.throws(() => loadConfig({ ...realm, TOOLING_EVENTS_TOKEN: 'avec espace' }), ConfigError);
+  assert.throws(() => loadConfig({ ...prod, DATABASE_URL: 'postgres://u:p@db/tooling', TOOLING_EVENTS_TOKEN: 'a.b.c' }), ConfigError, 'jeton préémis interdit en production');
 });
 
 test('CONTRACTS_DIR accepte un chemin natif du système (dont C:\\… sous Windows)', async () => {

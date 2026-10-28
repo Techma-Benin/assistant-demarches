@@ -111,6 +111,17 @@ test('JWT : appel complet, jeton tooling-resources obtenu une fois puis réutili
   assert.equal(oidc.tokenRequests, 1);
 });
 
+test('JWT : jetons sortants préémis utilisés tels quels, sans fournisseur de jetons', async (t) => {
+  const oidc = await startFakeOidc(t);
+  const backend = await startBackendMock(t);
+  const { OIDC_TOKEN_URL: _url, TOOLING_RESOURCES_CLIENT_ID: _a, TOOLING_RESOURCES_CLIENT_SECRET: _b, TOOLING_EVENTS_CLIENT_ID: _c, TOOLING_EVENTS_CLIENT_SECRET: _d, ...realm } = oidc.env;
+  const tooling = await startTooling(t, { ...realm, TOOLING_RESOURCES_TOKEN: 'mock-tooling-resources', TOOLING_EVENTS_TOKEN: 'mock-tooling-events', BACKEND_URL: backend });
+  const client = await mcpClient(t, tooling, await oidc.sign());
+  const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
+  assert.ok(!search.isError, search.content[0].text);
+  assert.equal(oidc.tokenRequests, 0);
+});
+
 test('fiches en brouillon masquées quand elles ne sont pas autorisées (règle de production)', async (t) => {
   const backend = await startBackendMock(t);
   const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', PROCEDURES_ALLOW_DRAFTS: 'false', BACKEND_URL: backend });

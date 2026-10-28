@@ -1,16 +1,11 @@
 export type AuthMode = 'jwt' | 'mock-tokens';
 export type OutboundClient = 'tooling-resources' | 'tooling-events';
 
-export interface OidcClient {
-  id: string;
-  secret: string;
-  scope: string;
-}
+export type OidcClient = { scope: string } & ({ id: string; secret: string; tokenUrl: URL } | { token: string });
 
 export interface JwtConfig {
   issuer: string;
   jwksUrl: URL;
-  tokenUrl: URL;
   clients: Record<OutboundClient, OidcClient>;
   proof: { jwksUrl: URL; issuer?: string };
 }
@@ -133,20 +128,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
     jwt: {
       issuer: required(env, 'JWT_ISSUER'),
       jwksUrl: serviceUrl(env, 'JWKS_URL'),
-      tokenUrl: serviceUrl(env, 'OIDC_TOKEN_URL'),
       clients: {
-        'tooling-resources': {
-          id: required(env, 'TOOLING_RESOURCES_CLIENT_ID'),
-          secret: required(env, 'TOOLING_RESOURCES_CLIENT_SECRET'),
-          scope: 'resources:read',
-        },
-        'tooling-events': {
-          id: required(env, 'TOOLING_EVENTS_CLIENT_ID'),
-          secret: required(env, 'TOOLING_EVENTS_CLIENT_SECRET'),
-          scope: 'events:publish',
-        },
+        'tooling-resources': outboundClient(env, 'TOOLING_RESOURCES', 'resources:read', production),
+        'tooling-events': outboundClient(env, 'TOOLING_EVENTS', 'events:publish', production),
       },
       proof: { jwksUrl: serviceUrl(env, 'PROOF_JWKS_URL'), issuer: env.PROOF_ISSUER || undefined },
     },
   };
+}
+
+function outboundClient(env: NodeJS.ProcessEnv, prefix: string, scope: string, production: boolean): OidcClient {
+  const token = env[`${prefix}_TOKEN`];
+  if (token) {
+    if (production) throw new ConfigError(`${prefix}_TOKEN interdit en production : utiliser OIDC_TOKEN_URL`);
+    if (!/^[A-Za-z0-9._~+/=-]+$/.test(token)) throw new ConfigError(`${prefix}_TOKEN n'est pas un jeton Bearer`);
+    return { scope, token };
+  }
+  return { scope, id: required(env, `${prefix}_CLIENT_ID`), secret: required(env, `${prefix}_CLIENT_SECRET`), tokenUrl: serviceUrl(env, 'OIDC_TOKEN_URL') };
 }
