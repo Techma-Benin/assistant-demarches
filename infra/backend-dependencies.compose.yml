@@ -26,13 +26,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-  clamav:
-    image: clamav/clamav:stable
-    ports:
-      - "127.0.0.1:3310:3310"
-    volumes:
-      - backend-clamav:/var/lib/clamav
 volumes:
   backend-postgres:
   backend-redis:
-  backend-clamav:

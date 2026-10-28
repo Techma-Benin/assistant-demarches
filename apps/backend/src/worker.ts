@@ -77,7 +77,6 @@ async function dispatch() {
       );
     }
     for (const operation of [
-      () => runtime.files?.scanPending(),
       () => runtime.files?.purgeExpired(),
       () => delivery?.next(),
     ]) {

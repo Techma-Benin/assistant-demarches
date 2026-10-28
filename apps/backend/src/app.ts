@@ -3,6 +3,9 @@ import { randomBytes } from "node:crypto";
 import {
   Body,
   Controller,
+  Delete,
+  HttpCode,
+  Post,
   Get,
   HttpException,
   Inject,
@@ -23,7 +26,10 @@ import {
   type Config,
   type Principal,
   type Resource,
+  configId,
+  validate,
 } from "./domain.js";
+import { McpConnections, type McpServer } from "./mcp-connections.js";
 import { Settings } from "./settings.js";
 import {
   ConversationController,
@@ -119,6 +125,7 @@ class HealthController {
 class AdminController {
   constructor(
     private settings: Settings,
+    private mcp: McpConnections,
     @Inject(AUTH) private auth: AuthOptions,
   ) {}
   private async principal(req: Request, scope: string): Promise<Principal> {
@@ -130,6 +137,60 @@ class AdminController {
         "Permission administrateur insuffisante.",
       );
     return principal;
+  }
+  @Get("mcp-servers")
+  async servers(@Req() req: AdminRequest) {
+    const principal = await this.principal(req, "admin:read");
+    const { limit = "20", cursor, ...unknown } = req.query;
+    if (Object.keys(unknown).length || typeof limit !== "string" ||
+        !/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 100 ||
+        (cursor !== undefined && (typeof cursor !== "string" || cursor.length > 4096)))
+      throw new Problem(400, "INVALID_REQUEST", "Pagination invalide.");
+    return this.mcp.list(principal.administrationId, Number(limit), cursor as string | undefined);
+  }
+  @Post("mcp-servers")
+  async addServer(@Req() req: AdminRequest, @Body() body: McpServer) {
+    const principal = await this.principal(req, "admin:write");
+    return this.mcp.mutate(principal, body?.id, body, "POST", this.key(req), req.get("traceparent")!);
+  }
+  @Get("mcp-servers/:id")
+  async server(@Req() req: AdminRequest, @Param("id") id: string) {
+    const principal = await this.principal(req, "admin:read");
+    return this.mcp.get(principal.administrationId, id);
+  }
+  @Put("mcp-servers/:id")
+  async putServer(@Req() req: AdminRequest, @Param("id") id: string, @Body() body: McpServer) {
+    const principal = await this.principal(req, "admin:write");
+    return this.mcp.mutate(principal, id, body, "PUT", this.key(req), req.get("traceparent")!);
+  }
+  @Delete("mcp-servers/:id")
+  @HttpCode(204)
+  async deleteServer(@Req() req: AdminRequest, @Param("id") id: string) {
+    const principal = await this.principal(req, "admin:write");
+    if (req.body !== undefined)
+      throw new Problem(400, "INVALID_REQUEST", "DELETE sans corps.");
+    await this.mcp.mutate(principal, id, null, "DELETE", this.key(req), req.get("traceparent")!);
+  }
+  @Post("mcp-servers/:id/discover")
+  @HttpCode(200)
+  async discover(@Req() req: AdminRequest, @Param("id") id: string) {
+    const principal = await this.principal(req, "admin:write");
+    if (req.body && Object.keys(req.body).length)
+      throw new Problem(400, "INVALID_REQUEST", "Découverte sans paramètres.");
+    return this.mcp.discover(principal, id, req.get("traceparent")!);
+  }
+  @Get("mcp-servers/:id/tools")
+  async serverTools(@Req() req: AdminRequest, @Param("id") id: string) {
+    const principal = await this.principal(req, "admin:read");
+    return this.mcp.tools(principal.administrationId, id);
+  }
+  @Put("mcp-servers/:id/tools/:name")
+  async permission(
+    @Req() req: AdminRequest, @Param("id") id: string, @Param("name") name: string,
+    @Body() body: { enabled: boolean; requiresMandate: boolean },
+  ) {
+    const principal = await this.principal(req, "admin:write");
+    return this.mcp.permission(principal, id, name, body, req.get("traceparent")!);
   }
   @Get(":resource")
   async list(@Param("resource") value: string, @Req() req: AdminRequest) {
@@ -160,6 +221,31 @@ class AdminController {
       cursor as string | undefined,
     );
   }
+  @Get(":resource/:id")
+  async get(@Param("resource") value: string, @Param("id") id: string, @Req() req: AdminRequest) {
+    return this.settings.get(await this.principal(req, "admin:read"), resource(value), id);
+  }
+  private key(req: Request) {
+    const key = req.get("Idempotency-Key") ?? "";
+    if (key.length < 8 || key.length > 128)
+      throw new Problem(400, "INVALID_REQUEST", "Idempotency-Key requis (8 à 128 caractères).");
+    return key;
+  }
+  @Post(":resource")
+  async create(@Param("resource") value: string, @Body() body: Config, @Req() req: AdminRequest) {
+    const principal = await this.principal(req, "admin:write");
+    const kind = resource(value);
+    validate(kind === "models" ? "ModelConfig" : kind === "tools" ? "ToolConfig" : "Procedure", body);
+    return this.settings.mutate(principal, kind, configId(body), body, this.key(req), req.get("traceparent")!, "POST");
+  }
+  @Delete(":resource/:id")
+  @HttpCode(204)
+  async remove(@Param("resource") value: string, @Param("id") id: string, @Req() req: AdminRequest) {
+    const principal = await this.principal(req, "admin:write");
+    if (req.body !== undefined)
+      throw new Problem(400, "INVALID_REQUEST", "DELETE ne reçoit pas de corps.");
+    await this.settings.mutate(principal, resource(value), id, null, this.key(req), req.get("traceparent")!, "DELETE");
+  }
   @Put(":resource/:id")
   async update(
     @Param("resource") value: string,
@@ -187,6 +273,7 @@ class AdminController {
 }
 export async function createBackend(options: {
   pool: Pool;
+  mcpGateway?: import("./tooling.js").ToolingPort;
   auth: AuthOptions;
   allowedMcpUrls: ReadonlySet<string>;
   corsOrigins?: string[];
@@ -201,6 +288,7 @@ export async function createBackend(options: {
       ...(options.runtime ? [ConversationController, InternalController] : []),
     ],
     providers: [
+      {provide:McpConnections,useValue:new McpConnections(options.pool,options.allowedMcpUrls,options.mcpGateway??options.runtime?.tooling)},
       { provide: DB, useValue: options.pool },
       { provide: AUTH, useValue: options.auth },
       {

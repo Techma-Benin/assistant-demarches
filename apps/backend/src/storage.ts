@@ -1,6 +1,5 @@
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { createConnection } from "node:net";
 import {
   S3Client,
   PutObjectCommand,
@@ -122,46 +121,4 @@ export function storageFromEnvironment(): ObjectStorage {
       bucket,
     );
   throw new Error("Unsupported storage driver.");
-}
-export type FileScanner = { clean(data: Buffer): Promise<boolean> };
-export class ClamScanner implements FileScanner {
-  constructor(
-    private host: string,
-    private port: number,
-  ) {}
-  clean(data: Buffer): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-      const socket = createConnection({ host: this.host, port: this.port });
-      let result = "";
-      socket.setTimeout(15000, () =>
-        socket.destroy(new Error("Scanner timeout.")),
-      );
-      socket.on("error", reject);
-      socket.on("connect", () => {
-        socket.write("zINSTREAM\0");
-        for (let offset = 0; offset < data.length; offset += 65536) {
-          const chunk = data.subarray(offset, offset + 65536);
-          const size = Buffer.alloc(4);
-          size.writeUInt32BE(chunk.length);
-          socket.write(size);
-          socket.write(chunk);
-        }
-        socket.write(Buffer.alloc(4));
-      });
-      socket.on("data", (chunk) => {
-        result += chunk.toString();
-        if (result.length > 4096)
-          socket.destroy(new Error("Invalid scanner response."));
-        else if (result.includes("\0")) {
-          socket.end();
-          if (result.trim().replace(/\0/g, "").endsWith(" OK")) resolve(true);
-          else if (result.includes(" FOUND")) resolve(false);
-          else reject(new Error("Scanner failed."));
-        }
-      });
-      socket.on("end", () => {
-        if (!result.includes("\0")) reject(new Error("Scanner disconnected."));
-      });
-    });
-  }
 }

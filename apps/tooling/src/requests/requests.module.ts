@@ -128,7 +128,6 @@ class RequestTools implements OnModuleInit {
   }
 
   private verify(fileId: string, file: FileMetadata) {
-    if (file.scanStatus === 'pending') return { fileId, status: 'pending', reasons: ['Analyse antivirus en cours'] };
     const reasons = this.fileProblems(file);
     return { fileId, status: reasons.length ? 'invalid' : 'valid', reasons };
   }
@@ -148,8 +147,6 @@ class RequestTools implements OnModuleInit {
 
   private fileProblems(file: FileMetadata): string[] {
     const problems: string[] = [];
-    if (file.scanStatus === 'pending') problems.push('Pièce en cours d\'analyse');
-    if (file.scanStatus === 'rejected') problems.push('Pièce rejetée par l\'analyse');
     if (Date.parse(file.expiresAt) <= Date.now()) problems.push('Pièce expirée');
     return problems;
   }

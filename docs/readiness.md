@@ -9,12 +9,12 @@
 - Types TypeScript générés, client conversation, monorepo pnpm/Turborepo avec emplacements des applications.
 - Simulations locales HTTP, MCP Streamable HTTP et WebSocket, récepteur callback de référence et fixtures synthétiques.
 - CI GitHub Actions et tests d'intégration positifs / négatifs.
-- Backend NestJS : parcours texte C1/C2/C3/C4, identités portail/WhatsApp vérifiées, agent multi-protocoles, worker BullMQ, consentement signé, fichiers avec scan, adaptateurs de stockage et callbacks. Tests sur PostgreSQL/Redis et fournisseurs synthétiques ; voir `apps/backend/README.md` pour les limites et dépendances.
+- Backend NestJS : parcours texte C1/C2/C3/C4, identités portail/WhatsApp vérifiées, agent multi-protocoles, worker BullMQ, consentement signé, fichiers privés sans analyse de contenu, adaptateurs de stockage et callbacks. Tests sur PostgreSQL/Redis et fournisseurs synthétiques ; voir `apps/backend/README.md` pour les limites et dépendances.
 
 ## Limites de cette livraison
 
 - Le Backend doit encore être validé avec Keycloak, le Tooling, les canaux, des modèles réels et le stockage du déploiement. Les autres dossiers applicatifs restent des emplacements réservés. La transcription/OCR, les traces OpenTelemetry et l'export du journal autoritatif Tooling ne sont pas branchés.
-- Les mocks partagent de la mémoire dans un processus et utilisent des jetons publics de test. Ils n'implémentent pas OIDC, TLS, chiffrement, scan antivirus réel, outbox, persistance, audit chaîné, reprise durable ou intégration Meta. Les clés, preuves signées, sauvegardes et déploiements réels restent aux équipes.
+- Les mocks partagent de la mémoire dans un processus et utilisent des jetons publics de test. Ils n'implémentent pas OIDC, TLS, chiffrement, outbox, persistance, audit chaîné, reprise durable ou intégration Meta. Les clés, preuves signées, sauvegardes et déploiements réels restent aux équipes.
 - Le simulateur répond avec un texte déterministe fictif ; aucune qualité d'IA ou fiabilité administrative n'est revendiquée. Les 50 questions métier sont à collecter.
 - Contrats complétés à partir des documents, à relire par les responsables de chaque groupe ; ce dépôt n'atteste pas leur approbation.
 - Les comptes des responsables Interface/Backend/Tooling ne sont pas connus. CODEOWNERS désigne temporairement @billos-e. La règle de revue croisée figure dans la checklist de PR.

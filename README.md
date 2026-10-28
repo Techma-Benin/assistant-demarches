@@ -56,3 +56,5 @@ Branches courtes ; Conventional Commits ; CI verte ; relecture par un autre grou
 - [État de livraison et limites](docs/readiness.md)
 
 Objectif interne : démonstration et dossier prêts le 6 novembre 2026. Selon le communiqué local, dépôt des candidatures du 29 octobre au 12 novembre 2026 ; règlement complet à confirmer avant candidature.
+
+Les serveurs MCP sont désormais administrables par connexion : ajout d’URL/authentification, découverte réelle des actions, activation du serveur et permissions individuelles. Le serveur métier Techma reste connecté ; d’autres serveurs peuvent exposer leurs propres actions hors catalogue historique. [Guide des connexions MCP](docs/mcp-connections.md).

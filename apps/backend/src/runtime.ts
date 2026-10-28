@@ -5,7 +5,7 @@ import type { AuthOptions } from "./auth.js";
 import { Identities } from "./identity.js";
 import { Conversations } from "./conversations.js";
 import { Files } from "./files.js";
-import { ClamScanner, storageFromEnvironment } from "./storage.js";
+import { storageFromEnvironment } from "./storage.js";
 import { Consent } from "./consent.js";
 import { HttpMandateControl, McpGateway } from "./tooling.js";
 import { HttpModels, type Provider } from "./model.js";
@@ -89,10 +89,6 @@ export async function loadRuntime(
   const files = new Files(
     pool,
     storageFromEnvironment(),
-    new ClamScanner(
-      process.env.CLAMAV_HOST ?? "127.0.0.1",
-      Number(process.env.CLAMAV_PORT ?? 3310),
-    ),
   );
   const tokens = new ServiceTokens();
   const runtime: Runtime = {
@@ -126,6 +122,7 @@ export async function loadRuntime(
       ? tokens.get("backend-agent", "tools:call", "techma-tooling")
       : required(references[reference] ?? "MISSING_MCP_SECRET_REFERENCE"),
   );
+  runtime.tooling = tooling;
   const models = new HttpModels(
     JSON.parse(process.env.MODEL_PROVIDERS_JSON ?? "{}") as Record<
       string,

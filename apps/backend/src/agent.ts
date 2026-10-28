@@ -1,3 +1,4 @@
+import { modelToolName, type McpServer } from "./mcp-connections.js";
 import { describeError, logFailure } from "./diagnostics.js";
 import type { Pool } from "pg";
 import {
@@ -18,6 +19,7 @@ import {
 import { transaction } from "./transactions.js";
 import {
   catalog,
+  compileMcpSchema,
   type ToolingPort,
   type ToolDefinition,
   type ToolResult,
@@ -79,6 +81,7 @@ type State = {
   sources: Schemas["Source"][];
   requests: Schemas["Request"][];
   config: ModelConfig;
+  externalResults?: boolean;
 };
 export class Agent {
   constructor(
@@ -329,27 +332,26 @@ export class Agent {
       };
       await this.save(conversation.id, input.id, state);
     }
-    const configs = (
-      await this.pool.query(
-        "SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource='tools' AND body->>'enabled'='true' ORDER BY resource_id",
-        [administrationId],
-      )
-    ).rows.map((row) => row.body) as ToolConfig[];
-    const context = {
-      conversationId: conversation.id,
-      userRef: conversation.userRef,
-      traceparent,
-    };
-    const advertised: ToolDefinition[] = [];
-    for (const config of configs) {
-      if (!catalog.some((tool) => tool.name === config.name)) continue;
-      const listed = await this.tooling.discover(
-        config.serverUrl,
-        config.secretRef,
-        context,
-      );
-      if (listed.some((tool) => tool.name === config.name))
-        advertised.push(catalog.find((tool) => tool.name === config.name)!);
+    const context = {conversationId:conversation.id,userRef:conversation.userRef,traceparent};
+    type Binding={server:McpServer;name:string;definition:ToolDefinition;requires:boolean};
+    const bindings=new Map<string,Binding>();
+    const servers=(await this.pool.query("SELECT body FROM backend_mcp_servers WHERE administration_id=$1 AND body->>'enabled'='true' ORDER BY id",[administrationId])).rows.map(r=>r.body as McpServer);
+    const advertised:ToolDefinition[]=[];
+    for(const server of servers){
+      const permissions=(await this.pool.query("SELECT name,enabled,requires_mandate,definition FROM backend_mcp_tools WHERE administration_id=$1 AND server_id=$2",[administrationId,server.id])).rows;
+      const listed=await this.tooling.discover(server.url,server.auth,{...context,external:server.policy!=="techma"});
+      for(const permission of permissions){
+        if(!permission.enabled)continue;
+        const remote=listed.find(t=>t.name===permission.name);if(!remote)continue;
+        // A changed remote contract requires explicit admin rediscovery/approval.
+        if(permission.definition&&canonical(permission.definition)!==canonical(remote))continue;
+        const known=server.policy==="techma"?catalog.find(t=>t.name===remote.name):undefined;
+        const definition=known??remote;
+        const name=modelToolName(server,remote.name);
+        if(bindings.has(name))throw new Problem(503,"UPSTREAM_UNAVAILABLE","Collision des noms MCP ; utiliser des connexions génériques distinctes.");
+        bindings.set(name,{server,name:remote.name,definition,requires:Boolean(permission.requires_mandate||known?._meta?.["bj.techma/requiresMandate"])});
+        advertised.push({...definition,name});
+      }
     }
     while (state.step < 8) {
       if (!state.pending) {
@@ -392,7 +394,7 @@ export class Agent {
           // Only citations observed in validated Tooling results can leave the service.
           const provenance = blocks.every((block) =>
             block.type === "text"
-              ? block.sources.length > 0 &&
+              ? (block.sources.length > 0 || state.externalResults === true) &&
                 block.sources.every((source) =>
                   state.sources.some(
                     (known) => canonical(known) === canonical(source),
@@ -442,13 +444,15 @@ export class Agent {
         if (cached) result = cached.result;
         else {
           try {
-            const config = configs.find((config) => config.name === call.name);
-            if (!config)
+            const binding=bindings.get(call.name);
+            if (!binding)
               throw new Problem(403, "FORBIDDEN", "Outil non activé.");
-            const definition = catalog.find((tool) => tool.name === call.name)!;
-            const requires = Boolean(
-              definition._meta?.["bj.techma/requiresMandate"],
-            );
+            const current=(await this.pool.query("SELECT s.body,t.enabled,t.requires_mandate,t.definition FROM backend_mcp_servers s JOIN backend_mcp_tools t ON t.administration_id=s.administration_id AND t.server_id=s.id WHERE s.administration_id=$1 AND s.id=$2 AND t.name=$3",[administrationId,binding.server.id,binding.name])).rows[0];
+            if(!current||!current.body.enabled||!current.enabled||canonical(current.body)!==canonical(binding.server)||(current.definition&&canonical(current.definition)!==canonical(binding.server.policy==="techma"?catalog.find(t=>t.name===binding.name)??binding.definition:binding.definition)))throw new Problem(403,"FORBIDDEN","Connexion ou action désactivée ou modifiée.");
+            const requires = binding.requires || current.requires_mandate;
+            let argumentsValue: Record<string,unknown>;
+            try {argumentsValue=JSON.parse(call.arguments);} catch {throw new Problem(400,"INVALID_REQUEST","Arguments outil JSON invalides.");}
+            if(!compileMcpSchema(binding.definition.inputSchema)(argumentsValue))throw new Problem(400,"INVALID_REQUEST","Arguments outil invalides.");
             if (
               requires &&
               (
@@ -478,12 +482,13 @@ export class Agent {
                 "Autorisation explicite requise.",
               );
             result = await this.tooling.call(
-              config.serverUrl,
-              config.secretRef,
-              call.name,
-              JSON.parse(call.arguments),
-              { ...context, ...(mandate ? { mandateId: mandate.id } : {}) },
+              binding.server.url,
+              binding.server.auth,
+              binding.name,
+              argumentsValue,
+              { ...context, external:binding.server.policy!=="techma", ...(mandate ? { mandateId: mandate.id } : {}) },
               operationKey,
+              binding.definition,
             );
           } catch (error) {
             if (!(error instanceof Problem) || error.status >= 500) throw error;
@@ -523,7 +528,10 @@ export class Agent {
             );
           });
         }
-        const output = result.structuredContent as any;
+        const selected=bindings.get(call.name);
+        const isTechma=selected?.server.policy==="techma"&&catalog.some(t=>t.name===selected.name);
+        if(!isTechma&&!result.isError)state.externalResults=true;
+        const output = (isTechma?result.structuredContent:undefined) as any;
         for (const procedure of output?.items ??
           (output?.source ? [output] : []))
           if (procedure.validationStatus === "validated") {
@@ -545,7 +553,7 @@ export class Agent {
                 code: toolErrorCode(result),
                 detail: "L’outil a échoué.",
               }
-            : { isError: false, result: result.structuredContent },
+            : { isError: false, result: result.structuredContent ?? result.content.filter(c=>c.type==="text").map(c=>c.text).join("\n") },
         );
         state.history.push({
           role: "tool",

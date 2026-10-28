@@ -4,7 +4,7 @@ Branche locale : `integration/backend-tooling`, issue de `backend/agent-orchestr
 
 Cette pile démarre le vrai Backend NestJS, un vrai processus worker BullMQ/Redis et le vrai Tooling MCP avec deux bases PostgreSQL isolées. Les huit outils viennent du catalogue partagé. Les ressources et les événements circulent par HTTP entre les services. Les quatre clients de service obtiennent des JWT RS256 par `client_credentials` ; les services vérifient signatures, audiences et scopes. Le consentement est signé par une autre clé et vérifié par le Tooling via JWKS.
 
-Trois dépendances sont des fixtures locales : fournisseur d’identité minimal, modèle scripté et scanner compatible avec le protocole ClamAV. Le scanner ne valide que le fichier synthétique généré au démarrage ; tout autre contenu est rejeté. Cette pile valide le raccordement technique et les contrôles d’accès, pas la qualité d’un vrai modèle, un déploiement Keycloak ou la détection antivirus réelle. Aucun appel à un fournisseur IA externe n’est effectué.
+Deux dépendances sont des fixtures locales : fournisseur d’identité minimal et modèle scripté. Les fichiers sont stockés sans analyse antivirus ni analyse du contenu. Cette pile valide le raccordement technique et les contrôles d’accès, pas la qualité d’un vrai modèle ou un déploiement Keycloak. Aucun appel à un fournisseur IA externe n’est effectué.
 
 ## Démarrer sur ce poste
 
@@ -76,7 +76,7 @@ Une base externe doit avoir un nom finissant par `_test` et un compte autorisé 
    Conserver le `chl_…`, lire le texte de consentement, puis exécuter `POST /v1/conversations/{conversationId}/mandates` avec `{"challengeId":"chl_…","accepted":true}`. Attendre **201** et un mandat `active`.
 6. Envoyer un nouveau message dont le texte est **`creer`**. Dans les événements, la carte de statut de la réponse contient le `req_…` créé. Conserver cet identifiant. `GET /v1/requests/{requestId}` doit également retourner cette demande : cela vérifie la projection des événements Tooling vers Backend.
 7. Envoyer **`completer req_…`** avec l’identifiant réel. La fixture remplit le champ fictif `displayName` avec `Usager fictif`. La demande reste `draft` tant qu’il manque sa pièce.
-8. Exécuter `POST /v1/files` avec `application/octet-stream`, le fichier `synthetic.pdf` dont le chemin est affiché dans le terminal et `X-File-Mime-Type: application/pdf`. Conserver le `fil_…`. Le fichier est d’abord `pending`, puis le worker le passe à `clean` en une ou deux secondes. Un autre fichier sera rejeté par cette fixture.
+8. Exécuter `POST /v1/files` avec `application/octet-stream`, le fichier `synthetic.pdf` dont le chemin est affiché dans le terminal et `X-File-Mime-Type: application/pdf`. Conserver le `fil_…`. Le fichier est disponible immédiatement ; `synthetic.pdf` est un exemple, pas une restriction du stockage. Les contrôles de taille, MIME déclaré, propriété et expiration restent applicables.
 9. Envoyer **`joindre req_… fil_…`**, en remplaçant les deux identifiants. Attendre une carte `ready` dans les événements.
 10. Envoyer **`soumettre req_…`**. Attendre `awaiting_user_validation` et le lien fictif `https://example.org/demonstration`. L’essai prépare un lien ; aucun dépôt administratif réel n’est effectué.
 11. Envoyer **`STOP`**. Vérifier `mandate.revoked` puis la confirmation de l’agent. Une nouvelle action ne doit plus réussir sans nouvelle autorisation.
@@ -92,7 +92,7 @@ Les mots ci-dessus sont des commandes exactes du modèle de test, en minuscules 
 - Refus d’une action sans mandat et refus d’une preuve de consentement altérée.
 - Rejeu de consentement et d’action sans doublon ; conflit si la même clé porte un autre contenu.
 - Création réelle d’une demande, réception des événements C4 et lecture de sa projection.
-- Scan de la seule pièce synthétique autorisée, refus d’un autre contenu, remplissage et préparation du lien.
+- Dépôt et utilisation immédiate de pièces sans scanner, remplissage et préparation du lien.
 - Redémarrage du worker sans seconde réponse, révocation par STOP et refus d’utiliser le mandat révoqué.
 - Utilisation des quatre clients `client_credentials`, outbox entièrement publiée et aucune entrée en échec définitif.
 - Arrêt interactif par Ctrl+C sur le groupe de processus et suppression des fichiers temporaires (Linux/macOS).
@@ -103,6 +103,14 @@ Les mots ci-dessus sont des commandes exactes du modèle de test, en minuscules 
 
 Le `.env.example` du Backend et son exemple de provisioning visent maintenant le vrai Tooling sur 4030. Configurer les huit `ToolConfig.serverUrl` sur `/mcp`, `secretRef=backend-agent` et l’autorisation réseau `MCP_ALLOWED_URLS`. Les variables et les valeurs en base doivent être cohérentes.
 
-Remplacer les fixtures par Keycloak, un fournisseur de modèle et ClamAV réels. Configurer les quatre clients : `backend-agent` (`tools:call`) et `backend-mandates` (`mandates:grant`) vers l’audience `techma-tooling`, puis `tooling-resources` (`resources:read`) et `tooling-events` (`events:publish`) vers `techma-backend`. Leurs jetons doivent inclure les claims attendus, dont `sub`, `iat`, `exp` et `azp` ou `client_id`.
+Remplacer les fixtures par Keycloak et un fournisseur de modèle réels. Configurer les quatre clients : `backend-agent` (`tools:call`) et `backend-mandates` (`mandates:grant`) vers l’audience `techma-tooling`, puis `tooling-resources` (`resources:read`) et `tooling-events` (`events:publish`) vers `techma-backend`. Leurs jetons doivent inclure les claims attendus, dont `sub`, `iat`, `exp` et `azp` ou `client_id`.
 
 Fournir la clé privée de consentement au Backend ; publier uniquement sa clé publique via `PROOF_JWKS_URL` et aligner `PROOF_ISSUER` sur `MANDATE_ISSUER`. Utiliser deux configurations d’environnement distinctes pour les bases Backend et Tooling. Activer HTTPS hors localhost, démarrer le worker séparément et refaire le même parcours avec ces dépendances. Le test local ne vaut pas validation d’un environnement de production.
+
+Décision sur les pièces : [stockage sans antivirus](../docs/file-storage-decision.md).
+
+## Connexion MCP dans l’administration
+
+La pile conserve le premier serveur MCP Techma et ses permissions issues du provisioning historique. Dans Swagger `admin`, le groupe **Serveurs MCP** permet de lister cette connexion, découvrir ses huit actions et les désactiver individuellement ou désactiver tout le serveur. Le champ `policy:techma` conserve les contrôles métier et de provenance. Les connexions externes `generic` se configurent via les mêmes endpoints, après autorisation de leurs URLs côté déploiement. Voir [guide multi-MCP](../docs/mcp-connections.md).
+
+Le test backend `mcp-connections.test.mjs` ajoute le cas de deux serveurs MCP avec actions hors catalogue et noms identiques, plusieurs authentifications et contrôle immédiat des permissions. Les fixtures locales ne prouvent pas une compatibilité avec tout fournisseur OAuth ni une soumission administrative réelle.

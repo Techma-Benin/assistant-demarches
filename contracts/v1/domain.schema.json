@@ -223,14 +223,6 @@
           "minimum": 1,
           "maximum": 10485760
         },
-        "scanStatus": {
-          "type": "string",
-          "enum": [
-            "pending",
-            "clean",
-            "rejected"
-          ]
-        },
         "expiresAt": {
           "type": "string",
           "format": "date-time"
@@ -240,7 +232,6 @@
         "id",
         "mimeType",
         "sizeBytes",
-        "scanStatus",
         "expiresAt"
       ]
     },
@@ -1124,6 +1115,15 @@
             "actorRef": {
               "type": "string",
               "minLength": 1
+            },
+            "operation": {
+              "type": "string",
+              "enum": [
+                "created",
+                "updated",
+                "deleted"
+              ],
+              "description": "Opération de configuration ; facultative pour compatibilité avec les événements antérieurs."
             }
           },
           "required": [
@@ -1411,6 +1411,242 @@
         },
         "userRef": {
           "$ref": "#/$defs/UserRef"
+        }
+      }
+    },
+    "McpAuth": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "none"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "secretRef"
+          ],
+          "properties": {
+            "type": {
+              "const": "bearer"
+            },
+            "secretRef": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.:-]{1,200}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "headers"
+          ],
+          "properties": {
+            "type": {
+              "const": "headers"
+            },
+            "headers": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 16,
+              "propertyNames": {
+                "pattern": "^[-A-Za-z0-9]+$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.:-]{1,200}$"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "tokenUrl",
+            "clientId",
+            "clientSecretRef"
+          ],
+          "properties": {
+            "type": {
+              "const": "oauth-client-credentials"
+            },
+            "tokenUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "clientId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "clientSecretRef": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.:-]{1,200}$"
+            },
+            "scope": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "audience": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          }
+        }
+      ]
+    },
+    "McpServer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "url",
+        "enabled",
+        "transport",
+        "auth",
+        "policy"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "transport": {
+          "const": "streamable-http"
+        },
+        "auth": {
+          "$ref": "#/$defs/McpAuth"
+        },
+        "policy": {
+          "enum": [
+            "generic",
+            "techma"
+          ]
+        }
+      }
+    },
+    "McpServerPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "nextCursor"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/McpServer"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "McpToolPermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "requiresMandate"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "requiresMandate": {
+          "type": "boolean"
+        }
+      }
+    },
+    "McpDiscoveredTool": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "enabled",
+        "requiresMandate",
+        "available",
+        "modelName"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string"
+        },
+        "inputSchema": {
+          "type": "object"
+        },
+        "outputSchema": {
+          "type": "object"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "requiresMandate": {
+          "type": "boolean"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "modelName": {
+          "type": "string"
+        }
+      }
+    },
+    "McpToolPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "nextCursor"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/McpDiscoveredTool"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     }

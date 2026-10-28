@@ -6,12 +6,12 @@ Service NestJS pour les contrats v1. Les contrats partagés et les types génér
 
 - C1 : conversations, messages acceptés en 202, historique d’événements, tickets WebSocket à usage unique, consentement, révocation et projection des demandes.
 - Identité : jetons OIDC usager du portail ; relais WhatsApp sous le client `whatsapp-adapter`, scope `conversation:relay` et claim signé `channel_subject` au format E.164. Le Backend résout un pseudonyme stable sans stocker le numéro en clair. Aucun écran de connexion propre à WhatsApp n’est nécessaire.
-- C2 : client MCP Streamable HTTP officiel, catalogue v1, schémas d’entrées/sorties, contexte hors arguments du modèle et clés stables pour les actions.
-- C3 : GET modèles, outils, fiches, conversations, audit et métriques ; PUT des modèles, outils et fiches existants. L’audit exposé ici couvre les changements de configuration locaux ; il ne remplace pas le journal métier autoritatif du Tooling.
+- C2 : client MCP Streamable HTTP officiel multi-serveurs, découverte dynamique, permissions par action et schémas d’entrées/sorties. Politique métier Techma conservée pour le serveur existant.
+- C3 : CRUD modèles, outils et fiches (POST, GET collection/détail, PUT existant, DELETE), puis GET conversations, audit et métriques. L’audit exposé ici couvre les changements de configuration locaux ; il ne remplace pas le journal métier autoritatif du Tooling.
 - C4 : ingestion authentifiée, déduplication durable, contrôle des propriétaires, projection des statuts et diffusion aux canaux.
 - Agent : adaptateurs Responses et Chat Completions compatibles OpenAI, prompt versionné, outils activés par administration et contrôle des sources retournées. Les changements de configuration affectent les nouveaux traitements ; un traitement commencé conserve sa configuration de modèle.
 - Worker BullMQ/Redis : travail durable dans PostgreSQL, ordre par conversation, checkpoints et reprise sans répéter les outils déjà terminés. `STOP` suspend immédiatement les nouvelles actions locales, puis le worker révoque les mandats via le client de contrôle. `HISTORIQUE` expose les actions de la conversation courante.
-- Fichiers : 10 Mio maximum, références opaques, stockage local/S3/GCS, état `pending` jusqu’au scan ClamAV, refus d’utilisation avant `clean` et purge à expiration. Les pièces brutes ne sont pas envoyées au modèle.
+- Fichiers : 10 Mio maximum, références opaques, stockage local/S3/GCS, utilisables dès le dépôt réussi sans scan antivirus, et purge à expiration. Les pièces brutes ne sont pas envoyées au modèle.
 - WhatsApp : callback statique, événements `message.sent`, acquittement attendu 204, reprise exponentielle jusqu’à 24 h et conservation des échecs.
 
 ## Développement
@@ -36,7 +36,7 @@ Dans un second processus, avec le même environnement :
 pnpm --filter @techma/backend worker
 ```
 
-Configurer les variables de `.env.example` dans l’environnement des deux processus ; ce fichier n’est pas chargé automatiquement. Le chemin du provisioning ci-dessus est relatif à `apps/backend`. Les migrations sont versionnées et rejouables. Le provisioning n’insère que les configurations absentes ; les PUT remplacent des ressources existantes et ne créent pas de ressources.
+Configurer les variables de `.env.example` dans l’environnement des deux processus ; ce fichier n’est pas chargé automatiquement. Le chemin du provisioning ci-dessus est relatif à `apps/backend`. Les migrations sont versionnées et rejouables. Le provisioning n’insère que les configurations absentes ; les POST créent depuis la console/API, les PUT remplacent des ressources existantes et les DELETE suppriment la configuration, jamais les dossiers. Voir [le guide CRUD](../../docs/admin-crud.md) pour les reprises et restrictions.
 
 Le service réel et les mocks utilisent 4010 par défaut : choisir des ports distincts pour les lancer ensemble. `/health` vérifie la dernière migration. Utiliser `HOST=0.0.0.0` et une `PUBLIC_BACKEND_URL` HTTPS dans un environnement publié.
 
@@ -48,7 +48,7 @@ Utiliser une base de développement dédiée sur votre PostgreSQL existant, ou l
 docker compose -f infra/backend-dependencies.compose.yml up -d
 ```
 
-Cette commande demande `POSTGRES_PASSWORD`. Elle expose PostgreSQL sur 5433, Redis sur 6380 et ClamAV sur 3310, uniquement sur localhost. Ajuster `DATABASE_URL` en conséquence. Ce fichier ne déploie pas Keycloak, le Tooling ou un fournisseur de modèle. Attendre la disponibilité des signatures ClamAV avant de traiter des pièces. Une panne du scanner laisse les pièces non utilisables.
+Cette commande demande `POSTGRES_PASSWORD`. Elle expose PostgreSQL sur 5433, Redis sur 6380, uniquement sur localhost. Ajuster `DATABASE_URL` en conséquence. Ce fichier ne déploie pas Keycloak, le Tooling ou un fournisseur de modèle.
 
 ### Identités et consentement
 
@@ -95,7 +95,7 @@ Après démarrage, ouvrir `http://localhost:4010/docs`. Swagger UI propose les q
 
 Les événements sont conservés 48 h à compter de leur persistance, ce qui couvre le minimum contractuel de 24 h. Les fichiers expirent après 24 h. Les réservations d’idempotence durent au moins 24 h. Les entrées traitées et résultats techniques sont nettoyés après 48 h ; les conversations, identités et preuves de consentement restent soumises à la politique du futur pilote, à définir avant données réelles.
 
-Le worker doit tourner pour les traitements, livraisons, scans et nettoyages. Un traitement s’arrête avec un message explicite après douze échecs ou 24 h, sans relancer une action au-delà de la fenêtre de reprise. Le callback WhatsApp échoué après 24 h reste signalé pour traitement d’exploitation. Les erreurs 401/403 du callback produisent une alerte de configuration sur stderr.
+Le worker doit tourner pour les traitements, livraisons et nettoyages. Un traitement s’arrête avec un message explicite après douze échecs ou 24 h, sans relancer une action au-delà de la fenêtre de reprise. Le callback WhatsApp échoué après 24 h reste signalé pour traitement d’exploitation. Les erreurs 401/403 du callback produisent une alerte de configuration sur stderr.
 
 ## Vérification et limites
 
@@ -108,12 +108,20 @@ Les tests utilisent PostgreSQL jetable et des fournisseurs locaux synthétiques,
 
 Le test du processus worker utilise `REDIS_TEST_URL`, ou un binaire Redis local (`REDIS_TEST_BINARY`). Il est ignoré si aucun Redis de test n’est disponible ; la CI fournit Redis et exécute ce scénario. Les tests ne ciblent jamais `DATABASE_URL` par défaut.
 
-À valider avant un pilote : realm Keycloak réel et échange de jetons WhatsApp, services des autres équipes, profils de modèles réels, stockage cloud et permissions, ClamAV réel, TLS/chiffrement, sauvegardes, supervision et jeu d’évaluation métier. Le masquage de motifs sensibles et la vérification des références de sources ne constituent pas une garantie d’anonymisation complète ou d’exactitude des réponses. Les traces OpenTelemetry et l’export du journal autoritatif Tooling restent à intégrer.
+À valider avant un pilote : realm Keycloak réel et échange de jetons WhatsApp, services des autres équipes, profils de modèles réels, stockage cloud et permissions, TLS/chiffrement, sauvegardes, supervision et jeu d’évaluation métier. Le masquage de motifs sensibles et la vérification des références de sources ne constituent pas une garantie d’anonymisation complète ou d’exactitude des réponses. Les traces OpenTelemetry et l’export du journal autoritatif Tooling restent à intégrer.
 
-Les messages audio/images/fichiers sont acceptés comme références contrôlées mais aucune transcription/OCR n’est encore branchée : l’assistant demande une description écrite. La phase v1 prépare un lien officiel et ne déclare pas un dépôt administratif autonome. La création/suppression publique de modèles ou de serveurs MCP n’est pas ajoutée au contrat actif.
+Les messages audio/images/fichiers sont acceptés comme références contrôlées mais aucune transcription/OCR n’est encore branchée : l’assistant demande une description écrite. La phase v1 prépare un lien officiel et ne déclare pas un dépôt administratif autonome. Les modèles et fiches ont un CRUD administrateur ; les connexions MCP disposent de leur propre CRUD, découverte et permissions. Voir [connexions MCP](../../docs/mcp-connections.md).
 
 ## Logs de diagnostic
 
 Le worker écrit des lignes JSON sur stderr : `agent.processing_failed`, `agent.processing_exhausted`, `worker.job_failed`, erreurs de file et de maintenance. Chercher `conversationId`, `messageId` et `traceId` pour suivre un traitement. Chaque échec comprend le numéro de tentative, le code et, pour un refus IA, le fournisseur, le modèle, le statut HTTP distant, l’identifiant de requête disponible et une raison classifiée. Exemple : `upstreamStatus: 403`, `reason: provider_network_access_denied` signifie que l’appel distant a été refusé pour une raison d’accès réseau ; ce n’est pas une erreur du WebSocket.
 
 Les corps de messages, jetons, clés et réponses brutes des fournisseurs ne sont pas journalisés. La dernière erreur structurée est conservée dans `backend_messages.last_error` après abandon ; elle est effacée après une réussite effective. Un ancien échec dont la cause avait déjà été effacée n’est pas récupérable rétroactivement.
+
+Décision sur les pièces : [stockage sans antivirus](../../docs/file-storage-decision.md).
+
+## Connexions MCP administrables
+
+Le groupe Swagger **Serveurs MCP** configure une URL par connexion ; la découverte retourne les actions et leurs schémas. Le modèle ne reçoit que les actions activées. La restriction aux huit noms du catalogue ne s’applique plus aux connexions génériques. `GET/POST /v1/admin/mcp-servers`, `GET/PUT/DELETE /v1/admin/mcp-servers/{id}`, `POST /{id}/discover`, `GET /{id}/tools`, `PUT /{id}/tools/{toolName}`. [Guide, authentifications, migration et limites](../../docs/mcp-connections.md).
+
+Le seed accepte `mcpServers` (tableau de `McpServer`) ; découvrir puis choisir les permissions après lancement. Les anciens champs `tools` et routes `/v1/admin/tools` restent dépréciés avec migration de compatibilité. Les nouveaux clients administrent des serveurs et les permissions de leurs actions, sans créer des noms d’actions.

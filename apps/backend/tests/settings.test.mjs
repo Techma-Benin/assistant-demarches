@@ -103,7 +103,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       },
       body: body ? JSON.stringify(body) : undefined,
     });
-    const value = await res.json();
+    const value = res.status === 204 ? null : await res.json();
     if (!res.ok) {
       validate("Problem", value);
       assert.equal(
@@ -322,7 +322,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
     },
   );
   await t.test(
-    "strict inputs, update-only semantics, secret references and MCP allowlist",
+    "strict inputs, PUT existing semantics, secret references and MCP allowlist",
     async () => {
       for (const body of [
         { ...model, apiKey: "never-store-me" },
@@ -428,4 +428,83 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       );
     },
   );
+  await t.test("CRUD configurations: creation, detail, tenant isolation, retries and delete/recreate", async () => {
+    const procedure = {
+      id: "crud-procedure", administrationId: "alpha", title: "Test", summary: "Test",
+      requiredDocuments: [], feeFcfa: 0, processingDays: 1,
+      source: { procedureId: "crud-procedure", url: "https://example.org/test", retrievedAt: new Date().toISOString(), version: "1" },
+      validationStatus: "draft", formSchema: {type: "object", additionalProperties: false},
+    };
+    for (const [resource, body] of [["models", {...model,id:"crud-model"}], ["tools",{...tool,name:"crud.tool"}], ["procedures",procedure]]) {
+      const path = "/v1/admin/" + resource, id = body.id ?? body.name, detail = path + "/" + id;
+      const before = Number((await pool.query("SELECT count(*) FROM backend_outbox")).rows[0].count);
+      const writes = await Promise.all(Array.from({length:3}, () => request(path,{method:"POST",body,key:"crud-create"})));
+      for (const result of writes) {assert.equal(result.status,201);assert.deepEqual(result.value,body);}
+      assert.equal((await request(path,{method:"POST",body,key:"crud-collision"})).status,409);
+      assert.equal((await request(path,{method:"POST",body:{...body,...(resource==="models"?{temperature:0.8}:resource==="tools"?{enabled:false}:{title:"changed"})},key:"crud-create"})).status,409);
+      assert.deepEqual((await request(detail)).value,body);
+      const beta = await token({administrationId:"beta"});
+      assert.equal((await request(detail,{authToken:beta})).status,404);
+      assert.equal((await request(detail,{method:"DELETE",authToken:beta,key:"crud-delete"})).status,404);
+      const betaBody=resource==="procedures"?{...body,administrationId:"beta"}:body;
+      const betaCreated=await request(path,{method:"POST",body:betaBody,authToken:beta,key:"crud-create"});
+      if(resource === "procedures") {
+        assert.equal(betaCreated.status,409,"procedure identifiers are globally unique for the Tooling resource API");
+        assert.equal((await request(detail,{authToken:beta})).status,404);
+      } else {
+        assert.equal(betaCreated.status,201);
+        assert.deepEqual((await request(detail)).value,body);
+        assert.deepEqual((await request(detail,{authToken:beta})).value,betaBody);
+        assert.equal((await request(detail,{method:"DELETE",authToken:beta,key:"crud-delete"})).status,204);
+      }
+      assert.equal((await request(path,{method:"POST",body,authToken:await token({scope:"admin:read"})})).status,403);
+      assert.equal((await request(detail,{method:"DELETE",authToken:await token({scope:"admin:read"})})).status,403);
+      assert.equal((await request(detail,{authToken:await token({scope:"admin:write"})})).status,403);
+      const changed={...body,...(resource==="models"?{temperature:0.7}:resource==="tools"?{enabled:false}:{title:"Updated"})};
+      assert.equal((await request(detail,{method:"PUT",body:changed,key:"crud-update"})).status,200);
+      assert.deepEqual((await request(detail)).value,changed);
+      const removed=await Promise.all(Array.from({length:3},()=>request(detail,{method:"DELETE",key:"crud-delete"})));
+      for (const result of removed) assert.equal(result.status,204);
+      assert.equal((await request(detail)).status,404);
+      assert.equal((await request(detail,{method:"PUT",body:changed,key:"crud-absent-put"})).status,404);
+      assert.equal((await request(detail,{method:"DELETE",key:"crud-absent-delete"})).status,404);
+      assert.equal(Number((await pool.query("SELECT count(*) FROM backend_outbox")).rows[0].count),before+(resource === "procedures" ? 3 : 5));
+      assert.equal((await request(path,{method:"POST",body,key:"crud-recreate"})).status,201);
+      assert.equal((await request(detail,{method:"DELETE",key:"crud-delete"})).status,204);
+      assert.deepEqual((await request(detail)).value,body,"replayed DELETE must not remove recreated configuration");
+      assert.equal((await request(detail,{method:"DELETE",key:"crud-delete-final"})).status,204);
+      const operations=(await pool.query("SELECT event->'data'->>'operation' AS operation FROM backend_outbox WHERE administration_id='alpha' AND event->'data'->>'resourceId'=$1",[id])).rows.map(r=>r.operation);
+      assert.deepEqual(operations.sort(),["created","created","deleted","deleted","updated"].sort());
+    }
+    assert.equal((await request("/v1/admin/models",{method:"POST",body:{...model,id:"bad",apiKey:"secret"}})).status,400);
+    assert.equal((await request("/v1/admin/tools",{method:"POST",body:{...tool,name:"bad.tool",serverUrl:"http://169.254.169.254/metadata"}})).status,403);
+    assert.equal((await request("/v1/admin/procedures",{method:"POST",body:{...procedure,administrationId:"beta"}})).status,403);
+    assert.equal((await request("/v1/admin/procedures",{method:"POST",body:{...procedure,formSchema:{type:"impossible"}}})).status,400);
+    assert.equal((await request("/v1/admin/models",{method:"POST",body:{...model,id:"missing-key"},key:""})).status,400);
+    assert.equal((await request("/v1/admin/models/primary",{method:"DELETE",key:""})).status,400);
+    assert.equal((await request("/v1/admin/models/primary",{method:"DELETE",body:{unexpected:true}})).status,400);
+    for (const rawBody of ["{}","null"]) {
+      const response=await fetch(url+"/v1/admin/models/primary",{method:"DELETE",headers:{Authorization:"Bearer "+bearer,traceparent,"Idempotency-Key":"raw-body-delete","Content-Type":"application/json"},body:rawBody});
+      assert.equal(response.status,400);
+    }
+    const audit=(await request("/v1/admin/audit?limit=100")).value.items;
+    assert.ok(audit.some(entry=>entry.action==="configuration.changed.created"));
+    assert.ok(audit.some(entry=>entry.action==="configuration.changed.deleted"));
+
+    // A referenced procedure is protected, without accessing the Tooling database.
+    await provision(pool,"alpha","procedures",procedure);
+    const conversationId="cnv_"+"0".repeat(26);
+    await pool.query("INSERT INTO backend_conversations(id,user_ref,administration_id,body) VALUES ($1,$2,'alpha','{}')",[conversationId,"usr_"+"0".repeat(26)]);
+    for (const [table,prefix] of [["backend_challenges","chl"],["backend_mandates","mdt"],["backend_requests","req"]]) {
+      const id=prefix+"_"+"0".repeat(26);
+      if(table==="backend_requests") await pool.query("INSERT INTO backend_requests(id,conversation_id,user_ref,body,last_event_at) VALUES ($1,$2,$3,$4,now())",[id,conversationId,"usr_"+"0".repeat(26),{procedureId:procedure.id}]);
+      else if(table==="backend_mandates") await pool.query("INSERT INTO backend_mandates(id,conversation_id,user_ref,body) VALUES ($1,$2,$3,$4)",[id,conversationId,"usr_"+"0".repeat(26),{procedureId:procedure.id}]);
+      else await pool.query("INSERT INTO backend_challenges(id,conversation_id,body) VALUES ($1,$2,$3)",[id,conversationId,{procedureId:procedure.id}]);
+      const result=await request("/v1/admin/procedures/"+procedure.id,{method:"DELETE",key:"protected-"+table});
+      assert.equal(result.status,409);assert.equal(result.value.code,"INVALID_TRANSITION");
+      await pool.query(`DELETE FROM ${table} WHERE id=$1`,[id]);
+    }
+    assert.equal((await request("/v1/admin/procedures/"+procedure.id,{method:"DELETE",key:"unreferenced-delete"})).status,204);
+  });
+
 });

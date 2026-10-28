@@ -18,7 +18,7 @@ async function environment(t){
 }
 async function httpCall(env,path,{method='GET',body,token='mock-user',key=randomUUID(),extra={}}={}){
  const binary=body instanceof Uint8Array;const res=await fetch(env.backendUrl+path,{method,headers:{Authorization:'Bearer '+token,traceparent:tp,'Idempotency-Key':key,...(body?{'Content-Type':binary?'application/octet-stream':'application/json'}:{}),...extra},body:body?(binary?body:JSON.stringify(body)):undefined});
- const value=await res.json();if(!res.ok)valid('Problem',value);return {status:res.status,value};
+ const value=res.status===204?null:await res.json();if(!res.ok)valid('Problem',value);return {status:res.status,value};
 }
 async function conversation(env){const r=await httpCall(env,'/v1/conversations',{method:'POST',body:{channel:'web',locale:'fr'}});assert.equal(r.status,201);valid('Conversation',r.value);return r.value;}
 async function callTool(env,c,name,args,{mandateId,key=randomUUID(),token='mock-agent'}={}){
@@ -74,6 +74,26 @@ test('C3 : pagination, modèle, outil, fiche et audit typés',async t=>{
  const metrics=await httpCall(env,'/v1/admin/metrics',{token:'mock-admin'});valid('Metrics',metrics.value);
  assert.equal((await httpCall(env,'/v1/admin/tools?limit=0',{token:'mock-admin'})).status,400);
 });
+test('C3 : CRUD configurations, collisions et rejeu de suppression',async t=>{
+ const env=await environment(t),token='mock-admin';
+ for(const resource of ['models','tools','procedures']){
+  const path='/v1/admin/'+resource,list=await httpCall(env,path,{token}),original=list.value.items[0];
+  const body=resource==='tools'?{...original,name:'crud.tool'}:{...original,id:'crud-'+resource,...(resource==='procedures'?{source:{...original.source,procedureId:'crud-procedures'}}:{})};
+  const detail=path+'/'+(body.id??body.name),createKey=randomUUID(),deleteKey=randomUUID();
+  const created=await httpCall(env,path,{token,method:'POST',body,key:createKey});assert.equal(created.status,201);assert.deepEqual(created.value,body);
+  assert.deepEqual(await httpCall(env,path,{token,method:'POST',body,key:createKey}),created);
+  assert.equal((await httpCall(env,path,{token,method:'POST',body})).status,409);
+  assert.deepEqual((await httpCall(env,detail,{token})).value,body);
+  assert.equal((await httpCall(env,detail)).status,403);
+  assert.equal((await httpCall(env,detail,{token,method:'PUT',body})).status,200);
+  assert.equal((await httpCall(env,detail,{token,method:'DELETE',key:deleteKey})).status,204);
+  assert.equal((await httpCall(env,detail,{token})).status,404);
+  assert.equal((await httpCall(env,detail,{token,method:'DELETE'})).status,404);
+  assert.equal((await httpCall(env,path,{token,method:'POST',body})).status,201);
+  assert.equal((await httpCall(env,detail,{token,method:'DELETE',key:deleteKey})).status,204);
+  assert.deepEqual((await httpCall(env,detail,{token})).value,body);
+ }
+});
 test('C4 : ingestion authentifiée, enveloppe cohérente et déduplication',async t=>{
  const env=await environment(t),c=await conversation(env),f=load('mocks/fixtures.json'),event=structuredClone(f.event);event.source='urn:techma:tooling';event.data.conversationId=c.id;event.data.message.conversationId=c.id;
  const args={method:'POST',body:event,token:'mock-tooling-events'};
@@ -101,4 +121,15 @@ test('C2 ressources : fiches et pièces privées Backend pour Tooling',async t=>
  const f=await httpCall(env,'/v1/files',{method:'POST',body:new TextEncoder().encode('demo'),extra:{'X-File-Mime-Type':'application/pdf'}});
  const access=await httpCall(env,'/internal/v1/files/'+f.value.id,{token:'mock-tooling-resources',extra:{'X-User-Ref':uid}});assert.equal(access.status,200);valid('FileAccess',access.value);
  assert.equal((await httpCall(env,'/internal/v1/files/'+f.value.id,{token:'mock-tooling-resources',extra:{'X-User-Ref':'usr_'+('0'.repeat(25))+'2'}})).status,404);
+});
+
+test('C3 MCP : connexion serveur, découverte et permissions sans création manuelle d’action',async t=>{
+ const env=await environment(t),token='mock-admin',path='/v1/admin/mcp-servers';
+ const server={id:'public-service',name:'Service public',url:'http://127.0.0.1:4020/mcp',enabled:true,transport:'streamable-http',auth:{type:'none'},policy:'generic'};
+ const created=await httpCall(env,path,{token,method:'POST',body:server});assert.equal(created.status,201);valid('McpServer',created.value);
+ valid('McpServerPage',(await httpCall(env,path,{token})).value);
+ const discovered=await httpCall(env,path+'/'+server.id+'/discover',{token,method:'POST'});assert.equal(discovered.status,200);valid('McpToolPage',discovered.value);assert.equal(discovered.value.items.length,8);assert.ok(discovered.value.items.every(t=>!t.enabled));
+ const permission=await httpCall(env,path+'/'+server.id+'/tools/procedures.search',{token,method:'PUT',body:{enabled:true,requiresMandate:false}});assert.equal(permission.status,200);valid('McpDiscoveredTool',permission.value);assert.equal(permission.value.name,'procedures.search');
+ assert.equal((await httpCall(env,path+'/'+server.id+'/tools/procedures.search',{token,method:'PUT',body:{name:'invented',enabled:true,requiresMandate:false}})).status,400);
+ const key=randomUUID();assert.equal((await httpCall(env,path+'/'+server.id,{token,method:'DELETE',key})).status,204);assert.equal((await httpCall(env,path+'/'+server.id,{token,method:'DELETE',key})).status,204);
 });

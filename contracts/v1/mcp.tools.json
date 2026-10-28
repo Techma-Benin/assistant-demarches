@@ -803,7 +803,7 @@
     },
     {
       "name": "documents.verify",
-      "description": "documents.verify — données fictives dans le simulateur",
+      "description": "Vérifier la disponibilité et la péremption de la référence de pièce pour cet usager ; aucune analyse du contenu ni validation administrative.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -844,7 +844,6 @@
           "status": {
             "type": "string",
             "enum": [
-              "pending",
               "valid",
               "invalid"
             ]

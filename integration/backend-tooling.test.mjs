@@ -56,6 +56,11 @@ test("Backend + worker Redis + Tooling réels, PostgreSQL et JWT vérifiés dans
   await t.test("identités séparées, découverte des huit outils et recherche via le worker", async () => {
     await api("/v1/conversations", { method: "POST", body: { channel: "web", locale: "fr" }, token: "invalid", status: 401 });
     await api("/v1/conversations", { method: "POST", body: { channel: "web", locale: "fr" }, token: stack.tokens.admin, status: 403 });
+    const servers = await api("/v1/admin/mcp-servers", { token: stack.tokens.admin });
+    assert.equal(servers.items.length, 1);
+    const discovered = await api(`/v1/admin/mcp-servers/${servers.items[0].id}/discover`, { method: "POST", token: stack.tokens.admin });
+    assert.equal(discovered.items.length, 8);
+    assert.ok(discovered.items.every(tool => tool.available && tool.enabled));
     conversation = await api("/v1/conversations", { method: "POST", body: { channel: "web", locale: "fr" }, status: 201 });
     await api(`/v1/conversations/${conversation.id}/events`, { token: stack.tokens.other, status: 404 });
     const listed = await gateway.discover(stack.toolingUrl + "/mcp", "backend-agent", context());
@@ -106,12 +111,9 @@ test("Backend + worker Redis + Tooling réels, PostgreSQL et JWT vérifiés dans
     assert.equal(rows.length, 1);
   });
 
-  await t.test("pièce contrôlée, remplissage, préparation du lien et remontée du statut", async () => {
-    file = await api("/v1/files", { method: "POST", body: stack.syntheticFile, binary: true, status: 201 });
-    await until(async () => {
-      const row = (await stack.pool.query("SELECT body FROM backend_files WHERE id=$1", [file.id])).rows[0];
-      return row.body.scanStatus === "clean";
-    }, "scan de la pièce synthétique");
+  await t.test("pièce disponible immédiatement, remplissage, préparation du lien et remontée du statut", async () => {
+    file = await api("/v1/files", { method: "POST", body: Buffer.from("Autre pièce utilisateur sans analyse de contenu"), binary: true, status: 201 });
+    assert.equal("scanStatus" in file, false);
     const completed = await message(`completer ${request.id}`);
     assert.equal(completed.reply.blocks[0].request.fields.displayName, "Usager fictif");
     const attached = await message(`joindre ${request.id} ${file.id}`);
@@ -120,8 +122,8 @@ test("Backend + worker Redis + Tooling réels, PostgreSQL et JWT vérifiés dans
     assert.equal(submitted.reply.blocks[0].request.status, "awaiting_user_validation");
     assert.equal(submitted.reply.blocks[0].request.officialLink, stack.procedure.source.url);
     await until(async () => (await api(`/v1/requests/${request.id}`)).status === "awaiting_user_validation", "projection du statut final");
-    const rejected = await api("/v1/files", { method: "POST", body: Buffer.from("Un fichier non autorisé par la fixture"), binary: true, status: 201 });
-    await until(async () => (await stack.pool.query("SELECT body FROM backend_files WHERE id=$1", [rejected.id])).rows[0].body.scanStatus === "rejected", "refus du fichier hors fixture");
+    const verification = await call("documents.verify", { requestId: request.id, fileId: file.id });
+    assert.deepEqual(verification.structuredContent, { fileId: file.id, status: "valid", reasons: [] });
   });
 
   await t.test("reprise du worker, STOP révoque le mandat et interdit les actions", async () => {
@@ -156,7 +158,7 @@ test("Le lanceur interactif nettoie sa session après Ctrl+C sur le groupe de pr
     if (child.exitCode !== null) throw new Error(logs);
     return logs.includes("Ctrl+C supprime");
   }, "démarrage interactif");
-  const sample = /Pièce synthétique autorisée : (.+)\/synthetic\.pdf/.exec(logs);
+  const sample = /Exemple de pièce synthétique : (.+)\/synthetic\.pdf/.exec(logs);
   assert.ok(sample, logs);
   assert.ok(existsSync(sample[1]));
   process.kill(-child.pid, "SIGINT");

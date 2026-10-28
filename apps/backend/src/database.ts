@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { catalog } from "./tooling.js";
 import { readFileSync, readdirSync } from "node:fs";
 import { Pool } from "pg";
 import type { Config, Resource } from "./domain.js";
@@ -67,8 +69,16 @@ export async function provision(
     body.administrationId !== administrationId
   )
     throw new Error("Procedure administration mismatch.");
+  if(resource==="tools") await provisionLegacyMcp(pool,administrationId,body as import("./domain.js").ToolConfig);
   await pool.query(
     "INSERT INTO backend_configurations (administration_id, resource, resource_id, body) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
     [administrationId, resource, configId(body), body],
   );
+}
+
+export async function provisionLegacyMcp(pool:Pool,admin:string,tool:import("./domain.js").ToolConfig){
+ const id="mcp_"+createHash("md5").update(tool.serverUrl+String.fromCharCode(31)+tool.secretRef).digest("hex");
+ await pool.query("INSERT INTO backend_mcp_servers(administration_id,id,body) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",[admin,id,{id,name:"Serveur MCP migré",url:tool.serverUrl,enabled:true,transport:"streamable-http",auth:{type:"bearer",secretRef:tool.secretRef},policy:"techma"}]);
+ const definition=catalog.find(t=>t.name===tool.name);
+ await pool.query("INSERT INTO backend_mcp_tools(administration_id,server_id,name,definition,enabled,requires_mandate,available) VALUES($1,$2,$3,$4,$5,$6,false) ON CONFLICT DO NOTHING",[admin,id,tool.name,definition??null,tool.enabled,Boolean(definition?._meta?.["bj.techma/requiresMandate"])]);
 }

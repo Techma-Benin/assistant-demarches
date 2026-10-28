@@ -16,6 +16,7 @@ async function read(req,binary=false){let size=0;const parts=[];for await(const 
 export async function startMocks({backendPort=4010,toolingPort=4020}={}){
  const conversations=new Map(),requests=new Map(),mandates=new Map(),challenges=new Map(),files=new Map(),events=new Map(),dedup=new Map(),tickets=new Map(),sockets=new Map(),ingested=new Set(),messageDigests=new Map();
  const config={models:[{id:'demo-model',provider:'mock',model:'deterministic',promptVersion:'v1',temperature:0,active:true}],tools:catalog.tools.map(t=>({name:t.name,enabled:true,serverUrl:'http://127.0.0.1:4020/mcp',secretRef:'mock-only'})),procedures:[structuredClone(fixture.schemas.Procedure)],audit:[]};
+ const mcpServers=new Map(),mcpActions=new Map();
  const servers=[];const wss=new WebSocketServer({noServer:true});
  const owner=(map,key,user)=>{const v=map.get(key);if(!v||v.userRef!==user)fail(404,'NOT_FOUND','Ressource introuvable');return v;};
  const addEvent=(kind,data,traceparent,source='backend')=>{
@@ -40,7 +41,7 @@ export async function startMocks({backendPort=4010,toolingPort=4020}={}){
    if(name==='request.create'){r={id:id('req'),conversationId:ctx.conversationId,userRef:ctx.userRef,procedureId:proc.id,status:'draft',fields:{},fileIds:[],officialLink:null,updatedAt:now()};requests.set(r.id,r);}
    if(['request.update','documents.attach','request.submit'].includes(name)&&!['draft','ready'].includes(r.status))fail(409,'INVALID_TRANSITION','Demande non modifiable');
    if(name==='request.update'){const combined={...r.fields,...args.fields};const v=ajv.compile({...proc.formSchema,required:[]});if(!v(combined))fail(400,'INVALID_REQUEST','Champ non autorisé');r.fields=combined;r.status=ajv.compile(proc.formSchema)(r.fields)&&r.fileIds.length?'ready':'draft';}
-   if(name==='documents.attach'){const f=owner(files,args.fileId,ctx.userRef);if(f.scanStatus!=='clean')fail(409,'INVALID_REQUEST','Pièce non validée');if(!proc.requiredDocuments.includes(args.documentType))fail(400,'INVALID_REQUEST','Type de pièce inconnu');if(!r.fileIds.includes(f.id))r.fileIds.push(f.id);r.status=ajv.compile(proc.formSchema)(r.fields)?'ready':'draft';}
+   if(name==='documents.attach'){const f=owner(files,args.fileId,ctx.userRef);if(Date.parse(f.expiresAt)<=Date.now())fail(409,'INVALID_REQUEST','Pièce expirée');if(!proc.requiredDocuments.includes(args.documentType))fail(400,'INVALID_REQUEST','Type de pièce inconnu');if(!r.fileIds.includes(f.id))r.fileIds.push(f.id);r.status=ajv.compile(proc.formSchema)(r.fields)?'ready':'draft';}
    if(name==='documents.verify'){owner(files,args.fileId,ctx.userRef);if(!r.fileIds.includes(args.fileId))fail(404,'NOT_FOUND','Pièce non attachée');out={fileId:args.fileId,status:'valid',reasons:[]};}
    if(name==='request.submit'){if(!ajv.compile(proc.formSchema)(r.fields)||!r.fileIds.length)fail(409,'REQUEST_INCOMPLETE','Champs ou pièces manquants');r.status='awaiting_user_validation';r.officialLink='https://example.org/demonstration';}
    if(!out)out=r;r.updatedAt=now();
@@ -88,10 +89,36 @@ export async function startMocks({backendPort=4010,toolingPort=4020}={}){
   const user=principal(req);
   if(url.pathname.startsWith('/v1/admin/')){
    if(user!=='admin-demo')fail(403,'FORBIDDEN','Rôle administrateur requis');const resource=url.pathname.split('/')[3];
-   if(req.method==='GET'){if(resource==='metrics'){reply(res,200,{conversationCount:conversations.size,p95LatencyMs:0,sourcedAnswerRate:0,errorCount:0});return;}let items=resource==='conversations'?[...conversations.values()]:config[resource];if(!items)fail(404,'NOT_FOUND','Ressource inconnue');const limit=Number(url.searchParams.get('limit')??20),cursor=Number(url.searchParams.get('cursor')??0);if(!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(cursor)||cursor<0)fail(400,'INVALID_REQUEST','Pagination invalide');reply(res,200,{items:items.slice(cursor,cursor+limit),nextCursor:cursor+limit<items.length?String(cursor+limit):null});return;}
-   if(req.method==='PUT'&&['models','tools','procedures'].includes(resource)){
-    const body=await read(req);schema({models:'ModelConfig',tools:'ToolConfig',procedures:'Procedure'}[resource],body);const rid=decodeURIComponent(url.pathname.split('/')[4]??'');if(!rid||(body.id??body.name)!==rid)fail(400,'INVALID_REQUEST','Identifiant incompatible');
-    const [code,out]=await idem(req,body,()=>{if(resource==='procedures')ajv.compile(body.formSchema);const index=config[resource].findIndex(v=>(v.id??v.name)===rid);if(index<0)fail(404,'NOT_FOUND','Ressource inconnue');config[resource][index]=body;config.audit.push({id:id('aud'),actorRef:user,action:'configuration.changed',resourceId:rid,at:now(),traceId:tp.split('-')[1]});return [200,body];});reply(res,code,out);return;
+   const rid=decodeURIComponent(url.pathname.split('/')[4]??'');
+   if(resource==='mcp-servers'){
+    const action=url.pathname.split('/')[5],toolName=decodeURIComponent(url.pathname.split('/')[6]??'');
+    const server=rid?mcpServers.get(rid):undefined;
+    if(rid&&!server&&req.method!=='DELETE')fail(404,'NOT_FOUND','Serveur MCP inconnu');
+    const toolPage=()=>({items:[...(mcpActions.get(rid)?.values()??[])],nextCursor:null});
+    if(req.method==='GET'){reply(res,200,action==='tools'?toolPage():rid?server:{items:[...mcpServers.values()],nextCursor:null});return;}
+    const body=await read(req);
+    if(action==='discover'&&req.method==='POST'){
+     const previous=mcpActions.get(rid)??new Map();
+     mcpActions.set(rid,new Map(catalog.tools.map(t=>[t.name,{...t,enabled:previous.get(t.name)?.enabled??false,requiresMandate:previous.get(t.name)?.requiresMandate??true,available:true,modelName:'mcp_'+createHash('sha256').update(rid+'\0'+t.name).digest('hex').slice(0,48)}])));
+     reply(res,200,toolPage());return;
+    }
+    if(action==='tools'&&toolName&&req.method==='PUT'){schema('McpToolPermission',body);const tool=mcpActions.get(rid)?.get(toolName);if(!tool)fail(404,'NOT_FOUND','Action non découverte');Object.assign(tool,body);reply(res,200,tool);return;}
+    if(action)fail(404,'NOT_FOUND','Route inconnue');
+    if(req.method!=='DELETE'){schema('McpServer',body);if(body.url!=='http://127.0.0.1:4020/mcp')fail(403,'FORBIDDEN','Serveur non autorisé dans les mocks');if(rid&&rid!==body.id)fail(400,'INVALID_REQUEST','Identifiant incompatible');}
+    const [code,result]=await idem(req,body,()=>{const target=rid||body.id;if(req.method==='POST'){if(mcpServers.has(target))fail(409,'INVALID_TRANSITION','Serveur existant');mcpServers.set(target,body);return [201,body];}
+     if(req.method==='PUT'){if(JSON.stringify([server.url,server.auth,server.policy])!==JSON.stringify([body.url,body.auth,body.policy]))mcpActions.delete(target);mcpServers.set(target,body);return [200,body];}
+     if(req.method==='DELETE'){if(!mcpServers.has(target))fail(404,'NOT_FOUND','Serveur MCP inconnu');mcpServers.delete(target);mcpActions.delete(target);return [204,null];}fail(404,'NOT_FOUND','Route inconnue');});reply(res,code,result);return;
+   }
+   const configurable=['models','tools','procedures'].includes(resource);
+   if(req.method==='GET'){if(resource==='metrics'){reply(res,200,{conversationCount:conversations.size,p95LatencyMs:0,sourcedAnswerRate:0,errorCount:0});return;}let items=resource==='conversations'?[...conversations.values()]:config[resource];if(!items)fail(404,'NOT_FOUND','Ressource inconnue');if(rid){if(!configurable)fail(404,'NOT_FOUND','Route inconnue');const item=items.find(v=>(v.id??v.name)===rid);if(!item)fail(404,'NOT_FOUND','Ressource inconnue');reply(res,200,item);return;}const limit=Number(url.searchParams.get('limit')??20),cursor=Number(url.searchParams.get('cursor')??0);if(!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(cursor)||cursor<0)fail(400,'INVALID_REQUEST','Pagination invalide');reply(res,200,{items:items.slice(cursor,cursor+limit),nextCursor:cursor+limit<items.length?String(cursor+limit):null});return;}
+   if(configurable&&((req.method==='POST'&&!rid)||(['PUT','DELETE'].includes(req.method)&&rid))){
+    const body=await read(req);if(req.method!=='DELETE')schema({models:'ModelConfig',tools:'ToolConfig',procedures:'Procedure'}[resource],body);else if(body!==undefined)fail(400,'INVALID_REQUEST','DELETE sans corps');
+    const target=req.method==='POST'?(body.id??body.name):rid;if(req.method==='PUT'&&(body.id??body.name)!==rid)fail(400,'INVALID_REQUEST','Identifiant incompatible');
+    const [code,out]=await idem(req,body,()=>{if(resource==='procedures'&&body){if(body.administrationId!==fixture.schemas.Procedure.administrationId)fail(403,'FORBIDDEN','Administration incompatible');ajv.compile(body.formSchema);}if(resource==='tools'&&body&&body.serverUrl!=='http://127.0.0.1:4020/mcp')fail(403,'FORBIDDEN','Serveur MCP non autorisé');const index=config[resource].findIndex(v=>(v.id??v.name)===target);
+     if(req.method==='POST'&&index>=0)fail(409,'INVALID_TRANSITION','Configuration existante');if(req.method!=='POST'&&index<0)fail(404,'NOT_FOUND','Ressource inconnue');
+     if(req.method==='DELETE'&&resource==='procedures'&&([...requests.values(),...mandates.values(),...[...challenges.values()].map(c=>c.value)].some(v=>v.procedureId===target)))fail(409,'INVALID_TRANSITION','Fiche référencée');
+     if(req.method==='POST')config[resource].push(body);else if(req.method==='PUT')config[resource][index]=body;else config[resource].splice(index,1);
+     const operation=req.method==='POST'?'created':req.method==='PUT'?'updated':'deleted';config.audit.push({id:id('aud'),actorRef:user,action:'configuration.changed.'+operation,resourceId:target,at:now(),traceId:tp.split('-')[1]});return [req.method==='POST'?201:req.method==='PUT'?200:204,body];});reply(res,code,out);return;
    }fail(404,'NOT_FOUND','Route inconnue');
   }
   if(user==='admin-demo')fail(403,'FORBIDDEN','Session usager requise');
@@ -99,7 +126,7 @@ export async function startMocks({backendPort=4010,toolingPort=4020}={}){
    const b=await read(req);schema('ConversationInput',b);const result=await idem(req,b,()=>{const c={id:id('cnv'),userRef:user,...b,createdAt:now()};conversations.set(c.id,c);return c;});reply(res,201,result);return;
   }
   if(req.method==='POST'&&url.pathname==='/v1/files'){
-   if(req.headers['content-type']!=='application/octet-stream')fail(415,'UNSUPPORTED_MEDIA_TYPE','application/octet-stream requis');const mime=req.headers['x-file-mime-type'];if(!fixture.schemas.File||!['application/pdf','image/jpeg','image/png','audio/ogg','audio/mpeg','audio/mp4'].includes(mime))fail(415,'UNSUPPORTED_MEDIA_TYPE','MIME non autorisé');const b=await read(req,true);if(!b.length)fail(400,'INVALID_REQUEST','Fichier vide');const f=await idem(req,{digest:createHash('sha256').update(b).digest('hex'),mime},()=>{const f={id:id('fil'),mimeType:mime,sizeBytes:b.length,scanStatus:'clean',expiresAt:new Date(Date.now()+86400000).toISOString()};files.set(f.id,{...f,userRef:user});return f;});reply(res,201,f);return;
+   if(req.headers['content-type']!=='application/octet-stream')fail(415,'UNSUPPORTED_MEDIA_TYPE','application/octet-stream requis');const mime=req.headers['x-file-mime-type'];if(!fixture.schemas.File||!['application/pdf','image/jpeg','image/png','audio/ogg','audio/mpeg','audio/mp4'].includes(mime))fail(415,'UNSUPPORTED_MEDIA_TYPE','MIME non autorisé');const b=await read(req,true);if(!b.length)fail(400,'INVALID_REQUEST','Fichier vide');const f=await idem(req,{digest:createHash('sha256').update(b).digest('hex'),mime},()=>{const f={id:id('fil'),mimeType:mime,sizeBytes:b.length,expiresAt:new Date(Date.now()+86400000).toISOString()};files.set(f.id,{...f,userRef:user});return f;});reply(res,201,f);return;
   }
   const requestMatch=url.pathname.match(/^\/v1\/requests\/(req_[A-Z0-9]+)$/);if(requestMatch&&req.method==='GET'){reply(res,200,owner(requests,requestMatch[1],user));return;}
   const match=url.pathname.match(/^\/v1\/conversations\/(cnv_[A-Z0-9]+)\/(.+)$/);if(!match)fail(404,'NOT_FOUND','Route inconnue');const [,cid,action]=match;owner(conversations,cid,user);

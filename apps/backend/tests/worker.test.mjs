@@ -22,7 +22,7 @@ const redisAvailable =
   Boolean(process.env.REDIS_TEST_URL) || existsSync(redisBinary);
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function stop(child) {
-  if (child.exitCode !== null) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
   const exit = once(child, "exit");
   child.kill("SIGTERM");
   const deadline = setTimeout(() => child.kill("SIGKILL"), 10000);

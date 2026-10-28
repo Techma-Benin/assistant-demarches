@@ -133,8 +133,6 @@ export class Conversations {
             ).rows[0]?.body;
             if (!file)
               throw new Problem(404, "NOT_FOUND", "Pièce introuvable.");
-            if (file.scanStatus !== "clean")
-              throw new Problem(409, "INVALID_REQUEST", "Pièce non validée.");
           }
           await db.query(
             "INSERT INTO backend_messages(conversation_id,id,fingerprint,body,traceparent) VALUES($1,$2,$3,$4,$5)",

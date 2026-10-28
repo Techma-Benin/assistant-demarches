@@ -7,13 +7,12 @@ import {
   type Schemas,
 } from "./domain.js";
 import { idempotent, transaction } from "./transactions.js";
-import type { ObjectStorage, FileScanner } from "./storage.js";
+import type { ObjectStorage } from "./storage.js";
 
 export class Files {
   constructor(
     private pool: Pool,
     private storage: ObjectStorage,
-    private scanner: FileScanner,
   ) {}
   async upload(userRef: string, data: Buffer, mime: string, key: string) {
     if (!Buffer.isBuffer(data) || !data.length)
@@ -22,7 +21,6 @@ export class Files {
       id: identifier("fil"),
       mimeType: mime as Schemas["File"]["mimeType"],
       sizeBytes: data.length,
-      scanStatus: "pending",
       expiresAt: new Date(Date.now() + 86400000).toISOString(),
     };
     if (data.length > 10485760)
@@ -67,24 +65,6 @@ export class Files {
     ).rows[0];
     if (!row) throw new Problem(404, "NOT_FOUND", "Pièce introuvable.");
     return { file: row.body, userRef };
-  }
-  async scanPending() {
-    return transaction(this.pool, async (db) => {
-      const row = (
-        await db.query(
-          "SELECT id,object_key,body FROM backend_files WHERE body->>'scanStatus'='pending' AND expires_at>now() ORDER BY expires_at LIMIT 1 FOR UPDATE SKIP LOCKED",
-        )
-      ).rows[0];
-      if (!row) return false;
-      const clean = await this.scanner.clean(
-        await this.storage.read(row.object_key),
-      );
-      await db.query("UPDATE backend_files SET body=$2 WHERE id=$1", [
-        row.id,
-        { ...row.body, scanStatus: clean ? "clean" : "rejected" },
-      ]);
-      return true;
-    });
   }
   async purgeExpired() {
     return transaction(this.pool, async (db) => {

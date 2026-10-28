@@ -26,7 +26,7 @@ Les identités de test sont signées et expirent après 8 h ; relancer `pnpm dev
 | Obtenir une réponse IA | Prérequis précédents + worker + Redis + un seul modèle actif pour l’administration, fournisseur et prompt configurés ; MCP et identité de service pour les outils utilisés |
 | Lire/modifier la configuration | JWT administrateur avec `administrationId` et `admin:read` ou `admin:write` ; ressources déjà provisionnées pour PUT |
 | Autoriser/révoquer un mandat | Conversation + fiche validée + clé de signature et service de contrôle Tooling configurés |
-| Utiliser une pièce jointe | Stockage + worker + ClamAV ; le fichier doit passer de `pending` à `clean` |
+| Utiliser une pièce jointe | Stockage ; pièce disponible dès le dépôt, worker requis pour la purge à expiration |
 | Appels internes | JWT de service dédié, ressources existantes et cohérentes |
 
 **État du démarrage local :** la configuration PostgreSQL ne fournit pas de JWT et ne déploie ni Keycloak, ni Redis, ni un modèle, ni le Tooling. `pnpm dev` lance l’API ; le worker est un processus séparé. Si l’identité n’est pas configurée, le parcours authentifié s’arrête avant la première conversation. En dehors du mode de test local décrit plus haut, aucun jeton de démonstration universel n’est livré ; `mock-user` et `mock-admin` ne fonctionnent qu’avec le serveur de simulation.
@@ -48,7 +48,7 @@ Tous les JWT doivent être signés en RS256, non expirés, porter un `sub`, un `
 | Conversation web/mobile | Identité usager du portail, sans scopes `admin:*`. Le Backend contrôle le propriétaire de chaque conversation. Utiliser le même usager pendant le scénario. |
 | Conversation WhatsApp | Relais `whatsapp-adapter`, scope `conversation:relay` et claim signé `channel_subject` E.164. Le relais est géré par l’équipe Interface ; aucune saisie du numéro dans le corps de création. |
 | Admin GET | `administrationId` et scope/rôle `admin:read`. |
-| Admin PUT | `administrationId` et scope/rôle `admin:write`. |
+| Admin POST/PUT/DELETE | `administrationId` et scope/rôle `admin:write`. |
 | Events | Client `tooling-events`, scope `events:publish`. |
 | Backend resources | Client `tooling-resources`, scope `resources:read`. |
 
@@ -77,7 +77,7 @@ Les événements sont conservés 48 h. Un curseur expiré retourne `410` : repre
 
 Passer au contrat `admin` et à un JWT administrateur. Commencer par les GET ; une liste vide signifie qu’aucune configuration n’a été provisionnée pour cette administration.
 
-Pour modifier : copier un objet retourné par GET, utiliser son `id` (ou `name` pour un outil) dans le chemin PUT, modifier l’objet complet et fournir une nouvelle clé d’idempotence. Attendre **200**, puis refaire GET. Les routes v1 ne proposent ni création ni suppression. Le provisioning initial passe par le CLI décrit dans le README Backend.
+Pour modifier : copier un objet retourné par GET, utiliser son `id` (ou `name` pour un outil) dans le chemin PUT, modifier l’objet complet et fournir une nouvelle clé d’idempotence. Attendre **200**, puis refaire GET. Créer avec `POST /v1/admin/{models,tools,procedures}` (201), identifiant `id` dans le corps (`name` pour un outil). Lire ensuite le GET détail. Supprimer avec DELETE détail (204 sans corps), sans effacer les dossiers ou l’audit. Chaque mutation demande une nouvelle clé ; rejouer la même clé pendant 24 h ne reproduit pas la mutation, y compris après une recréation. Une fiche référencée par demandes/mandats/challenges locaux est protégée par 409 ; les références Tooling non encore projetées ne sont pas détectables. Supprimer le dernier modèle actif ou un outil requis peut rendre les nouveaux traitements indisponibles. Voir `docs/admin-crud.md` dans le dépôt.
 
 Un modèle enregistré n’est pas nécessairement joignable : `provider` doit correspondre à `MODEL_PROVIDERS_JSON`, `model` à un identifiant disponible chez le fournisseur, `promptVersion` à un prompt installé. Un seul modèle actif est requis par administration. Les modifications affectent les nouveaux traitements.
 
@@ -97,7 +97,7 @@ Sans clé de signature ou service de contrôle disponible, ces opérations peuve
 
 Dans `uploadFile`, choisir un fichier binaire, utiliser `application/octet-stream` pour le corps et indiquer le MIME d’origine dans `X-File-Mime-Type` parmi les valeurs autorisées affichées. Maximum : 10 Mio. Attendre **201** et conserver `id`.
 
-Le fichier reste `pending` jusqu’au scan. Un fichier non `clean`, expiré ou appartenant à un autre usager ne peut pas servir de pièce jointe. Il expire après 24 h. Pour le référencer dans un message, utiliser `{"type":"file","fileId":"<id réel>"}` comme `content` (et renseigner `id`, `sentAt` du message). L’upload seul n’ajoute pas le fichier à une conversation. L’API v1 ne fournit pas de GET public de statut fichier ; la lecture interne nécessite l’identité Tooling. Audio et images ne déclenchent pas encore de transcription/OCR.
+Le fichier est utilisable dès le dépôt réussi, sans analyse antivirus ni analyse du contenu. Un fichier expiré ou appartenant à un autre usager ne peut pas servir de pièce jointe. Il expire après 24 h. Pour le référencer dans un message, utiliser `{"type":"file","fileId":"<id réel>"}` comme `content` (et renseigner `id`, `sentAt` du message). L’upload seul n’ajoute pas le fichier à une conversation. L’API v1 ne fournit pas de GET public de statut fichier ; la lecture interne nécessite l’identité Tooling. Audio et images ne déclenchent pas encore de transcription/OCR.
 
 ## Scénario 5 — Intégration Tooling
 
@@ -120,3 +120,7 @@ Ces routes ne sont pas des opérations utilisateur ou administrateur. Utiliser d
 | 503 | Dépendance, identité distante, stockage, signature ou configuration indisponible ; lire `detail` et les logs serveur. |
 
 Si Swagger affiche « Failed to fetch » sans réponse HTTP, vérifier le serveur, l’URL et les règles CORS. **Authorize** ne teste pas la validité du jeton : seul un appel API la vérifie.
+
+## Administrer des serveurs MCP
+
+Dans le contrat admin, groupe Serveurs MCP : ajouter une connexion (`McpServer`), lancer discover, puis activer les actions souhaitées via PUT permission. Les noms et schémas viennent du serveur. La connexion peut être désactivée ou supprimée ; les actions se désactivent individuellement. Les anciennes routes Outils MCP sont dépréciées. Documentation détaillée : `docs/mcp-connections.md` à la racine du dépôt.

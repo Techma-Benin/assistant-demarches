@@ -34,13 +34,19 @@ export class McpController {
       traceId: trace.traceId,
       ...(mandateId === undefined ? {} : { mandateId }),
     };
-    if (!validateContext(context)) throw new ProblemError(400, 'INVALID_REQUEST', 'Contexte MCP invalide ou absent');
+    // Discovery/initialization needs a service identity, not an invented end-user.
+    // Any supplied context must remain valid; executing an action always needs it.
+    const hasContext = ['x-conversation-id', 'x-user-ref', 'x-mandate-id']
+      .some((name) => singleHeader(req, name) !== undefined);
+    if ((hasContext || req.body?.method === 'tools/call') && !validateContext(context))
+      throw new ProblemError(400, 'INVALID_REQUEST', 'Contexte MCP invalide ou absent');
     const idempotencyKey = singleHeader(req, 'idempotency-key');
 
     const server = new Server({ name: 'techma-tooling', version: catalog.version }, { capabilities: { tools: {} } });
     server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: catalog.tools }));
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
+        if (!validateContext(context)) throw new ProblemError(400, 'INVALID_REQUEST', 'Contexte MCP invalide ou absent');
         const output = await this.executor.execute({
           name: request.params.name,
           args: request.params.arguments ?? {},

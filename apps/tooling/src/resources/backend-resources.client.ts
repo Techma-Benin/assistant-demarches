@@ -17,7 +17,6 @@ export interface FileMetadata {
   id: string;
   mimeType: string;
   sizeBytes: number;
-  scanStatus: 'pending' | 'clean' | 'rejected';
   expiresAt: string;
 }
 

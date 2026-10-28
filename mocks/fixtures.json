@@ -73,7 +73,6 @@
       "id": "fil_00000000000000000000000001",
       "mimeType": "application/pdf",
       "sizeBytes": 10,
-      "scanStatus": "clean",
       "expiresAt": "2099-01-01T00:00:00Z"
     },
     "AgentMessage": {

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { catalog } from "./tooling.js";
 import type { Pool } from "pg";
 import {
   Problem,
@@ -61,44 +63,57 @@ export class Settings {
     };
   }
 
-  async update(
+  async get(principal: Principal, resource: Resource, id: string) {
+    const result = await this.pool.query("SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource=$2 AND resource_id=$3", [principal.administrationId, resource, id]);
+    if (!result.rowCount) throw new Problem(404, "NOT_FOUND", "Configuration introuvable.");
+    return result.rows[0].body;
+  }
+
+  async update(principal: Principal, resource: Resource, id: string, body: Config, key: string, traceparent: string) {
+    return this.mutate(principal, resource, id, body, key, traceparent, "PUT");
+  }
+
+  async mutate(
     principal: Principal,
     resource: Resource,
     id: string,
-    body: Config,
+    body: Config | null,
     key: string,
     traceparent: string,
+    method: "POST" | "PUT" | "DELETE",
   ) {
-    validate(
-      resource === "models"
-        ? "ModelConfig"
-        : resource === "tools"
-          ? "ToolConfig"
-          : "Procedure",
-      body,
-    );
-    if (resource === "procedures") {
-      if (
-        !("administrationId" in body) ||
-        body.administrationId !== principal.administrationId
-      )
-        throw new Problem(403, "FORBIDDEN", "Administration incompatible.");
-      try {
-        ajv.compile(body.formSchema);
-      } catch {
-        throw new Problem(
-          400,
-          "INVALID_REQUEST",
-          "Schéma de formulaire invalide.",
-        );
+    if (body !== null) {
+      validate(
+        resource === "models"
+          ? "ModelConfig"
+          : resource === "tools"
+            ? "ToolConfig"
+            : "Procedure",
+        body,
+      );
+      if (resource === "procedures") {
+        if (
+          !("administrationId" in body) ||
+          body.administrationId !== principal.administrationId
+        )
+          throw new Problem(403, "FORBIDDEN", "Administration incompatible.");
+        try {
+          ajv.compile(body.formSchema);
+        } catch {
+          throw new Problem(
+            400,
+            "INVALID_REQUEST",
+            "Schéma de formulaire invalide.",
+          );
+        }
       }
+      if (configId(body) !== id)
+        throw new Problem(400, "INVALID_REQUEST", "Identifiant incompatible.");
     }
-    if (configId(body) !== id)
-      throw new Problem(400, "INVALID_REQUEST", "Identifiant incompatible.");
     const scope = canonical([
       principal.administrationId,
       principal.subject,
-      "PUT",
+      method,
       resource,
       id,
     ]);
@@ -127,7 +142,7 @@ export class Settings {
         return previous.response;
       }
       if (
-        resource === "tools" &&
+        body !== null && resource === "tools" &&
         "serverUrl" in body &&
         !approvedMcpUrl(body.serverUrl, this.allowedMcpUrls)
       )
@@ -136,12 +151,41 @@ export class Settings {
           "FORBIDDEN",
           "Serveur MCP non autorisé au déploiement.",
         );
-      const result = await client.query(
-        "UPDATE backend_configurations SET body=$4, updated_at=now() WHERE administration_id=$1 AND resource=$2 AND resource_id=$3 RETURNING body",
-        [principal.administrationId, resource, id, body],
-      );
-      if (!result.rowCount)
+      // Serialize all mutations of the same resource, including different keys.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [canonical([principal.administrationId, resource, id])]);
+      const current = (await client.query("SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource=$2 AND resource_id=$3 FOR UPDATE", [principal.administrationId, resource, id])).rows[0];
+      if (method === "POST" && current)
+        throw new Problem(409, "INVALID_TRANSITION", "Configuration déjà existante.");
+      if (method !== "POST" && !current)
         throw new Problem(404, "NOT_FOUND", "Configuration introuvable.");
+      if (method === "DELETE" && resource === "procedures") {
+        const references = await client.query(`SELECT 1 FROM backend_conversations c WHERE c.administration_id=$1 AND (
+          EXISTS (SELECT 1 FROM backend_requests r WHERE r.conversation_id=c.id AND r.body->>'procedureId'=$2) OR
+          EXISTS (SELECT 1 FROM backend_mandates m WHERE m.conversation_id=c.id AND m.body->>'procedureId'=$2) OR
+          EXISTS (SELECT 1 FROM backend_challenges h WHERE h.conversation_id=c.id AND h.body->>'procedureId'=$2)) LIMIT 1`, [principal.administrationId, id]);
+        if (references.rowCount)
+          throw new Problem(409, "INVALID_TRANSITION", "Fiche référencée par un dossier ou un consentement ; conserver la fiche.");
+      }
+      if (method === "POST") {
+        const inserted = await client.query("INSERT INTO backend_configurations (administration_id,resource,resource_id,body) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING resource_id", [principal.administrationId,resource,id,body]);
+        if (!inserted.rowCount) throw new Problem(409, "INVALID_TRANSITION", "Configuration déjà existante.");
+      } else if (method === "PUT")
+        await client.query("UPDATE backend_configurations SET body=$4,updated_at=now() WHERE administration_id=$1 AND resource=$2 AND resource_id=$3", [principal.administrationId,resource,id,body]);
+      else
+        await client.query("DELETE FROM backend_configurations WHERE administration_id=$1 AND resource=$2 AND resource_id=$3", [principal.administrationId,resource,id]);
+      if(resource==="tools"){
+        // Compatibility bridge for deprecated per-action clients; new clients use mcp-servers.
+        const previous=current?.body;
+        if(previous && (method==="DELETE" || previous.serverUrl!==(body as any)?.serverUrl || previous.secretRef!==(body as any)?.secretRef)){
+          const oldId="mcp_"+createHash("md5").update(previous.serverUrl+String.fromCharCode(31)+previous.secretRef).digest("hex");
+          await client.query("DELETE FROM backend_mcp_tools WHERE administration_id=$1 AND server_id=$2 AND name=$3",[principal.administrationId,oldId,id]);
+        }
+        if(body!==null){const tool=body as any;const serverId="mcp_"+createHash("md5").update(tool.serverUrl+String.fromCharCode(31)+tool.secretRef).digest("hex");
+          await client.query("INSERT INTO backend_mcp_servers(administration_id,id,body) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",[principal.administrationId,serverId,{id:serverId,name:"Serveur MCP migré",url:tool.serverUrl,enabled:true,transport:"streamable-http",auth:{type:"bearer",secretRef:tool.secretRef},policy:"techma"}]);
+          const definition=catalog.find(t=>t.name===tool.name);
+          await client.query("INSERT INTO backend_mcp_tools(administration_id,server_id,name,definition,enabled,requires_mandate) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(administration_id,server_id,name) DO UPDATE SET enabled=excluded.enabled",[principal.administrationId,serverId,tool.name,definition??null,tool.enabled,Boolean(definition?._meta?.["bj.techma/requiresMandate"])]);
+        }
+      }
       const event = {
         specversion: "1.0",
         id: eventId(),
@@ -155,6 +199,7 @@ export class Settings {
           resource,
           resourceId: id,
           actorRef: principal.subject,
+          operation: method === "POST" ? "created" : method === "PUT" ? "updated" : "deleted",
         },
       };
       validate("Event", event);
@@ -164,10 +209,10 @@ export class Settings {
       );
       await client.query(
         "INSERT INTO backend_idempotency (scope,key,fingerprint,response) VALUES ($1,$2,$3,$4) ON CONFLICT (scope,key) DO UPDATE SET fingerprint=excluded.fingerprint,response=excluded.response,expires_at=now()+interval '24 hours'",
-        [scope, key, digest, body],
+        [scope, key, digest, JSON.stringify(body)],
       );
       await client.query("COMMIT");
-      return result.rows[0].body;
+      return body;
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -218,7 +263,7 @@ export class Settings {
         : page.map((row) => ({
             id: row.id,
             actorRef: row.body.data.actorRef,
-            action: row.body.data.kind,
+            action: row.body.data.operation ? `${row.body.data.kind}.${row.body.data.operation}` : row.body.data.kind,
             resourceId: row.body.data.resourceId,
             at: row.body.time,
             traceId: row.body.traceparent.split("-")[1],

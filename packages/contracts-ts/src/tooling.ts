@@ -87,8 +87,6 @@ export interface components {
             /** @enum {string} */
             mimeType: "application/pdf" | "image/jpeg" | "image/png" | "audio/ogg" | "audio/mpeg" | "audio/mp4";
             sizeBytes: number;
-            /** @enum {string} */
-            scanStatus: "pending" | "clean" | "rejected";
             /** Format: date-time */
             expiresAt: string;
         };
@@ -300,6 +298,11 @@ export interface components {
             resource: "models" | "tools" | "procedures";
             resourceId: string;
             actorRef: string;
+            /**
+             * @description Opération de configuration ; facultative pour compatibilité avec les événements antérieurs.
+             * @enum {string}
+             */
+            operation?: "created" | "updated" | "deleted";
         };
         Event: {
             /** @constant */

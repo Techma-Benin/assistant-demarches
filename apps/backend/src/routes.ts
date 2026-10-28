@@ -14,6 +14,7 @@ import { verifyIdentity, scopes, type AuthOptions } from "./auth.js";
 import { Identities, serviceClient, type User } from "./identity.js";
 import { Conversations, type Event } from "./conversations.js";
 import { Consent } from "./consent.js";
+import type { ToolingPort } from "./tooling.js";
 import { Files } from "./files.js";
 import { Problem, type Schemas } from "./domain.js";
 import { idempotencyKey } from "./transactions.js";
@@ -21,6 +22,7 @@ import { idempotencyKey } from "./transactions.js";
 export const RUNTIME = Symbol("CONVERSATION_RUNTIME");
 export type Runtime = {
   pool: Pool;
+  tooling?: ToolingPort;
   auth: AuthOptions;
   identities: Identities;
   conversations: Conversations;

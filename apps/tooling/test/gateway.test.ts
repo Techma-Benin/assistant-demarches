@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { generateKeyPair } from 'jose';
 import {
   assertSchema,
@@ -118,4 +120,17 @@ test('fiches en brouillon masquées quand elles ne sont pas autorisées (règle 
   const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
   assert.deepEqual(search.structuredContent, { items: [] });
   assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: 'demo-procedure' })).code, 'NOT_FOUND');
+});
+
+
+test('découverte administrative authentifiée sans contexte usager ; exécution sans contexte refusée', async (t) => {
+  const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens' });
+  const client = new Client({ name: 'admin-discovery', version: '1.0.0' });
+  const transport = new StreamableHTTPClientTransport(new URL(tooling + '/mcp'), {
+    requestInit: { headers: { Authorization: 'Bearer mock-agent', traceparent: `00-${'1'.repeat(32)}-${'2'.repeat(16)}-01` } },
+  });
+  t.after(() => client.close());
+  await client.connect(transport);
+  assert.equal((await client.listTools()).tools.length, 8);
+  await assert.rejects(client.callTool({ name: 'procedures.search', arguments: { query: 'demo', locale: 'fr' } }));
 });

@@ -181,32 +181,7 @@ export async function startStack({ backendPort = 0, toolingPort = 0 } = {}) {
     const proofFile = join(directory, "proof.pem");
     writeFileSync(proofFile, await exportPKCS8(proofKeys.privateKey), { mode: 0o600 });
 
-    // This fixture accepts only our exact synthetic file, never arbitrary documents.
     const syntheticFile = Buffer.from("TECHMA SYNTHETIC INTEGRATION FILE\n");
-    const scanner = net.createServer(socket => {
-      let buffered = Buffer.alloc(0), started = false, parts = [], total = 0;
-      socket.setTimeout(5000, () => socket.destroy());
-      socket.on("error", () => {});
-      socket.on("data", chunk => {
-        buffered = Buffer.concat([buffered, chunk]);
-        if (!started) {
-          if (buffered.length < 10) return;
-          if (buffered.subarray(0, 10).toString() !== "zINSTREAM\0") return socket.destroy();
-          buffered = buffered.subarray(10); started = true;
-        }
-        while (buffered.length >= 4) {
-          const size = buffered.readUInt32BE();
-          if (total + size > 10485760) return socket.destroy();
-          if (buffered.length < size + 4) return;
-          const part = buffered.subarray(4, size + 4);
-          buffered = buffered.subarray(size + 4);
-          if (!size) return socket.end(Buffer.concat(parts).equals(syntheticFile) ? "stream: OK\0" : "stream: SyntheticFixtureOnly FOUND\0");
-          parts.push(part); total += size;
-        }
-      });
-    });
-    const scannerUrl = new URL(await listen(scanner));
-    cleanup.push(() => closeServer(scanner));
     const prefix = "integration-" + randomUUID();
     const redis = new URL(redisUrl);
     const queue = new Queue("techma-conversations", { prefix, connection: {
@@ -227,7 +202,7 @@ export async function startStack({ backendPort = 0, toolingPort = 0 } = {}) {
       IDENTITY_HMAC_KEY: randomBytes(32).toString("hex"), DEFAULT_ADMINISTRATION_ID: procedure.administrationId,
       MANDATE_SIGNING_KEY_FILE: proofFile, MANDATE_SIGNING_KEY_ID: "integration-proof", MANDATE_ISSUER: issuer,
       REDIS_URL: redisUrl, QUEUE_PREFIX: prefix, WHATSAPP_CALLBACK_URL: "", MCP_SECRET_REFERENCES: "{}",
-      STORAGE_DRIVER: "local", STORAGE_LOCAL_DIRECTORY: join(directory, "files"), CLAMAV_HOST: "127.0.0.1", CLAMAV_PORT: scannerUrl.port,
+      STORAGE_DRIVER: "local", STORAGE_LOCAL_DIRECTORY: join(directory, "files"),
       MODEL_PROVIDERS_JSON: JSON.stringify({ integration: { baseUrl: issuer + "/v1/", protocol: "chat-completions" } }),
     };
     // Bind the Backend first; no model job can run until the worker starts below.
@@ -292,6 +267,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const stack = await startStack({ backendPort: Number(process.env.INTEGRATION_BACKEND_PORT ?? 4110), toolingPort: Number(process.env.INTEGRATION_TOOLING_PORT ?? 4130) });
   const sample = join(stack.directory, "synthetic.pdf");
   writeFileSync(sample, stack.syntheticFile);
-  console.log(`Pile locale prête — données fictives, OIDC/modèle/antivirus de test uniquement.\nSwagger : ${stack.backendUrl}/docs\nTooling réel : ${stack.toolingUrl}/mcp\nPièce synthétique autorisée : ${sample}\nCommandes modèle : rechercher, creer, completer <req_id>, joindre <req_id> <fil_id>, soumettre <req_id>, STOP\nCtrl+C supprime les bases, fichiers et clés de cette session.`);
+  console.log(`Pile locale prête — données fictives, OIDC/modèle de test uniquement.\nSwagger : ${stack.backendUrl}/docs\nTooling réel : ${stack.toolingUrl}/mcp\nExemple de pièce synthétique : ${sample}\nCommandes modèle : rechercher, creer, completer <req_id>, joindre <req_id> <fil_id>, soumettre <req_id>, STOP\nCtrl+C supprime les bases, fichiers et clés de cette session.`);
   for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => stack.close().then(() => process.exit(0), error => { console.error(error); process.exit(1); }));
 }

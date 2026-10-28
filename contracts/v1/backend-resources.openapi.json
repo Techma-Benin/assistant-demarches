@@ -411,14 +411,6 @@
             "minimum": 1,
             "maximum": 10485760
           },
-          "scanStatus": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "clean",
-              "rejected"
-            ]
-          },
           "expiresAt": {
             "type": "string",
             "format": "date-time"
@@ -428,7 +420,6 @@
           "id",
           "mimeType",
           "sizeBytes",
-          "scanStatus",
           "expiresAt"
         ]
       },
@@ -1312,6 +1303,15 @@
               "actorRef": {
                 "type": "string",
                 "minLength": 1
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "created",
+                  "updated",
+                  "deleted"
+                ],
+                "description": "Opération de configuration ; facultative pour compatibilité avec les événements antérieurs."
               }
             },
             "required": [

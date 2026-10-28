@@ -319,12 +319,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       "synthetic-identity-secret-32-characters",
       "alpha",
     );
-  let scannerClean = true;
-  const files = new Files(pool, new LocalStorage(directory), {
-    async clean() {
-      return scannerClean;
-    },
-  });
+  const files = new Files(pool, new LocalStorage(directory));
   const consent = new Consent(
     pool,
     conversations,
@@ -687,7 +682,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
     },
   );
   await t.test(
-    "Private files stay pending until scan, ownership and expiry",
+    "Private files usable immediately, ownership and expiry",
     async () => {
       const file = await request("/v1/files", {
         method: "POST",
@@ -696,17 +691,9 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       });
       assert.equal(file.status, 201);
       validate("File", file.value);
-      assert.equal(file.value.scanStatus, "pending");
+      assert.equal('scanStatus' in file.value, false);
       const metadata = "/internal/v1/files/" + file.value.id;
-      assert.equal(
-        (
-          await request(metadata, {
-            bearer: resourcesToken,
-            headers: { "X-User-Ref": c.userRef },
-          })
-        ).value.file.scanStatus,
-        "pending",
-      );
+      assert.deepEqual((await request(metadata, { bearer: resourcesToken, headers: { "X-User-Ref": c.userRef } })).value.file, file.value);
       assert.equal(
         (
           await request(metadata, {
@@ -728,28 +715,16 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
             body,
           })
         ).status,
-        409,
-      );
-      await files.scanPending();
-      assert.equal(
-        (
-          await request(metadata, {
-            bearer: resourcesToken,
-            headers: { "X-User-Ref": c.userRef },
-          })
-        ).value.file.scanStatus,
-        "clean",
-      );
-      assert.equal(
-        (
-          await request("/v1/conversations/" + c.id + "/messages", {
-            method: "POST",
-            body,
-          })
-        ).status,
         202,
       );
       await agent.process(c.id);
+      // Existing uploads and idempotency replays must survive the contract migration.
+      await pool.query("UPDATE backend_files SET body=body || '{\"scanStatus\":\"rejected\"}'::jsonb WHERE id=$1", [file.value.id]);
+      await pool.query("UPDATE backend_idempotency SET response=response || '{\"scanStatus\":\"pending\"}'::jsonb WHERE response->>'id'=$1", [file.value.id]);
+      await pool.query("DELETE FROM backend_migrations WHERE name='006_remove_file_scan.sql'");
+      await migrate(pool);
+      assert.deepEqual((await files.metadata(file.value.id, c.userRef)).file, file.value);
+      assert.equal((await pool.query("SELECT count(*)::int AS n FROM backend_idempotency WHERE response->>'id'=$1 AND response ? 'scanStatus'", [file.value.id])).rows[0].n, 0);
       await pool.query(
         "UPDATE backend_files SET expires_at=now()-interval '1 second' WHERE id=$1",
         [file.value.id],
@@ -763,22 +738,6 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
           })
         ).status,
         404,
-      );
-      scannerClean = false;
-      const rejected = await request("/v1/files", {
-        method: "POST",
-        body: Buffer.from("%PDF infected synthetic"),
-        headers: { "X-File-Mime-Type": "application/pdf" },
-      });
-      await files.scanPending();
-      assert.equal(
-        (
-          await request("/internal/v1/files/" + rejected.value.id, {
-            bearer: resourcesToken,
-            headers: { "X-User-Ref": c.userRef },
-          })
-        ).value.file.scanStatus,
-        "rejected",
       );
     },
   );
