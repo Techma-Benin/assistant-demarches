@@ -1,0 +1,36 @@
+# Entrée HTTPS du Tooling. Répartit les appels entre les répliques ; une réplique dont
+# /ready échoue est retirée du trafic jusqu'à son rétablissement, et si une connexion
+# échoue avant l'envoi de la requête, la réplique suivante est essayée.
+#
+# Variables :
+#   TOOLING_PUBLIC_HOST  nom servi par le certificat (défaut localhost)
+#   TOOLING_HTTPS_PORT   port HTTPS (défaut 4443)
+#   TOOLING_TLS          « internal » (autorité locale de Caddy, environnement de test)
+#                        ou « /certs/tls.crt /certs/tls.key » (certificat fourni)
+#   TOOLING_UPSTREAMS    répliques, séparées par des espaces
+{
+	admin off
+	# Aucune redirection HTTP : seul le port HTTPS est ouvert.
+	auto_https disable_redirects
+	# L'autorité locale n'est jamais installée dans le magasin de confiance de l'hôte.
+	skip_install_trust
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$TOOLING_PUBLIC_HOST:localhost}:{$TOOLING_HTTPS_PORT:4443} {
+	tls {$TOOLING_TLS:internal}
+	header -Server
+	reverse_proxy {$TOOLING_UPSTREAMS:tooling-a:4030 tooling-b:4030} {
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		health_uri /ready
+		health_interval 2s
+		health_timeout 2s
+		health_passes 1
+		health_fails 1
+		fail_duration 30s
+	}
+}

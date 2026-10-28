@@ -13,9 +13,13 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs",
     "mocks": "node mocks/server.mjs",
-    "check": "pnpm contracts:check && pnpm contracts:generate && pnpm typecheck && pnpm test && pnpm --filter @techma/backend test",
+    "check": "pnpm contracts:check && pnpm contracts:generate && pnpm typecheck && pnpm test && pnpm test:apps && pnpm test:integration",
     "build": "turbo run build",
-    "dev": "pnpm --filter @techma/backend dev"
+    "dev": "pnpm --filter @techma/backend dev",
+    "test:apps": "turbo run test",
+    "test:integration": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && node --env-file-if-exists=integration/.env --test integration/backend-tooling.test.mjs",
+    "dev:integration": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && node --env-file-if-exists=integration/.env integration/local-stack.mjs",
+    "check:portable": "pnpm contracts:check && pnpm contracts:generate && pnpm typecheck && pnpm test && pnpm --filter @techma/tooling test && pnpm --filter @techma/backend build"
   },
   "devDependencies": {
     "ajv": "8.20.0",

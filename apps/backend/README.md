@@ -72,7 +72,7 @@ Exemple synthétique de provisioning :
 {
   "administrationId": "demo-administration",
   "models": [{"id":"primary","provider":"openai","model":"MODEL_ID","promptVersion":"agent-v1","temperature":0.2,"active":true}],
-  "tools": [{"name":"procedures.get","enabled":true,"serverUrl":"http://127.0.0.1:4020/mcp","secretRef":"backend-agent"}],
+  "tools": [{"name":"procedures.get","enabled":true,"serverUrl":"http://127.0.0.1:4030/mcp","secretRef":"backend-agent"}],
   "procedures": []
 }
 ```

@@ -1,0 +1,199 @@
+name: Tooling
+
+on:
+  push:
+    branches: ['tooling/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tooling-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: 10.20.0
+  NODE_VERSION: 22
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Fins de ligne identiques sur tous les systèmes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm check:portable
+      - run: git diff --exit-code -- packages/contracts-ts/src
+
+  test-postgres:
+    name: test (PostgreSQL 16, répliques)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter @techma/tooling test
+      - name: Démonstration agent → pont → Tooling
+        run: pnpm --filter @techma/tooling demo
+
+  image:
+    name: image (construction et démarrage en production)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Construire l'image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/tooling/Dockerfile
+          load: true
+          tags: techma-tooling:ci
+          cache-from: type=gha,scope=tooling
+          cache-to: type=gha,mode=max,scope=tooling
+      - name: Démarrer l'image en production
+        run: |
+          docker run -d --name tooling --network host \
+            -e TOOLING_HOST=127.0.0.1 \
+            -e DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres \
+            -e AUTH_MODE=jwt \
+            -e JWT_ISSUER=https://idp.example.invalid/realms/ci \
+            -e JWKS_URL=https://idp.example.invalid/certs \
+            -e OIDC_TOKEN_URL=https://idp.example.invalid/token \
+            -e TOOLING_RESOURCES_CLIENT_ID=ci -e TOOLING_RESOURCES_CLIENT_SECRET=ci \
+            -e TOOLING_EVENTS_CLIENT_ID=ci -e TOOLING_EVENTS_CLIENT_SECRET=ci \
+            -e PROOF_JWKS_URL=https://backend.example.invalid/jwks \
+            -e BACKEND_URL=https://backend.example.invalid \
+            -e EVENTS_PUBLISHER=off \
+            techma-tooling:ci
+      - name: Vérifier le service démarré
+        run: |
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:4030/ready && break; sleep 1; done
+          test "$(curl -s http://127.0.0.1:4030/ready)" = '{"status":"ready"}'
+          test "$(curl -s http://127.0.0.1:4030/health)" = '{"status":"ok"}'
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:4030/mcp -H 'traceparent: 00-11111111111111111111111111111111-2222222222222222-01')
+          test "$code" = 401
+          test "$(docker exec tooling id -u)" != 0
+          docker exec tooling sh -c 'test ! -d /app/src && test ! -d /app/test && test ! -e /app/deploy'
+      - name: Journaux du conteneur
+        if: always()
+        run: docker logs tooling
+
+  compose:
+    name: déploiement (2 répliques, proxy HTTPS)
+    runs-on: ubuntu-latest
+    env:
+      TOOLING_DB_PASSWORD: ci-database-password
+    defaults:
+      run:
+        working-directory: apps/tooling/deploy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configuration de test
+        run: |
+          cp tooling.env.example tooling.env
+          sed -i -E 's/^(.*_SECRET)=$/\1=ci-secret/' tooling.env
+      - name: Démarrer la pile
+        run: docker compose up -d --build --wait --wait-timeout 300
+      - name: Vérifier l'entrée HTTPS et la bascule
+        run: |
+          test "$(curl -sk https://localhost:4443/ready)" = '{"status":"ready"}'
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4443/ready || true)
+          test "$code" != 200
+          docker compose stop tooling-a
+          for i in $(seq 1 20); do
+            test "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:4443/ready)" = 200
+          done
+          docker compose start tooling-a
+          docker compose up -d --wait --wait-timeout 120
+          test "$(curl -sk https://localhost:4443/ready)" = '{"status":"ready"}'
+      - name: Journaux de la pile
+        if: always()
+        run: docker compose logs --no-color
+      - name: Arrêter la pile
+        if: always()
+        run: docker compose down -v
+
+  publish:
+    name: publication de l'image (ghcr.io)
+    needs: [test, test-postgres, image, compose]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Nom et étiquettes de l'image
+        id: meta
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/assistant-demarches-tooling"
+          branch="$(echo "$GITHUB_REF_NAME" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9.\n' '-')"
+          {
+            echo "tags<<EOF"
+            echo "$image:sha-${GITHUB_SHA::12}"
+            echo "$image:$branch"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Construire et publier
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/tooling/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=tooling
