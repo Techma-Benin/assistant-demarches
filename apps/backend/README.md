@@ -83,6 +83,8 @@ Configurer les huit outils v1 nécessaires au parcours. Les fiches doivent être
 
 `STORAGE_DRIVER=local` utilise un répertoire privé de développement. `s3` utilise `STORAGE_BUCKET`, `AWS_REGION`, les credentials AWS standard et, pour un service compatible, `S3_ENDPOINT` / `S3_FORCE_PATH_STYLE`. `gcs` utilise `STORAGE_BUCKET` et les credentials GCS du déploiement. Les adaptateurs existent ; leur activation demande aussi les permissions et ressources correspondantes. Migrer des fichiers existants reste une opération distincte.
 
+Pour essayer Swagger sans fournisseur d’identité local : activer `BACKEND_DEV_AUTH=true` dans le `.env`, relancer `pnpm dev` et cliquer **Tester comme usager** sur `/docs`. Les identités RS256 temporaires sont réservées au lancement de développement sur localhost. La production conserve la vérification OIDC normale.
+
 ## Documentation interactive
 
 Le [guide de test complet](docs/testing.md) explique les prérequis, les identités, cinq scénarios et les erreurs ; il est aussi accessible sur `/docs/guide`. Chaque route Swagger contient ses étapes et des exemples. Les descriptions sont enrichies au service de la documentation, sans modifier les contrats partagés.
@@ -109,3 +111,9 @@ Le test du processus worker utilise `REDIS_TEST_URL`, ou un binaire Redis local 
 À valider avant un pilote : realm Keycloak réel et échange de jetons WhatsApp, services des autres équipes, profils de modèles réels, stockage cloud et permissions, ClamAV réel, TLS/chiffrement, sauvegardes, supervision et jeu d’évaluation métier. Le masquage de motifs sensibles et la vérification des références de sources ne constituent pas une garantie d’anonymisation complète ou d’exactitude des réponses. Les traces OpenTelemetry et l’export du journal autoritatif Tooling restent à intégrer.
 
 Les messages audio/images/fichiers sont acceptés comme références contrôlées mais aucune transcription/OCR n’est encore branchée : l’assistant demande une description écrite. La phase v1 prépare un lien officiel et ne déclare pas un dépôt administratif autonome. La création/suppression publique de modèles ou de serveurs MCP n’est pas ajoutée au contrat actif.
+
+## Logs de diagnostic
+
+Le worker écrit des lignes JSON sur stderr : `agent.processing_failed`, `agent.processing_exhausted`, `worker.job_failed`, erreurs de file et de maintenance. Chercher `conversationId`, `messageId` et `traceId` pour suivre un traitement. Chaque échec comprend le numéro de tentative, le code et, pour un refus IA, le fournisseur, le modèle, le statut HTTP distant, l’identifiant de requête disponible et une raison classifiée. Exemple : `upstreamStatus: 403`, `reason: provider_network_access_denied` signifie que l’appel distant a été refusé pour une raison d’accès réseau ; ce n’est pas une erreur du WebSocket.
+
+Les corps de messages, jetons, clés et réponses brutes des fournisseurs ne sont pas journalisés. La dernière erreur structurée est conservée dans `backend_messages.last_error` après abandon ; elle est effacée après une réussite effective. Un ancien échec dont la cause avait déjà été effacée n’est pas récupérable rétroactivement.

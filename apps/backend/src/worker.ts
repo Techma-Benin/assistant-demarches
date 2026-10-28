@@ -1,3 +1,4 @@
+import { logFailure } from "./diagnostics.js";
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
 import { database } from "./database.js";
 import { remoteAuth } from "./auth.js";
@@ -33,13 +34,11 @@ const worker = new Worker(
   },
   { connection, prefix, concurrency: 4 },
 );
-worker.on("error", () => console.error("Conversation queue unavailable."));
-worker.on("failed", () =>
-  console.error(
-    "Conversation processing failed; durable work remains pending.",
-  ),
-);
-queue.on("error", () => console.error("Conversation dispatcher unavailable."));
+worker.on("error", error => logFailure("worker.queue_error", error));
+worker.on("failed", (job, error) => logFailure("worker.job_failed", error, {
+  jobId: job?.id, conversationId: job?.data?.conversationId, attemptsMade: job?.attemptsMade,
+}));
+queue.on("error", error => logFailure("worker.dispatcher_error", error));
 const delivery = process.env.WHATSAPP_CALLBACK_URL
   ? new Delivery(pool, process.env.WHATSAPP_CALLBACK_URL, () =>
       tokens.get("backend-delivery", "messages:deliver", "whatsapp-adapter"),
@@ -84,8 +83,8 @@ async function dispatch() {
     ]) {
       try {
         await operation();
-      } catch {
-        console.error("An independent maintenance operation will be retried.");
+      } catch (error) {
+        logFailure("worker.maintenance_operation_failed", error);
       }
     }
     await pool.query(
@@ -101,8 +100,8 @@ async function dispatch() {
     await pool.query(
       "DELETE FROM backend_conversation_events WHERE expires_at<now() AND (callback_delivered_at IS NOT NULL OR callback_failed OR NOT EXISTS(SELECT 1 FROM backend_conversations c WHERE c.id=backend_conversation_events.conversation_id AND c.body->>'channel'='whatsapp'))",
     );
-  } catch {
-    console.error("Background maintenance interrupted; pending work retained.");
+  } catch (error) {
+    logFailure("worker.maintenance_failed", error);
   } finally {
     if (!stopped) timer = setTimeout(schedule, 1000);
   }

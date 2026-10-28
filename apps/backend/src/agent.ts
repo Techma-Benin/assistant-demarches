@@ -1,3 +1,4 @@
+import { describeError, logFailure } from "./diagnostics.js";
 import type { Pool } from "pg";
 import {
   canonical,
@@ -117,6 +118,10 @@ export class Agent {
           row.attempts >= 12 ||
           Date.now() - row.created_at.getTime() >= 86400000
         ) {
+          logFailure("agent.processing_exhausted", new Problem(503, "PROCESSING_EXHAUSTED", "Traitement abandonné après la limite de tentatives ou de durée."), {
+            conversationId, messageId: row.id, attempts: row.attempts,
+            traceId: row.traceparent?.split("-")[1], lastError: row.last_error ?? "unknown",
+          });
           await this.finish(
             row.conversation,
             row.body,
@@ -128,6 +133,7 @@ export class Agent {
               },
             ],
             row.traceparent,
+            true,
           );
           continue;
         }
@@ -139,12 +145,18 @@ export class Agent {
             row.administration_id,
           );
         } catch (error) {
+          const diagnostic = {
+            ...describeError(error), timestamp: new Date().toISOString(),
+            conversationId, messageId: row.id, attempt: row.attempts + 1,
+            traceId: row.traceparent?.split("-")[1],
+          };
+          logFailure("agent.processing_failed", error, diagnostic);
           await this.pool.query(
             "UPDATE backend_messages SET attempts=attempts+1,last_error=$3 WHERE conversation_id=$1 AND id=$2",
             [
               conversationId,
               row.id,
-              error instanceof Problem ? error.code : "UPSTREAM_UNAVAILABLE",
+              JSON.stringify(diagnostic),
             ],
           );
           throw error;
@@ -571,6 +583,7 @@ export class Agent {
     input: MessageInput,
     blocks: Schemas["AgentMessage"]["blocks"],
     traceparent: string,
+    preserveError = false,
   ) {
     await transaction(this.pool, async (db) => {
       await this.conversations.complete(
@@ -579,6 +592,7 @@ export class Agent {
         input.id,
         blocks,
         traceparent,
+        preserveError,
       );
       await db.query(
         "DELETE FROM backend_agent_checkpoints WHERE conversation_id=$1 AND message_id=$2",

@@ -1,3 +1,4 @@
+import { DiagnosticProblem, providerReason, safeProviderIdentifier } from "./diagnostics.js";
 import { readFileSync } from "node:fs";
 import { Problem, approvedMcpUrl, type ModelConfig } from "./domain.js";
 import type { ToolDefinition } from "./tooling.js";
@@ -156,7 +157,9 @@ export class HttpModels implements ModelPort {
     const base = provider.baseUrl.endsWith("/")
       ? provider.baseUrl
       : provider.baseUrl + "/";
-    const res = await fetch(
+    let res: Response;
+    try {
+    res = await fetch(
       new URL(responses ? "responses" : "chat/completions", base),
       {
         method: "POST",
@@ -169,12 +172,41 @@ export class HttpModels implements ModelPort {
         signal: AbortSignal.timeout(60000),
       },
     );
-    if (!res.ok)
-      throw new Problem(
-        503,
-        "UPSTREAM_UNAVAILABLE",
-        "Appel au modèle interrompu ou refusé.",
-      );
+    } catch (error) {
+      throw new DiagnosticProblem("Connexion au fournisseur IA impossible ou expirée.", {
+        stage: "model.request", provider: config.provider, model: config.model,
+        reason: "provider_network_error", causeCode: safeProviderIdentifier((error as any)?.cause?.code) ?? safeProviderIdentifier((error as any)?.name),
+      });
+    }
+    if (!res.ok) {
+      let upstream: any;
+      // Only classify the error; never persist a provider body that may echo a prompt or secret.
+      try {
+        const reader = res.body?.getReader();
+        if (reader) {
+          let bytes = 0;
+          const chunks: Uint8Array[] = [];
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              bytes += value.byteLength;
+              if (bytes > 16384) break;
+              chunks.push(value);
+            }
+            if (bytes <= 16384) upstream = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          } finally { await reader.cancel().catch(() => {}); }
+        }
+      } catch { /* HTTP status remains useful even for a non-JSON response. */ }
+      throw new DiagnosticProblem("Appel au fournisseur IA refusé (HTTP " + res.status + ").", {
+        stage: "model.response", provider: config.provider, model: config.model,
+        upstreamStatus: res.status,
+        upstreamCode: safeProviderIdentifier(upstream?.error?.code),
+        upstreamType: safeProviderIdentifier(upstream?.error?.type),
+        upstreamRequestId: safeProviderIdentifier(res.headers.get("x-request-id") ?? res.headers.get("request-id")),
+        reason: providerReason(res.status, upstream?.error?.message),
+      });
+    }
     const text = await res.text();
     if (Buffer.byteLength(text) > 1048576)
       throw new Problem(

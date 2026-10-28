@@ -191,6 +191,7 @@ export async function createBackend(options: {
   allowedMcpUrls: ReadonlySet<string>;
   corsOrigins?: string[];
   runtime?: Runtime;
+  developmentTokens?: Record<string, string>;
 }) {
   let closeSockets = () => {};
   @Module({
@@ -221,7 +222,7 @@ export async function createBackend(options: {
   })
   class BackendModule {}
   const app = await NestFactory.create(BackendModule, { logger: false });
-  attachDocumentation(app.getHttpAdapter().getInstance());
+  attachDocumentation(app.getHttpAdapter().getInstance(), options.developmentTokens);
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");

@@ -365,6 +365,7 @@ export class Conversations {
     inputId: string,
     blocks: Schemas["AgentMessage"]["blocks"],
     traceparent: string,
+    preserveError = false,
   ) {
     const message = {
       id: identifier("msg"),
@@ -379,8 +380,8 @@ export class Conversations {
       envelope({ kind: "message.sent", conversationId, message }, traceparent),
     );
     await db.query(
-      "UPDATE backend_messages SET processed_at=now(),last_error=NULL WHERE conversation_id=$1 AND id=$2",
-      [conversationId, inputId],
+      "UPDATE backend_messages SET processed_at=now(),last_error=CASE WHEN $3 THEN last_error ELSE NULL END WHERE conversation_id=$1 AND id=$2",
+      [conversationId, inputId, preserveError],
     );
     return message;
   }

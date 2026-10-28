@@ -2,6 +2,12 @@
 
 Swagger est un client HTTP : il envoie de vraies requêtes au Backend et peut modifier la base configurée. Les exemples sont des données fictives ; ils ne créent pas automatiquement les ressources auxquelles ils font référence.
 
+## Test local sans chercher de jeton
+
+Pour les essais locaux, activer `BACKEND_DEV_AUTH=true` dans le `.env` puis lancer `pnpm dev`. En haut de `/docs`, cliquer **Tester comme usager** avant les routes de conversation, ou **Tester comme administrateur** pour les routes admin. Le bouton génère la connexion de test : rien à copier dans Authorize. Les en-têtes techniques laissés aux valeurs d’exemple sont remplacés automatiquement par des valeurs uniques lors de l’envoi. Une valeur personnalisée reste conservée pour tester les rejeux.
+
+Les identités de test sont signées et expirent après 8 h ; relancer `pnpm dev` puis se reconnecter si elles expirent. Les données écrites restent dans la base locale. Le même usager de test retrouve ses conversations après redémarrage, mais les anciens jetons ne sont plus valides. Ces identités sont limitées à `pnpm dev` et à une écoute locale ; elles ne remplacent pas Keycloak pour une intégration réelle. Aucun modèle ni worker n’est lancé par ce bouton.
+
 ## Commencer ici
 
 1. Depuis la racine du dépôt, lancer `pnpm dev`. Le `.env` est chargé et les migrations sont appliquées. Ouvrir `/docs`.
@@ -23,7 +29,7 @@ Swagger est un client HTTP : il envoie de vraies requêtes au Backend et peut mo
 | Utiliser une pièce jointe | Stockage + worker + ClamAV ; le fichier doit passer de `pending` à `clean` |
 | Appels internes | JWT de service dédié, ressources existantes et cohérentes |
 
-**État du démarrage local :** la configuration PostgreSQL ne fournit pas de JWT et ne déploie ni Keycloak, ni Redis, ni un modèle, ni le Tooling. `pnpm dev` lance l’API ; le worker est un processus séparé. Si l’identité n’est pas configurée, le parcours authentifié s’arrête avant la première conversation. Aucun jeton de démonstration universel n’est livré pour l’API réelle ; `mock-user` et `mock-admin` ne fonctionnent qu’avec le serveur de simulation.
+**État du démarrage local :** la configuration PostgreSQL ne fournit pas de JWT et ne déploie ni Keycloak, ni Redis, ni un modèle, ni le Tooling. `pnpm dev` lance l’API ; le worker est un processus séparé. Si l’identité n’est pas configurée, le parcours authentifié s’arrête avant la première conversation. En dehors du mode de test local décrit plus haut, aucun jeton de démonstration universel n’est livré ; `mock-user` et `mock-admin` ne fonctionnent qu’avec le serveur de simulation.
 
 Lancer le worker depuis la racine après compilation :
 
