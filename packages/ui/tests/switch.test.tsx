@@ -37,8 +37,8 @@ describe('Switch', () => {
 
   it('uses token colors for on and off states', () => {
     const { rerender } = render(<Switch checked aria-label="Actif" />);
-    expect(screen.getByRole('switch').firstElementChild?.className).toContain('bg-action');
+    expect(screen.getByRole('switch').firstElementChild?.className).toContain('bg-trust');
     rerender(<Switch checked={false} aria-label="Actif" />);
-    expect(screen.getByRole('switch').firstElementChild?.className).toContain('bg-sunken');
+    expect(screen.getByRole('switch').firstElementChild?.className).toContain('bg-[var(--ui-border-strong)]');
   });
 });

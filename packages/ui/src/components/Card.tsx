@@ -7,7 +7,8 @@ export const cardVariants = cva('rounded-card border p-4', {
     tone: {
       default: 'bg-surface border-line text-ink',
       trust: 'bg-trust-soft border-trust-line text-ink',
-      warning: 'bg-warning-soft border-warning/30 text-ink',
+      // Fond jaune dans les deux thèmes : encre fixe (text-warning), jamais text-ink.
+      warning: 'bg-warning-soft border-warning/30 text-warning',
       danger: 'bg-danger-soft border-danger/30 text-ink',
     },
   },

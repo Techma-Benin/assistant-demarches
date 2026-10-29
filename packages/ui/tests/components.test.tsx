@@ -8,7 +8,7 @@ describe('Button', () => {
     const { rerender } = render(<Button>Ok</Button>);
     expect(screen.getByRole('button', { name: 'Ok' }).className).toContain('bg-action');
     rerender(<Button variant="secondary">Ok</Button>);
-    expect(screen.getByRole('button', { name: 'Ok' }).className).toContain('border-line-strong');
+    expect(screen.getByRole('button', { name: 'Ok' }).className).toContain('bg-sunken');
     rerender(<Button variant="ghost">Ok</Button>);
     expect(screen.getByRole('button', { name: 'Ok' }).className).toContain('hover:bg-sunken');
     expect(screen.getByRole('button', { name: 'Ok' }).className).toContain('rounded-pill');

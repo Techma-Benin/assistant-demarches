@@ -9,11 +9,15 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         primary: 'bg-action text-on-action hover:bg-action-hover',
-        secondary: 'bg-surface border border-line-strong text-ink hover:bg-sunken',
+        secondary: 'bg-sunken text-ink hover:bg-line',
+        outline: 'border border-action bg-transparent text-ink hover:bg-sunken',
+        /** Uniquement pour « Valider et publier ». */
+        trust: 'bg-trust text-on-trust hover:brightness-95',
         ghost: 'text-ink hover:bg-sunken',
       },
       size: {
-        md: 'min-h-11 px-5 text-[15px] font-semibold',
+        lg: 'min-h-14 px-8 text-base font-semibold',
+        md: 'min-h-12 px-6 text-[15px] font-semibold',
         sm: 'min-h-9 px-4 text-sm font-semibold',
       },
     },

@@ -30,11 +30,13 @@ const pairs: [string, string, number][] = [
   ['text', 'canvas', 7],
   ['text-muted', 'canvas', 4.5],
   ['text-subtle', 'surface', 4.5],
+  ['text-subtle', 'sunken', 4.5],
   ['on-action', 'action', 4.5],
   ['trust-text', 'trust-soft', 4.5],
   ['on-trust', 'trust', 4.5],
   ['danger-text', 'danger-soft', 4.5],
   ['warning-text', 'warning-soft', 4.5],
+  ['warning-text', 'sun', 4.5],
   ['field-border', 'surface', 3],
 ];
 

@@ -1,27 +1,31 @@
 import type { HTMLAttributes } from 'react';
 import { cn } from '../cn';
+import { FlagGlyph } from './FlagGlyph';
 
-export type BrandMarkProps = HTMLAttributes<HTMLSpanElement> & { size?: 'sm' | 'lg' };
+export type BrandMarkProps = HTMLAttributes<HTMLSpanElement> & {
+  size?: 'sm' | 'lg';
+  /** false : mot-symbole seul (repli si l’équipe refuse le drapeau dans la marque). */
+  showFlag?: boolean;
+};
 
-export function BrandMark({ size = 'sm', className, ...props }: BrandMarkProps) {
+export function BrandMark({ size = 'sm', showFlag = true, className, ...props }: BrandMarkProps) {
   const large = size === 'lg';
   return (
     <span
-      aria-hidden={props['aria-label'] ? undefined : true}
-      className={cn(
-        'relative inline-flex shrink-0 items-center justify-center rounded-full bg-trust font-extrabold text-on-trust',
-        large ? 'size-16 text-3xl' : 'size-8 text-base',
-        className,
-      )}
+      className={cn('inline-flex shrink-0 items-center', large ? 'gap-3' : 'gap-2.5', className)}
       {...props}
     >
-      A
+      {showFlag ? (
+        <FlagGlyph decorative width={large ? 48 : 30} height={large ? 35 : 22} className="shrink-0" />
+      ) : null}
       <span
         className={cn(
-          'absolute rounded-full bg-sun ring-2 ring-canvas',
-          large ? 'top-0 right-0 size-4' : 'top-0 right-0 size-2.5',
+          'font-display font-extrabold tracking-[-0.02em] text-ink',
+          large ? 'text-[32px] leading-none' : 'text-[19px] leading-none',
         )}
-      />
+      >
+        Démarches
+      </span>
     </span>
   );
 }

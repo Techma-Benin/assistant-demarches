@@ -4,15 +4,21 @@ import { VisuallyHidden } from './VisuallyHidden';
 
 export type TypingIndicatorProps = HTMLAttributes<HTMLSpanElement> & { label?: string };
 
+// Vert, jaune, rouge : les couleurs du drapeau.
+const DOTS = ['bg-trust', 'bg-sun', 'bg-flag-red'] as const;
+
 export function TypingIndicator({ label = 'L’assistant écrit…', className, ...props }: TypingIndicatorProps) {
   return (
-    <span role="status" className={cn('inline-flex items-center gap-1 py-1', className)} {...props}>
-      {[0, 1, 2].map((index) => (
+    <span role="status" className={cn('inline-flex items-center gap-1.5 py-1', className)} {...props}>
+      {DOTS.map((color, index) => (
         <span
-          key={index}
+          key={color}
           aria-hidden="true"
-          style={{ animationDelay: `${index * 150}ms` }}
-          className="size-2 rounded-full bg-ink-subtle motion-safe:animate-[ui-typing_1s_var(--ui-ease-out)_infinite]"
+          style={{ animationDelay: `${index * 160}ms` }}
+          className={cn(
+            'size-2.5 rounded-full motion-safe:animate-[ui-typing-flag_1.2s_var(--ui-ease-out)_infinite]',
+            color,
+          )}
         />
       ))}
       <VisuallyHidden>{label}</VisuallyHidden>

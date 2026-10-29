@@ -1,15 +1,17 @@
 # @techma/ui
 
-Fondation de design « Sceau » : tokens, thème Tailwind v4 et composants React partagés (widget web et futures interfaces).
+Fondation de design « Bonjour, Bénin » : tokens, thème Tailwind v4 et composants React partagés (widget web et futures interfaces).
 
 ## Référence visuelle (verrouillée)
 
-Direction principale : douceur façon Headspace (canevas blanc cassé chaud, surfaces très arrondies, boutons pilule encre quasi noire), ancrée dans le service public béninois (service-public.bj) : le vert porte uniquement la confiance.
+Direction « Bonjour, Bénin » : un seul accueil orienté conversation. Fond blanc, encre quasi noire, très grands titres serrés (Inter Tight 800), tuiles très arrondies. Les couleurs du drapeau béninois (vert, jaune, rouge) n’apparaissent qu’en accents.
 
-- À conserver : canevas blanc cassé chaud ; bouton pilule encre = LA action principale ; grands rayons (pilule pour boutons, chips, composeur ; 20 px pour bulles et cartes) ; vert réservé aux signaux de confiance (sources, liens officiels, statuts terminés ou positifs, marque) ; jaune soleil uniquement pour le petit point de la marque.
-- À refuser : accents indigo, violet ou bleu ; dégradés ; halos ; ombres lourdes ; liserés décoratifs à gauche ; cartes comme conteneurs par défaut ; emoji ; CTA vert (le CTA reste encre) ; jaune ailleurs que sur la marque.
+- À conserver : bouton pilule encre = LA action principale (48 à 56 px) ; tuiles à 32 px de rayon (`Tile`), cartes à 28 px, chips et boutons en pilule ; vert = confiance (sources, statuts positifs, tuile WhatsApp, « Valider et publier ») ; glyphes « rebus » en `em` dans les titres ; une seule ombre (`shadow-prompt`), réservée à la zone de question.
+- Le jaune (`sun`) sert UNIQUEMENT en fond (tuile, pastille « brouillon / à valider », avertissement) : jamais en texte. Le texte posé dessus est l’encre fixe (`text-warning`). Le rouge (`flag-red`) ne sert qu’au drapeau et aux compteurs d’accent.
+- Le drapeau (`FlagGlyph`) garde ses couleurs exactes dans les deux thèmes. `BrandMark showFlag={false}` donne le mot-symbole seul si l’équipe refuse le drapeau dans la marque.
+- À refuser : accents indigo, violet ou bleu ; dégradés ; halos ; ombres lourdes ; liserés décoratifs à gauche ; emoji ; CTA vert hors « Valider et publier » ; jaune en texte.
 - Ton : chaleureux, grand public, pour des personnes peu à l’aise avec le numérique : texte de base 16 px, cibles tactiles d’au moins 44 px, français simple, états clairs.
-- Ne jamais suggérer un aval officiel : pas de « officiel » à côté de la marque ; sous-titre « Réponses sourcées ». Seuls le lien vers le portail officiel et les sources peuvent dire « portail officiel » / « Source ».
+- Ne jamais suggérer un aval officiel : pas de « officiel » à côté de la marque. Seuls le lien vers le portail officiel et les sources peuvent dire « portail officiel » / « Source ».
 
 ## Tokens
 
@@ -17,36 +19,39 @@ Source unique : `src/styles/tokens.css` (préfixe `--ui-`). Clair sur `:root` ; 
 
 | token | clair | sombre | rôle |
 |---|---|---|---|
-| canvas | #FBFAF7 | #121614 | page, fond du chat |
-| surface | #FFFFFF | #1A1F1C | bulles, cartes, champs |
-| sunken | #F3F1EC | #0E110F | piste du composeur, fonds en creux |
-| border | #E7E4DC | rgba(255,255,255,0.10) | filets |
-| border-strong | #D9D5CB | rgba(255,255,255,0.16) | boutons et chips contour |
-| field-border | #8A918C | #6A726C | bordures de champs (contraste 3:1) |
-| text | #17201A | #EEF1EE | texte courant |
-| text-muted | #56605A | #A9B2AC | texte secondaire |
-| text-subtle | #6B736D | #87908A | métadonnées, placeholders |
-| action | #17201A | #F1EFE8 | fond du CTA, bulle de l’usager |
-| action-hover | #2A352D | #DAD7CE | survol du CTA |
-| on-action | #FFFFFF | #121614 | texte sur action |
-| trust | #0B6B3A | #3FAE6E | remplissage confiance (marque, icône) |
-| trust-text | #0B5A31 | #7FD3A0 | texte et liens de confiance |
-| trust-soft | #E6F2EA | #173323 | fond de chip ou carte de confiance |
-| trust-line | #B9DCC6 | #2C5A3E | bordures de confiance |
-| on-trust | #FFFFFF | #0E110F | texte sur fond confiance |
-| sun | #FCD116 | #FCD116 | point de la marque UNIQUEMENT |
-| danger-text | #B42318 | #FF8A80 | erreurs |
-| danger-soft | #FDECEA | #3A1714 | fond d’erreur |
-| warning-text | #7A4F00 | #F5C451 | attention |
-| warning-soft | #FFF4D6 | #33270B | fond d’attention |
-| focus | #17201A | #F1EFE8 | anneau de focus |
-| viz-1 | #2A78D6 | #3987E5 | visualisation de données : bleu (Web) |
-| viz-2 | #EB6834 | #D95926 | visualisation de données : orange (WhatsApp) |
-| viz-3 | #1BAF7A | #199E70 | visualisation de données : aqua (Mobile) |
+| canvas | #FFFFFF | #0D0D0F | page, fond du chat |
+| surface | #FFFFFF | #17171A | champs, tuiles blanches |
+| sunken | #F3F3F1 | #1E1E22 | tuiles grises, chips, bulle usager |
+| shell (nouveau) | #FAFAF8 | #131316 | barre latérale admin, en-têtes de tableau |
+| border | #DCDCD8 | rgba(255,255,255,0.14) | bordures de tuiles et de boîtes |
+| border-subtle (nouveau) | #EBEBE8 | rgba(255,255,255,0.08) | lignes de tableau, séparateurs |
+| border-strong | #C4C4C0 | rgba(255,255,255,0.28) | pointillés, interrupteur inactif |
+| field-border | #8A8B90 | #75757D | bordures de champs (3:1) |
+| text | #0D0D0F | #F5F5F2 | texte courant |
+| text-muted | #3A3A40 | #C8C8CC | texte secondaire |
+| text-subtle | #55565C | #A0A0A6 | métadonnées (4,5:1 sur blanc et sur sunken) |
+| action | #0D0D0F | #FFFFFF | boutons principaux, envoi |
+| action-hover | #2A2A2F | #E4E4E0 | survol |
+| on-action | #FFFFFF | #0D0D0F | texte sur action |
+| trust | #00855A | #2FBF7A | vert du drapeau : fonds, statuts positifs |
+| trust-text | #00573A | #5FD39B | texte vert |
+| trust-soft | #E6F4EC | #123528 | pastille « Validée » / « Source » |
+| trust-line | #A9D8BF | #1F5A41 | bordures de confiance |
+| on-trust | #FFFFFF | #0D0D0F | texte sur confiance |
+| sun | #FCD116 | #FCD116 | jaune du drapeau : fonds UNIQUEMENT, jamais texte |
+| flag-red (nouveau) | #D21034 | #D21034 | rouge du drapeau, compteurs d’accent |
+| danger-text | #B3122B | #FF8A80 | erreurs |
+| danger-soft | #FDECEE | #3A1714 | fond d’erreur |
+| warning-text | #0D0D0F | #0D0D0F | encre sur fond jaune |
+| warning-soft | #FCD116 | #FCD116 | fond d’avertissement (= sun) |
+| focus | #0D0D0F | #FCD116 | anneau de focus |
+| viz-1 | #0D0D0F | #F5F5F2 | visualisation : Web |
+| viz-2 | #00855A | #2FBF7A | visualisation : WhatsApp |
+| viz-3 | #E3A800 | #FCD116 | visualisation : Mobile |
 
 Règle des tokens `viz-1..3` : marques de visualisation de données uniquement (barres, segments, pastilles de légende), attribuées dans cet ordre fixe aux entités (Web = 1, WhatsApp = 2, Mobile = 3) ; la couleur suit l’entité, jamais son rang. Jamais pour l’interface, le texte ou un statut. Textes, valeurs, légendes et axes utilisent toujours les tokens de texte (`ink`, `ink-muted`), jamais une couleur viz.
 
-Autres tokens : rayons `--ui-radius-sm` 10 px, `--ui-radius-field` 14 px, `--ui-radius-card` 20 px, `--ui-radius-pill` 9999 px ; ombre `--ui-shadow-pop` (éléments flottants uniquement) ; mouvement (voir ci-dessous).
+Autres tokens : rayons `--ui-radius-sm` 10 px, `--ui-radius-field` 14 px, `--ui-radius-card` 28 px, `--ui-radius-tile` 32 px (nouveau), `--ui-radius-pill` 9999 px ; ombres `--ui-shadow-pop` (éléments flottants) et `--ui-shadow-prompt` (nouveau, zone de question uniquement) ; mouvement (voir ci-dessous).
 
 Tokens de mouvement :
 
@@ -71,9 +76,9 @@ Dans la feuille globale de l’application (Tailwind v4) :
 @import "@techma/ui/styles.css";
 ```
 
-Avec Next.js : `transpilePackages: ['@techma/ui']`, police Plus Jakarta Sans via `next/font/google` (`variable: '--font-jakarta'`), `<ThemeScript />` dans `<head>` et `suppressHydrationWarning` sur `<html>`.
+Avec Next.js : `transpilePackages: ['@techma/ui']`, polices via `next/font/google` : Inter Tight 600–900 (`--font-inter-tight`, titres), Inter 400–700 (`--font-inter`, texte), et JetBrains Mono 400–600 (`--font-jetbrains-mono`, identifiants) dans la console admin uniquement, `<ThemeScript />` dans `<head>` et `suppressHydrationWarning` sur `<html>`.
 
-Utilitaires générés : couleurs `canvas surface sunken line line-strong field ink ink-muted ink-subtle action action-hover on-action trust trust-text trust-soft trust-line on-trust sun danger danger-soft warning warning-soft focus viz-1 viz-2 viz-3`, rayons `rounded-field rounded-card rounded-pill`, police `font-sans`. Pas de couleur brute dans les composants.
+Utilitaires générés : couleurs `canvas surface sunken line line-strong field ink ink-muted ink-subtle action action-hover on-action trust trust-text trust-soft trust-line on-trust sun danger danger-soft warning warning-soft focus viz-1 viz-2 viz-3`, rayons `rounded-field rounded-card rounded-tile rounded-pill`, ombre `shadow-prompt`, polices `font-display font-sans font-mono`, animation `.ui-glyph-pop`. Pas de couleur brute dans les composants.
 
 Échelle typographique : légende 13 px, corps 16 px, lead 18 px, titre 22 px/800, display 28 px/800 `tracking-tight`.
 

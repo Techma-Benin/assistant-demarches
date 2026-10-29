@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Badge, BrandMark, Button, Chip, InlineAlert, ThemeToggle, TypingIndicator, cn } from '@techma/ui';
+import { Badge, BrandMark, Button, FlagGlyph, Chip, InlineAlert, ThemeToggle, TypingIndicator, cn } from '@techma/ui';
 import { AudioLines, Check, CheckCheck, Clock, FileText, Image as ImageIcon, Loader } from 'lucide-react';
 import { BlockRenderer, isBareBlock } from '@/components/blocks/BlockRenderer';
 import { useConversation } from '@/hooks/use-conversation';
@@ -74,7 +74,7 @@ function DeliveryLine({ entry, onRetry }: { entry: UserEntry; onRetry: () => voi
 function AgentRow({ avatar, children }: { avatar: boolean; children: ReactNode }) {
   return (
     <div className="ui-enter flex items-end gap-2">
-      {avatar ? <BrandMark size="sm" /> : <span className="size-8 shrink-0" aria-hidden="true" />}
+      {avatar ? <FlagGlyph decorative width={32} height={24} className="shrink-0" /> : <span className="w-8 shrink-0" aria-hidden="true" />}
       {children}
     </div>
   );
@@ -226,7 +226,7 @@ export function ChatWidget() {
   return (
     <section aria-label="Assistant démarches" className="flex h-full w-full flex-col bg-canvas">
       <header className="flex items-center gap-3 border-b border-line bg-surface px-4 py-3">
-        <BrandMark size="sm" />
+        <FlagGlyph decorative width={30} height={22} className="shrink-0" />
         <div className="min-w-0 flex-1">
           <h1 className="text-base font-extrabold leading-tight">Assistant démarches</h1>
           <p className="text-[13px] text-ink-muted">Réponses sourcées</p>
