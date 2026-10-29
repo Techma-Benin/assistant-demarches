@@ -24,6 +24,7 @@ Le pont `dev/agent-bridge.ts` est un serveur MCP en stdio, réservé au dévelop
 ```sh
 pnpm --filter @techma/tooling demo        # parcours complet scripté, échoue si une étape casse
 pnpm --filter @techma/tooling dev:stack   # Backend simulé (4010) + Tooling (4030), pour un agent
+CONNECTORS=simulated pnpm --filter @techma/tooling dev:stack   # idem, avec envoi et suivi simulés
 node apps/tooling/dist/dev/agent-bridge.js                              # commande stdio à déclarer dans le client MCP
 npx @modelcontextprotocol/inspector node apps/tooling/dist/dev/agent-bridge.js   # exploration manuelle
 ```
@@ -88,6 +89,21 @@ Le Tooling ne publie pas `mandate.granted` ni `mandate.revoked` : le Backend re�
 
 Ajouter un outil : un `ToolHandler` dans un module qui l'inscrit au `ToolRegistry` en `onModuleInit`. La passerelle se charge du reste. Un outil d'action qui n'appelle pas `requireMandate` est refusé.
 
+## Connecteurs vers l'administration
+
+`request.submit` prépare la demande et renvoie le lien officiel (v1). Si un connecteur est activé pour la fiche, l'envoi est en plus mis en file dans la même transaction, puis un processus de fond (`src/connectors/connector-worker.ts`) :
+
+1. revérifie le mandat : révoqué ou expiré, rien n'est transmis ;
+2. appelle `submit` du connecteur ; avec un accusé de réception, la demande passe à `submitted` ;
+3. suit ensuite le dossier avec `status` (`processing`, puis `completed` ou `rejected`), un événement `request.status_changed` à chaque étape ;
+4. en cas d'échec, réessaie avec un délai croissant ; après 24 h sans envoi, abandonne et le lien officiel reste valable.
+
+Il fonctionne comme l'outbox : sûr sur plusieurs répliques, bail de 60 s, journal d'audit sous l'acteur `tooling-connector`. La référence externe et l'accusé restent internes : la sortie des outils garde la forme du contrat.
+
+Brancher un vrai connecteur : implémenter `AdministrationConnector` (`id`, `supports(procedure)`, `submit`, `status`), l'inscrire au `ConnectorRegistry` dans `onModuleInit`, puis l'activer par `CONNECTORS`. Aucun outil ni l'agent n'est à modifier.
+
+Seul le connecteur `simulated` existe aujourd'hui. Il produit des statuts fictifs (références `SIMULATION-…`) : le contrat interdit d'inventer `submitted` et la suite hors connecteur réel, il est donc refusé en production et hors poste local, et ne doit jamais servir à la démonstration officielle. Le transfert des pièces elles-mêmes vers l'administration relève de la phase suivante : le connecteur ne reçoit aujourd'hui que leurs métadonnées.
+
 ## Tenue en cas de panne
 
 | Panne | Comportement |
@@ -150,6 +166,10 @@ Le déploiement sur un serveur n'est pas automatisé : aucun environnement cible
 | `RATE_LIMIT_CLIENT_PER_MIN` | 1200 | Requêtes par client de service |
 | `RATE_LIMIT_AUTH_FAILURES_PER_MIN` | 20 | Échecs d'authentification par adresse avant blocage |
 | `TRUST_PROXY` | `false` | Réseaux autorisés à fournir `X-Forwarded-For` (`loopback`, `uniquelocal`…) |
+| `CONNECTORS` | vide | Connecteurs activés, séparés par des virgules ; `simulated` seulement en local hors production |
+| `CONNECTOR_WORKER`, `CONNECTOR_INTERVAL_MS` | `on`, 2000 | Processus d'envoi et de suivi |
+| `CONNECTOR_POLL_MS` | 300000 | Intervalle de suivi d'un dossier envoyé |
+| `CONNECTOR_SIMULATED_STEP_MS` | 30000 | Durée de chaque étape fictive du connecteur simulé |
 | `CONTRACTS_DIR` | `contracts/v1` du dépôt | Contrats dans une image |
 
 Toutes les URL de service doivent être en HTTPS hors localhost. Les secrets viennent de l'environnement et ne sont jamais journalisés. Entre le proxy et les répliques, le trafic reste en HTTP sur le réseau privé du déploiement.

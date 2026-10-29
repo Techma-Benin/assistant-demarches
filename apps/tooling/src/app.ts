@@ -8,6 +8,7 @@ import { ProblemFilter } from './common/problem.js';
 import { securityHeaders } from './common/security-headers.js';
 import { TraceMiddleware } from './common/trace.js';
 import { TOOLING_CONFIG, type ToolingConfig } from './config.js';
+import { ConnectorsModule } from './connectors/connectors.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { EventsModule } from './events/events.module.js';
 import { GatewayModule } from './gateway/mcp.controller.js';
@@ -41,6 +42,7 @@ class AppModule implements NestModule {
         ToolRegistryModule,
         MandatesModule,
         ProceduresModule,
+        ConnectorsModule,
         RequestsModule,
         GatewayModule,
       ],

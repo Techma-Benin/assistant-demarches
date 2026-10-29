@@ -136,6 +136,23 @@ create policy rate_limits_service on rate_limits to ${APP_ROLE} using (true) wit
 grant select, insert, update, delete on rate_limits to ${APP_ROLE};
 `,
   },
+  {
+    version: 3,
+    name: 'administration connector submissions',
+    sql: `
+alter table requests
+  add column connector text,
+  add column mandate_id text,
+  add column external_ref text,
+  add column receipt jsonb,
+  add column submission_state text check (submission_state in ('queued','sent','awaiting_user','done','withdrawn','failed')),
+  add column queued_at timestamptz,
+  add column next_check_at timestamptz,
+  add column connector_attempts integer not null default 0,
+  add column connector_error text;
+create index requests_connector_due_idx on requests (next_check_at) where submission_state in ('queued','sent');
+`,
+  },
 ];
 
 const MIGRATION_LOCK = 7_304_221_001;

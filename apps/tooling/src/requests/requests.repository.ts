@@ -88,4 +88,12 @@ export class RequestsRepository {
     );
     return fromRow(row);
   }
+
+  async queueSubmission(tx: Tx, id: string, connector: string, mandateId: string): Promise<void> {
+    await tx.query(
+      `update requests set connector = $2, mandate_id = $3, submission_state = 'queued', queued_at = now(), next_check_at = now(), connector_attempts = 0, connector_error = null
+       where id = $1`,
+      [id, connector, mandateId],
+    );
+  }
 }

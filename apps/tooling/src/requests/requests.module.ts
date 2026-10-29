@@ -1,5 +1,6 @@
 import { Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { newId } from '../common/ids.js';
+import { ConnectorRegistry } from '../connectors/connector.js';
 import { ProblemError } from '../common/problem.js';
 import { ToolRegistry, type PreparationContext, type ToolHandler, type ToolInvocation } from '../gateway/tool-registry.js';
 import { ProcedureCatalog, ProceduresModule } from '../procedures/procedures.module.js';
@@ -23,6 +24,7 @@ class RequestTools implements OnModuleInit {
     private readonly resources: BackendResourcesClient,
     private readonly requests: RequestsRepository,
     private readonly forms: FormSchemas,
+    private readonly connectors: ConnectorRegistry,
   ) {}
 
   onModuleInit(): void {
@@ -124,7 +126,10 @@ class RequestTools implements OnModuleInit {
       if (!file) throw new ProblemError(409, 'INVALID_TRANSITION', 'Demande modifiée pendant la préparation ; réessayer');
       if (this.fileProblems(file).length) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Pièce ${document.documentType} à remplacer`);
     }
-    return this.save(request, { ...request, status: 'awaiting_user_validation', officialLink: procedure.source.url }, call);
+    const output = await this.save(request, { ...request, status: 'awaiting_user_validation', officialLink: procedure.source.url }, call);
+    const connector = this.connectors.forProcedure(procedure);
+    if (connector) await this.requests.queueSubmission(call.tx, request.id, connector.id, call.context.mandateId as string);
+    return output;
   }
 
   private verify(fileId: string, file: FileMetadata) {
