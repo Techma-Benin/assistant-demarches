@@ -82,7 +82,7 @@ Un challenge signé suffit seulement s'il est appelé par le client contrôle d�
 
 Transport SDK officiel **Streamable HTTP**, chemin `/mcp`, initialisation MCP standard, version négociée par le SDK. Pas d'endpoint REST `/tools/call` personnalisé.
 
-Chaque requête transporte : `Authorization` agent, `traceparent`, `X-Conversation-Id`, `X-User-Ref`, et `X-Mandate-Id` pour une action. `Idempotency-Key` requis pour chaque `tools/call` d'action. La clé est stable pour la même tentative métier, différente pour chaque opération. Contexte absent du JSON `arguments` et inaccessible au modèle.
+Chaque requête transporte : `Authorization` agent, `traceparent`, `X-Conversation-Id`, `X-User-Ref`, et `X-Mandate-Id` pour une action. `Idempotency-Key` requis pour chaque `tools/call` d'action. La clé est stable pour la même tentative métier, différente pour chaque opération. Contexte absent du JSON `arguments` et inaccessible au modèle. Seule exception : une session sans aucun en-tête de contexte peut faire `initialize` et `tools/list`, pour l'ajout d'un serveur MCP par URL ; tout `tools/call` y est refusé (`INVALID_REQUEST`). Un contexte partiel ou invalide reste refusé en 400.
 
 Le catalogue garde les annotations MCP standard (`readOnlyHint` etc.). Les règles métier sont dans `_meta` avec clés `bj.techma/kind`, `bj.techma/requiresMandate`, `bj.techma/scopes` ; elles ne sont pas des autorisations : la passerelle les vérifie elle-même.
 
@@ -92,7 +92,8 @@ Le catalogue garde les annotations MCP standard (`readOnlyHint` etc.). Les règl
 | `procedures.get` | lecture | fiche complète |
 | `request.create` | `requests:write` | demande `draft` |
 | `request.update` | `requests:write` | demande actualisée |
-| `request.submit` | `requests:submit` | v1 : `awaiting_user_validation` + lien |
+| `request.submit` | `requests:submit` | v1 : `awaiting_user_validation` + lien ; avec un connecteur, envoi en file |
+| `request.pay` | `requests:submit` | paiement simulé des frais d'un dossier déjà transmis au X-Road simulé (C5) ; jamais deux paiements pour une demande |
 | `request.status` | lecture avec contrôle de propriété | demande |
 | `documents.attach` | `documents:write` | demande + référence pièce |
 | `documents.verify` | lecture, propriété demande et pièce | vérification technique, aucune certification administrative |

@@ -98,5 +98,5 @@ test('CONTRACTS_DIR accepte un chemin natif du système (dont C:\\… sous Windo
   const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `const c = await import(${JSON.stringify(module)}); console.log(c.catalog.tools.length)`], {
     env: { ...process.env, CONTRACTS_DIR: dir },
   });
-  assert.equal(stdout.trim(), '8');
+  assert.equal(stdout.trim(), '9');
 });

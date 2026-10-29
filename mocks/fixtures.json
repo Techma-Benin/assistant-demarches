@@ -438,6 +438,20 @@
         "status": "valid",
         "reasons": []
       }
+    },
+    "request.pay": {
+      "input": {
+        "requestId": "req_00000000000000000000000001"
+      },
+      "output": {
+        "requestId": "req_00000000000000000000000001",
+        "caseReference": "SIM-JUS-2026-000001",
+        "simulated": true,
+        "amountFcfa": 1000,
+        "status": "paid",
+        "paymentReference": "SIM-PAY-000001",
+        "paidAt": "2026-10-29T09:05:00Z"
+      }
     }
   }
 }

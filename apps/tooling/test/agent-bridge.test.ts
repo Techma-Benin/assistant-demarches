@@ -31,7 +31,7 @@ test('pont : un agent stdio enchaîne des actions distinctes sans conflit d’id
   t.after(() => agent.close());
 
   assert.match(agent.getInstructions() ?? '', /fileId « fil_[0-9A-Z]{26} »/);
-  assert.equal((await agent.listTools()).tools.length, 8);
+  assert.equal((await agent.listTools()).tools.length, 9);
   const first = (await agent.callTool({ name: 'request.create', arguments: { procedureId: 'demo-procedure' } })) as unknown as { structuredContent: { id: string } };
   const second = (await agent.callTool({ name: 'request.create', arguments: { procedureId: 'demo-procedure' } })) as unknown as { structuredContent: { id: string } };
   assert.notEqual(first.structuredContent.id, second.structuredContent.id);
