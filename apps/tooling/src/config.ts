@@ -25,6 +25,7 @@ export interface ToolingConfig {
   events: { publisher: boolean; intervalMs: number };
   rateLimits: { perUser: number; perClient: number; authFailuresPerIp: number };
   trustProxy: string | false;
+  connectors: { enabled: string[]; worker: boolean; intervalMs: number; pollMs: number; simulatedStepMs: number };
   jwt?: JwtConfig;
 }
 
@@ -103,6 +104,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
     throw new ConfigError('TRUST_PROXY doit valoir false ou une liste parmi loopback, linklocal, uniquelocal');
   }
 
+  const enabledConnectors = (env.CONNECTORS ?? '').split(',').map((name) => name.trim()).filter(Boolean);
+  for (const name of enabledConnectors) {
+    if (name !== 'simulated') throw new ConfigError(`Connecteur inconnu : ${name}`);
+    if (production || !LOCAL_HOSTS.has(host)) throw new ConfigError('Le connecteur simulé est réservé au poste local hors production');
+  }
+  const connectorWorker = env.CONNECTOR_WORKER ?? 'on';
+  if (connectorWorker !== 'on' && connectorWorker !== 'off') throw new ConfigError('CONNECTOR_WORKER doit valoir on ou off');
+
   const base = {
     host,
     port,
@@ -120,6 +129,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
       authFailuresPerIp: integer(env, 'RATE_LIMIT_AUTH_FAILURES_PER_MIN', 20, 1, 10_000),
     },
     trustProxy: trustProxy === 'false' ? (false as const) : trustProxy,
+    connectors: {
+      enabled: enabledConnectors,
+      worker: connectorWorker === 'on',
+      intervalMs: integer(env, 'CONNECTOR_INTERVAL_MS', 2000, 20, 600_000),
+      pollMs: integer(env, 'CONNECTOR_POLL_MS', 300_000, 20, 86_400_000),
+      simulatedStepMs: integer(env, 'CONNECTOR_SIMULATED_STEP_MS', 30_000, 0, 3_600_000),
+    },
   };
   if (authMode === 'mock-tokens') return base;
 

@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { ConnectorWorker } from '../src/connectors/connector-worker.js';
 import { startDevStack } from './stack.js';
 
 interface ToolResult {
@@ -88,8 +89,48 @@ async function run(): Promise<void> {
     await agent.close().catch(() => undefined);
     await stack.close();
   }
+  await runConnector();
   console.log(failures ? `\n${failures} étape(s) en échec.` : '\nToutes les étapes ont réussi.');
   process.exitCode = failures ? 1 : 0;
+}
+
+async function runConnector(): Promise<void> {
+  console.log('\nSuite : connecteur SIMULÉ. Statuts fictifs, jamais activé en production ni dans la démonstration officielle.\n');
+  const stack = await startDevStack({ backend: 0, tooling: 0 }, { CONNECTORS: 'simulated', CONNECTOR_WORKER: 'off', CONNECTOR_POLL_MS: '20', CONNECTOR_SIMULATED_STEP_MS: '200' });
+  const agent = new Client({ name: 'demo-agent-connecteur', version: '1.0.0' });
+  const call = async (name: string, args: Record<string, unknown>) => (await agent.callTool({ name, arguments: args })) as ToolResult;
+  try {
+    await agent.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: [fileURLToPath(new URL('./agent-bridge.js', import.meta.url))],
+        env: { ...process.env, TOOLING_URL: stack.toolingUrl, BACKEND_URL: stack.backendUrl } as Record<string, string>,
+        stderr: 'ignore',
+      }),
+    );
+    const fileId = /fileId « (fil_[0-9A-Z]{26}) »/.exec(agent.getInstructions() ?? '')?.[1];
+    const requestId = (await call('request.create', { procedureId: 'demo-procedure' })).structuredContent?.id as string;
+    await call('request.update', { requestId, fields: { displayName: 'Usager fictif' } });
+    await call('documents.attach', { requestId, fileId, documentType: 'demo-document' });
+    const submitted = await call('request.submit', { requestId });
+    expect('request.submit (envoi mis en file)', submitted.structuredContent?.status === 'awaiting_user_validation', 'l’agent a terminé, le Tooling prend le relais');
+
+    const worker = stack.app.get(ConnectorWorker);
+    const steps: [string, string, number][] = [
+      ['envoi à l’administration', 'submitted', 0],
+      ['suivi : dossier en traitement', 'processing', 220],
+      ['suivi : dossier terminé', 'completed', 220],
+    ];
+    for (const [label, expected, wait] of steps) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      await worker.tick();
+      const status = (await call('request.status', { requestId })).structuredContent?.status;
+      expect(label, status === expected, `statut ${status}`);
+    }
+  } finally {
+    await agent.close().catch(() => undefined);
+    await stack.close();
+  }
 }
 
 run().catch((error: unknown) => {
