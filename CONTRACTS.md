@@ -1,4 +1,4 @@
-# Contrats d'intégration v1.0.0
+# Contrats d'intégration v1.1.0
 
 Statut : base d'implémentation exécutable, proposée à la revue des trois groupes. Les équipes peuvent commencer leurs adaptateurs, leurs modules et leurs tests sur cette base ; aucun accord collectif fictif n'est présumé. Les évolutions passent par PR avant changement d'une frontière. Pas de promesse d'intégration sans tests : chaque vrai service doit passer la même suite sur ses URL.
 
@@ -11,9 +11,10 @@ Statut : base d'implémentation exécutable, proposée à la revue des trois gro
 | C2 contrôle mandat | `contracts/v1/tooling-internal.openapi.json` | Tooling → code de consentement du Backend |
 | C3 Administration | `contracts/v1/admin.openapi.json` | Backend → console Interface |
 | C4 événements | schéma `Event` dans `domain.schema.json`, `events.openapi.json` | Tooling → Backend → canaux |
+| C5 X-Road simulé | `contracts/v1/xroad-sim.openapi.json` | X-Road simulé → Tooling (dépôt) et Backend (administration) |
 | Données communes | `contracts/v1/domain.schema.json` | Tous |
 
-Les fichiers OpenAPI sont du JSON valide en version 3.1 ; tous les corps, codes de succès et types sont décrits. Les schémas MCP sont embarqués sans référence externe pour être directement utilisables. Les types C1/C3/C2-interne/C4 se génèrent depuis OpenAPI. Toute modification des schémas communs doit être répercutée dans les documents embarqués ; `contracts:check` contrôle leur cohérence.
+Les fichiers OpenAPI sont du JSON valide en version 3.1 ; tous les corps, codes de succès et types sont décrits. Les schémas MCP sont embarqués sans référence externe pour être directement utilisables. Les types C1/C3/C2-interne/C4/C5 se génèrent depuis OpenAPI. Toute modification des schémas communs doit être répercutée dans les documents embarqués ; `contracts:check` contrôle leur cohérence.
 
 ## 2. Règles communes
 
@@ -38,6 +39,8 @@ Profil de production commun : JWT RS256, issuer = realm Keycloak du déploiement
 | Agent Backend | client `backend-agent` vers `/mcp`, scope `tools:call` ; **aucun** accès au contrôle mandat |
 | Contrôle Backend | client `backend-mandates`, scope `mandates:grant`, seul accès aux routes internes de mandat |
 | Événements Tooling | client `tooling-events`, scope `events:publish`, seul accès à l'ingestion C4 |
+| Dépôt X-Road | client `tooling-xroad`, scopes `xroad:read` et `xroad:submit`, pour l'usager désigné par `X-Applicant-Ref` |
+| Administration X-Road | client `backend-xroad`, scopes `xroad:read` et `xroad:administer`, pour l'agent désigné par `X-Official-Id` |
 
 Le Backend ne fait jamais confiance à un `userRef` fourni par le navigateur ou par le modèle. Les endpoints C1 ne le prennent donc pas en entrée. Au niveau Tooling, les en-têtes de contexte ne sont acceptés que d'un client `backend-agent` authentifié ; ils sont construits par du code applicatif hors modèle. Vérifier aussi la propriété des ressources, la conversation et la portée du mandat côté Tooling.
 
@@ -98,7 +101,7 @@ Sortie réussie = `structuredContent` conforme à `outputSchema` et bloc texte J
 
 `request.update.fields` suit `Procedure.formSchema`, au format JSON Schema 2020-12, sans champs inconnus. Les champs obligatoires peuvent manquer en brouillon mais sont contrôlés avant préparation finale. Pas de données d'identité sensibles dans ces champs v1. Les pièces sont des références opaques ; Tooling valide la propriété, le scan et la péremption via `GET /internal/v1/files/{fileId}` avec `X-User-Ref`, identité `tooling-resources`, audience Backend et scope `resources:read`. Réponse `FileAccess` sans contenu brut ni URL publique ; 404 si propriété incompatible. Les fiches sont accessibles via `GET /internal/v1/procedures?query=…` et `GET /internal/v1/procedures/{procedureId}`, même identité. Contrat : `backend-resources.openapi.json`. Seules les fiches validées sont exposées en production ; la simulation utilise une fiche explicitement fictive en brouillon. Dans la démo, fichiers synthétiques uniquement.
 
-Machine d'état : `draft` → `ready` quand champs et pièces requis sont présents → `awaiting_user_validation` en v1. `draft`/`ready` modifiables ; après préparation finale, modification refusée 409. L'absence d'un élément requis donne `REQUEST_INCOMPLETE`. Les états `submitted` → `processing` → `completed` / `rejected` et `cancelled` sont réservés aux connecteurs réels et ne doivent pas être inventés dans la démo. Le connecteur doit fournir une preuve d'accusé de réception avant passage à `submitted`.
+Machine d'état : `draft` → `ready` quand champs et pièces requis sont présents → `awaiting_user_validation` en v1. `draft`/`ready` modifiables ; après préparation finale, modification refusée 409. L'absence d'un élément requis donne `REQUEST_INCOMPLETE`. Les états `submitted` → `processing` → `completed` / `rejected` et `cancelled` ne sont produits que par un connecteur. Depuis la v1.1, le connecteur vers le X-Road simulé (C5) est admis en démonstration, parce que la simulation est déclarée dans chaque réponse et annoncée au public. Aucun autre état ne doit être inventé ; un connecteur qui produit ses statuts sans service distant reste réservé au poste local. Le connecteur doit fournir une preuve d'accusé de réception avant passage à `submitted`.
 
 ## 8. C3 : administration
 
@@ -137,3 +140,11 @@ Les schémas existants ne se rétrécissent pas en v1 : ne pas retirer une opér
 CI : validation OpenAPI / JSON Schema, concordance des schémas embarqués, tests positifs/négatifs, types régénérés sans diff et comparaison des contrats avec la branche cible. Une modification v1 détectée exige une revue explicite et une nouvelle version du manifeste ; la CI ne remplace pas l'analyse humaine de compatibilité.
 
 `CODEOWNERS` désigne actuellement le responsable GitHub connu. Les responsables des trois groupes doivent être renseignés dès que leurs comptes/équipes sont connus ; GitHub n'exige pas une approbation de **chaque** propriétaire d'une même ligne. La règle de revue par chaque groupe concerné est donc également inscrite dans le modèle de PR. Les restrictions effectivement activées sur GitHub sont consignées dans `docs/readiness.md`.
+
+## 12. C5 : X-Road simulé
+
+Service `apps/xroad-sim`, simulation déclarée des administrations reliées par X-Road : catalogue, agents et rôles, dossiers, paiement et documents délivrés. Chaque dossier porte `simulated: true` et une référence `SIM-…`. Conception, cycle de vie et points ouverts : `docs/xroad-sim.md`.
+
+Le Tooling dépose et suit pour l'usager, avec `X-Applicant-Ref`. Le Backend lit et décide pour l'agent connecté, avec `X-Official-Id`, et sert la console ; l'Interface n'appelle jamais C5 directement. Ces en-têtes ne sont acceptés que des clients `tooling-xroad` et `backend-xroad`. Un dossier d'un autre usager ou d'une autre administration donne 404. `super_admin` voit toutes les administrations.
+
+Correspondance avec `RequestStatus` : `awaiting_payment` et `received` → `submitted`, `in_review` → `processing`, `completed` → `completed`, `rejected` → `rejected`. Le Tooling suit les dossiers par interrogation ; C5 n'émet pas d'événement.
