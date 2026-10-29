@@ -134,7 +134,7 @@ export class ConnectorWorker implements OnApplicationBootstrap, OnApplicationShu
     for (const document of row.documents) {
       documents.push({ documentType: document.documentType, file: await this.resources.getFile(document.fileId, row.user_ref, trace) });
     }
-    const result = await connector.submit({ requestId: row.id, procedure, fields: row.fields, documents, traceId: trace.traceId });
+    const result = await connector.submit({ requestId: row.id, userRef: row.user_ref, procedure, fields: row.fields, documents, traceId: trace.traceId });
 
     await this.db.transaction('system', async (tx) => {
       if (result.kind === 'user_action_required') {
@@ -158,7 +158,7 @@ export class ConnectorWorker implements OnApplicationBootstrap, OnApplicationShu
   }
 
   private async track(row: DueRow, connector: AdministrationConnector, trace: TraceContext): Promise<void> {
-    const status = await connector.status(row.external_ref as string, trace.traceId);
+    const status = await connector.status(row.external_ref as string, { requestId: row.id, userRef: row.user_ref, traceId: trace.traceId });
     await this.db.transaction('system', async (tx) => {
       if (RANK[status] <= RANK[row.status]) {
         await tx.query(`update requests set connector_attempts = 0, connector_error = null, next_check_at = now() + make_interval(secs => $2) where id = $1`, [
@@ -183,6 +183,11 @@ export class ConnectorWorker implements OnApplicationBootstrap, OnApplicationShu
     const code = error instanceof ProblemError ? error.code : 'UPSTREAM_UNAVAILABLE';
     const action = row.submission_state === 'queued' ? 'connector.submit' : 'connector.status';
     this.logger.warn(`${action} ${row.id} en échec (${code}) : ${error instanceof Error ? error.message : String(error)}`);
+    // A refusal by the administration, or a case it no longer knows, will not change on retry.
+    if (error instanceof ProblemError && (error.status === 404 || error.status === 409)) {
+      await this.finish(row, trace, 'failed', action, code, `refus définitif (${error.message}) ; le lien officiel reste disponible`);
+      return;
+    }
     if (row.submission_state === 'queued' && Date.now() - new Date(row.queued_at).getTime() > GIVE_UP_MS) {
       await this.finish(row, trace, 'failed', action, code, 'abandon après 24 h ; le lien officiel reste disponible');
       return;

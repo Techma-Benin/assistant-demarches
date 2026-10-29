@@ -89,6 +89,20 @@ export class RequestsRepository {
     return fromRow(row);
   }
 
+  async submission(tx: Tx, id: string): Promise<{ connector: string | null; externalRef: string | null; state: string | null }> {
+    const [row] = await tx.query<{ connector: string | null; external_ref: string | null; submission_state: string | null }>(
+      'select connector, external_ref, submission_state from requests where id = $1',
+      [id],
+    );
+    if (!row) throw new ProblemError(404, 'NOT_FOUND', 'Demande inconnue');
+    return { connector: row.connector, externalRef: row.external_ref, state: row.submission_state };
+  }
+
+  /** Asks the connector worker to look at a sent case on its next pass instead of waiting for the poll interval. */
+  async checkSoon(tx: Tx, id: string): Promise<void> {
+    await tx.query("update requests set next_check_at = now() where id = $1 and submission_state = 'sent'", [id]);
+  }
+
   async queueSubmission(tx: Tx, id: string, connector: string, mandateId: string): Promise<void> {
     await tx.query(
       `update requests set connector = $2, mandate_id = $3, submission_state = 'queued', queued_at = now(), next_check_at = now(), connector_attempts = 0, connector_error = null

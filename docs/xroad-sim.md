@@ -65,12 +65,12 @@ Le Tooling suit les dossiers par interrogation (`GET /v1/cases/{caseId}`). La si
 - Contrat ajouté au manifeste, version 1.1.0 : ajout compatible, aucun schéma existant n'est modifié.
 - CONTRACTS.md §7 : les états `submitted` et suivants restent produits uniquement par un connecteur. Le connecteur `xroad` vers ce service est admis en démonstration, parce que la simulation est annoncée comme telle. Le connecteur `simulated`, qui invente les statuts à partir du temps écoulé, reste réservé au poste local.
 
-## Suites prévues côté Tooling
+## Côté Tooling
 
-1. Le service `apps/xroad-sim`, avec des données fictives pour plusieurs ministères.
-2. Le connecteur `xroad`, inscrit sur l'emplacement de connecteurs existant.
-3. `procedures.search` et `procedures.get` lisent le catalogue de la simulation au lieu du Backend.
-4. Un outil MCP de paiement. Sa portée de mandat reste à décider : réutiliser `requests:submit` évite de toucher au consentement du Backend.
+- Le service `apps/xroad-sim` implémente ce contrat, avec des données fictives pour cinq ministères.
+- Le connecteur `xroad` dépose et suit les dossiers depuis l'emplacement de connecteurs du Tooling.
+- `procedures.search` et `procedures.get` lisent le catalogue de la simulation (`PROCEDURES_SOURCE=xroad`).
+- L'outil MCP `request.pay` règle les frais, sous la portée `requests:submit` : le consentement du Backend n'a pas à changer.
 
 ## Points ouverts
 

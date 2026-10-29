@@ -25,6 +25,7 @@ Le pont `dev/agent-bridge.ts` est un serveur MCP en stdio, réservé au dévelop
 pnpm --filter @techma/tooling demo        # parcours complet scripté, échoue si une étape casse
 pnpm --filter @techma/tooling dev:stack   # Backend simulé (4010) + Tooling (4030), pour un agent
 CONNECTORS=simulated pnpm --filter @techma/tooling dev:stack   # idem, avec envoi et suivi simulés
+XROAD=on pnpm --filter @techma/tooling dev:stack                # idem, avec le X-Road simulé sur 4040 (BRIDGE_PROCEDURE_ID=casier-judiciaire pour le pont)
 node apps/tooling/dist/dev/agent-bridge.js                              # commande stdio à déclarer dans le client MCP
 npx @modelcontextprotocol/inspector node apps/tooling/dist/dev/agent-bridge.js   # exploration manuelle
 ```
@@ -102,7 +103,16 @@ Il fonctionne comme l'outbox : sûr sur plusieurs répliques, bail de 60 s, jour
 
 Brancher un vrai connecteur : implémenter `AdministrationConnector` (`id`, `supports(procedure)`, `submit`, `status`), l'inscrire au `ConnectorRegistry` dans `onModuleInit`, puis l'activer par `CONNECTORS`. Aucun outil ni l'agent n'est à modifier.
 
-Seul le connecteur `simulated` existe aujourd'hui. Il produit des statuts fictifs (références `SIMULATION-…`) : le contrat interdit d'inventer `submitted` et la suite hors connecteur réel, il est donc refusé en production et hors poste local, et ne doit jamais servir à la démonstration officielle. Le transfert des pièces elles-mêmes vers l'administration relève de la phase suivante : le connecteur ne reçoit aujourd'hui que leurs métadonnées.
+Deux connecteurs existent :
+
+- `xroad` dépose le dossier au X-Road simulé (`apps/xroad-sim`, contrat C5) et en suit l'état : `awaiting_payment` et `received` donnent `submitted`, `in_review` donne `processing`, puis `completed` ou `rejected`. Il exige `XROAD_URL` et des fiches lues au X-Road (`PROCEDURES_SOURCE=xroad`, valeur par défaut dès que `XROAD_URL` est fourni). Il est admis hors poste local : le service distant se déclare simulation dans chaque dossier (CONTRACTS.md §7).
+- `simulated` produit des statuts fictifs à partir du temps écoulé (références `SIMULATION-…`), sans service distant : refusé en production et hors poste local.
+
+Un refus de l'administration (409) ou un dossier qu'elle ne connaît plus (404) arrête les essais aussitôt : la demande garde son lien officiel. Le transfert des pièces elles-mêmes relève de la phase suivante : le connecteur ne transmet que leurs métadonnées.
+
+`request.pay` règle les frais d'un dossier déjà transmis au X-Road. Le mandat est vérifié avant l'appel au X-Road, puis de nouveau à l'enregistrement ; la clé d'idempotence côté X-Road est propre à la demande, un nouvel appel ne paie jamais deux fois. Le paiement demande au processus de fond de relire le dossier aussitôt.
+
+Sans aucun en-tête de contexte, `/mcp` accepte `initialize` et `tools/list` : un écran « ajouter un MCP par URL » peut lister les outils. Les appels d'outils exigent toujours le contexte.
 
 ## Tenue en cas de panne
 
@@ -167,7 +177,10 @@ Le déploiement sur un serveur n'est pas automatisé : aucun environnement cible
 | `RATE_LIMIT_CLIENT_PER_MIN` | 1200 | Requêtes par client de service |
 | `RATE_LIMIT_AUTH_FAILURES_PER_MIN` | 20 | Échecs d'authentification par adresse avant blocage |
 | `TRUST_PROXY` | `false` | Réseaux autorisés à fournir `X-Forwarded-For` (`loopback`, `uniquelocal`…) |
-| `CONNECTORS` | vide | Connecteurs activés, séparés par des virgules ; `simulated` seulement en local hors production |
+| `CONNECTORS` | vide | Connecteurs activés, séparés par des virgules : `xroad`, ou `simulated` seulement en local hors production |
+| `XROAD_URL` | aucun | X-Road simulé (C5) ; HTTPS hors localhost |
+| `PROCEDURES_SOURCE` | `xroad` si `XROAD_URL`, sinon `backend` | Origine des fiches de `procedures.search` et `procedures.get` |
+| `TOOLING_XROAD_CLIENT_ID`, `TOOLING_XROAD_CLIENT_SECRET` ou `TOOLING_XROAD_TOKEN` | aucun | Identité `tooling-xroad` en mode `jwt`, requise avec `XROAD_URL` |
 | `CONNECTOR_WORKER`, `CONNECTOR_INTERVAL_MS` | `on`, 2000 | Processus d'envoi et de suivi |
 | `CONNECTOR_POLL_MS` | 300000 | Intervalle de suivi d'un dossier envoyé |
 | `CONNECTOR_SIMULATED_STEP_MS` | 30000 | Durée de chaque étape fictive du connecteur simulé |

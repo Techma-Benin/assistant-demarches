@@ -18,6 +18,7 @@ import { IdempotencyModule } from './idempotency/idempotency.js';
 import { MandatesModule } from './mandates/mandates.module.js';
 import { ProceduresModule } from './procedures/procedures.module.js';
 import { RequestsModule } from './requests/requests.module.js';
+import { XroadModule } from './xroad/xroad.client.js';
 
 @Global()
 @Module({})
@@ -40,6 +41,7 @@ class AppModule implements NestModule {
         IdempotencyModule,
         EventsModule,
         ToolRegistryModule,
+        XroadModule,
         MandatesModule,
         ProceduresModule,
         ConnectorsModule,

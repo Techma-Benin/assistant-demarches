@@ -37,16 +37,32 @@ export async function startDevStack(ports: { backend: number; tooling: number } 
   };
 }
 
+/** The simulated X-Road (apps/xroad-sim, built by the dev:stack script), with its fictitious history. */
+async function startXroad(port: number): Promise<{ url: string; close(): Promise<void> }> {
+  const { createXroadServer } = await import(new URL('apps/xroad-sim/dist/src/server.js', repoRoot).href);
+  const { loadConfig: loadSimConfig } = await import(new URL('apps/xroad-sim/dist/src/config.js', repoRoot).href);
+  return createXroadServer(loadSimConfig({ XROAD_PORT: String(port) })).listen();
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const connectors = process.env.CONNECTORS ? { CONNECTORS: process.env.CONNECTORS } : {};
+  const xroad = process.env.XROAD === 'on' ? await startXroad(4040) : undefined;
+  const connectors = xroad
+    ? { XROAD_URL: xroad.url, CONNECTORS: 'xroad', CONNECTOR_INTERVAL_MS: '1000', CONNECTOR_POLL_MS: '3000' }
+    : process.env.CONNECTORS
+      ? { CONNECTORS: process.env.CONNECTORS }
+      : {};
   const stack = await startDevStack(undefined, connectors);
   console.log(`Backend simulé : ${stack.backendUrl}`);
-  if (connectors.CONNECTORS) console.log(`Connecteurs : ${connectors.CONNECTORS} (SIMULATION, statuts fictifs)`);
+  if (xroad) console.log(`X-Road simulé  : ${xroad.url} (vue des connexions sur ${xroad.url}/, fiches et dossiers fictifs)`);
+  else if (connectors.CONNECTORS) console.log(`Connecteurs : ${connectors.CONNECTORS} (SIMULATION, statuts fictifs)`);
   console.log(`Tooling réel   : ${stack.toolingUrl}/mcp (jetons de simulation, PGlite en mémoire)`);
   console.log('Pont pour un agent : node apps/tooling/dist/dev/agent-bridge.js');
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => {
-      void stack.close().then(() => process.exit(0));
+      void stack
+        .close()
+        .then(() => xroad?.close())
+        .then(() => process.exit(0));
     });
   }
 }

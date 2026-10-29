@@ -1,12 +1,13 @@
 export type AuthMode = 'jwt' | 'mock-tokens';
-export type OutboundClient = 'tooling-resources' | 'tooling-events';
+export type OutboundClient = 'tooling-resources' | 'tooling-events' | 'tooling-xroad';
+export type ProcedureSource = 'backend' | 'xroad';
 
 export type OidcClient = { scope: string } & ({ id: string; secret: string; tokenUrl: URL } | { token: string });
 
 export interface JwtConfig {
   issuer: string;
   jwksUrl: URL;
-  clients: Record<OutboundClient, OidcClient>;
+  clients: Record<Exclude<OutboundClient, 'tooling-xroad'>, OidcClient> & { 'tooling-xroad'?: OidcClient };
   proof: { jwksUrl: URL; issuer?: string };
 }
 
@@ -22,6 +23,8 @@ export interface ToolingConfig {
   workers: number;
   mandateTtlMs: number;
   allowDraftProcedures: boolean;
+  procedureSource: ProcedureSource;
+  xroadUrl?: URL;
   events: { publisher: boolean; intervalMs: number };
   rateLimits: { perUser: number; perClient: number; authFailuresPerIp: number };
   trustProxy: string | false;
@@ -104,8 +107,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
     throw new ConfigError('TRUST_PROXY doit valoir false ou une liste parmi loopback, linklocal, uniquelocal');
   }
 
+  const xroadUrl = env.XROAD_URL ? serviceUrl(env, 'XROAD_URL') : undefined;
+  const procedureSource = (env.PROCEDURES_SOURCE ?? (xroadUrl ? 'xroad' : 'backend')) as ProcedureSource;
+  if (procedureSource !== 'backend' && procedureSource !== 'xroad') throw new ConfigError('PROCEDURES_SOURCE doit valoir backend ou xroad');
+  if (procedureSource === 'xroad' && !xroadUrl) throw new ConfigError('PROCEDURES_SOURCE=xroad exige XROAD_URL');
+
   const enabledConnectors = (env.CONNECTORS ?? '').split(',').map((name) => name.trim()).filter(Boolean);
   for (const name of enabledConnectors) {
+    if (name === 'xroad') {
+      // Allowed off localhost: the X-Road simulation declares itself in every case (CONTRACTS.md §7, C5).
+      if (!xroadUrl) throw new ConfigError('Le connecteur xroad exige XROAD_URL');
+      if (procedureSource !== 'xroad') throw new ConfigError('Le connecteur xroad exige les fiches du X-Road (PROCEDURES_SOURCE=xroad)');
+      continue;
+    }
     if (name !== 'simulated') throw new ConfigError(`Connecteur inconnu : ${name}`);
     if (production || !LOCAL_HOSTS.has(host)) throw new ConfigError('Le connecteur simulé est réservé au poste local hors production');
   }
@@ -122,6 +136,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
     workers,
     mandateTtlMs: 3_600_000,
     allowDraftProcedures: drafts === 'true',
+    procedureSource,
+    ...(xroadUrl ? { xroadUrl } : {}),
     events: { publisher: publisher === 'on', intervalMs: integer(env, 'EVENTS_INTERVAL_MS', 1000, 50, 60_000) },
     rateLimits: {
       perUser: integer(env, 'RATE_LIMIT_USER_PER_MIN', 60, 1, 100_000),
@@ -147,6 +163,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
       clients: {
         'tooling-resources': outboundClient(env, 'TOOLING_RESOURCES', 'resources:read', production),
         'tooling-events': outboundClient(env, 'TOOLING_EVENTS', 'events:publish', production),
+        ...(xroadUrl ? { 'tooling-xroad': outboundClient(env, 'TOOLING_XROAD', 'xroad:read xroad:submit', production) } : {}),
       },
       proof: { jwksUrl: serviceUrl(env, 'PROOF_JWKS_URL'), issuer: env.PROOF_ISSUER || undefined },
     },

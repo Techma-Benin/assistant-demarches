@@ -1,9 +1,12 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { ProblemError } from '../common/problem.js';
 import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
 import type { FileMetadata, Procedure } from '../resources/backend-resources.client.js';
+import { XroadClient, type CaseStatus } from '../xroad/xroad.client.js';
 
 export interface SubmissionInput {
   requestId: string;
+  userRef: string;
   procedure: Procedure;
   fields: Record<string, string | number | boolean | null>;
   documents: { documentType: string; file: FileMetadata }[];
@@ -21,11 +24,17 @@ export type SubmissionResult =
 
 export type ExternalStatus = 'submitted' | 'processing' | 'completed' | 'rejected';
 
+export interface TrackingContext {
+  requestId: string;
+  userRef: string;
+  traceId: string;
+}
+
 export interface AdministrationConnector {
   readonly id: string;
   supports(procedure: Procedure): boolean;
   submit(input: SubmissionInput): Promise<SubmissionResult>;
-  status(externalRef: string, traceId: string): Promise<ExternalStatus>;
+  status(externalRef: string, context: TrackingContext): Promise<ExternalStatus>;
 }
 
 @Injectable()
@@ -83,5 +92,52 @@ export class SimulatedConnector implements AdministrationConnector, OnModuleInit
     if (since >= 2 * step) return 'completed';
     if (since >= step) return 'processing';
     return 'submitted';
+  }
+}
+
+const XROAD_STATUS: Record<CaseStatus, ExternalStatus> = {
+  awaiting_payment: 'submitted',
+  received: 'submitted',
+  in_review: 'processing',
+  completed: 'completed',
+  rejected: 'rejected',
+};
+const XROAD_MIME_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png']);
+
+/** Files cases with the simulated X-Road (C5). Its statuses come from that service, which declares itself simulated. */
+@Injectable()
+export class XroadConnector implements AdministrationConnector, OnModuleInit {
+  readonly id = 'xroad';
+
+  constructor(
+    @Inject(TOOLING_CONFIG) private readonly config: ToolingConfig,
+    private readonly registry: ConnectorRegistry,
+    private readonly xroad: XroadClient,
+  ) {}
+
+  onModuleInit(): void {
+    this.registry.register(this);
+  }
+
+  supports(): boolean {
+    return this.config.procedureSource === 'xroad';
+  }
+
+  async submit(input: SubmissionInput): Promise<SubmissionResult> {
+    const documents = input.documents.map(({ documentType, file }) => {
+      if (!XROAD_MIME_TYPES.has(file.mimeType)) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Pièce ${documentType} dans un format refusé par l'administration`);
+      return { documentType, fileId: file.id, mimeType: file.mimeType, sizeBytes: file.sizeBytes };
+    });
+    const created = await this.xroad.createCase(
+      input.userRef,
+      { requestId: input.requestId, procedureId: input.procedure.id, fields: input.fields, documents },
+      { traceId: input.traceId },
+    );
+    return { kind: 'submitted', externalRef: created.id, receipt: { reference: created.reference, receivedAt: created.createdAt } };
+  }
+
+  async status(externalRef: string, context: TrackingContext): Promise<ExternalStatus> {
+    const found = await this.xroad.getCase(context.userRef, externalRef, context.requestId, context);
+    return XROAD_STATUS[found.status];
   }
 }

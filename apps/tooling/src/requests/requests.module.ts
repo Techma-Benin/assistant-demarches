@@ -2,11 +2,14 @@ import { Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { newId } from '../common/ids.js';
 import { ConnectorRegistry } from '../connectors/connector.js';
 import { ProblemError } from '../common/problem.js';
+import { tools } from '../contracts.js';
+import { MandatesRepository } from '../mandates/mandates.repository.js';
 import { ToolRegistry, type PreparationContext, type ToolHandler, type ToolInvocation } from '../gateway/tool-registry.js';
 import { ProcedureCatalog, ProceduresModule } from '../procedures/procedures.module.js';
 import { BackendResourcesClient, type FileMetadata, type Procedure } from '../resources/backend-resources.client.js';
 import { ResourcesModule } from '../resources/resources.module.js';
 import { FormSchemas } from './form-schemas.js';
+import { XroadClient, type XroadCase } from '../xroad/xroad.client.js';
 import { RequestsRepository, toContract, type Fields, type RequestRecord, type RequestStatus } from './requests.repository.js';
 
 const EDITABLE: ReadonlySet<RequestStatus> = new Set(['draft', 'ready']);
@@ -25,6 +28,8 @@ class RequestTools implements OnModuleInit {
     private readonly requests: RequestsRepository,
     private readonly forms: FormSchemas,
     private readonly connectors: ConnectorRegistry,
+    private readonly mandates: MandatesRepository,
+    private readonly xroad: XroadClient,
   ) {}
 
   onModuleInit(): void {
@@ -56,6 +61,24 @@ class RequestTools implements OnModuleInit {
       },
       run: (args, call) => this.submit(args.requestId as string, call),
     };
+    const pay: ToolHandler<{ request: RequestRecord; paid: XroadCase }> = {
+      name: 'request.pay',
+      prepare: (args, call) => this.pay(args.requestId as string, call),
+      run: async (_args, call) => {
+        const { request, paid } = call.prepared;
+        await call.requireMandate(request.procedureId);
+        await this.requests.checkSoon(call.tx, request.id);
+        return {
+          requestId: request.id,
+          caseReference: paid.reference,
+          simulated: true,
+          amountFcfa: paid.payment.amountFcfa,
+          status: paid.payment.status === 'paid' ? 'paid' : 'not_required',
+          paymentReference: paid.payment.reference,
+          paidAt: paid.payment.paidAt,
+        };
+      },
+    };
     const verify: ToolHandler<{ fileId: string; file: FileMetadata }> = {
       name: 'documents.verify',
       prepare: async (args, call) => {
@@ -69,7 +92,7 @@ class RequestTools implements OnModuleInit {
       name: 'request.status',
       run: async (args, call) => toContract(await this.requests.findOwned(call.tx, args.requestId as string, call.context)),
     };
-    this.registry.register(create, update, attach, submit, verify, status);
+    this.registry.register(create, update, attach, submit, pay, verify, status);
   }
 
   private async load(requestId: string, call: PreparationContext): Promise<Loaded> {
@@ -130,6 +153,25 @@ class RequestTools implements OnModuleInit {
     const connector = this.connectors.forProcedure(procedure);
     if (connector) await this.requests.queueSubmission(call.tx, request.id, connector.id, call.context.mandateId as string);
     return output;
+  }
+
+  /**
+   * Pays the fees of a case already filed with the simulated X-Road. Money moves here, outside the
+   * database transaction, so the mandate is checked first; it is checked again when the call is recorded.
+   * The X-Road payment is idempotent per request: a retried call never pays twice.
+   */
+  private async pay(requestId: string, call: PreparationContext): Promise<{ request: RequestRecord; paid: XroadCase }> {
+    const { request, submission } = await call.read(async (tx) => {
+      const request = await this.requests.findOwned(tx, requestId, call.context);
+      await this.mandates.requireForTool(tx, call.context, tools.get('request.pay')!.definition._meta['bj.techma/scopes'], request.procedureId);
+      return { request, submission: await this.requests.submission(tx, requestId) };
+    });
+    if (submission.connector !== 'xroad') throw new ProblemError(409, 'INVALID_TRANSITION', 'Paiement en ligne indisponible pour cette démarche');
+    if (submission.state === 'queued') throw new ProblemError(409, 'INVALID_TRANSITION', "Dossier en cours de transmission à l'administration ; réessayer dans quelques secondes");
+    if (!submission.externalRef) throw new ProblemError(409, 'INVALID_TRANSITION', "Dossier non transmis à l'administration");
+    const found = await this.xroad.getCase(call.context.userRef, submission.externalRef, requestId, call.trace);
+    const paid = found.payment.status === 'pending' ? await this.xroad.pay(call.context.userRef, submission.externalRef, requestId, call.trace) : found;
+    return { request, paid };
   }
 
   private verify(fileId: string, file: FileMetadata) {

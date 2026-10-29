@@ -69,6 +69,20 @@ export async function startBackendMock(t: TestContext): Promise<string> {
   return mocks.backendUrl as string;
 }
 
+/** The real simulated X-Road (apps/xroad-sim, built by this package's test script), on a free port. */
+export async function startXroadSim(t: TestContext): Promise<{ url: string; store: any; close(): Promise<void> }> {
+  const { createXroadServer } = await import(new URL('apps/xroad-sim/dist/src/server.js', repoRoot).href);
+  const { loadConfig: loadSimConfig } = await import(new URL('apps/xroad-sim/dist/src/config.js', repoRoot).href);
+  const running = await createXroadServer(loadSimConfig({ XROAD_PORT: '0', XROAD_SEED_HISTORY: 'off' })).listen();
+  let closed = false;
+  const close = async () => {
+    if (!closed) await running.close();
+    closed = true;
+  };
+  t.after(close);
+  return { url: running.url, store: running.store, close };
+}
+
 async function listen(t: TestContext, handler: http.RequestListener): Promise<string> {
   const server = http.createServer(handler);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
