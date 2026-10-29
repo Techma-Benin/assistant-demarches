@@ -15,5 +15,8 @@ for(const t of catalog.tools){ajv.compile(t.inputSchema);ajv.compile(t.outputSch
 const fixtures=load('mocks/fixtures.json');
 for(const [name,value] of Object.entries(fixtures.schemas)) valid(name,value);
 validateEvent(fixtures.event);
+assert.throws(()=>valid('Case',{...fixtures.schemas.Case,simulated:false}),'dossier sans marque de simulation');
+assert.throws(()=>valid('Case',{...fixtures.schemas.Case,status:'awaiting_applicant'}),'état de dossier hors contrat');
+assert.throws(()=>valid('OfficialAssignment',{administrationId:'justice',role:'chef'}),'rôle inconnu');
 for(const t of catalog.tools){const f=fixtures.tools[t.name];assert.ok(f,t.name);assert.ok(ajv.compile(t.inputSchema)(f.input),t.name+' input');assert.ok(ajv.compile(t.outputSchema)(f.output),t.name+' output');}
 console.log(`Contrats valides : ${Object.keys(domain.$defs).length} schémas, ${operationIds.size} opérations HTTP, ${catalog.tools.length} outils MCP et exemples.`);

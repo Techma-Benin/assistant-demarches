@@ -1413,6 +1413,642 @@
           "$ref": "#/$defs/UserRef"
         }
       }
+    },
+    "AdministrationId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,62}$"
+    },
+    "CaseId": {
+      "type": "string",
+      "pattern": "^cas_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "OfficialId": {
+      "type": "string",
+      "pattern": "^off_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "IssuedDocumentId": {
+      "type": "string",
+      "pattern": "^doc_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "Administration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/AdministrationId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "shortName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "themes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "connection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "connected",
+                "not_connected"
+              ]
+            },
+            "since": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "status",
+            "since"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "shortName",
+        "themes",
+        "connection"
+      ]
+    },
+    "AdministrationPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Administration"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "OfficialRole": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "admin",
+        "super_admin"
+      ]
+    },
+    "Official": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/OfficialId"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "jobTitle": {
+          "type": "string",
+          "minLength": 1
+        },
+        "administrationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdministrationId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "$ref": "#/$defs/OfficialRole"
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        }
+      },
+      "required": [
+        "id",
+        "displayName",
+        "jobTitle",
+        "administrationId",
+        "role",
+        "avatarUrl"
+      ]
+    },
+    "OfficialPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Official"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "OfficialAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "administrationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdministrationId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "$ref": "#/$defs/OfficialRole"
+        }
+      },
+      "required": [
+        "administrationId",
+        "role"
+      ]
+    },
+    "CaseStatus": {
+      "type": "string",
+      "enum": [
+        "awaiting_payment",
+        "received",
+        "in_review",
+        "completed",
+        "rejected"
+      ]
+    },
+    "CaseStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,62}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "done",
+            "blocked",
+            "pending"
+          ]
+        },
+        "actor": {
+          "type": "string",
+          "enum": [
+            "assistant",
+            "applicant",
+            "administration"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "state",
+        "actor",
+        "note",
+        "at"
+      ]
+    },
+    "CaseDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "documentType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fileId": {
+          "$ref": "#/$defs/FileId"
+        },
+        "mimeType": {
+          "type": "string",
+          "enum": [
+            "application/pdf",
+            "image/jpeg",
+            "image/png"
+          ]
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10485760
+        }
+      },
+      "required": [
+        "documentType",
+        "fileId",
+        "mimeType",
+        "sizeBytes"
+      ]
+    },
+    "CasePayment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "amountFcfa": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "not_required",
+            "pending",
+            "paid"
+          ]
+        },
+        "method": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "mobile_money",
+            null
+          ]
+        },
+        "reference": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "paidAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "amountFcfa",
+        "status",
+        "method",
+        "reference",
+        "paidAt"
+      ]
+    },
+    "IssuedDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/IssuedDocumentId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mimeType": {
+          "const": "application/pdf"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "mimeType",
+        "issuedAt"
+      ]
+    },
+    "Case": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/CaseId"
+        },
+        "reference": {
+          "type": "string",
+          "pattern": "^SIM-[A-Z]{2,5}-[0-9]{4}-[0-9]{6}$"
+        },
+        "simulated": {
+          "const": true
+        },
+        "procedureId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "administrationId": {
+          "$ref": "#/$defs/AdministrationId"
+        },
+        "requestId": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "applicantRef": {
+          "$ref": "#/$defs/UserRef"
+        },
+        "status": {
+          "$ref": "#/$defs/CaseStatus"
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CaseDocument"
+          }
+        },
+        "payment": {
+          "$ref": "#/$defs/CasePayment"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/CaseStep"
+          }
+        },
+        "issuedDocuments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IssuedDocument"
+          }
+        },
+        "completedBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "assistant",
+            "administration",
+            null
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "reference",
+        "simulated",
+        "procedureId",
+        "administrationId",
+        "requestId",
+        "applicantRef",
+        "status",
+        "fields",
+        "documents",
+        "payment",
+        "steps",
+        "issuedDocuments",
+        "completedBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CasePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Case"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "CaseInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "procedureId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CaseDocument"
+          }
+        }
+      },
+      "required": [
+        "requestId",
+        "procedureId",
+        "fields",
+        "documents"
+      ]
+    },
+    "PaymentInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "mobile_money"
+        }
+      },
+      "required": [
+        "method"
+      ]
+    },
+    "CaseDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": [
+            "approve",
+            "reject"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "decision",
+        "note"
+      ]
+    },
+    "AdministrationMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "administrationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdministrationId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "casesTotal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "casesPending": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "casesCompleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "casesCompletedByAssistant": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "casesRejected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "medianProcessingHours": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "topProcedures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "procedureId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "procedureId",
+              "title",
+              "count"
+            ]
+          }
+        }
+      },
+      "required": [
+        "administrationId",
+        "casesTotal",
+        "casesPending",
+        "casesCompleted",
+        "casesCompletedByAssistant",
+        "casesRejected",
+        "medianProcessingHours",
+        "topProcedures"
+      ]
     }
   }
 }
