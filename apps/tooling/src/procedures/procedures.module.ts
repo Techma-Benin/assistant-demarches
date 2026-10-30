@@ -30,6 +30,15 @@ export class ProcedureCatalog {
     return procedure;
   }
 
+  /** In the X-Road catalogue only sheets marked assistedFiling can become a request; the others are information only. */
+  async getFileable(procedureId: string, trace: TraceContext): Promise<Procedure> {
+    const procedure = await this.get(procedureId, trace);
+    if (this.config.procedureSource === 'xroad' && procedure.assistedFiling !== true) {
+      throw new ProblemError(409, 'INVALID_TRANSITION', `Dépôt par l'assistant non disponible pour cette démarche : orienter l'usager vers la fiche officielle ${procedure.source.url}`);
+    }
+    return procedure;
+  }
+
   private visible(procedure: Procedure): boolean {
     return this.config.allowDraftProcedures || procedure.validationStatus === 'validated';
   }
