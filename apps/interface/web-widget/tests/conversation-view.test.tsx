@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { components } from '@techma/contracts-ts';
 import { describe, expect, it, vi } from 'vitest';
@@ -162,5 +162,59 @@ describe('ConversationView', () => {
     view(build({}), onRestart);
     await userEvent.setup().click(screen.getByRole('button', { name: 'Nouvelle question' }));
     expect(onRestart).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ConversationView scrolling', () => {
+  const thread = () => screen.getByRole('log').closest('.overflow-y-auto') as HTMLDivElement;
+  const layout = (el: HTMLElement, sizes: { scrollHeight: number; clientHeight: number }) => {
+    Object.defineProperty(el, 'scrollHeight', { configurable: true, value: sizes.scrollHeight });
+    Object.defineProperty(el, 'clientHeight', { configurable: true, value: sizes.clientHeight });
+  };
+  const timeline = [
+    user('u1', 'Comment obtenir un casier judiciaire ?'),
+    agent('a1', { type: 'text', text: 'Réponse', sources: [] }),
+  ];
+
+  it('keeps the composer outside the scrolling thread', () => {
+    view(build({ timeline }));
+    const composer = screen.getByRole('textbox', { name: 'Poser une autre question' });
+    expect(thread().contains(composer)).toBe(false);
+  });
+
+  it('does not pull the reader down while they read older messages, and offers a way back', async () => {
+    const { rerender } = view(build({ timeline }));
+    const el = thread();
+    layout(el, { scrollHeight: 2000, clientHeight: 400 });
+    el.scrollTop = 0;
+    fireEvent.scroll(el);
+
+    const jump = screen.getByRole('button', { name: 'Aller au dernier message' });
+    rerender(
+      <ConversationView
+        conversation={build({ timeline: [...timeline, agent('a2', { type: 'text', text: 'Suite', sources: [] })] })}
+        onRestart={() => {}}
+      />,
+    );
+    expect(el.scrollTop).toBe(0);
+
+    await userEvent.click(jump);
+    expect(el.scrollTop).toBe(2000);
+  });
+
+  it('jumps to the bottom when the user sends a message, even after scrolling up', () => {
+    const { rerender } = view(build({ timeline }));
+    const el = thread();
+    layout(el, { scrollHeight: 2000, clientHeight: 400 });
+    el.scrollTop = 0;
+    fireEvent.scroll(el);
+
+    rerender(
+      <ConversationView
+        conversation={build({ timeline: [...timeline, user('u2', 'Et ensuite ?', 'accepted')] })}
+        onRestart={() => {}}
+      />,
+    );
+    expect(el.scrollTop).toBe(2000);
   });
 });
