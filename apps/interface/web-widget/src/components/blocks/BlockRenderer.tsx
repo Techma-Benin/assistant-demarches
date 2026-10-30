@@ -15,11 +15,6 @@ export type BlockRendererProps = {
   onFile: (file: File) => void;
 };
 
-/** Blocks that carry their own container (card, quick replies): rendered without a chat bubble. */
-export function isBareBlock(block: Block): boolean {
-  return block.type === 'buttons' || block.type === 'fileRequest' || block.type === 'statusCard';
-}
-
 export function BlockRenderer({ block, interactive, onButton, onForm, onFile }: BlockRendererProps) {
   switch (block.type) {
     case 'text':

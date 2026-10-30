@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Chip } from '@techma/ui';
+import { Button } from '@techma/ui';
 import type { components } from '@techma/contracts-ts';
 
 type Block = components['schemas']['Block'];
@@ -15,12 +15,14 @@ export function ButtonsBlock({ block, interactive, onButton }: Props) {
   const [clickedId, setClickedId] = useState<string | null>(null);
   const disabled = !interactive || clickedId !== null;
   return (
-    <div className="flex flex-wrap gap-2">
-      {block.items.slice(0, 3).map((item) => (
-        <Chip
+    <div className="flex flex-wrap gap-2.5">
+      {block.items.slice(0, 3).map((item, index) => (
+        <Button
           key={item.id}
+          variant={index === 0 ? 'primary' : 'secondary'}
           disabled={disabled}
-          selected={clickedId === item.id}
+          aria-pressed={clickedId === null ? undefined : clickedId === item.id}
+          className="min-h-[52px] whitespace-normal px-6 text-base font-bold"
           onClick={() => {
             if (disabled) return;
             setClickedId(item.id);
@@ -28,7 +30,7 @@ export function ButtonsBlock({ block, interactive, onButton }: Props) {
           }}
         >
           {item.label}
-        </Chip>
+        </Button>
       ))}
     </div>
   );

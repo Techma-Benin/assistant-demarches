@@ -26,8 +26,20 @@ describe('Composer attach', () => {
     expect(onFile).not.toHaveBeenCalled();
   });
 
+  it('sends trimmed text on submit and clears the box', async () => {
+    const onSend = vi.fn();
+    render(<Composer disabled={false} onSend={onSend} onFile={() => {}} />);
+    const user = userEvent.setup();
+    const box = screen.getByLabelText('Poser une autre question');
+    await user.type(box, '  Bonjour  ');
+    await user.click(screen.getByRole('button', { name: 'Envoyer' }));
+    expect(onSend).toHaveBeenCalledExactlyOnceWith('Bonjour');
+    expect(box).toHaveValue('');
+    expect(screen.getByText(/L’IA peut se tromper/)).toBeInTheDocument();
+  });
+
   it('disables the attach button like the textarea', () => {
     render(<Composer disabled onSend={() => {}} onFile={() => {}} />);
-    expect(screen.getByRole('button', { name: 'Joindre une pièce' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Joindre un fichier' })).toBeDisabled();
   });
 });

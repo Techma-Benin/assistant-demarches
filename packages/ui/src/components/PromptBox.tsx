@@ -95,7 +95,7 @@ export function PromptBox({
         'border border-line-strong bg-surface focus-within:border-ink',
         hero
           ? 'flex flex-col gap-2.5 rounded-[30px] pb-3.5 pl-[26px] pr-5 pt-5 shadow-prompt'
-          : 'flex items-center gap-2 rounded-[28px] py-2.5 pl-6 pr-2.5',
+          : 'flex items-center gap-2 rounded-[28px] py-2.5 pl-4 pr-2.5 sm:pl-6',
         className,
       )}
     >
@@ -112,7 +112,7 @@ export function PromptBox({
         onKeyDown={onKeyDown}
         className={cn(
           'w-full resize-none bg-transparent font-sans text-ink outline-none placeholder:text-ink-subtle disabled:cursor-not-allowed',
-          hero ? 'p-0 text-[20px] leading-[1.45]' : 'min-h-11 flex-1 py-3 text-[17px] leading-snug',
+          hero ? 'p-0 text-[20px] leading-[1.45]' : 'ui-scrollbar-none min-h-11 min-w-0 flex-1 py-3 text-base leading-snug [field-sizing:content] max-h-40 sm:text-[17px]',
         )}
       />
       {hero ? (
