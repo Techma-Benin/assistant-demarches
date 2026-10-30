@@ -4,7 +4,7 @@ import { createXroadServer } from './server.js';
 try {
   const config = loadConfig();
   const running = await createXroadServer(config).listen();
-  console.log(`X-Road simulé sur ${running.url} (authentification ${config.authMode}, historique ${config.seedHistory ? 'fictif chargé' : 'vide'})`);
+  console.log(`X-Road simulé sur ${running.url} (authentification ${config.authMode}, historique ${config.seedHistory ? 'fictif chargé' : 'vide'}, état ${config.stateFile ? `conservé dans ${config.stateFile}` : 'en mémoire'})`);
   const stop = () => {
     void running.close().then(() => process.exit(0));
   };

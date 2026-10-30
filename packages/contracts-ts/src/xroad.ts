@@ -134,7 +134,7 @@ export interface paths {
         put?: never;
         /**
          * decideXroadCase
-         * @description Décision d'un agent sur un dossier `in_review` de son administration : `approve` → `completed` (`completedBy: administration`), `reject` → `rejected`. Autre état : 409 `INVALID_TRANSITION`.
+         * @description Décision sur un dossier `in_review` : `approve` → `completed` (`completedBy: administration`), `reject` → `rejected`. Autre état : 409 `INVALID_TRANSITION`. Exactement un des en-têtes : `X-Official-Id` (client `backend-xroad`, scope `xroad:administer`, agent de l'administration du dossier) ou `X-Actor-Ref` (client `tooling-xroad`, scope `xroad:decide`, décision prise dans la console d'administration et relayée par le Tooling, qui a vérifié le département). Les deux, ou aucun : 400.
          */
         post: operations["decideXroadCase"];
         delete?: never;
@@ -689,7 +689,9 @@ export interface operations {
             header: {
                 traceparent: string;
                 "Idempotency-Key": string;
-                "X-Official-Id": components["schemas"]["OfficialId"];
+                "X-Official-Id"?: components["schemas"]["OfficialId"];
+                /** @description Référence opaque de l'agent de la console (sujet OIDC), transmise par le Tooling. */
+                "X-Actor-Ref"?: string;
             };
             path: {
                 caseId: components["schemas"]["CaseId"];

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "X-Road simulé — administrations, dossiers et agents",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Simulation déclarée : aucune réponse ne vient d’une vraie administration. Voir docs/xroad-sim.md."
   },
   "servers": [
@@ -530,7 +530,7 @@
       "post": {
         "operationId": "decideXroadCase",
         "summary": "decideXroadCase",
-        "description": "Décision d'un agent sur un dossier `in_review` de son administration : `approve` → `completed` (`completedBy: administration`), `reject` → `rejected`. Autre état : 409 `INVALID_TRANSITION`.",
+        "description": "Décision sur un dossier `in_review` : `approve` → `completed` (`completedBy: administration`), `reject` → `rejected`. Autre état : 409 `INVALID_TRANSITION`. Exactement un des en-têtes : `X-Official-Id` (client `backend-xroad`, scope `xroad:administer`, agent de l'administration du dossier) ou `X-Actor-Ref` (client `tooling-xroad`, scope `xroad:decide`, décision prise dans la console d'administration et relayée par le Tooling, qui a vérifié le département). Les deux, ou aucun : 400.",
         "parameters": [
           {
             "name": "traceparent",
@@ -554,9 +554,19 @@
           {
             "name": "X-Official-Id",
             "in": "header",
-            "required": true,
+            "required": false,
             "schema": {
               "$ref": "#/components/schemas/OfficialId"
+            }
+          },
+          {
+            "name": "X-Actor-Ref",
+            "in": "header",
+            "required": false,
+            "description": "Référence opaque de l'agent de la console (sujet OIDC), transmise par le Tooling.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[\\x21-\\x7e]{1,255}$"
             }
           },
           {
@@ -605,7 +615,7 @@
             }
           }
         },
-        "x-role": "xroad:administer"
+        "x-role": "xroad:administer | xroad:decide"
       }
     },
     "/v1/cases/{caseId}/documents/{documentId}": {

@@ -2,7 +2,7 @@ import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { ProblemError } from '../common/problem.js';
 import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
 import type { FileMetadata, Procedure } from '../resources/backend-resources.client.js';
-import { XroadClient, type CaseStatus } from '../xroad/xroad.client.js';
+import { XroadClient, type CaseStatus, type XroadCase } from '../xroad/xroad.client.js';
 
 export interface SubmissionInput {
   requestId: string;
@@ -18,11 +18,27 @@ export interface Receipt {
   receivedAt: string;
 }
 
-export type SubmissionResult =
-  | { kind: 'submitted'; externalRef: string; receipt: Receipt }
-  | { kind: 'user_action_required'; link: string };
+export type ExternalStage = 'filed' | 'processing' | 'in_review' | 'completed' | 'rejected';
 
-export type ExternalStatus = 'submitted' | 'processing' | 'completed' | 'rejected';
+export interface ExternalDocument {
+  id: string;
+  name: string;
+  mimeType: 'application/pdf' | 'image/png' | 'image/jpeg';
+  issuedAt: string;
+}
+
+export interface ExternalCase {
+  stage: ExternalStage;
+  blocker?: { detail: string; at: string };
+  payment?: { status: 'not_required' | 'pending' | 'paid'; amountFcfa: number; reference: string | null };
+  completedBy?: 'ai' | 'human';
+  completedAt?: string;
+  documents: ExternalDocument[];
+}
+
+export type SubmissionResult =
+  | { kind: 'submitted'; externalRef: string; receipt: Receipt; state: ExternalCase }
+  | { kind: 'user_action_required'; link: string };
 
 export interface TrackingContext {
   requestId: string;
@@ -30,11 +46,20 @@ export interface TrackingContext {
   traceId: string;
 }
 
+export interface DecisionInput {
+  decision: 'approve' | 'reject';
+  note: string | null;
+  actorRef: string;
+  idempotencyKey: string;
+}
+
 export interface AdministrationConnector {
   readonly id: string;
   supports(procedure: Procedure): boolean;
   submit(input: SubmissionInput): Promise<SubmissionResult>;
-  status(externalRef: string, context: TrackingContext): Promise<ExternalStatus>;
+  status(externalRef: string, context: TrackingContext): Promise<ExternalCase>;
+  decide?(externalRef: string, input: DecisionInput, context: TrackingContext): Promise<ExternalCase>;
+  document?(externalRef: string, documentId: string, context: TrackingContext): Promise<Buffer>;
 }
 
 @Injectable()
@@ -81,30 +106,41 @@ export class SimulatedConnector implements AdministrationConnector, OnModuleInit
   async submit(input: SubmissionInput): Promise<SubmissionResult> {
     const receivedAt = new Date();
     const externalRef = `SIMULATION-${input.requestId}-${receivedAt.getTime()}`;
-    return { kind: 'submitted', externalRef, receipt: { reference: externalRef, receivedAt: receivedAt.toISOString() } };
+    return { kind: 'submitted', externalRef, receipt: { reference: externalRef, receivedAt: receivedAt.toISOString() }, state: { stage: 'filed', documents: [] } };
   }
 
-  async status(externalRef: string): Promise<ExternalStatus> {
+  async status(externalRef: string): Promise<ExternalCase> {
     const sentAt = Number(/-(\d+)$/.exec(externalRef)?.[1]);
     if (!Number.isFinite(sentAt)) throw new Error('Référence simulée illisible');
     const since = Date.now() - sentAt;
     const step = this.config.connectors.simulatedStepMs;
-    if (since >= 2 * step) return 'completed';
-    if (since >= step) return 'processing';
-    return 'submitted';
+    if (since >= 2 * step) return { stage: 'completed', completedBy: 'ai', completedAt: new Date(sentAt + 2 * step).toISOString(), documents: [] };
+    if (since >= step) return { stage: 'processing', documents: [] };
+    return { stage: 'filed', documents: [] };
   }
 }
 
-const XROAD_STATUS: Record<CaseStatus, ExternalStatus> = {
-  awaiting_payment: 'submitted',
-  received: 'submitted',
-  in_review: 'processing',
+const XROAD_STAGE: Record<CaseStatus, ExternalStage> = {
+  awaiting_payment: 'filed',
+  received: 'filed',
+  in_review: 'in_review',
   completed: 'completed',
   rejected: 'rejected',
 };
 const XROAD_MIME_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png']);
 
-/** Files cases with the simulated X-Road (C5). Its statuses come from that service, which declares itself simulated. */
+export function externalCaseOf(found: XroadCase): ExternalCase {
+  const stage = XROAD_STAGE[found.status];
+  const blocked = found.steps.find((step) => step.state === 'blocked');
+  return {
+    stage,
+    ...(stage === 'in_review' && blocked ? { blocker: { detail: blocked.note ?? blocked.label, at: blocked.at ?? found.updatedAt } } : {}),
+    payment: { status: found.payment.status, amountFcfa: found.payment.amountFcfa, reference: found.payment.reference },
+    ...(stage === 'completed' ? { completedBy: found.completedBy === 'administration' ? ('human' as const) : ('ai' as const), completedAt: found.updatedAt } : {}),
+    documents: found.issuedDocuments.map((document) => ({ id: document.id, name: document.title, mimeType: document.mimeType, issuedAt: document.issuedAt })),
+  };
+}
+
 @Injectable()
 export class XroadConnector implements AdministrationConnector, OnModuleInit {
   readonly id = 'xroad';
@@ -133,11 +169,18 @@ export class XroadConnector implements AdministrationConnector, OnModuleInit {
       { requestId: input.requestId, procedureId: input.procedure.id, fields: input.fields, documents },
       { traceId: input.traceId },
     );
-    return { kind: 'submitted', externalRef: created.id, receipt: { reference: created.reference, receivedAt: created.createdAt } };
+    return { kind: 'submitted', externalRef: created.id, receipt: { reference: created.reference, receivedAt: created.createdAt }, state: externalCaseOf(created) };
   }
 
-  async status(externalRef: string, context: TrackingContext): Promise<ExternalStatus> {
-    const found = await this.xroad.getCase(context.userRef, externalRef, context.requestId, context);
-    return XROAD_STATUS[found.status];
+  async status(externalRef: string, context: TrackingContext): Promise<ExternalCase> {
+    return externalCaseOf(await this.xroad.getCase(context.userRef, externalRef, context.requestId, context));
+  }
+
+  async decide(externalRef: string, input: DecisionInput, context: TrackingContext): Promise<ExternalCase> {
+    return externalCaseOf(await this.xroad.decide(externalRef, context.requestId, input, context));
+  }
+
+  async document(externalRef: string, documentId: string, context: TrackingContext): Promise<Buffer> {
+    return this.xroad.issuedDocument(context.userRef, externalRef, documentId, context);
   }
 }

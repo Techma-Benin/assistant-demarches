@@ -1,6 +1,8 @@
 > Pivot du 29 octobre — version 1.3.0 : voir [contrat d’intégration du pivot](docs/backend-pivot-api.md) et les nouveaux OpenAPI `department-admin` / `tooling-admin`. Le X-Road simulé est ajouté (`xroad-sim.openapi.json`) sans revenir au cadre C1–C4 comme boussole. Les anciennes routes ci-dessous restent compatibles pendant la migration. Pour les dossiers passés au snapshot versionné, seuls les snapshots font désormais autorité. Les statuts simulés sont autorisés uniquement avec identification explicite de la simulation et preuves de dépôt/complétion émises par le connecteur de test.
 
-# Contrats d'intégration v1.3.0
+> 1.4.0 (30 octobre, Tooling) : ajout compatible au X-Road simulé. La route de décision accepte aussi le Tooling (`X-Actor-Ref`, scope `xroad:decide`) pour relayer les décisions de la console. Aucun autre schéma ne change.
+
+# Contrats d'intégration v1.4.0
 
 Statut : base d'implémentation exécutable, proposée à la revue des trois groupes. Les équipes peuvent commencer leurs adaptateurs, leurs modules et leurs tests sur cette base ; aucun accord collectif fictif n'est présumé. Les évolutions passent par PR avant changement d'une frontière. Pas de promesse d'intégration sans tests : chaque vrai service doit passer la même suite sur ses URL.
 
@@ -42,6 +44,9 @@ Profil de production commun : JWT RS256, issuer = realm Keycloak du déploiement
 | Contrôle Backend | client `backend-mandates`, scope `mandates:grant`, seul accès aux routes internes de mandat |
 | Événements Tooling | client `tooling-events`, scope `events:publish`, seul accès à l'ingestion C4 |
 | Dépôt X-Road | client `tooling-xroad`, scopes `xroad:read` et `xroad:submit`, pour l'usager désigné par `X-Applicant-Ref` |
+| Décision relayée depuis la console | client `tooling-xroad`, scope `xroad:decide`, pour l'agent désigné par `X-Actor-Ref` |
+| Commandes de la console vers le Tooling | client `backend-admin`, scope `requests:admin`, `POST /internal/v1/admin/requests/{id}/actions` |
+| Documents délivrés vers le Backend | client `tooling-documents`, scope `documents:transfer` |
 | Administration X-Road | client `backend-xroad`, scopes `xroad:read` et `xroad:administer`, pour l'agent désigné par `X-Official-Id` |
 
 Le Backend ne fait jamais confiance à un `userRef` fourni par le navigateur ou par le modèle. Les endpoints C1 ne le prennent donc pas en entrée. Au niveau Tooling, les en-têtes de contexte ne sont acceptés que d'un client `backend-agent` authentifié ; ils sont construits par du code applicatif hors modèle. Vérifier aussi la propriété des ressources, la conversation et la portée du mandat côté Tooling.

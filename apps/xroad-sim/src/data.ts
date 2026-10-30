@@ -173,7 +173,12 @@ export const CATALOGUE: { procedure: Procedure; rule: InstructionRule }[] = [
       1,
       form({ motif: reason(['emploi', 'concours', 'voyage', 'autre']), exemplaires: copies }, ['motif']),
     ),
-    rule: { code: 'JUS', check: 'Antécédents vérifiés auprès du greffe', blocker: null, issues: 'Extrait de casier judiciaire' },
+    rule: {
+      code: 'JUS',
+      check: 'Antécédents vérifiés auprès du greffe',
+      blocker: "Nouvelle demande à vérifier : identité du demandeur à confirmer par un agent du greffe",
+      issues: 'Extrait de casier judiciaire',
+    },
   },
   {
     procedure: procedure(
@@ -223,6 +228,19 @@ export const CATALOGUE: { procedure: Procedure; rule: InstructionRule }[] = [
       form({ session: { type: 'integer', minimum: 1960, maximum: 2026 }, examen: reason(['CEP', 'BEPC', 'BAC']) }, ['session', 'examen']),
     ),
     rule: { code: 'ENS', check: 'Diplôme retrouvé dans le registre des examens', blocker: null, issues: "Attestation d'authenticité" },
+  },
+  {
+    procedure: procedure(
+      'releve-notes',
+      'Relevé de notes du baccalauréat',
+      'enseignement',
+      "Délivrance d'un relevé de notes retrouvé dans le registre des examens.",
+      ['piece-identite'],
+      1000,
+      2,
+      form({ session: { type: 'integer', minimum: 1960, maximum: 2026 }, exemplaires: copies }, ['session']),
+    ),
+    rule: { code: 'ENS', check: 'Notes retrouvées dans le registre des examens', blocker: null, issues: 'Relevé de notes' },
   },
   {
     procedure: procedure(

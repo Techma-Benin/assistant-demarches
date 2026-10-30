@@ -6,6 +6,7 @@ export interface SimConfig {
   authMode: AuthMode;
   jwt?: { jwksUrl: URL; issuer: string };
   seedHistory: boolean;
+  stateFile?: string;
 }
 
 export class ConfigError extends Error {}
@@ -34,7 +35,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SimConfig {
   const seed = env.XROAD_SEED_HISTORY ?? 'on';
   if (seed !== 'on' && seed !== 'off') throw new ConfigError('XROAD_SEED_HISTORY doit valoir on ou off');
 
-  const base = { host, port, authMode, seedHistory: seed === 'on' };
+  const stateFile = env.XROAD_STATE_FILE || undefined;
+  const base = { host, port, authMode, seedHistory: seed === 'on', ...(stateFile ? { stateFile } : {}) };
   if (authMode === 'mock-tokens') return base;
 
   const jwksUrl = new URL(required(env, 'JWT_JWKS_URL'));

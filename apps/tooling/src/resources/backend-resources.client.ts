@@ -21,7 +21,15 @@ export interface FileMetadata {
   expiresAt: string;
 }
 
+export interface StoredDocument {
+  id: string;
+  mimeType: string;
+  sizeBytes: number;
+  expiresAt: string;
+}
+
 const procedureSchema = domainValidator('Procedure');
+const fileSchema = domainValidator('File');
 const fileAccessSchema = domainValidator('FileAccess');
 const isProcedure = (value: unknown): value is Procedure => procedureSchema(value) === true;
 const isFileAccess = (value: unknown): value is { file: FileMetadata; userRef: string } => fileAccessSchema(value) === true;
@@ -58,6 +66,49 @@ export class BackendResourcesClient {
     if (!isFileAccess(access) || access.file.id !== fileId) throw this.nonConforming('FileAccess');
     if (access.userRef !== userRef) throw new ProblemError(404, 'NOT_FOUND', 'Pièce inconnue');
     return access.file;
+  }
+
+  async storeIssuedDocument(
+    requestId: string,
+    userRef: string,
+    document: { bytes: Buffer; mimeType: string; idempotencyKey: string },
+    trace: Pick<TraceContext, 'traceId'>,
+  ): Promise<StoredDocument> {
+    const url = new URL(`internal/v1/requests/${encodeURIComponent(requestId)}/documents`, this.config.backendUrl.href.replace(/\/?$/, '/'));
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await this.tokens.get('tooling-documents')}`,
+          traceparent: childTraceparent(trace),
+          Accept: 'application/json',
+          'Content-Type': 'application/octet-stream',
+          'Idempotency-Key': document.idempotencyKey,
+          'X-User-Ref': userRef,
+          'X-File-Mime-Type': document.mimeType,
+        },
+        body: new Uint8Array(document.bytes),
+        redirect: 'error',
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error) {
+      if (error instanceof ProblemError) throw error;
+      this.logger.error(`Backend injoignable pour un document délivré : ${error instanceof Error ? error.message : String(error)}`);
+      throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', 'Service Backend indisponible');
+    }
+    if (res.status === 401 || res.status === 403) {
+      this.tokens.invalidate('tooling-documents');
+      this.logger.error(`Backend refuse l'identité tooling-documents : HTTP ${res.status}`);
+    }
+    if (res.status !== 201) {
+      await res.body?.cancel();
+      this.logger.error(`Document délivré non transmis au Backend : HTTP ${res.status}`);
+      throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', 'Document délivré non transmis');
+    }
+    const stored = (await res.json().catch(() => undefined)) as unknown;
+    if (!fileSchema(stored)) throw this.nonConforming(`document délivré (${errorsText(fileSchema)})`);
+    return stored as StoredDocument;
   }
 
   private async get(path: string, trace: TraceContext, notFound = 'Ressource inconnue', extraHeaders: Record<string, string> = {}): Promise<unknown> {
