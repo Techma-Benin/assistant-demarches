@@ -315,7 +315,8 @@
               "processing",
               "completed",
               "rejected",
-              "cancelled"
+              "cancelled",
+              "blocked"
             ]
           },
           "fields": {
@@ -432,7 +433,8 @@
               "processing",
               "completed",
               "rejected",
-              "cancelled"
+              "cancelled",
+              "blocked"
             ]
           },
           "fields": {
@@ -537,7 +539,8 @@
               "processing",
               "completed",
               "rejected",
-              "cancelled"
+              "cancelled",
+              "blocked"
             ]
           },
           "fields": {
@@ -640,7 +643,8 @@
               "processing",
               "completed",
               "rejected",
-              "cancelled"
+              "cancelled",
+              "blocked"
             ]
           },
           "fields": {
@@ -755,7 +759,8 @@
               "processing",
               "completed",
               "rejected",
-              "cancelled"
+              "cancelled",
+              "blocked"
             ]
           },
           "fields": {

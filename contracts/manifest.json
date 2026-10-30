@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "status": "implementation-baseline",
   "documents": [
     "v1/conversation.openapi.json",
@@ -9,6 +9,8 @@
     "v1/events.openapi.json",
     "v1/domain.schema.json",
     "v1/whatsapp-callback.openapi.json",
-    "v1/backend-resources.openapi.json"
+    "v1/backend-resources.openapi.json",
+    "v1/department-admin.openapi.json",
+    "v1/tooling-admin.openapi.json"
   ]
 }
