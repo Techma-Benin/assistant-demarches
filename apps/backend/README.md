@@ -1,6 +1,8 @@
+> Livraison du pivot : [recette et travail restant](../../docs/backend-pivot-recette.md), [APIs et raccordement Interface/Tooling](../../docs/backend-pivot-api.md), [suivi de reprise et validations](../../docs/backend-pivot-status.md). Les nouvelles routes métier sont distinctes des routes opérateur.
+
 # Backend
 
-Service NestJS pour les contrats v1. Les contrats partagés et les types générés ne sont pas modifiés.
+Service NestJS pour les contrats v1. Le pivot étend les contrats partagés et leurs types générés avec le manifeste 1.3.0.
 
 ## Fonctionnalités
 
@@ -77,7 +79,7 @@ Exemple synthétique de provisioning :
 }
 ```
 
-Configurer les huit outils v1 nécessaires au parcours. Les fiches doivent être provisionnées, puis validées par une administration ; les API privées ne servent que les fiches validées. Une configuration de modèle persistée ne garantit pas que le modèle ou son endpoint prend en charge toutes les capacités : vérifier chaque profil avant activation.
+Configurer les outils nécessaires au parcours. Le catalogue MCP Techma doit retourner des fiches validées ; le consentement du pivot consulte ce catalogue sans imposer une copie SQL locale. Les anciennes API privées servent uniquement les fiches locales validées. Une configuration de modèle persistée ne garantit pas que le modèle ou son endpoint prend en charge toutes les capacités : vérifier chaque profil avant activation.
 
 ### Stockage
 
@@ -89,7 +91,7 @@ Pour essayer Swagger sans fournisseur d’identité local : activer `BACKEND_DEV
 
 Le [guide de test complet](docs/testing.md) explique les prérequis, les identités, cinq scénarios et les erreurs ; il est aussi accessible sur `/docs/guide`. Chaque route Swagger contient ses étapes et des exemples. Les descriptions sont enrichies au service de la documentation, sans modifier les contrats partagés.
 
-Après démarrage, ouvrir `http://localhost:4010/docs`. Swagger UI propose les quatre contrats du Backend et permet de tester les routes sur le serveur courant. Fournir un jeton valide via **Authorize**, ainsi que les en-têtes requis (`traceparent`, `Idempotency-Key`, selon la route). Les jetons ne sont pas conservés après rechargement. La documentation est publique, les opérations restent authentifiées. Les fichiers Swagger sont servis localement, sans CDN.
+Après démarrage, ouvrir `http://localhost:4010/docs`. Swagger UI propose six définitions, dont `department-admin` pour le pivot et `tooling-admin` pour le contrat du service distant. Les routes Backend se testent sur le serveur courant ; les commandes internes du contrat `tooling-admin` appartiennent au Tooling. Fournir un jeton valide via **Authorize**, ainsi que les en-têtes requis (`traceparent`, `Idempotency-Key`, selon la route). Les jetons ne sont pas conservés après rechargement. La documentation est publique, les opérations restent authentifiées. Les fichiers Swagger sont servis localement, sans CDN.
 
 ## Conservation et reprise
 
@@ -110,7 +112,7 @@ Le test du processus worker utilise `REDIS_TEST_URL`, ou un binaire Redis local 
 
 À valider avant un pilote : realm Keycloak réel et échange de jetons WhatsApp, services des autres équipes, profils de modèles réels, stockage cloud et permissions, TLS/chiffrement, sauvegardes, supervision et jeu d’évaluation métier. Le masquage de motifs sensibles et la vérification des références de sources ne constituent pas une garantie d’anonymisation complète ou d’exactitude des réponses. Les traces OpenTelemetry et l’export du journal autoritatif Tooling restent à intégrer.
 
-Les messages audio/images/fichiers sont acceptés comme références contrôlées mais aucune transcription/OCR n’est encore branchée : l’assistant demande une description écrite. La phase v1 prépare un lien officiel et ne déclare pas un dépôt administratif autonome. Les modèles et fiches ont un CRUD administrateur ; les connexions MCP disposent de leur propre CRUD, découverte et permissions. Voir [connexions MCP](../../docs/mcp-connections.md).
+Les messages audio/images/fichiers sont acceptés comme références contrôlées. Le pivot ajoute une transcription audio explicitement activable ; son adaptateur est testé localement, l’essai vocal réel reste à réaliser. Aucun OCR n’est branché. Le socle historique prépare un lien officiel ; le dépôt simulé du pivot dépend des nouveaux connecteurs et snapshots Tooling. Les modèles et fiches ont un CRUD opérateur ; les connexions MCP disposent de leur propre CRUD, découverte et permissions. Voir [connexions MCP](../../docs/mcp-connections.md).
 
 ## Logs de diagnostic
 

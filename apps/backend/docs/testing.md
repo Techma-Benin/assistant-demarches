@@ -1,5 +1,7 @@
 # Tester le Backend dans Swagger
 
+Pour les nouvelles fonctions du pivot (départements, utilisateurs, dossiers, KPI, documents et interventions humaines), commencer par `docs/backend-pivot-recette.md` à la racine du dépôt. Le présent guide détaille le socle conversationnel ; les contrats actuels du pivot et ses dépendances interéquipes sont décrits dans `docs/backend-pivot-api.md`.
+
 Swagger est un client HTTP : il envoie de vraies requêtes au Backend et peut modifier la base configurée. Les exemples sont des données fictives ; ils ne créent pas automatiquement les ressources auxquelles ils font référence.
 
 ## Test local sans chercher de jeton
@@ -12,7 +14,7 @@ Les identités de test sont signées et expirent après 8 h ; relancer `pnpm dev
 
 1. Depuis la racine du dépôt, lancer `pnpm dev`. Le `.env` est chargé et les migrations sont appliquées. Ouvrir `/docs`.
 2. Vérifier `GET /health` dans le navigateur : `{"status":"ok","service":"backend"}` signifie que l’API et les migrations répondent. Cela ne vérifie pas le modèle, Redis, Keycloak ni les autres équipes.
-3. Choisir un contrat dans **Select a definition** : `conversation` pour le parcours usager, `admin` pour la configuration, `events` et `backend-resources` pour les appels du Tooling.
+3. Choisir un contrat dans **Select a definition** : `conversation` pour le parcours usager, `admin` pour la configuration opérateur, `department-admin` pour la console métier, `events` et `backend-resources` pour les appels du Tooling. `tooling-admin` décrit les commandes à implémenter sur le serveur Tooling, pas des routes locales du Backend.
 4. Cliquer **Authorize**, saisir uniquement le JWT, puis confirmer. Swagger ajoute `Authorization: Bearer …`. Les jetons ne sont pas persistés après rechargement. Déconnecter l’ancien jeton avec **Logout** avant de changer de rôle.
 5. Déplier une route, lire ses prérequis, cliquer **Try it out**, remplir les paramètres, puis **Execute**. La section **Server response** est la réponse réelle ; les exemples de la section **Responses** ne prouvent pas qu’un appel a eu lieu.
 
@@ -97,7 +99,7 @@ Sans clé de signature ou service de contrôle disponible, ces opérations peuve
 
 Dans `uploadFile`, choisir un fichier binaire, utiliser `application/octet-stream` pour le corps et indiquer le MIME d’origine dans `X-File-Mime-Type` parmi les valeurs autorisées affichées. Maximum : 10 Mio. Attendre **201** et conserver `id`.
 
-Le fichier est utilisable dès le dépôt réussi, sans analyse antivirus ni analyse du contenu. Un fichier expiré ou appartenant à un autre usager ne peut pas servir de pièce jointe. Il expire après 24 h. Pour le référencer dans un message, utiliser `{"type":"file","fileId":"<id réel>"}` comme `content` (et renseigner `id`, `sentAt` du message). L’upload seul n’ajoute pas le fichier à une conversation. L’API v1 ne fournit pas de GET public de statut fichier ; la lecture interne nécessite l’identité Tooling. Audio et images ne déclenchent pas encore de transcription/OCR.
+Le fichier est utilisable dès le dépôt réussi, sans analyse antivirus ni analyse du contenu. Un fichier expiré ou appartenant à un autre usager ne peut pas servir de pièce jointe. Il expire après 24 h. Pour le référencer dans un message, utiliser `{"type":"file","fileId":"<id réel>"}` comme `content` (et renseigner `id`, `sentAt` du message). L’upload seul n’ajoute pas le fichier à une conversation. L’API v1 ne fournit pas de GET public de statut fichier ; la lecture interne nécessite l’identité Tooling. La transcription d’un message `audio` exige l’activation et la configuration explicites de l’adaptateur du pivot. Les images et PDF ne déclenchent aucun OCR ni transcription.
 
 ## Scénario 5 — Intégration Tooling
 
