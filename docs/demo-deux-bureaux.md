@@ -1,5 +1,7 @@
 # Démo « un message, deux bureaux »
 
+Suivi visible par toute l’équipe : [issue 1](https://github.com/Techma-Benin/assistant-demarches/issues/1).
+
 À faire par Tooling et Interface, chacun sur **sa** branche. On ramène ensuite leur travail dans `integration/pivot-combo`.
 
 Référence : PowerPoint du 29 octobre, slides 7, 8 et 10. Branche de référence des contrats : `integration/pivot-combo` (commit `38ec092` au 30 octobre 2026). Le détail des routes est dans [backend-pivot-api.md](backend-pivot-api.md).
