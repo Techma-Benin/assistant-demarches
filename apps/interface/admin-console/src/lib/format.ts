@@ -25,14 +25,17 @@ const percentRounded = new Intl.NumberFormat('fr-FR', { style: 'percent', maximu
 /** Share in [0, 1] shown as a whole percentage (« 67 % »). */
 export const formatShare = (value: number): string => percentRounded.format(value);
 
-const shortDay = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
-const longDay = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+const shortDay = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const longDay = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+/** Local calendar day (same fields as the chart buckets), rendered in UTC so Intl cannot shift it. */
+const calendarDay = (date: Date): Date => new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
 
 /** « 26 oct. » */
-export const formatShortDay = (date: Date): string => shortDay.format(date);
+export const formatShortDay = (date: Date): string => shortDay.format(calendarDay(date));
 
 /** « dim. 26 oct. » */
-export const formatLongDay = (date: Date): string => longDay.format(date);
+export const formatLongDay = (date: Date): string => longDay.format(calendarDay(date));
 
 /** « 1 conversation », « 6 conversations ». */
 export const formatConversations = (count: number): string =>

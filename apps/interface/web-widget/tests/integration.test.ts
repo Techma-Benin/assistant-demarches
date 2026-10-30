@@ -82,7 +82,8 @@ describe('widget <-> proxy <-> mock backend', () => {
       'application/pdf',
       crypto.randomUUID(),
     );
-    expect(uploaded).toMatchObject({ scanStatus: 'clean', mimeType: 'application/pdf' });
+    expect(uploaded).toMatchObject({ mimeType: 'application/pdf' });
+    expect(uploaded).not.toHaveProperty('scanStatus');
     expect(uploaded.id).toMatch(/^fil_/);
     state = conversationReducer(state, { type: 'fileUploadSucceeded', id, file: uploaded });
 
@@ -96,7 +97,7 @@ describe('widget <-> proxy <-> mock backend', () => {
     expect(state.timeline[0]).toMatchObject({
       kind: 'user',
       delivery: 'received',
-      attachment: { name: 'doc.pdf', scanStatus: 'clean' },
+      attachment: { name: 'doc.pdf' },
       content: { type: 'file', fileId: uploaded.id },
     });
   });

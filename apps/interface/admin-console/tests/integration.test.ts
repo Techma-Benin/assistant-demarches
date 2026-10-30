@@ -73,7 +73,7 @@ describe('console <-> proxy <-> mock backend', () => {
 
     const audit = await client.listAudit({ limit: 100 });
     expect(audit.items).toContainEqual(
-      expect.objectContaining({ action: 'configuration.changed', resourceId: 'demo-procedure' }),
+      expect.objectContaining({ action: 'configuration.changed.updated', resourceId: 'demo-procedure' }),
     );
   });
 
@@ -81,7 +81,7 @@ describe('console <-> proxy <-> mock backend', () => {
     const client = new C3Client(shimWith('mock-admin'));
     const changes = async (resourceId: string) =>
       (await client.listAudit({ limit: 100 })).items.filter(
-        (entry) => entry.action === 'configuration.changed' && entry.resourceId === resourceId,
+        (entry) => entry.action === 'configuration.changed.updated' && entry.resourceId === resourceId,
       ).length;
 
     const model = (await client.listModels()).items[0];

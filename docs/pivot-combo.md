@@ -160,15 +160,14 @@ Scripts `package.json`, lancés à part :
 | `pnpm --filter @techma/xroad-sim test` | 11 réussites, 0 échec, 0 ignoré |
 | `pnpm --filter @techma/tooling test` | 56 réussites, 0 échec, 2 ignorés (`TEST_DATABASE_URL` absent : répliques PostgreSQL) |
 | `pnpm --filter @techma/ui test` | 84 réussites, 0 échec, 0 ignoré |
-| `pnpm --filter @techma/web-widget test` | 136 réussites, 1 échec, 0 ignoré |
-| `pnpm --filter @techma/admin-console test` | 134 réussites, 3 échecs, 0 ignoré |
+| `pnpm --filter @techma/web-widget test` | 137 réussites, 0 échec, 0 ignoré |
+| `pnpm --filter @techma/admin-console test` | 137 réussites, 0 échec, 0 ignoré |
 
-Échec widget : `uploads a file…` attend `scanStatus: 'clean'` sur le fichier déposé. La réponse du pivot n’a pas ce champ. Le widget s’en sert encore (état, pastille). Pas corrigé ici : ce n’est pas une ligne de merge.
+Les quatre échecs d’interface sont alignés sur le pivot, sans réintroduire `scanStatus` :
 
-Échecs console :
-
-- Infobulle du jour : le test attend `ven. 30 oct. · 4 conversations`, l’écran affiche `jeu. 29 oct. · 4 conversations`.
-- Audit : les tests cherchent `configuration.changed` ; le backend écrit `configuration.changed.updated`, donc les compteurs restent à 0.
+- Widget : le dépôt de fichier n’attend plus `scanStatus` (absent de la réponse).
+- Console : l’audit cherche `configuration.changed.updated` (kind `configuration.changed` et `operation` `updated`).
+- Console : le libellé de jour suit le calendrier local du graphique, le même pour l’infobulle et pour « aujourd’hui », quel que soit le fuseau d’Intl.
 
 ### Écart PowerPoint
 
