@@ -165,7 +165,7 @@ describe('récepteur de rappel C4 (jeton de développement)', () => {
     const target = await queue.jobs[0]!.prepare();
     expect(target!.to).toBe(WA_ID);
     expect(textsOf(target)).toEqual([
-      'Simulation : cette démarche est fictive.\n\nSources :\n• example.org — version demo-1, consultée le 22/10/2026 : https://example.org/demonstration',
+      'Simulation : cette démarche est fictive.\n\nSources :\n• example.org - version demo-1, consultée le 22/10/2026 : https://example.org/demonstration',
     ]);
   });
 

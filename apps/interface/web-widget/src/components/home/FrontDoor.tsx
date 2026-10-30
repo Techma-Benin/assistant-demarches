@@ -140,7 +140,7 @@ export function FrontDoor({ onAsk, disabled = false, config = siteConfig }: Fron
                 { label: 'Identité', className: 'bg-action text-on-action', icon: <IdCard className="size-[0.62em]" strokeWidth={2.4} /> },
               ]}
             />{' '}
-            — une seule porte d’entrée.
+            - une seule porte d’entrée.
           </p>
         </section>
 
@@ -186,7 +186,7 @@ export function FrontDoor({ onAsk, disabled = false, config = siteConfig }: Fron
             <ul className="m-0 mt-auto flex list-none flex-col gap-2.5 p-0">
               {[
                 { n: '1', title: 'Acte de naissance', sub: 'Fiche validée · service-public.bj' },
-                { n: '2', title: 'État civil — copie intégrale', sub: 'Fiche validée' },
+                { n: '2', title: 'État civil - copie intégrale', sub: 'Fiche validée' },
               ].map((s) => (
                 <li key={s.n} className="flex items-center gap-3 rounded-[18px] bg-surface px-4 py-3.5">
                   <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-action text-[13px] font-bold text-on-action">{s.n}</span>
@@ -239,7 +239,7 @@ export function FrontDoor({ onAsk, disabled = false, config = siteConfig }: Fron
               par thème.
             </h2>
             <p className="m-0 max-w-[380px] text-[17px] leading-normal text-ink-muted">
-              Chaque thème ouvre une conversation déjà orientée — vous pouvez toujours préciser.
+              Chaque thème ouvre une conversation déjà orientée - vous pouvez toujours préciser.
             </p>
           </div>
           <div className="grid grid-cols-1 gap-4 min-[640px]:grid-cols-[repeat(auto-fill,minmax(290px,1fr))]">

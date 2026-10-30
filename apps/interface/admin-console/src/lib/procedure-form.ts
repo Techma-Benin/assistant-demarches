@@ -64,7 +64,7 @@ export function describeFormSchema(schema: FormSchema): FormProperty[] {
     const type = (definition as { type?: unknown } | null)?.type;
     return {
       name,
-      type: typeof type === 'string' ? type : Array.isArray(type) ? type.join(' | ') : '—',
+      type: typeof type === 'string' ? type : Array.isArray(type) ? type.join(' | ') : '-',
       required: required.has(name),
     };
   });

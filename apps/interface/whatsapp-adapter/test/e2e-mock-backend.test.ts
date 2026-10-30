@@ -109,7 +109,7 @@ describe('bout en bout contre le mock Backend', () => {
     expect(message.type).toBe('text');
     if (message.type === 'text') {
       expect(message.text.body).toContain('Simulation : cette démarche est fictive.');
-      expect(message.text.body).toContain('• example.org — version demo-1, consultée le 22/10/2026 : https://example.org/demonstration');
+      expect(message.text.body).toContain('• example.org - version demo-1, consultée le 22/10/2026 : https://example.org/demonstration');
     }
   });
 

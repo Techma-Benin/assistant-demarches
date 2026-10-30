@@ -26,10 +26,10 @@ function sourceLine(source: Source): string {
   const date = formatDateFr(source.retrievedAt);
   if (isHttpUrl(source.url)) {
     const host = new URL(source.url).hostname;
-    return `• ${host} — version ${source.version}, consultée le ${date} : ${source.url}`;
+    return `• ${host} - version ${source.version}, consultée le ${date} : ${source.url}`;
   }
   // URL non http(s) (ex. javascript:) : jamais affichée.
-  return `• ${source.procedureId} — version ${source.version}, consultée le ${date}`;
+  return `• ${source.procedureId} - version ${source.version}, consultée le ${date}`;
 }
 
 /** Texte du bloc, suivi du paragraphe « Sources : » s’il y en a. */

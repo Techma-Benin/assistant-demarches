@@ -143,7 +143,7 @@ describe('ProcedureEdit', () => {
     expect(screen.queryByRole('button', { name: 'Repasser en brouillon' })).toBeNull();
     await user.type(screen.getByLabelText(/Titre/), ' bis');
     await user.click(screen.getByRole('button', { name: 'Valider et publier' }));
-    expect(await screen.findByText('Fiche validée — l’assistant peut la citer')).toBeInTheDocument();
+    expect(await screen.findByText('Fiche validée - l’assistant peut la citer')).toBeInTheDocument();
     expect(puts).toHaveLength(1);
     expect(puts[0].url).toBe('/api/admin/v1/admin/procedures/passeport');
     expect(puts[0].key).toMatch(/^procedure-passeport-/);
@@ -204,7 +204,7 @@ describe('ProcedureEdit', () => {
       .map((row) => within(row).getAllByRole('cell').map((c) => c.textContent));
     expect(cells).toEqual([
       ['ville', 'string', 'Non'],
-      ['cp', '—', 'Oui'],
+      ['cp', '-', 'Oui'],
     ]);
     await save(user);
     await screen.findByText('Modifications enregistrées.');
