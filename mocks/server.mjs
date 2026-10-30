@@ -5,6 +5,7 @@ import {Server} from '@modelcontextprotocol/sdk/server/index.js';
 import {StreamableHTTPServerTransport} from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {ListToolsRequestSchema,CallToolRequestSchema} from '@modelcontextprotocol/sdk/types.js';
 import {WebSocketServer} from 'ws';
+import {createDepartmentAdmin} from './department-admin.mjs';
 import {ajv,catalog,load,valid,validateEvent} from '../scripts/lib.mjs';
 const fixture=load('mocks/fixtures.json');
 const now=()=>new Date().toISOString();
@@ -17,6 +18,7 @@ export async function startMocks({backendPort=4010,toolingPort=4020}={}){
  const conversations=new Map(),requests=new Map(),mandates=new Map(),challenges=new Map(),files=new Map(),events=new Map(),dedup=new Map(),tickets=new Map(),sockets=new Map(),ingested=new Set(),messageDigests=new Map();
  const config={models:[{id:'demo-model',provider:'mock',model:'deterministic',promptVersion:'v1',temperature:0,active:true}],tools:catalog.tools.map(t=>({name:t.name,enabled:true,serverUrl:'http://127.0.0.1:4020/mcp',secretRef:'mock-only'})),procedures:[structuredClone(fixture.schemas.Procedure)],audit:[]};
  const mcpServers=new Map(),mcpActions=new Map();
+ const departmentAdmin=createDepartmentAdmin({fail});
  const servers=[];const wss=new WebSocketServer({noServer:true});
  const owner=(map,key,user)=>{const v=map.get(key);if(!v||v.userRef!==user)fail(404,'NOT_FOUND','Ressource introuvable');return v;};
  const addEvent=(kind,data,traceparent,source='backend')=>{
@@ -26,7 +28,7 @@ export async function startMocks({backendPort=4010,toolingPort=4020}={}){
  };
  const trace=req=>{const t=req.headers.traceparent;if(!/^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$/.test(t??''))fail(400,'INVALID_REQUEST','traceparent requis');return t;};
  const token=req=>req.headers.authorization?.replace(/^Bearer /,'');
- const principal=req=>{const t=token(req);if(t==='mock-user')return user1;if(t==='mock-user-2')return user2;if(t==='mock-admin')return 'admin-demo';fail(401,'UNAUTHORIZED','Jeton de simulation requis');};
+ const principal=req=>{const t=token(req);if(t==='mock-user')return user1;if(t==='mock-user-2')return user2;if(t==='mock-admin')return 'admin-demo';if(departmentAdmin.tokens.has(t))return departmentAdmin.tokens.get(t);fail(401,'UNAUTHORIZED','Jeton de simulation requis');};
  const schema=(n,v)=>{try{return valid(n,v);}catch(e){fail(400,'INVALID_REQUEST',e.message);}};
  async function idem(req,body,fn){const key=req.headers['idempotency-key'];if(typeof key!=='string'||key.length<8||key.length>128)fail(400,'INVALID_REQUEST','Idempotency-Key : 8 à 128 caractères');const scope=token(req)+'|'+req.method+'|'+req.url+'|'+key;const digest=createHash('sha256').update(JSON.stringify(body??null)).digest('hex');const old=dedup.get(scope);if(old){if(old.digest!==digest)fail(409,'IDEMPOTENCY_CONFLICT','Clé réutilisée avec un autre contenu');return structuredClone(await old.promise);}const promise=Promise.resolve().then(fn);dedup.set(scope,{digest,promise});try{return structuredClone(await promise);}catch(e){dedup.delete(scope);throw e;}}
  const grant=body=>{schema('MandateGrant',body);const c=challenges.get(body.challenge.id);if(!c||c.consumed||JSON.stringify(c.value)!==JSON.stringify(body.challenge))fail(403,'FORBIDDEN','Preuve de consentement inconnue');if(Date.parse(c.value.expiresAt)<=Date.now())fail(403,'MANDATE_EXPIRED','Défi expiré');c.consumed=true;const m={id:id('mdt'),conversationId:c.value.conversationId,userRef:c.value.userRef,procedureId:c.value.procedureId,scopes:c.value.scopes,status:'active',expiresAt:new Date(Date.now()+3600000).toISOString()};mandates.set(m.id,m);return m;};
@@ -88,6 +90,7 @@ export async function startMocks({backendPort=4010,toolingPort=4020}={}){
   }
   const user=principal(req);
   if(url.pathname.startsWith('/v1/admin/')){
+   if(departmentAdmin.actors.has(user)){const handled=await departmentAdmin.route({req,url,subject:user,traceId:tp.split('-')[1],read,idem});if(!handled){if(['models','tools','procedures','conversations','metrics','audit','mcp-servers'].includes(url.pathname.split('/')[3]))fail(403,'FORBIDDEN','Rôle administrateur requis');fail(404,'NOT_FOUND','Route inconnue');}reply(res,...handled);return;}
    if(user!=='admin-demo')fail(403,'FORBIDDEN','Rôle administrateur requis');const resource=url.pathname.split('/')[3];
    const rid=decodeURIComponent(url.pathname.split('/')[4]??'');
    if(resource==='mcp-servers'){
@@ -121,7 +124,7 @@ export async function startMocks({backendPort=4010,toolingPort=4020}={}){
      const operation=req.method==='POST'?'created':req.method==='PUT'?'updated':'deleted';config.audit.push({id:id('aud'),actorRef:user,action:'configuration.changed.'+operation,resourceId:target,at:now(),traceId:tp.split('-')[1]});return [req.method==='POST'?201:req.method==='PUT'?200:204,body];});reply(res,code,out);return;
    }fail(404,'NOT_FOUND','Route inconnue');
   }
-  if(user==='admin-demo')fail(403,'FORBIDDEN','Session usager requise');
+  if(user==='admin-demo'||departmentAdmin.actors.has(user))fail(403,'FORBIDDEN','Session usager requise');
   if(req.method==='POST'&&url.pathname==='/v1/conversations'){
    const b=await read(req);schema('ConversationInput',b);const result=await idem(req,b,()=>{const c={id:id('cnv'),userRef:user,...b,createdAt:now()};conversations.set(c.id,c);return c;});reply(res,201,result);return;
   }
