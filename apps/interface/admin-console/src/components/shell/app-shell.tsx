@@ -1,12 +1,16 @@
 'use client';
 
-import { BrandMark, IconButton, ThemeToggle, cn } from '@techma/ui';
+import { BrandMark, Button, IconButton, InlineAlert, ThemeToggle, cn } from '@techma/ui';
 import { Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { useServiceStatus } from '@/lib/service-status';
-import { NAV_ITEMS, isActive } from './nav-items';
+import { canManageUsers, hasOperatorPermission } from '@/lib/permissions';
+import { newTraceparent } from '@/lib/trace';
+import { useConsole } from '../console/console-context';
+import { IdentitySwitcher } from './identity-switcher';
+import { MinistrySelector } from './ministry-selector';
+import { BUSINESS_NAV, OPERATOR_NAV, PROFILE_NAV, USERS_NAV, isActive, type NavItem } from './nav-items';
 import { ServiceStatusTile } from './service-status-tile';
 
 const DESKTOP_QUERY = '(min-width: 768px)';
@@ -20,14 +24,65 @@ function subscribeDesktop(onChange: () => void) {
 
 const isDesktop = () => typeof window.matchMedia === 'function' && window.matchMedia(DESKTOP_QUERY).matches;
 
+/** Number of items waiting for a decision in the selected ministry; null when unknown. One request, refreshed on navigation. */
+function usePendingCount(departmentId: string | null, sessionId: string, refreshKey: string): number | null {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!departmentId) {
+      setCount(null);
+      return;
+    }
+    const controller = new AbortController();
+    const query = new URLSearchParams({ departmentId, status: 'pending', limit: '100' });
+    fetch(`/api/admin/v1/admin/work-items?${query}`, {
+      headers: { traceparent: newTraceparent() },
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error('http'))))
+      .then(
+        (page: { items: unknown[] }) => setCount(page.items.length),
+        () => !controller.signal.aborted && setCount(null),
+      );
+    return () => controller.abort();
+  }, [departmentId, sessionId, refreshKey]);
+  return count;
+}
+
+function NavLink({ item, pathname, count }: { item: NavItem; pathname: string; count?: number | null }) {
+  const { href, label, icon: Icon } = item;
+  const active = isActive(item, pathname);
+  return (
+    <li>
+      <Link
+        href={href}
+        aria-current={active ? 'page' : undefined}
+        aria-label={count ? `${label}, ${count} à traiter` : undefined}
+        className={cn(
+          'flex min-h-[46px] items-center gap-3 rounded-[14px] px-3 text-[15px] font-semibold transition-[color,background-color,transform] duration-(--ui-dur-fast) ease-(--ui-ease-out) active:scale-[0.98] motion-reduce:active:scale-100',
+          active ? 'bg-action text-on-action' : 'text-ink-muted hover:bg-sunken hover:text-ink',
+        )}
+      >
+        <Icon aria-hidden="true" className="size-5 shrink-0" />
+        <span className="flex-1">{label}</span>
+        {count ? <span className="rounded-pill bg-sun px-2 py-0.5 text-xs font-extrabold text-warning">{count}</span> : null}
+      </Link>
+    </li>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const desktop = useSyncExternalStore(subscribeDesktop, isDesktop, () => false);
-  const status = useServiceStatus();
+  const { profile, departmentId, activeSessionId, loading, error, reload } = useConsole();
+  const pending = usePendingCount(departmentId, activeSessionId, pathname);
 
   // Close the mobile menu after navigating.
   useEffect(() => setOpen(false), [pathname]);
+
+  const businessItems = [...BUSINESS_NAV, ...(canManageUsers(profile, departmentId) ? [USERS_NAV] : []), PROFILE_NAV];
+  const operator = hasOperatorPermission(profile);
+  const backend = error ? 'down' : loading && !profile ? 'checking' : 'up';
 
   return (
     <div className="min-h-dvh md:flex">
@@ -54,55 +109,59 @@ export function AppShell({ children }: { children: ReactNode }) {
           id="console-nav"
           inert={!open && !desktop}
           className={cn(
-            // Mobile: overlay panel kept mounted; desktop: static column.
+            // Mobile: overlay panel kept mounted; desktop: static column (visible overflow so the menus can exceed the sidebar width).
             'absolute inset-x-0 top-full z-20 flex max-h-[calc(100dvh-3.5rem)] flex-col overflow-y-auto border-b border-line-subtle bg-shell transition-[opacity,translate,visibility] ease-(--ui-ease-out) motion-reduce:translate-y-0',
-            'md:pointer-events-auto md:visible md:static md:z-auto md:max-h-none md:flex-1 md:translate-y-0 md:border-b-0 md:bg-transparent md:opacity-100 md:transition-none',
+            'md:pointer-events-auto md:visible md:static md:z-auto md:max-h-none md:min-h-0 md:flex-1 md:translate-y-0 md:overflow-visible md:border-b-0 md:bg-transparent md:opacity-100 md:transition-none',
             open
               ? 'visible translate-y-0 opacity-100 duration-220'
               : 'pointer-events-none invisible -translate-y-2 opacity-0 duration-(--ui-dur-exit)',
           )}
         >
-          <nav aria-label="Navigation principale" className="flex-1 px-4 pb-3">
+          <div className="flex flex-col gap-3 px-4 pb-4">
+            <IdentitySwitcher />
+            <MinistrySelector />
+          </div>
+          <nav aria-label="Navigation principale" className="px-4 pb-3 md:min-h-0 md:flex-1 md:overflow-y-auto">
             <ul className="flex flex-col gap-1">
-              {NAV_ITEMS.map(({ href, label, icon: Icon, badge }) => {
-                const active = isActive(href, pathname);
-                const count = badge && status ? status[badge] : null;
-                return (
-                  <li key={href}>
-                    <Link
-                      href={href}
-                      aria-current={active ? 'page' : undefined}
-                      aria-label={count ? `${label}, ${count} à traiter` : undefined}
-                      className={cn(
-                        'flex min-h-[46px] items-center gap-3 rounded-[14px] px-3 text-[15px] font-semibold transition-[color,background-color,transform] duration-(--ui-dur-fast) ease-(--ui-ease-out) active:scale-[0.98] motion-reduce:active:scale-100',
-                        active ? 'bg-action text-on-action' : 'text-ink-muted hover:bg-sunken hover:text-ink',
-                      )}
-                    >
-                      <Icon aria-hidden="true" className="size-5 shrink-0" />
-                      <span className="flex-1">{label}</span>
-                      {count ? (
-                        <span
-                          className="rounded-pill bg-sun px-2 py-0.5 text-xs font-extrabold text-warning"
-                        >
-                          {count}
-                        </span>
-                      ) : null}
-                    </Link>
-                  </li>
-                );
-              })}
+              {businessItems.map((item) => (
+                <NavLink key={item.href} item={item} pathname={pathname} count={item.pendingBadge ? pending : null} />
+              ))}
             </ul>
+            {operator ? (
+              <>
+                <p className="mt-4 mb-1.5 px-3 text-xs font-bold tracking-[0.04em] text-ink-muted uppercase">Opérateur</p>
+                <ul aria-label="Opérateur" className="flex flex-col gap-1">
+                  {OPERATOR_NAV.map((item) => (
+                    <NavLink key={item.href} item={item} pathname={pathname} />
+                  ))}
+                </ul>
+              </>
+            ) : null}
           </nav>
           <div className="flex flex-col gap-3 px-4 py-4">
-            <ServiceStatusTile status={status} />
+            <ServiceStatusTile state={backend} />
             <ThemeToggle />
           </div>
         </div>
       </aside>
       <main className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-8">
-        <div key={pathname} className="ui-rise">
-          {children}
-        </div>
+        {error ? (
+          <div className="flex max-w-xl flex-col items-start gap-4">
+            <InlineAlert>{error}</InlineAlert>
+            <Button variant="outline" onClick={reload}>
+              Réessayer
+            </Button>
+          </div>
+        ) : loading && !profile ? (
+          <p role="status" className="text-sm font-semibold text-ink-muted">
+            Chargement…
+          </p>
+        ) : (
+          // Remounted on every session / ministry change so pages reload their data.
+          <div key={`${pathname}|${activeSessionId}|${departmentId}`} className="ui-rise">
+            {children}
+          </div>
+        )}
       </main>
     </div>
   );
