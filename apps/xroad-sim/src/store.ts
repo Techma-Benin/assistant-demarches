@@ -96,15 +96,31 @@ export class XroadStore {
     return [...this.administrations.values()];
   }
 
+  /**
+   * Ranked search over the official sheets: a citizen's question ("comment renouveler mon passeport") must find the sheet
+   * even when its words differ ("renouvellement"). Title matches weigh more; sheets covering fewer than half of the best
+   * sheet's terms are dropped. No query: the whole catalogue in its order.
+   */
   searchProcedures(query: string | undefined, administrationId: string | undefined): Procedure[] {
-    const words = (query ?? '').toLocaleLowerCase('fr').normalize('NFD').replace(/\p{Diacritic}/gu, '').split(/\s+/).filter(Boolean);
-    return [...this.catalogue.values()]
+    const procedures = [...this.catalogue.values()]
       .map((entry) => entry.procedure)
-      .filter((procedure) => !administrationId || procedure.administrationId === administrationId)
-      .filter((procedure) => {
-        const text = `${procedure.title} ${procedure.summary}`.toLocaleLowerCase('fr').normalize('NFD').replace(/\p{Diacritic}/gu, '');
-        return words.every((word) => text.includes(word));
-      });
+      .filter((procedure) => !administrationId || procedure.administrationId === administrationId);
+    const terms = [...new Set(searchTerms(query ?? ''))];
+    if (terms.length === 0) return query?.trim() ? [] : procedures;
+    const scored = procedures
+      .map((procedure) => {
+        const title = new Set(searchTerms(procedure.title));
+        const body = new Set(searchTerms(`${procedure.summary} ${procedure.official.authority ?? ''}`));
+        const matched = terms.filter((term) => title.has(term) || body.has(term));
+        const score = matched.reduce((sum, term) => sum + (title.has(term) ? 3 : 1), 0);
+        return { procedure, matched: matched.length, score };
+      })
+      .filter((entry) => entry.matched > 0);
+    const best = Math.max(0, ...scored.map((entry) => entry.matched));
+    return scored
+      .filter((entry) => entry.matched * 2 >= best)
+      .sort((a, b) => b.matched - a.matched || b.score - a.score || a.procedure.id.localeCompare(b.procedure.id))
+      .map((entry) => entry.procedure);
   }
 
   getProcedure(procedureId: string): Procedure {
@@ -123,6 +139,7 @@ export class XroadStore {
     const entry = this.catalogue.get(input.procedureId);
     if (!entry) throw notFound('Démarche inconnue');
     const { procedure, rule } = entry;
+    if (!rule) throw new ProblemError(409, 'INVALID_TRANSITION', `Dépôt par l'assistant non disponible pour cette démarche : voir la fiche officielle ${procedure.source.url}`);
     if (this.administrations.get(procedure.administrationId)?.connection.status !== 'connected') {
       throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', "Administration non connectée à X-Road : dépôt impossible, connexion recommandée");
     }
@@ -135,7 +152,7 @@ export class XroadStore {
     if (missing.length) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Pièces manquantes : ${missing.join(', ')}`);
 
     const at = this.iso();
-    const fee = procedure.feeFcfa > 0;
+    const fee = (procedure.feeFcfa ?? 0) > 0;
     const record: Case = {
       id: newId('cas', this.now()),
       reference: this.nextReference(rule.code),
@@ -147,7 +164,7 @@ export class XroadStore {
       status: fee ? 'awaiting_payment' : 'received',
       fields: { ...input.fields },
       documents: input.documents.map((document) => ({ ...document })),
-      payment: { amountFcfa: procedure.feeFcfa, status: fee ? 'pending' : 'not_required', method: null, reference: null, paidAt: null },
+      payment: { amountFcfa: procedure.feeFcfa ?? 0, status: fee ? 'pending' : 'not_required', method: null, reference: null, paidAt: null },
       steps: [
         step('form', "Formulaire complété avec l'assistant", 'done', 'assistant', at),
         step('documents', 'Pièces transmises', 'done', 'assistant', at),
@@ -334,7 +351,7 @@ export class XroadStore {
 
   private ruleOf(record: Case): InstructionRule {
     const entry = this.catalogue.get(record.procedureId);
-    if (!entry) throw new Error(`Démarche disparue du catalogue : ${record.procedureId}`);
+    if (!entry?.rule) throw new Error(`Démarche disparue du catalogue : ${record.procedureId}`);
     return entry.rule;
   }
 
@@ -373,6 +390,7 @@ export class XroadStore {
     };
     const end = this.now();
     for (const { procedure, rule } of this.catalogue.values()) {
+      if (!rule) continue;
       const total = 4 + Math.floor(random() * 6);
       for (let n = 0; n < total; n += 1) {
         const createdAt = end - Math.floor((1 + random() * 20) * 24) * HOUR;
@@ -388,7 +406,7 @@ export class XroadStore {
     const createdAt = new Date(createdAtMs).toISOString();
     const closedAt = new Date(createdAtMs + Math.floor(1 + random() * 72) * HOUR).toISOString();
     const reference = this.nextReference(rule.code, createdAtMs);
-    const paid = procedure.feeFcfa > 0;
+    const paid = (procedure.feeFcfa ?? 0) > 0;
     const steps: CaseStep[] = [
       step('form', "Formulaire complété avec l'assistant", 'done', 'assistant', createdAt),
       step('documents', 'Pièces transmises', 'done', 'assistant', createdAt),
@@ -423,7 +441,7 @@ export class XroadStore {
         sizeBytes: 1024,
       })),
       payment: paid
-        ? { amountFcfa: procedure.feeFcfa, status: 'paid', method: 'mobile_money', reference: `SIM-PAY-${reference.slice(-6)}`, paidAt: createdAt }
+        ? { amountFcfa: procedure.feeFcfa ?? 0, status: 'paid', method: 'mobile_money', reference: `SIM-PAY-${reference.slice(-6)}`, paidAt: createdAt }
         : { amountFcfa: 0, status: 'not_required', method: null, reference: null, paidAt: null },
       steps,
       issuedDocuments,
@@ -432,6 +450,25 @@ export class XroadStore {
       updatedAt: outcome === 'pending' ? createdAt : closedAt,
     };
   }
+}
+
+/** Words that say what the citizen wants to do rather than which procedure: they would match half the catalogue. */
+const STOP_WORDS = new Set(
+  ('au aux avec ce ces comment dans de des du elle en est et faire il je la le les leur ma mes moi mon nos notre ou par pour quel quelle ' +
+    'quels quelles qui quoi sa ses son sur ta tes ton une un vos votre obtenir avoir demande demander besoin veux voudrais peux puis doit ' +
+    'dois faut comme cette mais plus tout tous etre suis sont')
+    .split(' '),
+);
+
+/** Lowercase, no accents, no stop words, cut to a 6-letter stem ("renouveler" and "renouvellement" meet). */
+export function searchTerms(text: string): string[] {
+  return text
+    .toLocaleLowerCase('fr')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 3 && !STOP_WORDS.has(word))
+    .map((word) => word.slice(0, 6));
 }
 
 function step(id: string, label: string, state: CaseStep['state'], actor: CaseStep['actor'], at: string | null, note: string | null = null): CaseStep {
