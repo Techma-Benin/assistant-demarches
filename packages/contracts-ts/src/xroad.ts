@@ -274,14 +274,45 @@ export interface components {
             administrationId: string;
             summary: string;
             requiredDocuments: string[];
-            feeFcfa: number;
-            processingDays: number;
+            /** @description Montant en FCFA quand la fiche officielle en donne un seul sans condition ; sinon null et voir official. */
+            feeFcfa: number | null;
+            /** @description Délai en jours quand la fiche officielle en donne un seul sans condition ; sinon null et voir official. */
+            processingDays: number | null;
             source: components["schemas"]["Source"];
             /** @enum {string} */
             validationStatus: "draft" | "validated";
             formSchema: {
                 [key: string]: unknown;
             };
+            /** @description Fiche officielle du Portail national des services publics (service-public.bj), recopiée sans réécriture. Fait foi sur feeFcfa et processingDays. */
+            official?: {
+                serviceId: string;
+                target: string | null;
+                authority: string | null;
+                /** @description Canal tel que publié par le portail officiel (texte exact, Markdown d'origine). */
+                inPerson: {
+                    fee: string | null;
+                    delay: string | null;
+                    documents: string | null;
+                    process: string | null;
+                    where: string | null;
+                    /** Format: uri */
+                    url: string | null;
+                } | null;
+                /** @description Canal tel que publié par le portail officiel (texte exact, Markdown d'origine). */
+                online: {
+                    fee: string | null;
+                    delay: string | null;
+                    documents: string | null;
+                    process: string | null;
+                    where: string | null;
+                    /** Format: uri */
+                    url: string | null;
+                } | null;
+                hours: string | null;
+            };
+            /** @description true : l'assistant peut déposer le dossier (dépôt simulé via le X-Road). Absent ou false : information seulement, orienter l'usager vers source.url. */
+            assistedFiling?: boolean;
         };
         ProcedurePage: {
             items: components["schemas"]["Procedure"][];

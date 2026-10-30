@@ -2,7 +2,9 @@
 
 > 1.4.0 (30 octobre, Tooling) : ajout compatible au X-Road simulé. La route de décision accepte aussi le Tooling (`X-Actor-Ref`, scope `xroad:decide`) pour relayer les décisions de la console. Aucun autre schéma ne change.
 
-# Contrats d'intégration v1.4.0
+> 1.5.0 (30 octobre, Tooling) — **exception assumée au §11**. Les fiches viennent désormais du Portail national des services publics (`content/service-public/`, `scripts/import-service-public.mjs`). Le portail publie coût et délai en texte libre (« Variable », barèmes, conditions, champs vides) : `Procedure.feeFcfa` et `Procedure.processingDays` deviennent `integer | null` (null = pas de valeur unique sur la fiche officielle) et `Procedure.official` porte le texte exact du portail. Ajout compatible : `Procedure.assistedFiling` (`true` = dossier déposable par l'assistant ; absent ou `false` = information seulement, l'usager est orienté vers `source.url`). Rupture de type décidée en v1 plutôt qu'une v2, parce que tous les consommateurs sont dans ce dépôt et sont adaptés dans la même PR. Un consommateur externe doit traiter `null`.
+
+# Contrats d'intégration v1.5.0
 
 Statut : base d'implémentation exécutable, proposée à la revue des trois groupes. Les équipes peuvent commencer leurs adaptateurs, leurs modules et leurs tests sur cette base ; aucun accord collectif fictif n'est présumé. Les évolutions passent par PR avant changement d'une frontière. Pas de promesse d'intégration sans tests : chaque vrai service doit passer la même suite sur ses URL.
 

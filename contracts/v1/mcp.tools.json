@@ -73,12 +73,20 @@
                   }
                 },
                 "feeFcfa": {
-                  "type": "integer",
-                  "minimum": 0
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Montant en FCFA quand la fiche officielle en donne un seul sans condition ; sinon null et voir official."
                 },
                 "processingDays": {
-                  "type": "integer",
-                  "minimum": 0
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Délai en jours quand la fiche officielle en donne un seul sans condition ; sinon null et voir official."
                 },
                 "source": {
                   "type": "object",
@@ -118,6 +126,170 @@
                 "formSchema": {
                   "type": "object",
                   "additionalProperties": true
+                },
+                "official": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Fiche officielle du Portail national des services publics (service-public.bj), recopiée sans réécriture. Fait foi sur feeFcfa et processingDays.",
+                  "properties": {
+                    "serviceId": {
+                      "type": "string",
+                      "pattern": "^PS[0-9]{5}$"
+                    },
+                    "target": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1
+                    },
+                    "authority": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1
+                    },
+                    "inPerson": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "additionalProperties": false,
+                      "description": "Canal tel que publié par le portail officiel (texte exact, Markdown d'origine).",
+                      "properties": {
+                        "fee": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "delay": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "documents": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "process": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "where": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uri"
+                        }
+                      },
+                      "required": [
+                        "fee",
+                        "delay",
+                        "documents",
+                        "process",
+                        "where",
+                        "url"
+                      ]
+                    },
+                    "online": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "additionalProperties": false,
+                      "description": "Canal tel que publié par le portail officiel (texte exact, Markdown d'origine).",
+                      "properties": {
+                        "fee": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "delay": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "documents": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "process": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "where": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uri"
+                        }
+                      },
+                      "required": [
+                        "fee",
+                        "delay",
+                        "documents",
+                        "process",
+                        "where",
+                        "url"
+                      ]
+                    },
+                    "hours": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "serviceId",
+                    "target",
+                    "authority",
+                    "inPerson",
+                    "online",
+                    "hours"
+                  ]
+                },
+                "assistedFiling": {
+                  "type": "boolean",
+                  "description": "true : l'assistant peut déposer le dossier (dépôt simulé via le X-Road). Absent ou false : information seulement, orienter l'usager vers source.url."
                 }
               },
               "required": [
@@ -195,12 +367,20 @@
             }
           },
           "feeFcfa": {
-            "type": "integer",
-            "minimum": 0
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Montant en FCFA quand la fiche officielle en donne un seul sans condition ; sinon null et voir official."
           },
           "processingDays": {
-            "type": "integer",
-            "minimum": 0
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Délai en jours quand la fiche officielle en donne un seul sans condition ; sinon null et voir official."
           },
           "source": {
             "type": "object",
@@ -240,6 +420,170 @@
           "formSchema": {
             "type": "object",
             "additionalProperties": true
+          },
+          "official": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Fiche officielle du Portail national des services publics (service-public.bj), recopiée sans réécriture. Fait foi sur feeFcfa et processingDays.",
+            "properties": {
+              "serviceId": {
+                "type": "string",
+                "pattern": "^PS[0-9]{5}$"
+              },
+              "target": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              },
+              "authority": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              },
+              "inPerson": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": false,
+                "description": "Canal tel que publié par le portail officiel (texte exact, Markdown d'origine).",
+                "properties": {
+                  "fee": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "delay": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "documents": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "process": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "where": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "fee",
+                  "delay",
+                  "documents",
+                  "process",
+                  "where",
+                  "url"
+                ]
+              },
+              "online": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": false,
+                "description": "Canal tel que publié par le portail officiel (texte exact, Markdown d'origine).",
+                "properties": {
+                  "fee": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "delay": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "documents": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "process": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "where": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "fee",
+                  "delay",
+                  "documents",
+                  "process",
+                  "where",
+                  "url"
+                ]
+              },
+              "hours": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              }
+            },
+            "required": [
+              "serviceId",
+              "target",
+              "authority",
+              "inPerson",
+              "online",
+              "hours"
+            ]
+          },
+          "assistedFiling": {
+            "type": "boolean",
+            "description": "true : l'assistant peut déposer le dossier (dépôt simulé via le X-Road). Absent ou false : information seulement, orienter l'usager vers source.url."
           }
         },
         "required": [
