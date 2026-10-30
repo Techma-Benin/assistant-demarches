@@ -29,6 +29,7 @@ pnpm install --frozen-lockfile
 pnpm --filter @techma/backend build
 pnpm --filter @techma/backend migrate
 pnpm --filter @techma/backend seed ./provisioning.json
+pnpm --filter @techma/backend seed ./seeds/demo-deux-bureaux.json
 pnpm --filter @techma/backend start
 ```
 
@@ -127,3 +128,5 @@ Décision sur les pièces : [stockage sans antivirus](../../docs/file-storage-de
 Le groupe Swagger **Serveurs MCP** configure une URL par connexion ; la découverte retourne les actions et leurs schémas. Le modèle ne reçoit que les actions activées. La restriction aux huit noms du catalogue ne s’applique plus aux connexions génériques. `GET/POST /v1/admin/mcp-servers`, `GET/PUT/DELETE /v1/admin/mcp-servers/{id}`, `POST /{id}/discover`, `GET /{id}/tools`, `PUT /{id}/tools/{toolName}`. [Guide, authentifications, migration et limites](../../docs/mcp-connections.md).
 
 Le seed accepte `mcpServers` (tableau de `McpServer`) ; découvrir puis choisir les permissions après lancement. Les anciens champs `tools` et routes `/v1/admin/tools` restent dépréciés avec migration de compatibilité. Les nouveaux clients administrent des serveurs et les permissions de leurs actions, sans créer des noms d’actions.
+
+Le même `seed` accepte un fichier d’annuaire (`departments`, `users`). `seeds/demo-deux-bureaux.json` crée `justice`, `enseignement`, un agent par ministère et un super administrateur. Réexécution sans effet sur les lignes déjà présentes. Les `subject` doivent être les `sub` OIDC des sessions de démo ; le seed ne crée aucun jeton.

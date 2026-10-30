@@ -67,6 +67,8 @@ Ouvrir <http://127.0.0.1:4010/docs>, sélectionner **department-admin**, puis cl
 ### Parcours administration — environ dix minutes
 
 1. `GET /v1/admin/me` : attendre **200**, vérifier le sujet et les permissions. Le sujet local non inscrit peut avoir `revision: 0` ; modifier son propre profil demande d’abord une inscription dans l’annuaire.
+Pour la démo « deux bureaux », plutôt que ces IDs de recette, appliquer le seed une fois : `pnpm --filter @techma/backend seed ./seeds/demo-deux-bureaux.json`. Il crée `justice`, `enseignement`, `justice-agent`, `enseignement-agent` et `demo-super-admin`. Les routes ci-dessous restent le moyen de vérifier l’API à la main.
+
 2. `POST /v1/admin/departments`, avec :
 
    ```json
