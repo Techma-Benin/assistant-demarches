@@ -14,7 +14,7 @@ export function PageHeader({
       <div className="flex min-w-0 flex-col gap-2.5">
         {process.env.NEXT_PUBLIC_SAMPLE_DATA === 'true' ? (
           <span className="self-start rounded-pill bg-sunken px-2.5 py-1 text-xs font-bold text-ink">
-            Données d’exemple
+            Données simulées
           </span>
         ) : null}
         <h1 className="font-display text-[clamp(36px,4.4vw,56px)] leading-[0.95] font-extrabold tracking-[-0.045em] break-words">
