@@ -39,7 +39,7 @@ describe('renderAgentMessage', () => {
         type: 'text',
         text: {
           preview_url: false,
-          body: 'Bonjour\n\nSources :\n• example.org — version demo-1, consultée le 22/10/2026 : https://example.org/demonstration',
+          body: 'Bonjour\n\nSources :\n• example.org - version demo-1, consultée le 22/10/2026 : https://example.org/demonstration',
         },
       },
     ]);
@@ -54,7 +54,7 @@ describe('renderAgentMessage', () => {
       msg({ type: 'text', text: 'Voir', sources: [{ ...source, url: 'javascript:alert(1)' }] }),
     );
     expect(body).not.toContain('javascript');
-    expect(body).toContain('• demo-procedure — version demo-1, consultée le 22/10/2026');
+    expect(body).toContain('• demo-procedure - version demo-1, consultée le 22/10/2026');
   });
 
   it('fusionne le texte précédent dans le corps du message à boutons (≤ 1024)', () => {

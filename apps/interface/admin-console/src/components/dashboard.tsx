@@ -112,7 +112,7 @@ export function Dashboard({ load }: { load?: () => Promise<Metrics> }) {
           />
           <Counter
             label="Latence p95"
-            value={<CounterValue value={m && (m.p95LatencyMs === 0 ? '—' : formatSeconds(m.p95LatencyMs))} />}
+            value={<CounterValue value={m && (m.p95LatencyMs === 0 ? '-' : formatSeconds(m.p95LatencyMs))} />}
             caption={m ? (m.p95LatencyMs === 0 ? 'Pas encore mesuré' : 'jusqu’au premier bloc') : undefined}
           />
           <Counter

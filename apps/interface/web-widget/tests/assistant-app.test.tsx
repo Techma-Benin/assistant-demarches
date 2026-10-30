@@ -31,7 +31,7 @@ describe('AssistantApp', () => {
     const conversation = build({});
     hook.current = conversation;
     render(<AssistantApp />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Bonjour');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Vos démarches, simplement.');
     await userEvent.click(screen.getByRole('button', { name: 'Renouveler mon passeport' }));
     expect(conversation.sendText).toHaveBeenCalledWith('Renouveler mon passeport');
   });

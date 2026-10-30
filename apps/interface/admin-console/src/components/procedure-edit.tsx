@@ -22,7 +22,7 @@ import { useToast } from './use-toast';
 type Editor = ResourceEditor<Procedure, ProcedureDraft>;
 
 const SAVED = 'Fiche enregistrée';
-const PUBLISHED = 'Fiche validée — l’assistant peut la citer';
+const PUBLISHED = 'Fiche validée - l’assistant peut la citer';
 const UNPUBLISHED = 'Fiche repassée en brouillon';
 
 export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {

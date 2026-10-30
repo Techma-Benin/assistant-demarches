@@ -84,7 +84,7 @@ const CYCLE_ITEMS = [
 const SOURCES: SourceInfo[] = [
   {
     index: 1,
-    title: 'Casier judiciaire — bulletin n°3',
+    title: 'Casier judiciaire - bulletin n°3',
     domain: 'service-public.bj',
     href: 'https://service-public.bj',
     version: 'version 2',
@@ -134,9 +134,9 @@ function Panel({ theme }: { theme: 'light' | 'dark' }) {
 
       <Section title="Polices">
         <div className="space-y-1">
-          <p className="font-display text-[28px] font-extrabold tracking-tight">Inter Tight — font-display</p>
-          <p className="font-sans text-[18px]">Inter — font-sans (texte courant)</p>
-          <p className="font-mono text-[14px]">ui-monospace — font-mono (Réf. req_01J…X4)</p>
+          <p className="font-display text-[28px] font-extrabold tracking-tight">Inter Tight - font-display</p>
+          <p className="font-sans text-[18px]">Inter - font-sans (texte courant)</p>
+          <p className="font-mono text-[14px]">ui-monospace - font-mono (Réf. req_01J…X4)</p>
         </div>
         <h2 className="font-display font-extrabold text-[clamp(56px,9vw,128px)] leading-[0.95] tracking-[-0.055em]">
           Bonjour, <FlagGlyph decorative /> Bénin.
@@ -260,7 +260,7 @@ function Panel({ theme }: { theme: 'light' | 'dark' }) {
           <RebusGlyph variant="arrow-flag" flag={<FlagGlyph decorative width="1.3em" height="0.9em" />} />
         </p>
         <p className="font-display text-[clamp(24px,3vw,36px)] font-semibold leading-tight tracking-[-0.025em]">
-          Une entreprise <RebusGlyph variant="cycle" items={CYCLE_ITEMS} /> — une seule porte d’entrée.
+          Une entreprise <RebusGlyph variant="cycle" items={CYCLE_ITEMS} /> - une seule porte d’entrée.
         </p>
       </Section>
 

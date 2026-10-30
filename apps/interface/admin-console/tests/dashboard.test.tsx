@@ -82,11 +82,11 @@ describe('Dashboard', () => {
   });
 
   describe('metric tiles', () => {
-    it('shows — and a caption for a p95 of 0', async () => {
+    it('shows - and a caption for a p95 of 0', async () => {
       stubEmpty();
       render(<Dashboard load={async () => ({ ...metrics, p95LatencyMs: 0 })} />);
       expect(await screen.findByText('Pas encore mesuré')).toBeInTheDocument();
-      expect(screen.getByText('—')).toBeInTheDocument();
+      expect(screen.getByText('-')).toBeInTheDocument();
     });
 
     it('keeps the sourced rate neutral at 0 and says no error at 0', async () => {
