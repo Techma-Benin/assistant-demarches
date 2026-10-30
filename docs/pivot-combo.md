@@ -186,3 +186,7 @@ Pointe `techma/interface/redesign` : `99d279f`. Les comptes ci-dessus sont ceux 
 
 **La slide 8 n’est toujours pas jouable.** Un message, deux bureaux : l’agent Justice devrait voir **En attente (1)** et l’agent Enseignement **En attente (0)**. Ce parcours n’est pas en place. Le pont ne range pas le dossier dans **En attente** de la Justice, et la console n’a pas ces files ni ce cloisonnement.
 
+## Palier Backend — seed démo
+
+PR [#2](https://github.com/Techma-Benin/assistant-demarches/pull/2) mergée dans `backend/department-pivot` (`ecedfec`), puis ramenée ici. Le seed `apps/backend/seeds/demo-deux-bureaux.json` crée `justice`, `enseignement`, `justice-agent`, `enseignement-agent` et `demo-super-admin`. Les `sub` OIDC de la démo doivent être ces trois sujets. La file et l’écran ministère restent à Tooling et Interface.
+
