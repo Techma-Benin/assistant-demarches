@@ -1,3 +1,4 @@
+import { noopConsent } from '@/lib/consent';
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatWidget } from '@/components/chat/ChatWidget';
@@ -14,6 +15,7 @@ vi.mock('@/hooks/use-conversation', () => ({
     sendForm: () => {},
     sendFile: () => {},
     retry: () => {},
+    consent: noopConsent,
   }),
 }));
 

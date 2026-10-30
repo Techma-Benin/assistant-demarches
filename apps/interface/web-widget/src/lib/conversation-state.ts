@@ -1,5 +1,6 @@
 import type { components } from '@techma/contracts-ts';
 import type { UploadedFile } from './c1-client';
+import { isMandateTriggerCode, type MandateTriggerCode } from './consent';
 import { contentTypeFor } from './files';
 
 type Schemas = components['schemas'];
@@ -10,19 +11,15 @@ export type EventPage = Schemas['EventPage'];
 export type Delivery =
   | 'uploading'
   | 'uploadFailed'
-  | 'scanRejected'
   | 'sending'
   | 'accepted'
   | 'received'
   | 'failed';
 
-export type ScanStatus = UploadedFile['scanStatus'];
-
 export interface Attachment {
   name: string;
   sizeBytes: number;
   mimeType: string;
-  scanStatus?: ScanStatus;
 }
 
 export type TimelineEntry =
@@ -40,12 +37,25 @@ export type TimelineEntry =
     }
   | { kind: 'agent'; message: AgentMessage };
 
+/** A tool needed a mandate (Backend `tool.called` error event). The card is shown after `anchorMessageId`. */
+export interface ConsentNeeded {
+  status: 'needed';
+  toolName: string;
+  eventId: string;
+  code: MandateTriggerCode;
+  /** First agent message received after the trigger (the one that announced it); null until then. */
+  anchorMessageId: string | null;
+}
+
 export interface ConversationState {
   status: 'starting' | 'ready' | 'error';
   conversationId: string | null;
   cursor: string | null;
   seenEventIds: string[];
   timeline: TimelineEntry[];
+  /** Procedure of the latest `request.created` event, if any. */
+  requestProcedureId: string | null;
+  consent?: ConsentNeeded;
   error?: string;
   /** The conversation can't be resumed (session expired, access denied, gone): only a new one helps. */
   lost?: boolean;
@@ -57,6 +67,7 @@ export const initialState: ConversationState = {
   cursor: null,
   seenEventIds: [],
   timeline: [],
+  requestProcedureId: null,
 };
 
 export type ConversationAction =
@@ -149,16 +160,15 @@ export function conversationReducer(state: ConversationState, action: Conversati
         ],
       };
     case 'fileUploadSucceeded': {
+      // Contract 1.3.0: no antivirus scan; an uploaded file is usable at once.
       const { file } = action;
-      const rejected = file.scanStatus === 'rejected';
       return {
         ...state,
         timeline: updateUser(state.timeline, action.id, (e) => ({
           ...e,
           content: { type: contentTypeFor(file.mimeType), fileId: file.id },
-          attachment: e.attachment && { ...e.attachment, scanStatus: file.scanStatus },
-          delivery: rejected ? 'scanRejected' : 'sending',
-          error: rejected ? 'Pièce refusée par l’analyse de sécurité.' : undefined,
+          delivery: 'sending',
+          error: undefined,
           retryable: undefined,
         })),
       };
@@ -184,6 +194,8 @@ export function conversationReducer(state: ConversationState, action: Conversati
     case 'eventsReceived': {
       const seen = new Set(state.seenEventIds);
       let timeline = state.timeline;
+      let consent = state.consent;
+      let requestProcedureId = state.requestProcedureId;
       for (const event of action.page.items) {
         if (seen.has(event.id)) continue;
         const data = event.data;
@@ -196,14 +208,24 @@ export function conversationReducer(state: ConversationState, action: Conversati
           const message = data.message;
           if (!timeline.some((e) => e.kind === 'agent' && e.message.id === message.id)) {
             timeline = [...timeline, { kind: 'agent', message }];
+            if (consent && consent.anchorMessageId === null) consent = { ...consent, anchorMessageId: message.id };
+          }
+        } else if (data.kind === 'request.created') {
+          if (data.request.conversationId === state.conversationId) requestProcedureId = data.request.procedureId;
+        } else if (data.kind === 'tool.called' && data.outcome === 'error' && isMandateTriggerCode(data.code)) {
+          // A trigger already waiting for its announcing message is the same agent turn: keep it.
+          if (!consent || consent.anchorMessageId !== null) {
+            consent = { status: 'needed', toolName: data.toolName, eventId: event.id, code: data.code, anchorMessageId: null };
           }
         }
-        // Other kinds (request.*, mandate.*, tool.called, ...) are ignored for now.
+        // Other kinds (request.status_changed, successful tool.called, ...) are ignored.
       }
       return {
         ...state,
         seenEventIds: [...seen],
         timeline,
+        consent,
+        requestProcedureId,
         cursor: action.page.nextCursor ?? state.cursor,
       };
     }

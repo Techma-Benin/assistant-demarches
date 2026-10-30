@@ -7,7 +7,9 @@ import { BlockRenderer } from '@/components/blocks/BlockRenderer';
 import type { useConversation } from '@/hooks/use-conversation';
 import type { TimelineEntry } from '@/lib/conversation-state';
 import { deriveDossierSteps, lastTextSources, toSourceInfo } from '@/lib/dossier';
+import { consentStepState } from '@/lib/consent';
 import { Composer } from './Composer';
+import { ConsentCard } from './ConsentCard';
 import { ConnectionNotice } from './ConnectionNotice';
 import { AttachmentRow, DeliveryLine, ErrorPanel } from './UserEntryParts';
 
@@ -20,10 +22,10 @@ const PANEL_TITLE = 'font-display text-[22px] font-extrabold tracking-[-0.03em]'
 
 type Conversation = ReturnType<typeof useConversation>;
 
-function SidePanel({ timeline }: { timeline: TimelineEntry[] }) {
+function SidePanel({ timeline, consent }: { timeline: TimelineEntry[]; consent?: 'pending' | 'active' }) {
   const [open, setOpen] = useState(false);
   const regionId = useId();
-  const steps = deriveDossierSteps(timeline);
+  const steps = deriveDossierSteps(timeline, consent);
   const sources = lastTextSources(timeline).map((source, index) => toSourceInfo(source, index, true));
 
   return (
@@ -72,7 +74,9 @@ export function ConversationView({
   conversation: Conversation;
   onRestart: () => void;
 }) {
-  const { state, connection, sendText, sendButton, sendForm, sendFile, retry } = conversation;
+  const { state, connection, sendText, sendButton, sendForm, sendFile, retry, consent } = conversation;
+  const consentAnchor = state.consent?.anchorMessageId ?? null;
+  const showConsent = consent.flow.phase !== 'idle';
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLElement>(null);
   // Follow new messages only while the reader is at the bottom, like a messaging app.
@@ -211,6 +215,7 @@ export function ConversationView({
                             onFile={sendFile}
                           />
                         ))}
+                        {showConsent && consentAnchor === entry.message.id && <ConsentCard consent={consent} />}
                       </div>
                     );
                   }
@@ -233,6 +238,9 @@ export function ConversationView({
                     </div>
                   );
                 })}
+                {showConsent && (consentAnchor === null || !state.timeline.some((e) => e.kind === 'agent' && e.message.id === consentAnchor)) && (
+                  <ConsentCard consent={consent} />
+                )}
                 {waitingForAgent && <TypingIndicator className="py-2" />}
               </div>
             </main>
@@ -251,7 +259,7 @@ export function ConversationView({
             </button>
           )}
         </div>
-        <SidePanel timeline={state.timeline} />
+        <SidePanel timeline={state.timeline} consent={consentStepState(consent.flow)} />
         <div className="row-start-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 md:col-start-1 md:row-start-2">
           <Composer disabled={!ready} onSend={sendText} onFile={sendFile} />
         </div>
