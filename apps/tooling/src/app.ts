@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { Global, Module, RequestMethod, type DynamicModule, type INestApplication, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { AdminModule } from './admin/admin.module.js';
 import { AuditModule } from './audit/audit-log.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ProblemFilter } from './common/problem.js';
@@ -17,6 +18,7 @@ import { HealthController } from './health.controller.js';
 import { IdempotencyModule } from './idempotency/idempotency.js';
 import { MandatesModule } from './mandates/mandates.module.js';
 import { ProceduresModule } from './procedures/procedures.module.js';
+import { RequestWorkflowModule } from './requests/request-workflow.js';
 import { RequestsModule } from './requests/requests.module.js';
 import { XroadModule } from './xroad/xroad.client.js';
 
@@ -40,12 +42,14 @@ class AppModule implements NestModule {
         AuditModule,
         IdempotencyModule,
         EventsModule,
+        RequestWorkflowModule,
         ToolRegistryModule,
         XroadModule,
         MandatesModule,
         ProceduresModule,
         ConnectorsModule,
         RequestsModule,
+        AdminModule,
         GatewayModule,
       ],
       controllers: [HealthController],

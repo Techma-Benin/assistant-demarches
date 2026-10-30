@@ -3,7 +3,7 @@ import { createRemoteJWKSet, errors, jwtVerify, type JWTVerifyGetKey } from 'jos
 import { ProblemError } from '../common/problem.js';
 import { TOOLING_AUDIENCE, TOOLING_CONFIG, type ToolingConfig } from '../config.js';
 
-export type InboundClient = 'backend-agent' | 'backend-mandates';
+export type InboundClient = 'backend-agent' | 'backend-mandates' | 'backend-admin';
 
 export interface Principal {
   client: string;
@@ -13,6 +13,7 @@ export interface Principal {
 const MOCK_PRINCIPALS: Record<string, Principal> = {
   'mock-agent': { client: 'backend-agent', scopes: new Set(['tools:call']) },
   'mock-backend-control': { client: 'backend-mandates', scopes: new Set(['mandates:grant']) },
+  'mock-backend-admin': { client: 'backend-admin', scopes: new Set(['requests:admin']) },
 };
 
 @Injectable()

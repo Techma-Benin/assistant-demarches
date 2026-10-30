@@ -6,12 +6,13 @@ import { domainValidator, errorsText } from './contracts.js';
 import { canonicalJson, sha256 } from './ids.js';
 import { simulatedPdf } from './pdf.js';
 import { ProblemError, invalid, type ProblemCode } from './problem.js';
-import { XroadStore, type Caller, type CaseView } from './store.js';
+import { XroadStore, type Caller, type CaseView, type Decider } from './store.js';
 import { overviewPage, type Exchange } from './overview.js';
 
 const TRACEPARENT = /^00-([a-f0-9]{32})-([a-f0-9]{16})-0[01]$/;
 const MAX_BODY = 64 * 1024;
 const VIEWS = new Set<CaseView>(['pending', 'completed', 'all']);
+const ACTOR_REF = /^[\x21-\x7e]{1,255}$/;
 
 interface Context {
   req: http.IncomingMessage;
@@ -47,9 +48,8 @@ export interface XroadServer {
   close(): Promise<void>;
 }
 
-export function createXroadServer(config: SimConfig, store = new XroadStore({ seedHistory: config.seedHistory })) {
+export function createXroadServer(config: SimConfig, store = new XroadStore({ seedHistory: config.seedHistory, stateFile: config.stateFile })) {
   const auth = new ServiceAuth(config);
-  const idempotency = new Map<string, { fingerprint: string; reply: Reply }>();
   const exchanges: Exchange[] = [];
 
   const page = <T>(items: T[], url: URL) => {
@@ -83,6 +83,17 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
     if (hasApplicant === hasOfficial) throw invalid('Exactement un en-tête requis : X-Applicant-Ref ou X-Official-Id');
     if (hasApplicant) return { kind: 'applicant', applicantRef: applicant(context) };
     return { kind: 'official', official: official(context) as NonNullable<ReturnType<typeof official>> };
+  };
+
+  const decider = (context: Context): Decider => {
+    const hasOfficial = context.req.headers['x-official-id'] !== undefined;
+    const hasActor = context.req.headers['x-actor-ref'] !== undefined;
+    if (hasOfficial === hasActor) throw invalid('Exactement un en-tête requis : X-Official-Id ou X-Actor-Ref');
+    if (hasOfficial) return { kind: 'official', official: official(context)! };
+    requireScope(context.principal, 'xroad:decide', ['tooling-xroad']);
+    const value = context.req.headers['x-actor-ref'];
+    if (typeof value !== 'string' || !ACTOR_REF.test(value)) throw invalid('X-Actor-Ref invalide');
+    return { kind: 'console', actorRef: value };
   };
 
   const filter = (url: URL): string | undefined => {
@@ -172,9 +183,9 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
       name: 'decideXroadCase',
       body: 'decision',
       handler: async (context) => {
-        const viewer = official(context)!;
+        const by = decider(context);
         const input = (await readJson(context.req)) as { decision: 'approve' | 'reject'; note: string | null };
-        return { status: 200, body: store.decide(viewer, pathId(context.params[0], validators.caseId, 'Dossier'), input.decision, input.note) };
+        return { status: 200, body: store.decide(by, pathId(context.params[0], validators.caseId, 'Dossier'), input.decision, input.note) };
       },
     },
     {
@@ -262,17 +273,22 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
     if (typeof key !== 'string' || key.length < 8 || key.length > 128) throw invalid('Idempotency-Key de 8 à 128 caractères requise');
     const scope = `${principal.client}|${req.method}|${url.pathname}|${key}`;
     const fingerprint = sha256(
-      canonicalJson({ body: await readJson(req), applicant: req.headers['x-applicant-ref'] ?? null, official: req.headers['x-official-id'] ?? null }),
+      canonicalJson({
+        body: await readJson(req),
+        applicant: req.headers['x-applicant-ref'] ?? null,
+        official: req.headers['x-official-id'] ?? null,
+        actor: req.headers['x-actor-ref'] ?? null,
+      }),
     );
-    const previous = idempotency.get(scope);
+    const previous = store.recall(scope);
     if (previous) {
       if (previous.fingerprint !== fingerprint) throw new ProblemError(409, 'IDEMPOTENCY_CONFLICT', 'Clé déjà utilisée pour une autre requête');
-      return { reply: previous.reply, client: principal.client, name: route.name };
+      return { reply: previous.reply as Reply, client: principal.client, name: route.name };
     }
     const reply = await route.handler(context);
     // Snapshot: the stored case keeps changing, a replay must return what the first call returned.
     const stored = { ...reply, body: JSON.parse(JSON.stringify(reply.body)) };
-    idempotency.set(scope, { fingerprint, reply: stored });
+    store.remember(scope, { fingerprint, reply: stored });
     return { reply: stored, client: principal.client, name: route.name };
   };
 

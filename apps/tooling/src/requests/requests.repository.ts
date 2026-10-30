@@ -2,11 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { ProblemError } from '../common/problem.js';
 import type { Tx } from '../database/database.js';
 
-export type RequestStatus = 'draft' | 'ready' | 'awaiting_user_validation' | 'submitted' | 'processing' | 'completed' | 'rejected' | 'cancelled';
+export type RequestStatus = 'draft' | 'ready' | 'awaiting_user_validation' | 'submitted' | 'processing' | 'completed' | 'rejected' | 'cancelled' | 'blocked';
 export type Fields = Record<string, string | number | boolean | null>;
 export interface AttachedDocument {
   documentType: string;
   fileId: string;
+}
+
+export interface RequestRoute {
+  administrationId: string;
+  title: string;
+  processingDays: number;
 }
 
 export interface RequestRecord {
@@ -61,11 +67,23 @@ export const toContract = (request: RequestRecord) => ({
 
 @Injectable()
 export class RequestsRepository {
-  async insert(tx: Tx, request: Omit<RequestRecord, 'updatedAt'>): Promise<RequestRecord> {
+  async insert(tx: Tx, request: Omit<RequestRecord, 'updatedAt'>, route: RequestRoute): Promise<RequestRecord> {
     const [row] = await tx.query<RequestRow>(
-      `insert into requests (id, conversation_id, user_ref, procedure_id, status, fields, documents, official_link)
-       values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8) returning ${COLUMNS}`,
-      [request.id, request.conversationId, request.userRef, request.procedureId, request.status, JSON.stringify(request.fields), JSON.stringify(request.documents), request.officialLink],
+      `insert into requests (id, conversation_id, user_ref, procedure_id, status, fields, documents, official_link, administration_id, title, processing_days)
+       values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11) returning ${COLUMNS}`,
+      [
+        request.id,
+        request.conversationId,
+        request.userRef,
+        request.procedureId,
+        request.status,
+        JSON.stringify(request.fields),
+        JSON.stringify(request.documents),
+        request.officialLink,
+        route.administrationId,
+        route.title,
+        route.processingDays,
+      ],
     );
     return fromRow(row);
   }
@@ -98,9 +116,11 @@ export class RequestsRepository {
     return { connector: row.connector, externalRef: row.external_ref, state: row.submission_state };
   }
 
-  /** Asks the connector worker to look at a sent case on its next pass instead of waiting for the poll interval. */
-  async checkSoon(tx: Tx, id: string): Promise<void> {
-    await tx.query("update requests set next_check_at = now() where id = $1 and submission_state = 'sent'", [id]);
+  async recordExternal(tx: Tx, id: string, state: unknown): Promise<void> {
+    await tx.query(
+      "update requests set external_state = $2::jsonb, updated_at = now(), next_check_at = case when submission_state = 'sent' then now() else next_check_at end where id = $1",
+      [id, JSON.stringify(state)],
+    );
   }
 
   async queueSubmission(tx: Tx, id: string, connector: string, mandateId: string): Promise<void> {

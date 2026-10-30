@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
 import http from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { ConfigError, loadConfig } from '../src/config.js';
+import { createXroadServer } from '../src/server.js';
 import {
   APPLICANT,
   BACKEND,
@@ -74,13 +78,13 @@ test('dossier complété seul par l’assistant : paiement simulé, document dé
   const created = await call(url, 'POST', '/v1/cases', {
     token: TOOLING,
     applicant: APPLICANT,
-    body: caseInput('casier-judiciaire', { motif: 'emploi', exemplaires: 1 }, ['piece-identite']),
+    body: caseInput('releve-notes', { session: 2012, exemplaires: 1 }, ['piece-identite']),
   });
   assertConforms('createXroadCase', created, 201);
   assert.equal(created.body.status, 'awaiting_payment');
-  assert.equal(created.body.administrationId, 'justice');
+  assert.equal(created.body.administrationId, 'enseignement');
   assert.equal(created.body.simulated, true);
-  assert.match(created.body.reference, /^SIM-JUS-2026-\d{6}$/);
+  assert.match(created.body.reference, /^SIM-ENS-2026-\d{6}$/);
   assert.deepEqual(created.body.payment, { amountFcfa: 1000, status: 'pending', method: null, reference: null, paidAt: null });
 
   const paid = await call(url, 'POST', `/v1/cases/${created.body.id}/payment`, { token: TOOLING, applicant: APPLICANT, body: { method: 'mobile_money' } });
@@ -111,8 +115,68 @@ test('dossier complété seul par l’assistant : paiement simulé, document dé
   // Another applicant, or an official of another administration, learns nothing.
   assertConforms('getXroadCase', await call(url, 'GET', `/v1/cases/${created.body.id}`, { token: TOOLING, applicant: OTHER_APPLICANT }), 404);
   assert.equal((await call(url, 'GET', documentPath, { token: TOOLING, applicant: OTHER_APPLICANT })).status, 404);
-  assert.equal((await call(url, 'GET', `/v1/cases/${created.body.id}`, { token: BACKEND, official: ENSEIGNEMENT_AGENT })).status, 404);
-  assert.equal((await call(url, 'GET', `/v1/cases/${created.body.id}`, { token: TOOLING, applicant: APPLICANT, official: JUSTICE_AGENT })).status, 400);
+  assert.equal((await call(url, 'GET', `/v1/cases/${created.body.id}`, { token: BACKEND, official: JUSTICE_AGENT })).status, 404);
+  assert.equal((await call(url, 'GET', `/v1/cases/${created.body.id}`, { token: TOOLING, applicant: APPLICANT, official: ENSEIGNEMENT_AGENT })).status, 400);
+});
+
+test('casier judiciaire : nouvelle demande à vérifier par la Justice, jamais complétée seule', async (t) => {
+  const { url } = await startSim(t);
+  const created = await call(url, 'POST', '/v1/cases', { token: TOOLING, applicant: APPLICANT, body: caseInput('casier-judiciaire', { motif: 'emploi' }, ['piece-identite']) });
+  const paid = await call(url, 'POST', `/v1/cases/${created.body.id}/payment`, { token: TOOLING, applicant: APPLICANT, body: { method: 'mobile_money' } });
+  assertConforms('payXroadCase', paid, 200);
+  assert.equal(paid.body.status, 'in_review');
+  assert.equal(paid.body.completedBy, null);
+  assert.match(paid.body.steps.find((step: any) => step.state === 'blocked').note, /^Nouvelle demande à vérifier/);
+  assert.deepEqual((await call(url, 'GET', '/v1/cases?view=pending', { token: BACKEND, official: JUSTICE_AGENT })).body.items.map((item: any) => item.id), [created.body.id]);
+  assert.deepEqual((await call(url, 'GET', '/v1/cases?view=pending', { token: BACKEND, official: ENSEIGNEMENT_AGENT })).body.items, []);
+});
+
+test('décision relayée par le Tooling depuis la console : X-Actor-Ref, scope dédié, un seul en-tête', async (t) => {
+  const { url } = await startSim(t);
+  const created = await call(url, 'POST', '/v1/cases', { token: TOOLING, applicant: APPLICANT, body: caseInput('casier-judiciaire', { motif: 'concours' }, ['piece-identite']) });
+  await call(url, 'POST', `/v1/cases/${created.body.id}/payment`, { token: TOOLING, applicant: APPLICANT, body: { method: 'mobile_money' } });
+  const path = `/v1/cases/${created.body.id}/decisions`;
+  const decide = (headers: Record<string, string>, token = TOOLING) =>
+    fetch(url + path, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, traceparent: `00-${'3'.repeat(32)}-${'4'.repeat(16)}-01`, 'content-type': 'application/json', 'idempotency-key': key(), ...headers },
+      body: JSON.stringify({ decision: 'approve', note: 'Identité confirmée' }),
+    }).then(async (res) => ({ status: res.status, body: (await res.json()) as any, raw: Buffer.alloc(0), headers: res.headers }));
+
+  assert.equal((await decide({})).status, 400, 'aucun en-tête');
+  assert.equal((await decide({ 'x-actor-ref': 'agent-justice-1', 'x-official-id': JUSTICE_AGENT })).status, 400, 'deux en-têtes');
+  assert.equal((await decide({ 'x-actor-ref': 'agent justice' })).status, 400, 'référence invalide');
+  assert.equal((await decide({ 'x-actor-ref': 'agent-justice-1' }, BACKEND)).status, 401, 'identité Backend refusée sans X-Official-Id');
+
+  const approved = await decide({ 'x-actor-ref': 'agent-justice-1' });
+  assertConforms('decideXroadCase', approved, 200);
+  assert.equal(approved.body.status, 'completed');
+  assert.equal(approved.body.completedBy, 'administration');
+  assert.match(approved.body.steps.find((step: any) => step.id === 'check').note, /console d'administration/);
+  assert.equal(approved.body.issuedDocuments.length, 1);
+});
+
+test('redémarrage : dossiers, références, réponses idempotentes et affectations conservés dans le fichier d’état', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'xroad-state-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const stateFile = join(dir, 'state.json');
+  const first = await createXroadServer(loadConfig({ XROAD_PORT: '0', XROAD_SEED_HISTORY: 'off', XROAD_STATE_FILE: stateFile })).listen();
+  const input = caseInput('casier-judiciaire', { motif: 'emploi' }, ['piece-identite']);
+  const filing = key();
+  const created = await call(first.url, 'POST', '/v1/cases', { token: TOOLING, applicant: APPLICANT, body: input, idempotencyKey: filing });
+  await call(first.url, 'PUT', `/v1/officials/${ENSEIGNEMENT_AGENT}/assignment`, { token: BACKEND, official: SUPER_ADMIN, body: { administrationId: 'justice', role: 'agent' } });
+  await first.close();
+
+  const second = await startSim(t, { XROAD_STATE_FILE: stateFile });
+  const found = await call(second.url, 'GET', `/v1/cases/${created.body.id}`, { token: TOOLING, applicant: APPLICANT });
+  assertConforms('getXroadCase', found, 200);
+  assert.deepEqual(found.body, created.body);
+  const replay = await call(second.url, 'POST', '/v1/cases', { token: TOOLING, applicant: APPLICANT, body: input, idempotencyKey: filing });
+  assert.equal(replay.status, 201, 'rejeu après redémarrage : même réponse');
+  assert.deepEqual(replay.body, created.body);
+  assert.equal((await call(second.url, 'GET', `/v1/cases/${created.body.id}`, { token: BACKEND, official: ENSEIGNEMENT_AGENT })).status, 200, 'affectation conservée');
+  const next = await call(second.url, 'POST', '/v1/cases', { token: TOOLING, applicant: APPLICANT, body: caseInput('casier-judiciaire', { motif: 'voyage' }, ['piece-identite']) });
+  assert.equal(Number(next.body.reference.slice(-6)), Number(created.body.reference.slice(-6)) + 1, 'numérotation poursuivie');
 });
 
 test('dossier bloqué : visible seulement par son ministère, en attente, puis approuvé par un agent', async (t) => {
