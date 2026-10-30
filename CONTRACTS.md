@@ -1,6 +1,6 @@
-> Pivot du 29 octobre — version 1.3.0 : voir [contrat d’intégration du pivot](docs/backend-pivot-api.md) et les nouveaux OpenAPI `department-admin` / `tooling-admin`. Les anciennes routes ci-dessous restent compatibles pendant la migration. Pour les dossiers passés au snapshot versionné, seuls les snapshots font désormais autorité. Les statuts simulés sont autorisés uniquement avec identification explicite de la simulation et preuves de dépôt/complétion émises par le connecteur de test.
+> Pivot du 29 octobre — version 1.3.0 : voir [contrat d’intégration du pivot](docs/backend-pivot-api.md) et les nouveaux OpenAPI `department-admin` / `tooling-admin`. Le X-Road simulé est ajouté (`xroad-sim.openapi.json`) sans revenir au cadre C1–C4 comme boussole. Les anciennes routes ci-dessous restent compatibles pendant la migration. Pour les dossiers passés au snapshot versionné, seuls les snapshots font désormais autorité. Les statuts simulés sont autorisés uniquement avec identification explicite de la simulation et preuves de dépôt/complétion émises par le connecteur de test.
 
-# Contrats d'intégration v1.0.0
+# Contrats d'intégration v1.3.0
 
 Statut : base d'implémentation exécutable, proposée à la revue des trois groupes. Les équipes peuvent commencer leurs adaptateurs, leurs modules et leurs tests sur cette base ; aucun accord collectif fictif n'est présumé. Les évolutions passent par PR avant changement d'une frontière. Pas de promesse d'intégration sans tests : chaque vrai service doit passer la même suite sur ses URL.
 
@@ -13,9 +13,10 @@ Statut : base d'implémentation exécutable, proposée à la revue des trois gro
 | C2 contrôle mandat | `contracts/v1/tooling-internal.openapi.json` | Tooling → code de consentement du Backend |
 | C3 Administration | `contracts/v1/admin.openapi.json` | Backend → console Interface |
 | C4 événements | schéma `Event` dans `domain.schema.json`, `events.openapi.json` | Tooling → Backend → canaux |
+| C5 X-Road simulé | `contracts/v1/xroad-sim.openapi.json` | X-Road simulé → Tooling (dépôt) et Backend (administration) |
 | Données communes | `contracts/v1/domain.schema.json` | Tous |
 
-Les fichiers OpenAPI sont du JSON valide en version 3.1 ; tous les corps, codes de succès et types sont décrits. Les schémas MCP sont embarqués sans référence externe pour être directement utilisables. Les types C1/C3/C2-interne/C4 se génèrent depuis OpenAPI. Toute modification des schémas communs doit être répercutée dans les documents embarqués ; `contracts:check` contrôle leur cohérence.
+Les fichiers OpenAPI sont du JSON valide en version 3.1 ; tous les corps, codes de succès et types sont décrits. Les schémas MCP sont embarqués sans référence externe pour être directement utilisables. Les types C1/C3/C2-interne/C4/C5 se génèrent depuis OpenAPI. Toute modification des schémas communs doit être répercutée dans les documents embarqués ; `contracts:check` contrôle leur cohérence.
 
 ## 2. Règles communes
 
@@ -40,6 +41,8 @@ Profil de production commun : JWT RS256, issuer = realm Keycloak du déploiement
 | Agent Backend | client `backend-agent` vers `/mcp`, scope `tools:call` ; **aucun** accès au contrôle mandat |
 | Contrôle Backend | client `backend-mandates`, scope `mandates:grant`, seul accès aux routes internes de mandat |
 | Événements Tooling | client `tooling-events`, scope `events:publish`, seul accès à l'ingestion C4 |
+| Dépôt X-Road | client `tooling-xroad`, scopes `xroad:read` et `xroad:submit`, pour l'usager désigné par `X-Applicant-Ref` |
+| Administration X-Road | client `backend-xroad`, scopes `xroad:read` et `xroad:administer`, pour l'agent désigné par `X-Official-Id` |
 
 Le Backend ne fait jamais confiance à un `userRef` fourni par le navigateur ou par le modèle. Les endpoints C1 ne le prennent donc pas en entrée. Au niveau Tooling, les en-têtes de contexte ne sont acceptés que d'un client `backend-agent` authentifié ; ils sont construits par du code applicatif hors modèle. Vérifier aussi la propriété des ressources, la conversation et la portée du mandat côté Tooling.
 
@@ -81,7 +84,7 @@ Un challenge signé suffit seulement s'il est appelé par le client contrôle d�
 
 Transport SDK officiel **Streamable HTTP**, chemin `/mcp`, initialisation MCP standard, version négociée par le SDK. Pas d'endpoint REST `/tools/call` personnalisé.
 
-Chaque requête transporte : `Authorization` agent, `traceparent`, `X-Conversation-Id`, `X-User-Ref`, et `X-Mandate-Id` pour une action. `Idempotency-Key` requis pour chaque `tools/call` d'action. La clé est stable pour la même tentative métier, différente pour chaque opération. Contexte absent du JSON `arguments` et inaccessible au modèle.
+Chaque requête transporte : `Authorization` agent, `traceparent`, `X-Conversation-Id`, `X-User-Ref`, et `X-Mandate-Id` pour une action. `Idempotency-Key` requis pour chaque `tools/call` d'action. La clé est stable pour la même tentative métier, différente pour chaque opération. Contexte absent du JSON `arguments` et inaccessible au modèle. Seule exception : une session sans aucun en-tête de contexte peut faire `initialize` et `tools/list`, pour l'ajout d'un serveur MCP par URL ; tout `tools/call` y est refusé (`INVALID_REQUEST`). Un contexte partiel ou invalide reste refusé en 400.
 
 Le catalogue garde les annotations MCP standard (`readOnlyHint` etc.). Les règles métier sont dans `_meta` avec clés `bj.techma/kind`, `bj.techma/requiresMandate`, `bj.techma/scopes` ; elles ne sont pas des autorisations : la passerelle les vérifie elle-même.
 
@@ -91,7 +94,8 @@ Le catalogue garde les annotations MCP standard (`readOnlyHint` etc.). Les règl
 | `procedures.get` | lecture | fiche complète |
 | `request.create` | `requests:write` | demande `draft` |
 | `request.update` | `requests:write` | demande actualisée |
-| `request.submit` | `requests:submit` | v1 : `awaiting_user_validation` + lien |
+| `request.submit` | `requests:submit` | v1 : `awaiting_user_validation` + lien ; avec un connecteur, envoi en file |
+| `request.pay` | `requests:submit` | paiement simulé des frais d'un dossier déjà transmis au X-Road simulé (C5) ; jamais deux paiements pour une demande |
 | `request.status` | lecture avec contrôle de propriété | demande |
 | `documents.attach` | `documents:write` | demande + référence pièce |
 | `documents.verify` | lecture, propriété demande et pièce | vérification technique, aucune certification administrative |
@@ -100,7 +104,7 @@ Sortie réussie = `structuredContent` conforme à `outputSchema` et bloc texte J
 
 `request.update.fields` suit `Procedure.formSchema`, au format JSON Schema 2020-12, sans champs inconnus. Les champs obligatoires peuvent manquer en brouillon mais sont contrôlés avant préparation finale. Pas de données d'identité sensibles dans ces champs v1. Les pièces sont des références opaques ; Tooling valide la propriété et la péremption via `GET /internal/v1/files/{fileId}` avec `X-User-Ref`, identité `tooling-resources`, audience Backend et scope `resources:read`. Réponse `FileAccess` sans contenu brut ni URL publique ; 404 si propriété incompatible. Les fiches sont accessibles via `GET /internal/v1/procedures?query=…` et `GET /internal/v1/procedures/{procedureId}`, même identité. Contrat : `backend-resources.openapi.json`. Seules les fiches validées sont exposées en production ; la simulation utilise une fiche explicitement fictive en brouillon. Dans la démo, fichiers synthétiques uniquement.
 
-Machine d'état : `draft` → `ready` quand champs et pièces requis sont présents → `awaiting_user_validation` en v1. `draft`/`ready` modifiables ; après préparation finale, modification refusée 409. L'absence d'un élément requis donne `REQUEST_INCOMPLETE`. Les états `submitted` → `processing` / `blocked` → `completed` / `rejected` et `cancelled` proviennent de connecteurs ; le pivot autorise un connecteur simulé explicitement identifié (`simulation: true`). Le modèle ne doit jamais les inventer. Le connecteur doit fournir une preuve d'accusé de réception avant passage à `submitted`.
+Machine d'état : `draft` → `ready` quand champs et pièces requis sont présents → `awaiting_user_validation` en v1. `draft`/`ready` modifiables ; après préparation finale, modification refusée 409. L'absence d'un élément requis donne `REQUEST_INCOMPLETE`. Les états `submitted` → `processing` / `blocked` → `completed` / `rejected` et `cancelled` proviennent de connecteurs ; le pivot autorise un connecteur simulé explicitement identifié (`simulation: true`). Le connecteur vers le X-Road simulé est admis en démonstration, parce que la simulation est déclarée dans chaque réponse et annoncée au public. Le modèle ne doit jamais inventer ces états. Un connecteur qui produit ses statuts sans service distant reste réservé au poste local. Le connecteur doit fournir une preuve d'accusé de réception avant passage à `submitted`. Le pont X-Road actuel traduit `in_review` en `processing` : il ne pose pas encore le statut `blocked`.
 
 ## 8. C3 : administration
 
@@ -162,4 +166,14 @@ CI : validation OpenAPI / JSON Schema, concordance des schémas embarqués, test
 
 `CODEOWNERS` désigne actuellement le responsable GitHub connu. Les responsables des trois groupes doivent être renseignés dès que leurs comptes/équipes sont connus ; GitHub n'exige pas une approbation de **chaque** propriétaire d'une même ligne. La règle de revue par chaque groupe concerné est donc également inscrite dans le modèle de PR. Les restrictions effectivement activées sur GitHub sont consignées dans `docs/readiness.md`.
 
-Décision sur les pièces : [stockage sans antivirus](docs/file-storage-decision.md).
+Décision sur les pièces : [stockage sans antivirus](docs/file-storage-decision.md). Le champ `scanStatus` n'est pas réintroduit.
+
+## 12. C5 : X-Road simulé
+
+Service `apps/xroad-sim`, simulation déclarée des administrations reliées par X-Road : catalogue, agents et rôles, dossiers, paiement et documents délivrés. Chaque dossier porte `simulated: true` et une référence `SIM-…`. Conception, cycle de vie et points ouverts : `docs/xroad-sim.md`.
+
+Dans ce combo, seul le Tooling appelle le X-Road simulé (identité `tooling-xroad`, en-tête `X-Applicant-Ref`) pour le catalogue, le dépôt, le paiement simulé (`request.pay`, scope `requests:submit`) et le suivi. Le Backend n'a pas de client X-Road : la console métier passe par le Backend, qui n'interroge pas C5. L'Interface n'appelle jamais C5. Le service simulé accepte encore une identité `backend-xroad` dans son contrat, mais aucun code du Backend ne l'utilise.
+
+Le document délivré par la simulation s'appelle `XroadIssuedDocument` dans le schéma partagé, pour conserver `IssuedDocument` du pivot (pièce remise à l'usager, avec `simulation`).
+
+Correspondance avec `RequestStatus` : `awaiting_payment` et `received` → `submitted`, `in_review` → `processing`, `completed` → `completed`, `rejected` → `rejected`. Ce pont ne produit pas `blocked`. Le Tooling suit les dossiers par interrogation ; C5 n'émet pas d'événement. Un dossier d'un autre usager donne 404.

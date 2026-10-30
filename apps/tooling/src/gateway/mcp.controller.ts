@@ -28,24 +28,23 @@ export class McpController {
     const principal = await this.guard.authorize(req, 'backend-agent', 'tools:call');
     const trace = traceOf(req);
     const mandateId = singleHeader(req, 'x-mandate-id');
+    // Without any context header, the session can only discover the catalogue (adding an MCP server by URL).
+    // Any supplied context must remain valid; executing an action always needs a complete context.
+    const discovery = ['x-conversation-id', 'x-user-ref', 'x-mandate-id'].every((name) => req.headers[name] === undefined);
     const context: ToolContext = {
       conversationId: singleHeader(req, 'x-conversation-id') ?? '',
       userRef: singleHeader(req, 'x-user-ref') ?? '',
       traceId: trace.traceId,
       ...(mandateId === undefined ? {} : { mandateId }),
     };
-    // Discovery/initialization needs a service identity, not an invented end-user.
-    // Any supplied context must remain valid; executing an action always needs it.
-    const hasContext = ['x-conversation-id', 'x-user-ref', 'x-mandate-id']
-      .some((name) => singleHeader(req, name) !== undefined);
-    if ((hasContext || req.body?.method === 'tools/call') && !validateContext(context))
-      throw new ProblemError(400, 'INVALID_REQUEST', 'Contexte MCP invalide ou absent');
+    if (!discovery && !validateContext(context)) throw new ProblemError(400, 'INVALID_REQUEST', 'Contexte MCP invalide ou absent');
     const idempotencyKey = singleHeader(req, 'idempotency-key');
 
     const server = new Server({ name: 'techma-tooling', version: catalog.version }, { capabilities: { tools: {} } });
     server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: catalog.tools }));
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
+        if (discovery) throw new ProblemError(400, 'INVALID_REQUEST', 'Contexte MCP requis pour appeler un outil (X-Conversation-Id, X-User-Ref)');
         if (!validateContext(context)) throw new ProblemError(400, 'INVALID_REQUEST', 'Contexte MCP invalide ou absent');
         const output = await this.executor.execute({
           name: request.params.name,

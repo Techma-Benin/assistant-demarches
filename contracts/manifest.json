@@ -11,6 +11,7 @@
     "v1/whatsapp-callback.openapi.json",
     "v1/backend-resources.openapi.json",
     "v1/department-admin.openapi.json",
-    "v1/tooling-admin.openapi.json"
+    "v1/tooling-admin.openapi.json",
+    "v1/xroad-sim.openapi.json"
   ]
 }

@@ -53,18 +53,19 @@ test("Backend + worker Redis + Tooling réels, PostgreSQL et JWT vérifiés dans
   const context = () => ({ conversationId: conversation.id, userRef: conversation.userRef, traceparent, ...(mandate ? { mandateId: mandate.id } : {}) });
   const call = (name, args, key = randomUUID(), override = {}) => gateway.call(stack.toolingUrl + "/mcp", "backend-agent", name, args, { ...context(), ...override }, key);
 
-  await t.test("identités séparées, découverte des huit outils et recherche via le worker", async () => {
+  await t.test("identités séparées, découverte des neuf outils et recherche via le worker", async () => {
     await api("/v1/conversations", { method: "POST", body: { channel: "web", locale: "fr" }, token: "invalid", status: 401 });
     await api("/v1/conversations", { method: "POST", body: { channel: "web", locale: "fr" }, token: stack.tokens.admin, status: 403 });
     const servers = await api("/v1/admin/mcp-servers", { token: stack.tokens.admin });
     assert.equal(servers.items.length, 1);
     const discovered = await api(`/v1/admin/mcp-servers/${servers.items[0].id}/discover`, { method: "POST", token: stack.tokens.admin });
-    assert.equal(discovered.items.length, 8);
+    assert.equal(discovered.items.length, 9);
+    assert.ok(discovered.items.some(tool => tool.name === "request.pay"));
     assert.ok(discovered.items.every(tool => tool.available && tool.enabled));
     conversation = await api("/v1/conversations", { method: "POST", body: { channel: "web", locale: "fr" }, status: 201 });
     await api(`/v1/conversations/${conversation.id}/events`, { token: stack.tokens.other, status: 404 });
     const listed = await gateway.discover(stack.toolingUrl + "/mcp", "backend-agent", context());
-    assert.equal(listed.length, 8);
+    assert.equal(listed.length, 9);
     const { reply } = await message("rechercher");
     assert.equal(reply.blocks[0].sources[0].procedureId, stack.procedure.id);
     assert.ok((await events()).some(event => event.data.kind === "tool.called" && event.data.toolName === "procedures.search" && event.source === "urn:techma:tooling"));

@@ -1,17 +1,13 @@
 export type AuthMode = 'jwt' | 'mock-tokens';
-export type OutboundClient = 'tooling-resources' | 'tooling-events';
+export type OutboundClient = 'tooling-resources' | 'tooling-events' | 'tooling-xroad';
+export type ProcedureSource = 'backend' | 'xroad';
 
-export interface OidcClient {
-  id: string;
-  secret: string;
-  scope: string;
-}
+export type OidcClient = { scope: string } & ({ id: string; secret: string; tokenUrl: URL } | { token: string });
 
 export interface JwtConfig {
   issuer: string;
   jwksUrl: URL;
-  tokenUrl: URL;
-  clients: Record<OutboundClient, OidcClient>;
+  clients: Record<Exclude<OutboundClient, 'tooling-xroad'>, OidcClient> & { 'tooling-xroad'?: OidcClient };
   proof: { jwksUrl: URL; issuer?: string };
 }
 
@@ -27,9 +23,12 @@ export interface ToolingConfig {
   workers: number;
   mandateTtlMs: number;
   allowDraftProcedures: boolean;
+  procedureSource: ProcedureSource;
+  xroadUrl?: URL;
   events: { publisher: boolean; intervalMs: number };
   rateLimits: { perUser: number; perClient: number; authFailuresPerIp: number };
   trustProxy: string | false;
+  connectors: { enabled: string[]; worker: boolean; intervalMs: number; pollMs: number; simulatedStepMs: number };
   jwt?: JwtConfig;
 }
 
@@ -108,6 +107,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
     throw new ConfigError('TRUST_PROXY doit valoir false ou une liste parmi loopback, linklocal, uniquelocal');
   }
 
+  const xroadUrl = env.XROAD_URL ? serviceUrl(env, 'XROAD_URL') : undefined;
+  const procedureSource = (env.PROCEDURES_SOURCE ?? (xroadUrl ? 'xroad' : 'backend')) as ProcedureSource;
+  if (procedureSource !== 'backend' && procedureSource !== 'xroad') throw new ConfigError('PROCEDURES_SOURCE doit valoir backend ou xroad');
+  if (procedureSource === 'xroad' && !xroadUrl) throw new ConfigError('PROCEDURES_SOURCE=xroad exige XROAD_URL');
+
+  const enabledConnectors = (env.CONNECTORS ?? '').split(',').map((name) => name.trim()).filter(Boolean);
+  for (const name of enabledConnectors) {
+    if (name === 'xroad') {
+      // Allowed off localhost: the X-Road simulation declares itself in every case (CONTRACTS.md §7, C5).
+      if (!xroadUrl) throw new ConfigError('Le connecteur xroad exige XROAD_URL');
+      if (procedureSource !== 'xroad') throw new ConfigError('Le connecteur xroad exige les fiches du X-Road (PROCEDURES_SOURCE=xroad)');
+      continue;
+    }
+    if (name !== 'simulated') throw new ConfigError(`Connecteur inconnu : ${name}`);
+    if (production || !LOCAL_HOSTS.has(host)) throw new ConfigError('Le connecteur simulé est réservé au poste local hors production');
+  }
+  const connectorWorker = env.CONNECTOR_WORKER ?? 'on';
+  if (connectorWorker !== 'on' && connectorWorker !== 'off') throw new ConfigError('CONNECTOR_WORKER doit valoir on ou off');
+
   const base = {
     host,
     port,
@@ -118,6 +136,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
     workers,
     mandateTtlMs: 3_600_000,
     allowDraftProcedures: drafts === 'true',
+    procedureSource,
+    ...(xroadUrl ? { xroadUrl } : {}),
     events: { publisher: publisher === 'on', intervalMs: integer(env, 'EVENTS_INTERVAL_MS', 1000, 50, 60_000) },
     rateLimits: {
       perUser: integer(env, 'RATE_LIMIT_USER_PER_MIN', 60, 1, 100_000),
@@ -125,6 +145,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
       authFailuresPerIp: integer(env, 'RATE_LIMIT_AUTH_FAILURES_PER_MIN', 20, 1, 10_000),
     },
     trustProxy: trustProxy === 'false' ? (false as const) : trustProxy,
+    connectors: {
+      enabled: enabledConnectors,
+      worker: connectorWorker === 'on',
+      intervalMs: integer(env, 'CONNECTOR_INTERVAL_MS', 2000, 20, 600_000),
+      pollMs: integer(env, 'CONNECTOR_POLL_MS', 300_000, 20, 86_400_000),
+      simulatedStepMs: integer(env, 'CONNECTOR_SIMULATED_STEP_MS', 30_000, 0, 3_600_000),
+    },
   };
   if (authMode === 'mock-tokens') return base;
 
@@ -133,20 +160,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
     jwt: {
       issuer: required(env, 'JWT_ISSUER'),
       jwksUrl: serviceUrl(env, 'JWKS_URL'),
-      tokenUrl: serviceUrl(env, 'OIDC_TOKEN_URL'),
       clients: {
-        'tooling-resources': {
-          id: required(env, 'TOOLING_RESOURCES_CLIENT_ID'),
-          secret: required(env, 'TOOLING_RESOURCES_CLIENT_SECRET'),
-          scope: 'resources:read',
-        },
-        'tooling-events': {
-          id: required(env, 'TOOLING_EVENTS_CLIENT_ID'),
-          secret: required(env, 'TOOLING_EVENTS_CLIENT_SECRET'),
-          scope: 'events:publish',
-        },
+        'tooling-resources': outboundClient(env, 'TOOLING_RESOURCES', 'resources:read', production),
+        'tooling-events': outboundClient(env, 'TOOLING_EVENTS', 'events:publish', production),
+        ...(xroadUrl ? { 'tooling-xroad': outboundClient(env, 'TOOLING_XROAD', 'xroad:read xroad:submit', production) } : {}),
       },
       proof: { jwksUrl: serviceUrl(env, 'PROOF_JWKS_URL'), issuer: env.PROOF_ISSUER || undefined },
     },
   };
+}
+
+function outboundClient(env: NodeJS.ProcessEnv, prefix: string, scope: string, production: boolean): OidcClient {
+  const token = env[`${prefix}_TOKEN`];
+  if (token) {
+    if (production) throw new ConfigError(`${prefix}_TOKEN interdit en production : utiliser OIDC_TOKEN_URL`);
+    if (!/^[A-Za-z0-9._~+/=-]+$/.test(token)) throw new ConfigError(`${prefix}_TOKEN n'est pas un jeton Bearer`);
+    return { scope, token };
+  }
+  return { scope, id: required(env, `${prefix}_CLIENT_ID`), secret: required(env, `${prefix}_CLIENT_SECRET`), tokenUrl: serviceUrl(env, 'OIDC_TOKEN_URL') };
 }

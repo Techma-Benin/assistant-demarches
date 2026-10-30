@@ -1,6 +1,6 @@
 # Backend pivot — état de reprise
 
-Dernière mise à jour : **30 octobre 2026**. Branche : **`backend/department-pivot`**.
+Dernière mise à jour : **30 octobre 2026**. Branche d’origine de ce document : **`backend/department-pivot`**. La suite est sur **`integration/pivot-combo`** : voir [journal du combo](pivot-combo.md). Le Backend n’appelle toujours pas X-Road. Le catalogue MCP partagé compte désormais 9 outils (`request.pay` en plus) ; le chiffre « 8 outils » ci-dessous décrit la livraison du pivot avant cette fusion.
 Base : `integration/backend-tooling`, commit `006c7af`. Le worktree `integration/full-stack` reste séparé et n’a pas été modifié par ce chantier.
 
 ## État actuel

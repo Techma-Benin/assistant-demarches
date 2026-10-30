@@ -1,0 +1,1795 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "X-Road simulé — administrations, dossiers et agents",
+    "version": "1.1.0",
+    "description": "Simulation déclarée : aucune réponse ne vient d’une vraie administration. Voir docs/xroad-sim.md."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:4040",
+      "description": "Simulation locale"
+    }
+  ],
+  "paths": {
+    "/v1/administrations": {
+      "get": {
+        "operationId": "listXroadAdministrations",
+        "summary": "listXroadAdministrations",
+        "description": "Administrations de la simulation, connectées ou non.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdministrationPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:read"
+      }
+    },
+    "/v1/procedures": {
+      "get": {
+        "operationId": "searchXroadProcedures",
+        "summary": "searchXroadProcedures",
+        "description": "Catalogue des démarches. `query` cherche dans le titre et le résumé ; `administrationId` filtre par administration.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "administrationId",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AdministrationId"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcedurePage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:read"
+      }
+    },
+    "/v1/procedures/{procedureId}": {
+      "get": {
+        "operationId": "getXroadProcedure",
+        "summary": "getXroadProcedure",
+        "description": "Fiche complète : pièces, frais, délai, formulaire.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "procedureId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Procedure"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:read"
+      }
+    },
+    "/v1/cases": {
+      "post": {
+        "operationId": "createXroadCase",
+        "summary": "createXroadCase",
+        "description": "Dépôt d'un dossier pour l'usager `X-Applicant-Ref`. L'administration cible est celle de la démarche. 201 avec `awaiting_payment` si la démarche a des frais, sinon `received`. Même `requestId` déjà déposé : 409.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Applicant-Ref",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Dossier déposé",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:submit"
+      },
+      "get": {
+        "operationId": "listXroadCases",
+        "summary": "listXroadCases",
+        "description": "Dossiers visibles par l'agent `X-Official-Id`. `view=pending` : `in_review` ; `view=completed` : `completed`. Plus ancien en premier pour `pending`, plus récent en premier sinon.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Official-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OfficialId"
+            }
+          },
+          {
+            "name": "administrationId",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AdministrationId"
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "completed",
+                "all"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasePage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:administer"
+      }
+    },
+    "/v1/cases/{caseId}": {
+      "get": {
+        "operationId": "getXroadCase",
+        "summary": "getXroadCase",
+        "description": "Un dossier. Exactement un des en-têtes : `X-Applicant-Ref` (client `tooling-xroad`) ou `X-Official-Id` (client `backend-xroad`). Dossier d'un autre usager ou d'une autre administration : 404.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Applicant-Ref",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          },
+          {
+            "name": "X-Official-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/OfficialId"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:submit | xroad:administer"
+      }
+    },
+    "/v1/cases/{caseId}/payment": {
+      "post": {
+        "operationId": "payXroadCase",
+        "summary": "payXroadCase",
+        "description": "Paiement simulé des frais. Seulement depuis `awaiting_payment` ; le dossier passe à `received`. Aucun paiement réel, référence `SIM-PAY-…`.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Applicant-Ref",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:submit"
+      }
+    },
+    "/v1/cases/{caseId}/decisions": {
+      "post": {
+        "operationId": "decideXroadCase",
+        "summary": "decideXroadCase",
+        "description": "Décision d'un agent sur un dossier `in_review` de son administration : `approve` → `completed` (`completedBy: administration`), `reject` → `rejected`. Autre état : 409 `INVALID_TRANSITION`.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Official-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OfficialId"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:administer"
+      }
+    },
+    "/v1/cases/{caseId}/documents/{documentId}": {
+      "get": {
+        "operationId": "downloadXroadIssuedDocument",
+        "summary": "downloadXroadIssuedDocument",
+        "description": "Document délivré, au format PDF, marqué comme simulation. Mêmes en-têtes et règles de visibilité que `getXroadCase`.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Applicant-Ref",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          },
+          {
+            "name": "X-Official-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/OfficialId"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/IssuedDocumentId"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "contentMediaType": "application/pdf"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:submit | xroad:administer"
+      }
+    },
+    "/v1/officials": {
+      "get": {
+        "operationId": "listXroadOfficials",
+        "summary": "listXroadOfficials",
+        "description": "Agents visibles par `X-Official-Id` : son administration pour `admin`, toutes pour `super_admin`, lui seul pour `agent`. Sans `X-Official-Id`, tous les agents : sert uniquement à l'écran « se connecter en tant que » de la démonstration.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Official-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/OfficialId"
+            }
+          },
+          {
+            "name": "administrationId",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AdministrationId"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficialPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:administer"
+      }
+    },
+    "/v1/officials/me": {
+      "get": {
+        "operationId": "getXroadCurrentOfficial",
+        "summary": "getXroadCurrentOfficial",
+        "description": "Profil de l'agent `X-Official-Id`.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Official-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OfficialId"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Official"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:administer"
+      }
+    },
+    "/v1/officials/{officialId}/assignment": {
+      "put": {
+        "operationId": "assignXroadOfficial",
+        "summary": "assignXroadOfficial",
+        "description": "Affectation d'un agent à une administration et à un rôle. Réservé à `super_admin`, sinon 403. `super_admin` exige `administrationId: null`, les autres rôles une administration.",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Official-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OfficialId"
+            }
+          },
+          {
+            "name": "officialId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OfficialId"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OfficialAssignment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Official"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:administer"
+      }
+    },
+    "/v1/metrics": {
+      "get": {
+        "operationId": "getXroadMetrics",
+        "summary": "getXroadMetrics",
+        "description": "Indicateurs des dossiers de l'administration de `X-Official-Id`, ou de `administrationId` pour `super_admin` (toutes si absent).",
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Official-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OfficialId"
+            }
+          },
+          {
+            "name": "administrationId",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AdministrationId"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdministrationMetrics"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-role": "xroad:administer"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "UserRef": {
+        "type": "string",
+        "pattern": "^usr_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "RequestId": {
+        "type": "string",
+        "pattern": "^req_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "FileId": {
+        "type": "string",
+        "pattern": "^fil_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "INVALID_REQUEST",
+              "UNAUTHORIZED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "IDEMPOTENCY_CONFLICT",
+              "MANDATE_MISSING",
+              "MANDATE_EXPIRED",
+              "MANDATE_REVOKED",
+              "MANDATE_SCOPE_DENIED",
+              "REQUEST_INCOMPLETE",
+              "INVALID_TRANSITION",
+              "UPSTREAM_UNAVAILABLE",
+              "RATE_LIMITED",
+              "UNSUPPORTED_MEDIA_TYPE",
+              "FILE_TOO_LARGE",
+              "REPLAY_EXPIRED"
+            ]
+          },
+          "traceId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "code",
+          "traceId"
+        ]
+      },
+      "Source": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "procedureId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "procedureId",
+          "url",
+          "retrievedAt",
+          "version"
+        ]
+      },
+      "Procedure": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "administrationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requiredDocuments": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "feeFcfa": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "processingDays": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source": {
+            "$ref": "#/components/schemas/Source"
+          },
+          "validationStatus": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "validated"
+            ]
+          },
+          "formSchema": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "administrationId",
+          "summary",
+          "requiredDocuments",
+          "feeFcfa",
+          "processingDays",
+          "source",
+          "validationStatus",
+          "formSchema"
+        ]
+      },
+      "ProcedurePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Procedure"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AdministrationId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{1,62}$"
+      },
+      "CaseId": {
+        "type": "string",
+        "pattern": "^cas_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "OfficialId": {
+        "type": "string",
+        "pattern": "^off_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "IssuedDocumentId": {
+        "type": "string",
+        "pattern": "^doc_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "Administration": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/AdministrationId"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "shortName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "themes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "connection": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "not_connected"
+                ]
+              },
+              "since": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "status",
+              "since"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "shortName",
+          "themes",
+          "connection"
+        ]
+      },
+      "AdministrationPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Administration"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "OfficialRole": {
+        "type": "string",
+        "enum": [
+          "agent",
+          "admin",
+          "super_admin"
+        ]
+      },
+      "Official": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/OfficialId"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "jobTitle": {
+            "type": "string",
+            "minLength": 1
+          },
+          "administrationId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdministrationId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/OfficialRole"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "jobTitle",
+          "administrationId",
+          "role",
+          "avatarUrl"
+        ]
+      },
+      "OfficialPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Official"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "OfficialAssignment": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "administrationId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdministrationId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/OfficialRole"
+          }
+        },
+        "required": [
+          "administrationId",
+          "role"
+        ]
+      },
+      "CaseStatus": {
+        "type": "string",
+        "enum": [
+          "awaiting_payment",
+          "received",
+          "in_review",
+          "completed",
+          "rejected"
+        ]
+      },
+      "CaseStep": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,62}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "blocked",
+              "pending"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "enum": [
+              "assistant",
+              "applicant",
+              "administration"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "state",
+          "actor",
+          "note",
+          "at"
+        ]
+      },
+      "CaseDocument": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "documentType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fileId": {
+            "$ref": "#/components/schemas/FileId"
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png"
+            ]
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10485760
+          }
+        },
+        "required": [
+          "documentType",
+          "fileId",
+          "mimeType",
+          "sizeBytes"
+        ]
+      },
+      "CasePayment": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "amountFcfa": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_required",
+              "pending",
+              "paid"
+            ]
+          },
+          "method": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "mobile_money",
+              null
+            ]
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "paidAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "amountFcfa",
+          "status",
+          "method",
+          "reference",
+          "paidAt"
+        ]
+      },
+      "Case": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/CaseId"
+          },
+          "reference": {
+            "type": "string",
+            "pattern": "^SIM-[A-Z]{2,5}-[0-9]{4}-[0-9]{6}$"
+          },
+          "simulated": {
+            "const": true
+          },
+          "procedureId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "administrationId": {
+            "$ref": "#/components/schemas/AdministrationId"
+          },
+          "requestId": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "applicantRef": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseDocument"
+            }
+          },
+          "payment": {
+            "$ref": "#/components/schemas/CasePayment"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/CaseStep"
+            }
+          },
+          "issuedDocuments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/XroadIssuedDocument"
+            }
+          },
+          "completedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "assistant",
+              "administration",
+              null
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "simulated",
+          "procedureId",
+          "administrationId",
+          "requestId",
+          "applicantRef",
+          "status",
+          "fields",
+          "documents",
+          "payment",
+          "steps",
+          "issuedDocuments",
+          "completedBy",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CasePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Case"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "CaseInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "procedureId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseDocument"
+            }
+          }
+        },
+        "required": [
+          "requestId",
+          "procedureId",
+          "fields",
+          "documents"
+        ]
+      },
+      "PaymentInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "method": {
+            "const": "mobile_money"
+          }
+        },
+        "required": [
+          "method"
+        ]
+      },
+      "CaseDecision": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "decision",
+          "note"
+        ]
+      },
+      "AdministrationMetrics": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "administrationId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdministrationId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "casesTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "casesPending": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "casesCompleted": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "casesCompletedByAssistant": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "casesRejected": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "medianProcessingHours": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "topProcedures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "procedureId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "procedureId",
+                "title",
+                "count"
+              ]
+            }
+          }
+        },
+        "required": [
+          "administrationId",
+          "casesTotal",
+          "casesPending",
+          "casesCompleted",
+          "casesCompletedByAssistant",
+          "casesRejected",
+          "medianProcessingHours",
+          "topProcedures"
+        ]
+      },
+      "XroadIssuedDocument": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/IssuedDocumentId"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mimeType": {
+            "const": "application/pdf"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "mimeType",
+          "issuedAt"
+        ]
+      }
+    }
+  }
+}

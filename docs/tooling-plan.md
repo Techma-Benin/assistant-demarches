@@ -42,17 +42,17 @@ Le service vérifie toujours de vrais JWT. Pour le développement, un script gé
 
 ## Avancement
 
-| Branche | Contenu | État |
-|---|---|---|
-| `tooling/service-scaffold` | Service NestJS, configuration, `/health`, `traceparent`, erreurs problem+json | Poussée |
-| `tooling/mcp-gateway` | Passerelle MCP authentifiée, `procedures.search` et `procedures.get` | Poussée |
-| `tooling/persistence` | Base, sécurité des lignes, journal, idempotence, mandats, outils d'action | Poussée |
-| `tooling/events-outbox` | Publication des événements avec reprise et ordre par conversation | Poussée |
-| `tooling/resilience` | Superviseur, garde-fous, image, déploiement à deux répliques | Poussée |
-| `tooling/hardening` | Limitation de débit, `Retry-After`, TLS au proxy, tests sur PostgreSQL réel et à deux répliques, CI avec PostgreSQL | Poussée |
-| `tooling/observability` | Traces OpenTelemetry, métriques, tests d'attaque avant le 3 novembre | À faire |
+| Branche | Contenu | Commits sur `tooling/service` | État |
+|---|---|---|---|
+| `tooling/service-scaffold` | Service NestJS, configuration, `/health`, `traceparent`, erreurs problem+json | `c3a59ac`, `3641ad1` | PR à ouvrir |
+| `tooling/mcp-gateway` | Passerelle MCP authentifiée, `procedures.search` et `procedures.get` | `22595ba` | PR à ouvrir |
+| `tooling/persistence` | Base, sécurité des lignes, journal, idempotence, mandats, outils d'action | `30fad05` | PR à ouvrir, revue sécurité |
+| `tooling/events-outbox` | Publication des événements avec reprise et ordre par conversation | `8ba7387` | PR à ouvrir |
+| `tooling/resilience` | Superviseur, garde-fous, image, déploiement à deux répliques | `add1bdf` | PR à ouvrir |
+| `tooling/hardening` | Limitation de débit, `Retry-After`, TLS au proxy, tests sur PostgreSQL réel et à deux répliques, CI avec PostgreSQL | `058b091` | PR à ouvrir |
+| `tooling/observability` | Traces OpenTelemetry, métriques, tests d'attaque avant le 3 novembre | | À faire |
 
-Les branches s'empilent : chacune part de la précédente. Les PR vers `dev` suivent cet ordre.
+Tout le travail livré est aujourd'hui sur la seule branche `tooling/service` (environ 4 400 lignes). Chaque ligne du tableau devient une branche pointant sur ses commits, puis une PR vers `dev`. Les branches s'empilent : chacune part de la précédente, et les PR sont fusionnées dans cet ordre. Le commit `2ee24ec` (retrait des commentaires) est à valider en binôme avant d'être intégré.
 
 Jalons du cadre technique : outils de lecture réels au 29 octobre, passerelle mandat et outils d'action au 31 octobre, journée d'attaque le 3 novembre, démonstration le 6 novembre.
 
@@ -67,6 +67,61 @@ Le Tooling ne publie pas `mandate.granted` ni `mandate.revoked` : le Backend les
 Le contrat n'a pas de code d'erreur pour une panne interne (500). Le service renvoie `INVALID_REQUEST`, comme les simulations ; un code dédié serait plus juste.
 
 La collecte des vraies fiches sourcées passe par le responsable contenu. Jusqu'au pilote, uniquement des données fictives.
+
+## Répartition dans le binôme
+
+Chacun avance de son côté, sur des fichiers différents, et relit les PR de l'autre.
+
+### Naldo-56 : intégrer le service livré
+
+1. Découper `tooling/service` en branches selon le tableau d'avancement et ouvrir les PR dans l'ordre.
+2. Traiter les retours de relecture :
+   - Les outils d'action appellent le Backend (`catalog.get`, `resources.getFile`) pendant que la transaction PostgreSQL garde ses verrous (`src/requests/requests.module.ts`). Un Backend lent peut bloquer tout le pool de connexions. Lire fiche et pièce avant d'ouvrir la transaction, ou borner le temps d'attente.
+   - `PROCEDURES_ALLOW_DRAFTS` vaut `true` dès que `NODE_ENV` n'est pas `production` (`src/config.ts`). Un environnement de test déployé sans cette variable accepterait des fiches en brouillon. Préférer un refus par défaut hors poste local.
+   - Retrait des commentaires (`2ee24ec`) : garder au moins la justification des politiques de sécurité au niveau des lignes et des choix de sécurité.
+3. Suite aux PR, rester propriétaire de `src/gateway`, `src/requests`, `src/mandates`, `src/database`, `src/events`.
+
+### byKenVi : fiabiliser, observer, coordonner
+
+1. `tooling/test-windows` : faire passer `pnpm check` sous Windows et le rendre plus rapide. Les deux tests de `test/supervisor.test.ts` échouent sous Windows : démarrage PGlite de 7 à 21 s pour un délai de 20 s, aucun signal `SIGKILL` rapporté, `SIGTERM` sans arrêt propre. La suite Tooling dure environ 4 min et `pnpm check` la lance désormais pour toutes les équipes : sortir les tests de résilience lents de `check` et les garder en CI.
+2. `tooling/observability` : traces OpenTelemetry, métriques, préparation des tests d'attaque du 3 novembre.
+3. Mode « Tooling seul » de `tests/integration.test.mjs`, décrit plus haut. Fichier commun : relecture Backend.
+4. Coordination avec le Backend : JWKS du `proofToken` (bloquant pour le 31 octobre), date de l'API de ressources réelle, émetteur de `mandate.*`. Prévenir aussi que `/mcp` refuse `tools/list` sans les en-têtes de contexte (`X-Conversation-Id`, `X-User-Ref`) : c'est conforme au contrat, mais gênant si l'agent liste les outils au démarrage.
+5. Fiches fictives dans `content/`.
+6. Relire chaque PR de Naldo-56.
+
+Fichiers à risque de conflit : `src/app.ts`, `package.json`, `pnpm-lock.yaml`, `src/database/migrations.ts`. Limiter les modifications à l'enregistrement d'un module ou d'une dépendance, et prévenir l'autre avant de toucher aux migrations.
+
+## Règles de commit et de PR
+
+Ces règles déclinent [CONTRIBUTING.md](../CONTRIBUTING.md) pour le Tooling ; en cas d'écart, CONTRIBUTING.md prime.
+
+### Branches
+
+- Une branche par tâche, `tooling/<tâche>` (ou `docs/<sujet>`), créée depuis `dev`, ou depuis la branche précédente tant que la pile n'est pas fusionnée.
+- Deux jours maximum. Au-delà, découper.
+- Rebaser au moins une fois par jour : `git fetch origin && git rebase origin/dev`.
+- Jamais de force-push sur `dev`, `main` ou la branche de l'autre. Sur sa propre branche, uniquement `git push --force-with-lease`.
+
+### Commits
+
+- Format Conventional Commits, en anglais, à l'impératif, sans majuscule ni point final, 72 caractères maximum : `type(tooling): sujet`.
+- Types : `feat`, `fix`, `refactor`, `test`, `docs`, `chore`.
+- Un changement logique par commit. Le corps explique le pourquoi quand il n'est pas évident.
+- Exemples :
+  - `feat(tooling): add request.submit with official link`
+  - `fix(tooling): release db transaction before backend calls`
+  - `test(tooling): skip signal assertions on windows`
+- Ne jamais committer : secrets, `.env`, données réelles, `dist/`, ni les fichiers de `packages/contracts-ts/src` modifiés uniquement par les fins de ligne sous Windows (`git checkout -- packages/contracts-ts/src`).
+
+### Pull requests
+
+- Cible : `dev`. Remplir la checklist du modèle de PR.
+- `pnpm check` vert en local et en CI avant de demander une relecture.
+- Relecture obligatoire par l'autre membre du binôme. Ajouter un relecteur Backend dès que la PR touche C2, C4, les routes internes de mandat ou l'API de ressources.
+- Revue sécurité pour : mandats, authentification, données personnelles, connecteurs.
+- Un changement de contrat (`contracts/v1/`) passe par une PR dédiée : contrat, exemples, simulation et tests ensemble, plus incrément de `contracts/manifest.json`.
+- Les protections de branche ne sont pas actives : la relecture repose sur notre discipline. Pas de fusion sans approbation.
 
 ## Suivi
 

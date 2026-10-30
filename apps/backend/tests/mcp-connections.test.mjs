@@ -187,7 +187,7 @@ test('Migration des actions historiques : groupes par administration et identifi
  assert.equal(servers.length,2);assert.equal(servers[0].body.policy,'techma');assert.equal(servers[0].body.auth.secretRef,'backend-agent');
  for(const admin of ['alpha','beta']){
   const tools=(await pool.query('SELECT name,enabled,requires_mandate FROM backend_mcp_tools WHERE administration_id=$1',[admin])).rows;
-  assert.equal(tools.length,8);
+  assert.equal(tools.length,catalog.length);
   for(const tool of tools){assert.equal(tool.enabled,tool.name!=='request.update');assert.equal(tool.requires_mandate,Boolean(catalog.find(t=>t.name===tool.name)._meta['bj.techma/requiresMandate']));}
  }
 });

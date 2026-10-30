@@ -23,12 +23,27 @@ Le pont `dev/agent-bridge.ts` est un serveur MCP en stdio, réservé au dévelop
 
 ```sh
 pnpm --filter @techma/tooling demo        # parcours complet scripté, échoue si une étape casse
-pnpm --filter @techma/tooling dev:stack   # Backend simulé (4010) + Tooling (4030), pour un agent
+pnpm --filter @techma/tooling dev:stack   # Backend simulé (4010) + Tooling (4030) + X-Road simulé (4040) : PROCEDURES_SOURCE=xroad, CONNECTORS=xroad
+CONNECTORS=simulated pnpm --filter @techma/tooling dev:stack   # sans X-Road, envoi et suivi simulés locaux
+XROAD=off pnpm --filter @techma/tooling dev:stack              # Backend simulé + Tooling seuls
+XROAD=on pnpm --filter @techma/tooling dev:stack               # même pile que le défaut (BRIDGE_PROCEDURE_ID=casier-judiciaire pour le pont)
 node apps/tooling/dist/dev/agent-bridge.js                              # commande stdio à déclarer dans le client MCP
 npx @modelcontextprotocol/inspector node apps/tooling/dist/dev/agent-bridge.js   # exploration manuelle
 ```
 
 Variables du pont : `TOOLING_URL` (défaut `http://127.0.0.1:4030`), `BACKEND_URL` (défaut `http://127.0.0.1:4010`, vide pour ne pas déposer de pièce), `BRIDGE_PROCEDURE_ID`, `BRIDGE_SCOPES`, `BRIDGE_USER_REF`.
+
+## Console de démonstration
+
+`dev/console.ts` démarre le Backend simulé et le vrai service (PGlite en mémoire, publication des événements active), puis sert une page sur `http://127.0.0.1:4321` (variable `CONSOLE_PORT`). La page déroule un scénario en 16 étapes, de la recherche de fiche jusqu'à la révocation du mandat et à l'accès refusé d'un autre usager. Pour chaque appel, elle affiche la requête et la réponse réelles, le journal d'audit, les demandes, les mandats et l'outbox lus dans la base, et les événements reçus par le Backend. `→` ou Espace : étape suivante.
+
+```sh
+pnpm --filter @techma/tooling console
+```
+
+La même commande sert aussi `http://127.0.0.1:4321/vitrine`, une vue destinée à un public non technique : conversation de l'usager sur un téléphone, dossier qui se remplit, bouclier de sécurité et compteurs lus dans la base, sans aucun JSON. Les deux vues pilotent la même session : en ouvrir une seule à la fois.
+
+La base est en mémoire et le journal d'audit est en ajout seul : « Recommencer » relance le scénario sans effacer les lignes déjà écrites. Pour repartir d'une base vide, relancer la commande.
 
 ## Intégration pour les autres groupes
 
@@ -75,6 +90,30 @@ Le Tooling ne publie pas `mandate.granted` ni `mandate.revoked` : le Backend re�
 | `src/runtime` | Superviseur et garde-fous des processus |
 
 Ajouter un outil : un `ToolHandler` dans un module qui l'inscrit au `ToolRegistry` en `onModuleInit`. La passerelle se charge du reste. Un outil d'action qui n'appelle pas `requireMandate` est refusé.
+
+## Connecteurs vers l'administration
+
+`request.submit` prépare la demande et renvoie le lien officiel (v1). Si un connecteur est activé pour la fiche, l'envoi est en plus mis en file dans la même transaction, puis un processus de fond (`src/connectors/connector-worker.ts`) :
+
+1. revérifie le mandat : révoqué ou expiré, rien n'est transmis ;
+2. appelle `submit` du connecteur ; avec un accusé de réception, la demande passe à `submitted` ;
+3. suit ensuite le dossier avec `status` (`processing`, puis `completed` ou `rejected`), un événement `request.status_changed` à chaque étape ;
+4. en cas d'échec, réessaie avec un délai croissant ; après 24 h sans envoi, abandonne et le lien officiel reste valable.
+
+Il fonctionne comme l'outbox : sûr sur plusieurs répliques, bail de 60 s, journal d'audit sous l'acteur `tooling-connector`. La référence externe et l'accusé restent internes : la sortie des outils garde la forme du contrat.
+
+Brancher un vrai connecteur : implémenter `AdministrationConnector` (`id`, `supports(procedure)`, `submit`, `status`), l'inscrire au `ConnectorRegistry` dans `onModuleInit`, puis l'activer par `CONNECTORS`. Aucun outil ni l'agent n'est à modifier.
+
+Deux connecteurs existent :
+
+- `xroad` dépose le dossier au X-Road simulé (`apps/xroad-sim`, contrat C5) et en suit l'état : `awaiting_payment` et `received` donnent `submitted`, `in_review` donne `processing`, puis `completed` ou `rejected`. Il exige `XROAD_URL` et des fiches lues au X-Road (`PROCEDURES_SOURCE=xroad`, valeur par défaut dès que `XROAD_URL` est fourni). Il est admis hors poste local : le service distant se déclare simulation dans chaque dossier (CONTRACTS.md §7).
+- `simulated` produit des statuts fictifs à partir du temps écoulé (références `SIMULATION-…`), sans service distant : refusé en production et hors poste local.
+
+Un refus de l'administration (409) ou un dossier qu'elle ne connaît plus (404) arrête les essais aussitôt : la demande garde son lien officiel. Le transfert des pièces elles-mêmes relève de la phase suivante : le connecteur ne transmet que leurs métadonnées.
+
+`request.pay` règle les frais d'un dossier déjà transmis au X-Road. Le mandat est vérifié avant l'appel au X-Road, puis de nouveau à l'enregistrement ; la clé d'idempotence côté X-Road est propre à la demande, un nouvel appel ne paie jamais deux fois. Le paiement demande au processus de fond de relire le dossier aussitôt.
+
+Sans aucun en-tête de contexte, `/mcp` accepte `initialize` et `tools/list` : un écran « ajouter un MCP par URL » peut lister les outils. Les appels d'outils exigent toujours le contexte.
 
 ## Tenue en cas de panne
 
@@ -131,6 +170,7 @@ Le déploiement sur un serveur n'est pas automatisé : aucun environnement cible
 | `JWT_ISSUER`, `JWKS_URL`, `OIDC_TOKEN_URL` | | Realm Keycloak ; mode `jwt` |
 | `TOOLING_RESOURCES_CLIENT_ID` / `_SECRET` | | Identité sortante vers les ressources ; mode `jwt` |
 | `TOOLING_EVENTS_CLIENT_ID` / `_SECRET` | | Identité sortante vers les événements ; mode `jwt` |
+| `TOOLING_RESOURCES_TOKEN`, `TOOLING_EVENTS_TOKEN` | | Jeton préémis à la place du flux client credentials, comme `TOOLING_AGENT_TOKEN` côté Backend ; jamais renouvelé, interdit en production |
 | `PROOF_JWKS_URL`, `PROOF_ISSUER` | | Clés des preuves de consentement ; mode `jwt` |
 | `PROCEDURES_ALLOW_DRAFTS` | `true` seulement en écoute locale hors production | Fiches en brouillon visibles ; un serveur déployé les refuse sauf réglage explicite |
 | `EVENTS_PUBLISHER`, `EVENTS_INTERVAL_MS` | `on`, 1000 | Publication de l'outbox |
@@ -138,6 +178,13 @@ Le déploiement sur un serveur n'est pas automatisé : aucun environnement cible
 | `RATE_LIMIT_CLIENT_PER_MIN` | 1200 | Requêtes par client de service |
 | `RATE_LIMIT_AUTH_FAILURES_PER_MIN` | 20 | Échecs d'authentification par adresse avant blocage |
 | `TRUST_PROXY` | `false` | Réseaux autorisés à fournir `X-Forwarded-For` (`loopback`, `uniquelocal`…) |
+| `CONNECTORS` | vide | Connecteurs activés, séparés par des virgules : `xroad`, ou `simulated` seulement en local hors production |
+| `XROAD_URL` | aucun | X-Road simulé (C5) ; HTTPS hors localhost |
+| `PROCEDURES_SOURCE` | `xroad` si `XROAD_URL`, sinon `backend` | Origine des fiches de `procedures.search` et `procedures.get` |
+| `TOOLING_XROAD_CLIENT_ID`, `TOOLING_XROAD_CLIENT_SECRET` ou `TOOLING_XROAD_TOKEN` | aucun | Identité `tooling-xroad` en mode `jwt`, requise avec `XROAD_URL` |
+| `CONNECTOR_WORKER`, `CONNECTOR_INTERVAL_MS` | `on`, 2000 | Processus d'envoi et de suivi |
+| `CONNECTOR_POLL_MS` | 300000 | Intervalle de suivi d'un dossier envoyé |
+| `CONNECTOR_SIMULATED_STEP_MS` | 30000 | Durée de chaque étape fictive du connecteur simulé |
 | `CONTRACTS_DIR` | `contracts/v1` du dépôt | Contrats dans une image |
 
 Toutes les URL de service doivent être en HTTPS hors localhost. Les secrets viennent de l'environnement et ne sont jamais journalisés. Entre le proxy et les répliques, le trafic reste en HTTP sur le réseau privé du déploiement.

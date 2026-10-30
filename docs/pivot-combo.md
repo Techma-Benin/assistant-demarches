@@ -63,10 +63,51 @@ Après un merge brut, cet écart restera :
 
 Donc **on n’aura pas la slide 8 en jouant le combo**. Ce n’est pas un détail de contrat mort : c’est le trou entre le PowerPoint et les trois bases actuelles. Hors de ce merge. À revalider après chaque palier.
 
-## Palier 2 — Tooling (à documenter après merge + audit)
+## Palier 2 — Tooling (30 octobre 2026)
 
-En attente.
+### Fusion
+
+`git merge techma/tooling/xroad-connector` (`8cfa608`) dans `integration/pivot-combo`. Pas de merge séquentiel : aucun fichier des pointes `xroad-contract` (`049d3f9`), `xroad-sim` (`021c182`) ou `backend-integration` (`abb4486`) ne manquait sur le connecteur, ni dans l’arbre après fusion.
+
+Le merge interne du connecteur (`8f69f56`) n’a pas été repris tel quel. `pnpm install` confirme que `pnpm-lock.yaml` est cohérent avec les manifestes (aucune régénération supplémentaire).
+
+### Audit des quatre pointes
+
+| Pointe | SHA | Dans le résultat |
+|---|---|---|
+| `xroad-contract` | `049d3f9` | Tous les fichiers présents. `contracts/v1/xroad-sim.openapi.json` est celui de la pointe, sauf le renommage `IssuedDocument` → `XroadIssuedDocument` (le pivot possède déjà un `IssuedDocument` différent). |
+| `xroad-sim` | `021c182` | `apps/xroad-sim` identique à la pointe (contenu inchangé). |
+| `backend-integration` | `abb4486` | Aucun fichier absent. Le Tooling a continué ensuite (connecteur `xroad`, `request.pay`) : on ne revient pas à cette pointe. |
+| `xroad-connector` | `8cfa608` | Tous les fichiers présents, y compris `apps/tooling/src/xroad/xroad.client.ts` et `request.pay`. |
+
+### Conflits et résolution
+
+Fichiers en conflit : `CONTRACTS.md`, `contracts/manifest.json`, `contracts/v1/domain.schema.json`, `packages/contracts-ts/src/index.ts`, `scripts/generate-types.mjs`, `apps/tooling/src/gateway/mcp.controller.ts`.
+
+- Manifeste **1.3.0** conservé, avec `department-admin`, `tooling-admin` et `xroad-sim.openapi.json`.
+- Schéma partagé : départements, `blocked`, snapshots, `audio/webm`, `McpAuth` conservés. Schémas X-Road (administrations, dossiers, agents, paiement) ajoutés. `scanStatus` absent.
+- `IssuedDocument` du pivot conservé. Le document délivré par la simulation s’appelle `XroadIssuedDocument`.
+- `request.pay` ajouté, scope `requests:submit`. Catalogue : 9 outils.
+- Découverte MCP sans en-tête de contexte conservée ; un contexte partiel reste refusé ; un appel d’outil sans contexte renvoie `INVALID_REQUEST`.
+- Aucun client X-Road dans `apps/backend`. Le service simulé accepte encore l’identité `backend-xroad` pour ses tests, sans appelant Backend.
+- Textes de démo Tooling qui parlaient d’antivirus alignés sur le stockage sans scan.
+
+`pnpm contracts:check` : 99 schémas, 77 opérations HTTP, 9 outils MCP. `pnpm contracts:generate` a régénéré les types, dont `XroadIssuedDocument`.
+
+### Adaptation de la pile
+
+`pnpm --filter @techma/tooling dev:stack` démarre par défaut le X-Road simulé avec `PROCEDURES_SOURCE=xroad` et `CONNECTORS=xroad`. `CONNECTORS=simulated` ou `XROAD=off` retrouve l’ancienne pile locale. Le paiement simulé reste le même consentement que le dépôt. Le Backend n’appelle pas X-Road.
+
+### Vérification de ce palier
+
+- `pnpm --filter @techma/xroad-sim test` : 11 tests, 0 échec.
+- `pnpm --filter @techma/tooling test` : 56 réussites, 2 ignorés (`TEST_DATABASE_URL` absent : répliques PostgreSQL). 0 échec.
+
+### Écart PowerPoint
+
+**La slide 8 n’est pas jouable.** Le X-Road simulé sait qu’un dossier est fini seul (casier) ou en attente d’un agent (légalisation, vaccin). Le pont Tooling traduit `in_review` en `processing`, pas en `blocked`, et ne range pas le dossier dans **En attente** de la Justice. La console n’a pas encore ces files. Hors de ce palier.
 
 ## Palier 3 — Interface + vérification (à documenter après merge + tests)
 
 En attente.
+

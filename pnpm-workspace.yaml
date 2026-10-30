@@ -2,4 +2,5 @@ packages:
   - 'apps/interface/*'
   - 'apps/backend'
   - 'apps/tooling'
+  - 'apps/xroad-sim'
   - 'packages/*'

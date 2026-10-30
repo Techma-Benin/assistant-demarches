@@ -54,7 +54,11 @@ export class ToolExecutor {
       if (action) {
         const { traceId: _trace, ...context } = call.context;
         key = this.idempotency.keyFor({ actor: call.actor, method: 'tools/call', route: `/mcp#${call.name}`, key: call.idempotencyKey }, { name: call.name, args, context });
-        const prior = await this.db.transaction(scope, (tx) => this.idempotency.lookup(tx, key!));
+        const prior = await this.db.transaction(scope, async (tx) => {
+          const found = await this.idempotency.lookup(tx, key!);
+          if (found) await this.audit.record(tx, this.entry(call, 'success', 'REPLAY', undefined, found.response));
+          return found;
+        });
         if (prior) return prior.response as Record<string, unknown>;
       }
 
@@ -66,7 +70,10 @@ export class ToolExecutor {
         let keyHash: string | undefined;
         if (key) {
           const reservation = await this.idempotency.reserve(tx, key);
-          if (reservation.kind === 'replay') return reservation.response as Record<string, unknown>;
+          if (reservation.kind === 'replay') {
+            await this.audit.record(tx, this.entry(call, 'success', 'REPLAY', undefined, reservation.response));
+            return reservation.response as Record<string, unknown>;
+          }
           keyHash = reservation.keyHash;
         }
 

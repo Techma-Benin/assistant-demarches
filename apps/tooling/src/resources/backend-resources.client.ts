@@ -3,6 +3,7 @@ import { ServiceTokens } from '../auth/service-tokens.js';
 import { ProblemError } from '../common/problem.js';
 import { childTraceparent, type TraceContext } from '../common/trace.js';
 import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
+import { domainValidator, errorsText } from '../contracts.js';
 
 export interface Procedure {
   id: string;
@@ -20,6 +21,11 @@ export interface FileMetadata {
   expiresAt: string;
 }
 
+const procedureSchema = domainValidator('Procedure');
+const fileAccessSchema = domainValidator('FileAccess');
+const isProcedure = (value: unknown): value is Procedure => procedureSchema(value) === true;
+const isFileAccess = (value: unknown): value is { file: FileMetadata; userRef: string } => fileAccessSchema(value) === true;
+
 @Injectable()
 export class BackendResourcesClient {
   private readonly logger = new Logger(BackendResourcesClient.name);
@@ -33,19 +39,23 @@ export class BackendResourcesClient {
     const page = await this.get(`internal/v1/procedures?${new URLSearchParams({ query })}`, trace);
     const items = (page as { items?: unknown }).items;
     if (!Array.isArray(items)) throw this.nonConforming('liste de fiches');
-    return items as Procedure[];
+    return items.filter((item): item is Procedure => {
+      if (isProcedure(item)) return true;
+      this.logger.error(`Fiche non conforme écartée de la recherche : ${errorsText(procedureSchema)}`);
+      return false;
+    });
   }
 
   async getProcedure(procedureId: string, trace: TraceContext): Promise<Procedure> {
-    return (await this.get(`internal/v1/procedures/${encodeURIComponent(procedureId)}`, trace, 'Fiche inconnue')) as Procedure;
+    const procedure = await this.get(`internal/v1/procedures/${encodeURIComponent(procedureId)}`, trace, 'Fiche inconnue');
+    if (!isProcedure(procedure)) throw this.nonConforming(`fiche (${errorsText(procedureSchema)})`);
+    if (procedure.id !== procedureId) throw this.nonConforming('fiche demandée');
+    return procedure;
   }
 
   async getFile(fileId: string, userRef: string, trace: TraceContext): Promise<FileMetadata> {
-    const access = (await this.get(`internal/v1/files/${encodeURIComponent(fileId)}`, trace, 'Pièce inconnue', { 'X-User-Ref': userRef })) as {
-      file?: FileMetadata;
-      userRef?: string;
-    };
-    if (!access.file || access.file.id !== fileId) throw this.nonConforming('FileAccess');
+    const access = await this.get(`internal/v1/files/${encodeURIComponent(fileId)}`, trace, 'Pièce inconnue', { 'X-User-Ref': userRef });
+    if (!isFileAccess(access) || access.file.id !== fileId) throw this.nonConforming('FileAccess');
     if (access.userRef !== userRef) throw new ProblemError(404, 'NOT_FOUND', 'Pièce inconnue');
     return access.file;
   }

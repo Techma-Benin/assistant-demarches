@@ -8,6 +8,7 @@ import { ProblemFilter } from './common/problem.js';
 import { securityHeaders } from './common/security-headers.js';
 import { TraceMiddleware } from './common/trace.js';
 import { TOOLING_CONFIG, type ToolingConfig } from './config.js';
+import { ConnectorsModule } from './connectors/connectors.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { EventsModule } from './events/events.module.js';
 import { GatewayModule } from './gateway/mcp.controller.js';
@@ -17,6 +18,7 @@ import { IdempotencyModule } from './idempotency/idempotency.js';
 import { MandatesModule } from './mandates/mandates.module.js';
 import { ProceduresModule } from './procedures/procedures.module.js';
 import { RequestsModule } from './requests/requests.module.js';
+import { XroadModule } from './xroad/xroad.client.js';
 
 @Global()
 @Module({})
@@ -39,8 +41,10 @@ class AppModule implements NestModule {
         IdempotencyModule,
         EventsModule,
         ToolRegistryModule,
+        XroadModule,
         MandatesModule,
         ProceduresModule,
+        ConnectorsModule,
         RequestsModule,
         GatewayModule,
       ],

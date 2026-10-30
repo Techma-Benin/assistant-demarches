@@ -125,6 +125,109 @@
           "createdAt": "2026-10-22T18:00:00Z"
         }
       }
+    },
+    "Administration": {
+      "id": "justice",
+      "name": "Ministère de la Justice et de la Législation (simulation)",
+      "shortName": "Justice",
+      "themes": [
+        "casier judiciaire",
+        "nationalité"
+      ],
+      "connection": {
+        "status": "connected",
+        "since": "2026-10-29T08:00:00Z"
+      }
+    },
+    "Official": {
+      "id": "off_01JBDX7Q9M4R6T8V0W2Y4Z6A8C",
+      "displayName": "Agent fictif Justice",
+      "jobTitle": "Greffier (simulation)",
+      "administrationId": "justice",
+      "role": "agent",
+      "avatarUrl": null
+    },
+    "Case": {
+      "id": "cas_01JBDX7Q9M4R6T8V0W2Y4Z6A8D",
+      "reference": "SIM-JUS-2026-000001",
+      "simulated": true,
+      "procedureId": "demo-procedure",
+      "administrationId": "justice",
+      "requestId": "req_01JBDX7Q9M4R6T8V0W2Y4Z6A8E",
+      "applicantRef": "usr_01JBDX7Q9M4R6T8V0W2Y4Z6A8F",
+      "status": "in_review",
+      "fields": {
+        "displayName": "Usager fictif"
+      },
+      "documents": [
+        {
+          "documentType": "demo-document",
+          "fileId": "fil_01JBDX7Q9M4R6T8V0W2Y4Z6A8G",
+          "mimeType": "application/pdf",
+          "sizeBytes": 2048
+        }
+      ],
+      "payment": {
+        "amountFcfa": 1000,
+        "status": "paid",
+        "method": "mobile_money",
+        "reference": "SIM-PAY-000001",
+        "paidAt": "2026-10-29T09:05:00Z"
+      },
+      "steps": [
+        {
+          "id": "form",
+          "label": "Formulaire complété",
+          "state": "done",
+          "actor": "assistant",
+          "note": null,
+          "at": "2026-10-29T09:00:00Z"
+        },
+        {
+          "id": "payment",
+          "label": "Frais payés",
+          "state": "done",
+          "actor": "applicant",
+          "note": null,
+          "at": "2026-10-29T09:05:00Z"
+        },
+        {
+          "id": "identity",
+          "label": "Identité vérifiée auprès de l'état civil",
+          "state": "blocked",
+          "actor": "assistant",
+          "note": "Acte de naissance introuvable : vérification manuelle requise",
+          "at": "2026-10-29T09:06:00Z"
+        },
+        {
+          "id": "decision",
+          "label": "Décision de l'administration",
+          "state": "pending",
+          "actor": "administration",
+          "note": null,
+          "at": null
+        }
+      ],
+      "issuedDocuments": [],
+      "completedBy": null,
+      "createdAt": "2026-10-29T09:00:00Z",
+      "updatedAt": "2026-10-29T09:06:00Z"
+    },
+    "AdministrationMetrics": {
+      "administrationId": "justice",
+      "casesTotal": 12,
+      "casesPending": 3,
+      "casesCompleted": 8,
+      "casesCompletedByAssistant": 6,
+      "casesRejected": 1,
+      "medianProcessingHours": 2.5,
+      "topProcedures": [
+        {
+          "procedureId": "demo-procedure",
+          "title": "Démarche fictive de démonstration",
+          "count": 12
+        }
+      ]
     }
   },
   "event": {
@@ -333,6 +436,20 @@
         "fileId": "fil_00000000000000000000000001",
         "status": "valid",
         "reasons": []
+      }
+    },
+    "request.pay": {
+      "input": {
+        "requestId": "req_00000000000000000000000001"
+      },
+      "output": {
+        "requestId": "req_00000000000000000000000001",
+        "caseReference": "SIM-JUS-2026-000001",
+        "simulated": true,
+        "amountFcfa": 1000,
+        "status": "paid",
+        "paymentReference": "SIM-PAY-000001",
+        "paidAt": "2026-10-29T09:05:00Z"
       }
     }
   }

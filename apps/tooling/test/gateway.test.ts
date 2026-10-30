@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -7,6 +9,7 @@ import { generateKeyPair } from 'jose';
 import {
   assertSchema,
   callTool,
+  type ToolResult,
   CONVERSATION_ID,
   mcpClient,
   rawInitialize,
@@ -113,6 +116,36 @@ test('JWT : appel complet, jeton tooling-resources obtenu une fois puis réutili
   assert.equal(oidc.tokenRequests, 1);
 });
 
+test('JWT : jetons sortants préémis utilisés tels quels, sans fournisseur de jetons', async (t) => {
+  const oidc = await startFakeOidc(t);
+  const backend = await startBackendMock(t);
+  const { OIDC_TOKEN_URL: _url, TOOLING_RESOURCES_CLIENT_ID: _a, TOOLING_RESOURCES_CLIENT_SECRET: _b, TOOLING_EVENTS_CLIENT_ID: _c, TOOLING_EVENTS_CLIENT_SECRET: _d, ...realm } = oidc.env;
+  const tooling = await startTooling(t, { ...realm, TOOLING_RESOURCES_TOKEN: 'mock-tooling-resources', TOOLING_EVENTS_TOKEN: 'mock-tooling-events', BACKEND_URL: backend });
+  const client = await mcpClient(t, tooling, await oidc.sign());
+  const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
+  assert.ok(!search.isError, search.content[0].text);
+  assert.equal(oidc.tokenRequests, 0);
+});
+
+test('fiche non conforme renvoyée par le Backend : écartée de la recherche, refusée en lecture', async (t) => {
+  const fixtures = JSON.parse(readFileSync(new URL('../../../../mocks/fixtures.json', import.meta.url), 'utf8'));
+  const valid = fixtures.schemas.Procedure;
+  const broken = { ...valid, id: 'broken-procedure', requiredDocuments: 'demo-document' };
+  const backend = http.createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    const body = url.pathname === '/internal/v1/procedures' ? { items: [valid, broken], nextCursor: null } : url.pathname.endsWith('/broken-procedure') ? broken : { ...valid, id: 'other-id' };
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+  });
+  await new Promise<void>((resolve) => backend.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise<void>((resolve) => backend.close(() => resolve())));
+  const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: `http://127.0.0.1:${(backend.address() as AddressInfo).port}` });
+  const client = await mcpClient(t, tooling, 'mock-agent');
+  const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
+  assert.deepEqual((search.structuredContent?.items as { id: string }[]).map((item) => item.id), [valid.id]);
+  assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: 'broken-procedure' })).code, 'UPSTREAM_UNAVAILABLE');
+  assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: valid.id })).code, 'UPSTREAM_UNAVAILABLE', 'fiche renvoyée sous un autre identifiant');
+});
+
 test('fiches en brouillon masquées quand elles ne sont pas autorisées (règle de production)', async (t) => {
   const backend = await startBackendMock(t);
   const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', PROCEDURES_ALLOW_DRAFTS: 'false', BACKEND_URL: backend });
@@ -131,6 +164,7 @@ test('découverte administrative authentifiée sans contexte usager ; exécution
   });
   t.after(() => client.close());
   await client.connect(transport);
-  assert.equal((await client.listTools()).tools.length, 8);
-  await assert.rejects(client.callTool({ name: 'procedures.search', arguments: { query: 'demo', locale: 'fr' } }));
+  assert.equal((await client.listTools()).tools.length, 9);
+  const refused = await client.callTool({ name: 'procedures.search', arguments: { query: 'demo', locale: 'fr' } });
+  assert.equal(toolError(refused as ToolResult).code, 'INVALID_REQUEST');
 });

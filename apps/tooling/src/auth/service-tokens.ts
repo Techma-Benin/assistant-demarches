@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ProblemError } from '../common/problem.js';
-import { TOOLING_CONFIG, type OutboundClient, type ToolingConfig } from '../config.js';
+import { TOOLING_CONFIG, type OidcClient, type OutboundClient, type ToolingConfig } from '../config.js';
 
 interface CachedToken {
   value: string;
@@ -19,6 +19,8 @@ export class ServiceTokens {
 
   async get(client: OutboundClient): Promise<string> {
     if (!this.config.jwt) return `mock-${client}`;
+    const credentials = this.credentials(client);
+    if ('token' in credentials) return credentials.token;
     const cached = this.cache.get(client);
     if (cached && cached.expiresAt - REFRESH_MARGIN_MS > Date.now()) return cached.value;
     let pending = this.pending.get(client);
@@ -33,12 +35,18 @@ export class ServiceTokens {
     this.cache.delete(client);
   }
 
+  private credentials(client: OutboundClient): OidcClient {
+    const credentials = this.config.jwt!.clients[client];
+    if (!credentials) throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', `Identité ${client} non configurée`);
+    return credentials;
+  }
+
   private async fetchToken(client: OutboundClient): Promise<string> {
-    const jwt = this.config.jwt!;
-    const credentials = jwt.clients[client];
+    const credentials = this.credentials(client);
+    if ('token' in credentials) return credentials.token;
     let res: Response;
     try {
-      res = await fetch(jwt.tokenUrl, {
+      res = await fetch(credentials.tokenUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
         body: new URLSearchParams({

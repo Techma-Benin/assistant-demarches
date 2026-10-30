@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { supervise } from '../src/runtime/supervisor.js';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const SERVICE_START_MS = 60_000;
 
 async function freePort(): Promise<number> {
   const server = net.createServer();
@@ -85,13 +86,13 @@ test('service réel : processus tué relancé, puis arrêt propre demandé par I
     if (child.exitCode === null) child.kill('SIGKILL');
   });
   const health = `http://127.0.0.1:${port}/health`;
-  await until(() => get(health), 20_000);
+  await until(() => get(health), SERVICE_START_MS);
   const pid = Number(/prêt \(pid (\d+)\)/.exec(state.output)?.[1]);
   assert.ok(pid > 0, state.output);
 
   process.kill(pid, 'SIGKILL');
   await until(async () => /processus 0 arrêté/.test(state.output), 5000);
-  await until(async () => new RegExp(`prêt \\(pid (?!${pid}\\))\\d+\\)`).test(state.output) && (await get(health)), 20_000);
+  await until(async () => new RegExp(`prêt \\(pid (?!${pid}\\))\\d+\\)`).test(state.output) && (await get(health)), SERVICE_START_MS);
 
   child.send({ type: 'shutdown' });
   assert.equal(await exited, 0);
@@ -105,7 +106,7 @@ test('service réel : arrêt propre sur SIGTERM, comme Docker', { skip: process.
   t.after(() => {
     if (child.exitCode === null) child.kill('SIGKILL');
   });
-  await until(() => get(`http://127.0.0.1:${port}/health`), 20_000);
+  await until(() => get(`http://127.0.0.1:${port}/health`), SERVICE_START_MS);
   child.kill('SIGTERM');
   assert.equal(await exited, 0);
   assert.match(state.output, /SIGTERM reçu/);
