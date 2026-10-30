@@ -32,7 +32,7 @@ cpSync(new URL("migrations/", root), new URL("migrations/", assets), {
   recursive: true,
 });
 
-for (const name of ["conversation", "admin", "events", "backend-resources"]) {
+for (const name of ["conversation", "admin", "events", "backend-resources", "department-admin", "tooling-admin"]) {
   cpSync(new URL(`../../../contracts/v1/${name}.openapi.json`, import.meta.url), new URL(`${name}.openapi.json`, assets));
 }
 

@@ -56,6 +56,12 @@ test("Local Swagger test identity authenticates a real conversation and keeps us
     assert.equal(adminAsUser.status, 403);
     const models = await fetch(base + "/v1/admin/models", { headers: { ...headers, Authorization: `Bearer ${fixture.tokens.admin}` } });
     assert.equal(models.status, 200);
+    const department = await fetch(base + "/v1/admin/departments", { method: "POST", headers: {...headers, Authorization: `Bearer ${fixture.tokens.admin}`, "Idempotency-Key": "local-dev-department-001"}, body: JSON.stringify({id:"justice",name:"Justice — démonstration locale"}) });
+    assert.equal(department.status,201);
+    const profile = await fetch(base + "/v1/admin/me", { headers: {...headers, Authorization: `Bearer ${fixture.tokens.admin}`} });
+    assert.equal(profile.status,200);
+    assert.equal((await profile.json()).superAdmin,true);
+
     const wrongHostStatus = await new Promise((resolve, reject) => {
       const req = httpRequest(base + "/docs/development-auth/user", { headers: { Host: "untrusted.example" } }, res => { res.resume(); resolve(res.statusCode); });
       req.on("error", reject); req.end();

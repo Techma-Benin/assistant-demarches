@@ -10,7 +10,7 @@ export async function createDevelopmentIdentity(administrationId: string) {
   const issuer = "urn:techma:local-development";
   const tokens: Record<string, string> = {};
   for (const role of ["user", "admin"]) {
-    tokens[role] = await new SignJWT({ administrationId, ...(role === "admin" ? { scope: "admin:read admin:write" } : {}) })
+    tokens[role] = await new SignJWT({ administrationId, ...(role === "admin" ? { scope: "admin:read admin:write admin:super operator:read operator:write" } : {}) })
       .setProtectedHeader({ alg: "RS256", kid })
       .setIssuer(issuer).setAudience("techma-backend")
       .setSubject(`local-development-${role}`).setIssuedAt().setExpirationTime("8h").sign(privateKey);

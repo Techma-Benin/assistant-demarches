@@ -11,6 +11,7 @@
     "migrate": "node dist/apps/backend/src/cli.js migrate",
     "seed": "node dist/apps/backend/src/cli.js seed",
     "test": "node scripts/build.mjs && node --test tests/*.test.mjs",
+    "test:groq": "node scripts/build.mjs && GROQ_LIVE_TEST=true node --test tests/groq.live.mjs",
     "dev": "node scripts/dev.mjs"
   },
   "dependencies": {

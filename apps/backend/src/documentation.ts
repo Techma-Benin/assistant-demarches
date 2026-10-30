@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 import { static as serveStatic, type Express } from "express";
 
 const require = createRequire(import.meta.url);
-const documents = ["conversation", "admin", "events", "backend-resources"];
+const documents = ["conversation", "admin", "events", "backend-resources", "department-admin", "tooling-admin"];
 
 /** Serve the existing contracts; API authentication remains enforced by the routes. */
 export function attachDocumentation(server: Express, developmentTokens?: Record<string, string>) {
@@ -19,7 +19,7 @@ export function attachDocumentation(server: Express, developmentTokens?: Record<
   });
   const specifications = new Map(documents.map((name) => {
     const spec = JSON.parse(readFileSync(new URL(`./assets/${name}.openapi.json`, import.meta.url), "utf8"));
-    const documented = describeSpecification(name, spec);
+    const documented = name === "department-admin" || name === "tooling-admin" ? spec : describeSpecification(name, spec);
     if (developmentTokens) documented.info.description = "**Test local prêt :** cliquez sur **Tester comme usager** en haut pour les conversations, ou **Tester comme administrateur** pour la configuration. Le jeton est rempli automatiquement. Puis Try it out → Execute.\n\n" + documented.info.description;
     return [name, documented];
   }));

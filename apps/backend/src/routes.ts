@@ -5,10 +5,11 @@ import {
   Body,
   Param,
   Req,
+  Res,
   Inject,
   HttpCode,
 } from "@nestjs/common";
-import type { Request } from "express";
+import type { Request, Response } from "express";
 import type { Pool } from "pg";
 import { verifyIdentity, scopes, type AuthOptions } from "./auth.js";
 import { Identities, serviceClient, type User } from "./identity.js";
@@ -16,7 +17,8 @@ import { Conversations, type Event } from "./conversations.js";
 import { Consent } from "./consent.js";
 import type { ToolingPort } from "./tooling.js";
 import { Files } from "./files.js";
-import { Problem, type Schemas } from "./domain.js";
+import { DepartmentWork, type SnapshotEvent, adminView } from "./department-work.js";
+import { Problem, validate, type Schemas } from "./domain.js";
 import { idempotencyKey } from "./transactions.js";
 
 export const RUNTIME = Symbol("CONVERSATION_RUNTIME");
@@ -170,6 +172,21 @@ export class ConversationController {
       id,
     );
   }
+  @Get("requests/:id/progress")
+  async progress(@Param("id") id:string,@Req() req:Request) {
+    const owner=await user(this.runtime,req),item=await new DepartmentWork(this.runtime.pool).get(id);
+    if(item.userRef!==owner.userRef)throw new Problem(404,"NOT_FOUND","Dossier introuvable.");
+    const {assignedTo,...view}=adminView(item);
+    return view;
+  }
+  @Get("requests/:id/documents/:fileId")
+  async document(@Param("id") id:string,@Param("fileId") fileId:string,@Req() req:Request,@Res() res:Response) {
+    const owner=await user(this.runtime,req),item=await new DepartmentWork(this.runtime.pool).get(id);
+    const metadata=item.documents?.find(d=>d.fileId===fileId);
+    if(item.userRef!==owner.userRef||!metadata||Date.parse(metadata.expiresAt)<=Date.now()||!this.runtime.files)throw new Problem(404,"NOT_FOUND","Document introuvable.");
+    const file=await this.runtime.files.readOwned(fileId,owner.userRef);
+    res.setHeader("Content-Type",file.file.mimeType);res.setHeader("Content-Disposition",`attachment; filename*=UTF-8''${encodeURIComponent(metadata.name)}`);res.setHeader("Cache-Control","no-store");res.send(file.bytes);
+  }
   @Post("files")
   async upload(@Req() req: Request, @Body() body: Buffer) {
     const principal = await user(this.runtime, req);
@@ -196,6 +213,11 @@ export class InternalController {
   @HttpCode(202)
   async events(@Req() req: Request, @Body() event: Event) {
     await service(this.runtime, req, "tooling-events", "events:publish");
+    validate("Event", event);
+    if (event.data.kind === "request.snapshot") {
+      await new DepartmentWork(this.runtime.pool).ingest(event as unknown as SnapshotEvent, key(req));
+      return event;
+    }
     return this.runtime.conversations.ingest(event, key(req));
   }
   @Get("files/:id")
@@ -206,6 +228,25 @@ export class InternalController {
     const owner = req.get("X-User-Ref");
     if (!owner) throw new Problem(400, "INVALID_REQUEST", "X-User-Ref requis.");
     return this.runtime.files.metadata(id, owner);
+  }
+  @Get("files/:id/content")
+  async fileContent(@Param("id") id:string,@Req() req:Request,@Res() res:Response) {
+    await service(this.runtime,req,"tooling-documents","documents:transfer");
+    const owner=req.get("X-User-Ref");if(!owner||!this.runtime.files)throw new Problem(404,"NOT_FOUND","Pièce introuvable.");
+    const value=await this.runtime.files.readOwned(id,owner);
+    res.setHeader("Content-Type",value.file.mimeType);res.setHeader("Content-Disposition","attachment");res.setHeader("Cache-Control","no-store");res.send(value.bytes);
+  }
+  @Post("requests/:id/documents")
+  async issuedDocument(@Param("id") id:string,@Req() req:Request,@Body() data:Buffer) {
+    await service(this.runtime,req,"tooling-documents","documents:transfer");
+    const item=await new DepartmentWork(this.runtime.pool).get(id);
+    if(req.get("X-User-Ref")!==item.userRef)throw new Problem(404,"NOT_FOUND","Dossier introuvable.");
+    if(req.get("content-type")!=="application/octet-stream"||!this.runtime.files)throw new Problem(415,"UNSUPPORTED_MEDIA_TYPE","Dépôt binaire requis.");
+    const mime=req.get("X-File-Mime-Type")??"";
+    if(!["application/pdf","image/png","image/jpeg"].includes(mime))throw new Problem(415,"UNSUPPORTED_MEDIA_TYPE","Format de document délivré non autorisé.");
+    const days=Number(process.env.ISSUED_DOCUMENT_RETENTION_DAYS??30);
+    if(!Number.isInteger(days)||days<1||days>365)throw new Problem(503,"UPSTREAM_UNAVAILABLE","Durée de conservation invalide.");
+    return this.runtime.files.upload(item.userRef,data,mime,key(req),days*86400000,"issued:"+id);
   }
   @Get("procedures")
   async procedures(@Req() req: Request) {

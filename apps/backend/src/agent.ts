@@ -1,10 +1,11 @@
 import { modelToolName, type McpServer } from "./mcp-connections.js";
-import { describeError, logFailure } from "./diagnostics.js";
+import { DiagnosticProblem, describeError, logFailure } from "./diagnostics.js";
 import type { Pool } from "pg";
 import {
   canonical,
   validate,
   Problem,
+  identifier,
   type Schemas,
   type ToolConfig,
   type ModelConfig,
@@ -24,11 +25,12 @@ import {
   type ToolDefinition,
   type ToolResult,
 } from "./tooling.js";
-import { redact, type ModelPort, type Turn } from "./model.js";
+import { redact, type ModelPort, type ModelReply, type Turn } from "./model.js";
 import type { Consent } from "./consent.js";
+import { presentModelReply, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS } from "./model-reply.js";
+import type { TranscriptionPort } from "./transcription.js";
 
-const unavailable =
-  "Je ne dispose pas d’une source administrative validée pour répondre à cette demande. Veuillez consulter le portail officiel.";
+const MODEL_REPLY_ATTEMPTS = 3;
 function modelData(value: unknown): string {
   const privateFields = new Set([
     "userRef",
@@ -80,8 +82,11 @@ type State = {
   };
   sources: Schemas["Source"][];
   requests: Schemas["Request"][];
+  requestProcedures?: Record<string, string>;
+  procedures?: Schemas["Procedure"][];
+  successfulActions?: { fingerprint: string; operationKey: string }[];
+  toolFailed?: boolean;
   config: ModelConfig;
-  externalResults?: boolean;
 };
 export class Agent {
   constructor(
@@ -90,6 +95,7 @@ export class Agent {
     private models: ModelPort,
     private tooling: ToolingPort,
     private consent?: Consent,
+    private transcriber?: TranscriptionPort,
   ) {}
   async process(conversationId: string): Promise<void> {
     // Session lock survives checkpoint transactions, but is released on connection loss/crash.
@@ -125,6 +131,7 @@ export class Agent {
             conversationId, messageId: row.id, attempts: row.attempts,
             traceId: row.traceparent?.split("-")[1], lastError: row.last_error ?? "unknown",
           });
+          await this.unanswered(row.conversation.id, row.body.id, row.administration_id, "provider_failure");
           await this.finish(
             row.conversation,
             row.body,
@@ -178,6 +185,23 @@ export class Agent {
     traceparent: string,
     administrationId: string,
   ) {
+    if (input.content.type === "audio") {
+      try {
+        const text = await this.transcriber?.transcribe(input.content.fileId, conversation.userRef);
+        if (text && text.trim().length > 4000) {
+          await this.finish(conversation, input, [{ type: "text", text: "Le message vocal est trop long. Veuillez envoyer un audio plus court ou préciser votre demande par écrit.", sources: [] }], traceparent);
+          return;
+        }
+        if (text?.trim()) input = { ...input, content: { type: "text", text: text.trim() } };
+        else {
+          await this.finish(conversation, input, [{ type: "text", text: "L’audio n’a pas pu être transcrit. Veuillez préciser votre demande par écrit.", sources: [] }], traceparent);
+          return;
+        }
+      } catch {
+        await this.finish(conversation, input, [{ type: "text", text: "L’audio n’a pas pu être transcrit. Veuillez préciser votre demande par écrit.", sources: [] }], traceparent);
+        return;
+      }
+    }
     if (
       input.content.type === "text" &&
       input.content.text.trim().toUpperCase() === "STOP"
@@ -328,6 +352,8 @@ export class Agent {
         step: 0,
         sources: [],
         requests: [],
+        requestProcedures: Object.fromEntries(previous.flatMap(row => row.body.data.kind === "message.sent" ? (row.body.data.message.blocks as Schemas["AgentMessage"]["blocks"]).flatMap(block => block.type === "statusCard" && block.request.conversationId === conversation.id && block.request.userRef === conversation.userRef ? [[block.request.id, block.request.procedureId]] : []) : [])),
+        procedures: [],
         config: configs[0].body,
       };
       await this.save(conversation.id, input.id, state);
@@ -355,11 +381,12 @@ export class Agent {
     }
     while (state.step < 8) {
       if (!state.pending) {
-        const reply = await this.models.generate(
-          state.config,
-          state.history,
-          advertised,
-        );
+        const { reply, blocks } = await this.generateUsable(state, advertised);
+        if (!reply) {
+          await this.unanswered(conversation.id, input.id, administrationId, state.toolFailed ? "tool_failure" : blocks === UNAVAILABLE_BLOCKS ? "missing_source" : "invalid_reply");
+          await this.finish(conversation, input, blocks!, traceparent);
+          return;
+        }
         state.history.push({
           role: "assistant",
           content: reply.text,
@@ -367,49 +394,9 @@ export class Agent {
           ...(reply.rawOutput ? { rawOutput: reply.rawOutput } : {}),
         });
         if (!reply.calls.length) {
-          let blocks: Schemas["AgentMessage"]["blocks"];
-          try {
-            blocks = JSON.parse(reply.text).blocks;
-            if (Array.isArray(blocks))
-              blocks = blocks.map((block) =>
-                block.type === "statusCard"
-                  ? {
-                      type: "statusCard",
-                      request:
-                        state.requests.find(
-                          (request) => request.id === block.request?.id,
-                        ) ?? block.request,
-                    }
-                  : block,
-              );
-            validate("AgentMessage", {
-              id: input.id,
-              conversationId: conversation.id,
-              createdAt: new Date().toISOString(),
-              blocks,
-            });
-          } catch {
-            blocks = [{ type: "text", text: unavailable, sources: [] }];
-          }
-          // Only citations observed in validated Tooling results can leave the service.
-          const provenance = blocks.every((block) =>
-            block.type === "text"
-              ? (block.sources.length > 0 || state.externalResults === true) &&
-                block.sources.every((source) =>
-                  state.sources.some(
-                    (known) => canonical(known) === canonical(source),
-                  ),
-                )
-              : block.type === "statusCard"
-                ? state.requests.some(
-                    (request) =>
-                      canonical(request) === canonical(block.request),
-                  )
-                : true,
-          );
-          if (!provenance)
-            blocks = [{ type: "text", text: unavailable, sources: [] }];
-          await this.finish(conversation, input, blocks, traceparent);
+          if (blocks!.some(block => block.type === "text" && /Je n[’']ai pas trouvé de démarche validée|Aucune action disponible/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "missing_source");
+          else if (state.toolFailed && blocks!.some(block => block.type === "text" && /L[’']outil n[’']a pas pu|Action refusée/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "tool_failure");
+          await this.finish(conversation, input, blocks!, traceparent);
           return;
         }
         if (
@@ -467,11 +454,14 @@ export class Agent {
                 "MANDATE_REVOKED",
                 "Nouvelles actions suspendues.",
               );
+            const targetProcedure = typeof argumentsValue.procedureId === "string" ? argumentsValue.procedureId : typeof argumentsValue.requestId === "string" ? state.requestProcedures?.[argumentsValue.requestId] : undefined;
+            const scopes = binding.definition._meta?.["bj.techma/scopes"];
+            const requiredScopes = Array.isArray(scopes) && scopes.every(scope => typeof scope === "string") ? scopes : [];
             const mandate = requires
               ? (
                   await this.pool.query(
-                    "SELECT body FROM backend_mandates WHERE conversation_id=$1 AND user_ref=$2 AND body->>'status'='active' AND (body->>'expiresAt')::timestamptz>now() ORDER BY id LIMIT 1",
-                    [conversation.id, conversation.userRef],
+                    "SELECT body FROM backend_mandates WHERE conversation_id=$1 AND user_ref=$2 AND body->>'status'='active' AND (body->>'expiresAt')::timestamptz>now() AND (body->'scopes') @> $3::jsonb AND ($4::text IS NULL OR body->>'procedureId'=$4) ORDER BY id LIMIT 1",
+                    [conversation.id, conversation.userRef, JSON.stringify(requiredScopes), targetProcedure ?? null],
                   )
                 ).rows[0]?.body
               : undefined;
@@ -481,7 +471,11 @@ export class Agent {
                 "MANDATE_MISSING",
                 "Autorisation explicite requise.",
               );
-            result = await this.tooling.call(
+            const fingerprint = canonical({ name: call.name, arguments: argumentsValue });
+            const isWrite = binding.definition._meta?.["bj.techma/kind"] !== "read";
+            const previousAction = isWrite ? state.successfulActions?.find(action => action.fingerprint === fingerprint) : undefined;
+            const previousResult = previousAction ? (await this.pool.query("SELECT result FROM backend_tool_results WHERE conversation_id=$1 AND operation_key=$2", [conversation.id, previousAction.operationKey])).rows[0]?.result : undefined;
+            result = previousResult ?? await this.tooling.call(
               binding.server.url,
               binding.server.auth,
               binding.name,
@@ -490,6 +484,10 @@ export class Agent {
               operationKey,
               binding.definition,
             );
+            if (isWrite && !result.isError && !previousAction) {
+              state.successfulActions ??= [];
+              state.successfulActions.push({ fingerprint, operationKey });
+            }
           } catch (error) {
             if (!(error instanceof Problem) || error.status >= 500) throw error;
             result = {
@@ -529,21 +527,33 @@ export class Agent {
           });
         }
         const selected=bindings.get(call.name);
+        if (selected && selected.definition._meta?.["bj.techma/kind"] !== "read" && !result.isError) {
+          try {
+            const fingerprint = canonical({ name: call.name, arguments: JSON.parse(call.arguments) });
+            state.successfulActions ??= [];
+            if (!state.successfulActions.some(action => action.fingerprint === fingerprint)) state.successfulActions.push({ fingerprint, operationKey });
+          } catch { /* Invalid arguments have already produced a failed tool result. */ }
+        }
+        if (result.isError) state.toolFailed = true;
         const isTechma=selected?.server.policy==="techma"&&catalog.some(t=>t.name===selected.name);
-        if(!isTechma&&!result.isError)state.externalResults=true;
-        const output = (isTechma?result.structuredContent:undefined) as any;
+        const output = (isTechma&&!result.isError?result.structuredContent:undefined) as any;
         for (const procedure of output?.items ??
           (output?.source ? [output] : []))
           if (procedure.validationStatus === "validated") {
             try {
-              validate("Source", procedure.source);
+              validate("Procedure", procedure);
+              if (procedure.source.procedureId !== procedure.id) continue;
               state.sources.push(procedure.source);
+              state.procedures ??= [];
+              state.procedures.push(procedure);
             } catch {}
           }
-        if (output?.status && output?.conversationId === conversation.id) {
+        if (output?.status && output?.conversationId === conversation.id && output?.userRef === conversation.userRef) {
           try {
             validate("Request", output);
-            state.requests.push(output);
+            state.requests = [...state.requests.filter(request => request.id !== output.id), output];
+            state.requestProcedures ??= {};
+            state.requestProcedures[output.id] = output.procedureId;
           } catch {}
         }
         const sanitized = modelData(
@@ -579,6 +589,46 @@ export class Agent {
       ],
       traceparent,
     );
+  }
+  private async unanswered(conversationId: string, messageId: string, administrationId: string, reason: "missing_source" | "tool_failure" | "provider_failure" | "invalid_reply") {
+    await this.pool.query(
+      "INSERT INTO backend_unanswered(id,conversation_id,message_id,administration_id,reason) VALUES($1,$2,$3,$4,$5) ON CONFLICT(conversation_id,message_id,reason) DO NOTHING",
+      [identifier("una"), conversationId, messageId, administrationId, reason],
+    );
+  }
+  private async generateUsable(
+    state: State,
+    tools: ToolDefinition[],
+  ): Promise<{ reply?: ModelReply; blocks?: Schemas["AgentMessage"]["blocks"] }> {
+    let fallback = MODEL_UNAVAILABLE_BLOCKS;
+    for (let attempt = 0; attempt < MODEL_REPLY_ATTEMPTS; attempt++) {
+      // No tool is run in this retry loop. Successfully checkpointed tool results
+      // stay in the history, including after a worker restart.
+      const history: Turn[] = attempt === 0 ? state.history : [
+        ...state.history,
+        { role: "user", content: "Rappel technique : appelle uniquement les outils annoncés avec leur nom exact, ou fournis l’objet JSON {\"blocks\":[...]} dans le contenu texte assistant, sans appeler d’outil json ou final. Pour un texte sans source, reprends exactement une phrase autorisée du prompt. Ne répète pas une action dont le résultat est déjà présent." },
+      ];
+      let reply: ModelReply;
+      try { reply = await this.models.generate(state.config, history, tools); }
+      catch (error) {
+        // Groq rejects malformed/hallucinated tool generations before any local
+        // tool executes. Retry only this classified error within the same reply
+        // budget; never parse or execute its untrusted failed_generation body.
+        if (error instanceof DiagnosticProblem && error.diagnostic.reason === "provider_tool_generation_invalid") continue;
+        throw error;
+      }
+      if (!Array.isArray(reply.calls)) continue;
+      if (reply.calls.length) {
+        if (reply.calls.length <= 8 && new Set(reply.calls.map(call => call.id)).size === reply.calls.length && reply.calls.every(call => typeof call.id === "string" && call.id.length > 0 && typeof call.name === "string" && call.name.length > 0 && typeof call.arguments === "string")) return { reply };
+        continue;
+      }
+      if (typeof reply.text !== "string" || !reply.text.trim()) continue;
+      try { return { reply, blocks: presentModelReply(reply.text, state) }; }
+      catch (error) {
+        if (!(error instanceof SyntaxError)) fallback = UNAVAILABLE_BLOCKS;
+      }
+    }
+    return { blocks: fallback };
   }
   private save(cid: string, messageId: string, state: State) {
     return this.pool.query(

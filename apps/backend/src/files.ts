@@ -14,14 +14,14 @@ export class Files {
     private pool: Pool,
     private storage: ObjectStorage,
   ) {}
-  async upload(userRef: string, data: Buffer, mime: string, key: string) {
+  async upload(userRef: string, data: Buffer, mime: string, key: string, ttlMs = 86400000, namespace = "/v1/files") {
     if (!Buffer.isBuffer(data) || !data.length)
       throw new Problem(400, "INVALID_REQUEST", "Fichier vide.");
     const file: Schemas["File"] = {
       id: identifier("fil"),
       mimeType: mime as Schemas["File"]["mimeType"],
       sizeBytes: data.length,
-      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      expiresAt: new Date(Date.now() + ttlMs).toISOString(),
     };
     if (data.length > 10485760)
       throw new Problem(413, "FILE_TOO_LARGE", "Fichier supérieur à 10 Mio.");
@@ -38,7 +38,7 @@ export class Files {
     try {
       return await idempotent(
         this.pool,
-        [userRef, "POST", "/v1/files"],
+        [userRef, "POST", namespace],
         key,
         { mime, digest: fingerprint(data.toString("base64")) },
         async (db) => {
@@ -65,6 +65,35 @@ export class Files {
     ).rows[0];
     if (!row) throw new Problem(404, "NOT_FOUND", "Pièce introuvable.");
     return { file: row.body, userRef };
+  }
+  async readOwned(id: string, userRef: string): Promise<{ file: Schemas["File"]; bytes: Buffer }> {
+    const row = (
+      await this.pool.query(
+        "SELECT object_key,body FROM backend_files WHERE id=$1 AND user_ref=$2 AND expires_at>now()",
+        [id, userRef],
+      )
+    ).rows[0];
+    if (!row) throw new Problem(404, "NOT_FOUND", "Pièce introuvable.");
+    const file = row.body as Schemas["File"];
+    try {
+      validate("File", file);
+      if (file.id !== id) throw new Error();
+    } catch {
+      throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Métadonnées de la pièce invalides.");
+    }
+    if (Date.parse(file.expiresAt) <= Date.now())
+      throw new Problem(404, "NOT_FOUND", "Pièce introuvable.");
+    let bytes: Buffer;
+    try {
+      bytes = await this.storage.read(row.object_key);
+    } catch {
+      throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Lecture de la pièce indisponible.");
+    }
+    if (!Buffer.isBuffer(bytes) || !bytes.length || bytes.length !== file.sizeBytes || bytes.length > 10485760)
+      throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Contenu de la pièce invalide.");
+    if (Date.parse(file.expiresAt) <= Date.now())
+      throw new Problem(404, "NOT_FOUND", "Pièce introuvable.");
+    return { file, bytes };
   }
   async purgeExpired() {
     return transaction(this.pool, async (db) => {

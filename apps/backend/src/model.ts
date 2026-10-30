@@ -1,5 +1,6 @@
 import { DiagnosticProblem, providerReason, safeProviderIdentifier } from "./diagnostics.js";
 import { readFileSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
 import { Problem, approvedMcpUrl, type ModelConfig } from "./domain.js";
 import type { ToolDefinition } from "./tooling.js";
 
@@ -28,6 +29,7 @@ export type Provider = {
   protocol: "responses" | "chat-completions";
   apiKeyEnv?: string;
   omitTemperature?: boolean;
+  parallelToolCalls?: boolean;
 };
 export class HttpModels implements ModelPort {
   constructor(
@@ -44,6 +46,23 @@ export class HttpModels implements ModelPort {
         throw new Error("Model endpoint requires HTTPS outside localhost.");
   }
   async generate(
+    config: ModelConfig,
+    history: Turn[],
+    tools: ToolDefinition[],
+  ): Promise<ModelReply> {
+    for (let attempt = 0; ; attempt++) {
+      try { return await this.generateOnce(config, history, tools); }
+      catch (error) {
+        const diagnostic = error instanceof DiagnosticProblem ? error.diagnostic : undefined;
+        const status = diagnostic?.upstreamStatus;
+        const transient = diagnostic?.reason === "provider_network_error" || diagnostic?.reason === "provider_response_invalid" || (typeof status === "number" && ([408, 425, 429].includes(status) || status >= 500));
+        if (!transient || attempt >= 2) throw error;
+        // Only provider generation is retried; tool actions are handled by Agent.
+        await delay(250 * 2 ** attempt);
+      }
+    }
+  }
+  private async generateOnce(
     config: ModelConfig,
     history: Turn[],
     tools: ToolDefinition[],
@@ -154,6 +173,16 @@ export class HttpModels implements ModelPort {
           },
         })),
       };
+    // Groq and several OpenAI-compatible services reject an empty tools array.
+    if (!tools.length) delete body.tools;
+    if (!responses && tools.length) {
+      // Groq defaults this parameter to true, but its GPT-OSS models support
+      // sequential tool use only. Leave other providers/models untouched.
+      const sequentialGroqModel = new URL(provider.baseUrl).hostname === "api.groq.com"
+        && /^openai\/gpt-oss-(?:20b|120b|safeguard-20b)$/.test(config.model);
+      if (sequentialGroqModel) body.parallel_tool_calls = false;
+      else if (provider.parallelToolCalls !== undefined) body.parallel_tool_calls = provider.parallelToolCalls;
+    }
     const base = provider.baseUrl.endsWith("/")
       ? provider.baseUrl
       : provider.baseUrl + "/";
@@ -204,24 +233,39 @@ export class HttpModels implements ModelPort {
         upstreamCode: safeProviderIdentifier(upstream?.error?.code),
         upstreamType: safeProviderIdentifier(upstream?.error?.type),
         upstreamRequestId: safeProviderIdentifier(res.headers.get("x-request-id") ?? res.headers.get("request-id")),
-        reason: providerReason(res.status, upstream?.error?.message),
+        reason: res.status === 400 && new URL(provider.baseUrl).hostname === "api.groq.com" && upstream?.error?.code === "tool_use_failed"
+          ? "provider_tool_generation_invalid"
+          : providerReason(res.status, upstream?.error?.message),
       });
     }
-    const text = await res.text();
+    let text: string;
+    try { text = await res.text(); }
+    catch {
+      throw new DiagnosticProblem("Lecture de la réponse fournisseur interrompue.", {
+        stage: "model.response", provider: config.provider, model: config.model,
+        reason: "provider_network_error",
+      });
+    }
     if (Buffer.byteLength(text) > 1048576)
       throw new Problem(
         503,
         "UPSTREAM_UNAVAILABLE",
         "Réponse modèle trop volumineuse.",
       );
-    const value = JSON.parse(text);
+    let value: any;
+    try { value = JSON.parse(text); }
+    catch {
+      throw new DiagnosticProblem("Réponse fournisseur hors contrat JSON.", {
+        stage: "model.response", provider: config.provider, model: config.model,
+        reason: "provider_response_invalid",
+      });
+    }
+    const invalidResponse = () => new DiagnosticProblem("Réponse modèle invalide.", {
+      stage: "model.response", provider: config.provider, model: config.model,
+      reason: "provider_response_invalid",
+    });
     if (responses) {
-      if (!Array.isArray(value.output))
-        throw new Problem(
-          503,
-          "UPSTREAM_UNAVAILABLE",
-          "Réponse modèle invalide.",
-        );
+      if (!Array.isArray(value?.output) || value.output.some((item: unknown) => !item || typeof item !== "object")) throw invalidResponse();
       return {
         text: value.output
           .filter((item: any) => item.type === "message")
@@ -239,15 +283,13 @@ export class HttpModels implements ModelPort {
         rawOutput: value.output,
       };
     }
-    const message = value.choices?.[0]?.message;
-    if (!message)
-      throw new Problem(
-        503,
-        "UPSTREAM_UNAVAILABLE",
-        "Réponse modèle invalide.",
-      );
+    const message = value?.choices?.[0]?.message;
+    if (!message || typeof message !== "object" || (message.tool_calls != null && !Array.isArray(message.tool_calls))) throw invalidResponse();
+    const content = message.content;
+    const contentText = typeof content === "string" ? content : Array.isArray(content)
+      ? content.map((part: unknown) => typeof part === "string" ? part : typeof (part as any)?.text === "string" ? (part as any).text : "").join("") : "";
     return {
-      text: typeof message.content === "string" ? message.content : "",
+      text: contentText,
       calls: (message.tool_calls ?? []).map((call: any) => ({
         id: call.id,
         name: toolNames.get(call.function?.name) ?? call.function?.name,

@@ -6,12 +6,13 @@ import { Identities } from "./identity.js";
 import { Conversations } from "./conversations.js";
 import { Files } from "./files.js";
 import { storageFromEnvironment } from "./storage.js";
-import { Consent } from "./consent.js";
+import { Consent, McpProcedureCatalog } from "./consent.js";
 import { HttpMandateControl, McpGateway } from "./tooling.js";
 import { HttpModels, type Provider } from "./model.js";
 import { Agent } from "./agent.js";
 import { Problem, approvedMcpUrl } from "./domain.js";
 import type { Runtime } from "./routes.js";
+import { transcriberFromEnvironment } from "./transcription.js";
 
 export const required = (name: string) => {
   const value = process.env[name];
@@ -91,6 +92,14 @@ export async function loadRuntime(
     storageFromEnvironment(),
   );
   const tokens = new ServiceTokens();
+  const references = JSON.parse(
+    process.env.MCP_SECRET_REFERENCES ?? "{}",
+  ) as Record<string, string>;
+  const tooling = new McpGateway(allowedMcpUrls, async (reference) =>
+    reference === "backend-agent"
+      ? tokens.get("backend-agent", "tools:call", "techma-tooling")
+      : required(references[reference] ?? "MISSING_MCP_SECRET_REFERENCE"),
+  );
   const runtime: Runtime = {
     pool,
     auth,
@@ -112,16 +121,8 @@ export async function loadRuntime(
       key,
       kid: required("MANDATE_SIGNING_KEY_ID"),
       issuer: required("MANDATE_ISSUER"),
-    });
+    }, new McpProcedureCatalog(pool, tooling));
   }
-  const references = JSON.parse(
-    process.env.MCP_SECRET_REFERENCES ?? "{}",
-  ) as Record<string, string>;
-  const tooling = new McpGateway(allowedMcpUrls, async (reference) =>
-    reference === "backend-agent"
-      ? tokens.get("backend-agent", "tools:call", "techma-tooling")
-      : required(references[reference] ?? "MISSING_MCP_SECRET_REFERENCE"),
-  );
   runtime.tooling = tooling;
   const models = new HttpModels(
     JSON.parse(process.env.MODEL_PROVIDERS_JSON ?? "{}") as Record<
@@ -135,6 +136,7 @@ export async function loadRuntime(
     models,
     tooling,
     runtime.consent,
+    transcriberFromEnvironment(files),
   );
   return { runtime, agent, tokens };
 }

@@ -108,6 +108,12 @@ const parameterDescriptions: Record<string, string> = {
   "X-User-Ref": "userRef exact du propriétaire du fichier ; obtenu dans sa conversation. Ce n’est pas le sub du JWT ni un numéro de téléphone.",
   "X-File-Mime-Type": "MIME d’origine du fichier, choisi dans l’enum. Le corps HTTP reste application/octet-stream, pas multipart/form-data.",
 };
+Object.assign(operationHelp, {
+  getRequestProgress: {tag:"Suivi",summary:"Lire les étapes et sources du dossier",before:"JWT de l’usager propriétaire et identifiant de dossier projeté.",action:"GET avec l’identifiant retourné par les outils.",expected:"Étapes, informations et preuves de source du dossier ; aucune affectation interne.",next:"Afficher le panneau vos informations.",errors:"404 si autre usager ou dossier absent."},
+  downloadCitizenDocument: {tag:"Documents",summary:"Télécharger son document délivré",before:"JWT propriétaire et fileId présent dans les documents du dossier.",action:"GET avec les identifiants du dossier et du document.",expected:"Octets privés en téléchargement ; aucun lien public durable.",next:"Conserver la référence de dossier pour le suivi.",errors:"404 si absence, autre propriétaire ou expiration."},
+  downloadConnectorFile: {tag:"Ressources internes",summary:"Transférer une pièce au connecteur",before:"Client tooling-documents, scope documents:transfer, X-User-Ref signé par le service appelant.",action:"GET authentifié ; ne jamais transmettre ces octets au modèle conversationnel.",expected:"Pièce privée non expirée.",next:"Le connecteur traite le dépôt conformément au mandat.",errors:"401/403 si identité inadéquate ; 404 si propriété ou expiration incompatible."},
+  uploadIssuedDocument: {tag:"Ressources internes",summary:"Stocker un document délivré",before:"Client tooling-documents, scope documents:transfer et dossier projeté existant.",action:"POST binaire avec X-User-Ref, X-File-Mime-Type et Idempotency-Key.",expected:"File privé, conservation dédiée (30 jours par défaut démo).",next:"Publier un snapshot Tooling qui référence le fileId dans documents.",errors:"404 si propriétaire incompatible ; 413/415 si taille ou format refusé."}
+});
 const parameterExamples: Record<string, unknown> = { traceparent: traceExample, conversationId: `cnv_${suffix}`, requestId: `req_${suffix}`, mandateId: `mdt_${suffix}`, fileId: `fil_${suffix}`, "X-User-Ref": `usr_${suffix}`, procedureId: "demo-procedure", query: "naissance", limit: 20, "X-File-Mime-Type": "application/pdf" };
 
 export function describeSpecification(name: string, specification: any) {

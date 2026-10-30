@@ -17,7 +17,7 @@ import {
 
 export class Settings {
   constructor(
-    private pool: Pool,
+    readonly pool: Pool,
     private allowedMcpUrls: ReadonlySet<string>,
   ) {}
 

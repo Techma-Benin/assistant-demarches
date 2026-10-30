@@ -19,7 +19,8 @@
     "test:apps": "turbo run test",
     "test:integration": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && node --env-file-if-exists=integration/.env --test integration/backend-tooling.test.mjs",
     "dev:integration": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && node --env-file-if-exists=integration/.env integration/local-stack.mjs",
-    "check:portable": "pnpm contracts:check && pnpm contracts:generate && pnpm typecheck && pnpm test && pnpm --filter @techma/tooling test && pnpm --filter @techma/backend build"
+    "check:portable": "pnpm contracts:check && pnpm contracts:generate && pnpm typecheck && pnpm test && pnpm --filter @techma/tooling test && pnpm --filter @techma/backend build",
+    "check:pivot": "node scripts/verify-backend-pivot.mjs"
   },
   "devDependencies": {
     "ajv": "8.20.0",

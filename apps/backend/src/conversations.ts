@@ -291,6 +291,9 @@ export class Conversations {
         ).rows[0]?.body as Conversation | undefined;
         if (!conversation)
           throw new Problem(404, "NOT_FOUND", "Conversation introuvable.");
+        const requestId = "request" in data ? data.request.id : data.kind === "request.status_changed" ? data.requestId : undefined;
+        if (requestId && (await db.query("SELECT 1 FROM backend_work_items WHERE id=$1", [requestId])).rowCount)
+          throw new Problem(409, "INVALID_TRANSITION", "Ce dossier est suivi par snapshots versionnés ; publier request.snapshot.");
         if ("request" in data) {
           if (data.request.userRef !== conversation.userRef)
             throw new Problem(403, "FORBIDDEN", "Propriétaire incompatible.");

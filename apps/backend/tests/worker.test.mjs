@@ -191,12 +191,15 @@ test(
       ).length,
       1,
     );
-    assert.equal(modelCalls, 1);
+    assert.equal(modelCalls, 3, "Unsourced model prose is retried within a bounded generation cycle.");
+    const reply = (await conversations.page(user.userRef, conversation.id)).items.find(event => event.data.kind === "message.sent");
+    assert.match(reply.data.message.blocks[0].text, /source administrative validée/);
+    assert.equal((await pool.query("SELECT reason FROM backend_unanswered WHERE conversation_id=$1", [conversation.id])).rows[0].reason, "missing_source");
     await stop(child);
     child = start();
     await pause(1500);
     await stop(child);
-    assert.equal(modelCalls, 1);
+    assert.equal(modelCalls, 3, "Restart must not generate or deliver a second reply.");
     assert.equal(
       (await conversations.page(user.userRef, conversation.id)).items.filter(
         (event) => event.data.kind === "message.sent",

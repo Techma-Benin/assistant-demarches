@@ -31,6 +31,12 @@ import {
 } from "./domain.js";
 import { McpConnections, type McpServer } from "./mcp-connections.js";
 import { Settings } from "./settings.js";
+import { AdminDirectory } from "./admin-directory.js";
+import { AdminDirectoryController, ADMIN_DIRECTORY_RUNTIME } from "./admin-directory.controller.js";
+import { DepartmentWork } from "./department-work.js";
+import { DepartmentWorkController, DEPARTMENT_WORK_RUNTIME } from "./department-work.controller.js";
+import { departmentCommandsFromEnvironment, type DepartmentCommands } from "./department-commands.js";
+import { requireDepartmentPrincipal, assertDepartmentPermission } from "./department-auth.js";
 import {
   ConversationController,
   InternalController,
@@ -129,14 +135,11 @@ class AdminController {
     @Inject(AUTH) private auth: AuthOptions,
   ) {}
   private async principal(req: Request, scope: string): Promise<Principal> {
-    const principal = await authenticate(req.get("authorization"), this.auth);
-    if (!principal.scopes.has(scope))
-      throw new Problem(
-        403,
-        "FORBIDDEN",
-        "Permission administrateur insuffisante.",
-      );
-    return principal;
+    const p = await requireDepartmentPrincipal(req, this.auth, this.settings.pool, scope === "admin:read" ? "operator:read" : "operator:write");
+    const administrationId = req.get("X-Administration-Id") ?? (p.departmentIds.length === 1 ? p.departmentIds[0] : undefined);
+    if (!administrationId) throw new Problem(400,"INVALID_REQUEST","Sélectionnez un département par X-Administration-Id.");
+    assertDepartmentPermission(p, scope === "admin:read" ? "operator:read" : "operator:write", administrationId);
+    return { subject: p.subject, administrationId, scopes: new Set<string>(p.permissions) };
   }
   @Get("mcp-servers")
   async servers(@Req() req: AdminRequest) {
@@ -279,15 +282,20 @@ export async function createBackend(options: {
   corsOrigins?: string[];
   runtime?: Runtime;
   developmentTokens?: Record<string, string>;
+  departmentCommands?: DepartmentCommands;
 }) {
   let closeSockets = () => {};
   @Module({
     controllers: [
       HealthController,
+      AdminDirectoryController,
+      DepartmentWorkController,
       AdminController,
       ...(options.runtime ? [ConversationController, InternalController] : []),
     ],
     providers: [
+      { provide: ADMIN_DIRECTORY_RUNTIME, useValue: {pool: options.pool, auth: options.auth, directory: new AdminDirectory(options.pool)} },
+      { provide: DEPARTMENT_WORK_RUNTIME, useValue: {pool: options.pool, auth: options.auth, work: new DepartmentWork(options.pool), commands: options.departmentCommands ?? departmentCommandsFromEnvironment(), files: options.runtime?.files} },
       {provide:McpConnections,useValue:new McpConnections(options.pool,options.allowedMcpUrls,options.mcpGateway??options.runtime?.tooling)},
       { provide: DB, useValue: options.pool },
       { provide: AUTH, useValue: options.auth },
@@ -326,7 +334,7 @@ export async function createBackend(options: {
   });
   app.useGlobalFilters(new ProblemFilter());
   app.use(
-    "/v1/files",
+    ["/v1/files", "/internal/v1/requests"],
     raw({ type: "application/octet-stream", limit: "10mb" }),
   );
   if (options.corsOrigins?.length) {

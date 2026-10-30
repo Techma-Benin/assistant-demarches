@@ -32,7 +32,7 @@ import {
   envelope,
 } from "../dist/apps/backend/src/conversations.js";
 import { Identities } from "../dist/apps/backend/src/identity.js";
-import { Consent } from "../dist/apps/backend/src/consent.js";
+import { Consent, LocalProcedureCatalog } from "../dist/apps/backend/src/consent.js";
 import { Files } from "../dist/apps/backend/src/files.js";
 import { LocalStorage } from "../dist/apps/backend/src/storage.js";
 import {
@@ -325,6 +325,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
     conversations,
     new HttpMandateControl(remote, async () => secrets.control),
     { key: privateKey, kid: "test", issuer },
+    new LocalProcedureCatalog(pool),
   );
   const runtime = { pool, auth, identities, conversations, files, consent };
   const options = {
@@ -929,7 +930,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       });
       const before = mcpCalls.length;
       failFinalOnce = true;
-      await assert.rejects(agent.process(retry.id));
+      await agent.process(retry.id);
       assert.equal(mcpCalls.length, before + 1);
       await agent.process(retry.id);
       assert.equal(mcpCalls.length, before + 1);
