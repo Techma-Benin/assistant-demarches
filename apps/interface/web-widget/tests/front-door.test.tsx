@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FrontDoor } from '@/components/home/FrontDoor';
 import type { SiteConfig } from '@/lib/site-config';
 
-const base: SiteConfig = { flagGreeting: true, whatsappNumber: null, reportUrl: null, privacyUrl: null };
+const base: SiteConfig = { brandFlag: true, whatsappNumber: null, reportUrl: null, privacyUrl: null };
 
 describe('FrontDoor', () => {
   it('submits the trimmed PromptBox text', async () => {
@@ -63,21 +63,16 @@ describe('FrontDoor', () => {
     expect(screen.getByRole('link', { name: 'Confidentialité' })).toHaveAttribute('href', 'https://x.test/p');
   });
 
-  it('flagGreeting true shows the flag greeting and brand flag', () => {
+  it('shows the title and the brand flag', () => {
     const { container } = render(<FrontDoor onAsk={() => {}} config={base} />);
-    const h1 = screen.getByRole('heading', { level: 1 });
-    expect(h1).toHaveTextContent('Bonjour, Bénin.');
-    expect(h1.querySelector('svg')).not.toBeNull();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Vos démarches, simplement.');
     expect(container.querySelector('header a svg')).not.toBeNull();
   });
 
-  it('flagGreeting false reads « Bonjour ! » with no flag image', () => {
-    const { container } = render(<FrontDoor onAsk={() => {}} config={{ ...base, flagGreeting: false }} />);
-    const h1 = screen.getByRole('heading', { level: 1 });
-    expect(h1).toHaveTextContent('Bonjour !');
-    expect(h1.querySelector('svg')).toBeNull();
+  it('brandFlag false hides the flag in the brand mark', () => {
+    const { container } = render(<FrontDoor onAsk={() => {}} config={{ ...base, brandFlag: false }} />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Vos démarches, simplement.');
     expect(container.querySelector('header a svg')).toBeNull();
-    expect(screen.queryByRole('img', { name: 'Drapeau du Bénin' })).toBeNull();
   });
 
   it('keeps the mandatory footer lines', () => {

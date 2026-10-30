@@ -14,9 +14,10 @@ import {
   Scale,
   User,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { BrandMark, Chip, Counter, CounterGrid, FlagGlyph, PromptBox, RebusGlyph, ThemeToggle, Tile, cn } from '@techma/ui';
 import { siteConfig, type SiteConfig } from '@/lib/site-config';
+import { PromptDock } from './PromptDock';
 
 export type FrontDoorProps = {
   onAsk: (text: string) => void;
@@ -45,16 +46,23 @@ const navLink =
 const tileTitle = 'font-display font-extrabold tracking-[-0.035em]';
 
 export function FrontDoor({ onAsk, disabled = false, config = siteConfig }: FrontDoorProps) {
-  const { flagGreeting, whatsappNumber, reportUrl, privacyUrl } = config;
+  const { brandFlag, whatsappNumber, reportUrl, privacyUrl } = config;
   const ask = (text: string) => {
     if (!disabled) onAsk(text);
+  };
+  // One draft shared by the hero box and the docked box, so typing carries over when the dock appears.
+  const [draft, setDraft] = useState('');
+  const heroPrompt = useRef<HTMLDivElement>(null);
+  const submitDraft = (text: string) => {
+    ask(text);
+    setDraft('');
   };
 
   return (
     <div className="min-h-screen bg-canvas font-sans text-ink">
       <header className="mx-auto flex max-w-[1320px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4 md:px-6 md:py-5">
         <a href="#top" className="inline-flex min-h-11 items-center no-underline">
-          <BrandMark showFlag={flagGreeting} />
+          <BrandMark showFlag={brandFlag} />
         </a>
         <div className="flex min-w-0 flex-wrap items-center gap-1">
           <nav aria-label="Navigation principale" className="hidden items-center gap-1 md:flex">
@@ -73,33 +81,32 @@ export function FrontDoor({ onAsk, disabled = false, config = siteConfig }: Fron
         <section
           id="top"
           aria-labelledby="hero-title"
-          className="mx-auto flex max-w-[1000px] flex-col items-center gap-5 px-5 pb-12 pt-10 text-center md:gap-7 md:px-6 md:pb-[72px] md:pt-24"
+          className="mx-auto flex max-w-[1320px] flex-col items-center gap-5 px-5 pb-12 pt-10 text-center md:gap-7 md:px-6 md:pb-[72px] md:pt-24"
         >
           <h1
             id="hero-title"
-            className="m-0 max-w-full font-display text-[clamp(56px,9vw,128px)] font-extrabold leading-[0.95] tracking-[-0.055em]"
+            // One line at every width: the title is ≈ 12.3em wide, so its size follows the hero width (1320px max).
+            className="m-0 max-w-full whitespace-nowrap font-display text-[calc((min(100vw,1320px)-48px)/12.5)] font-extrabold leading-[0.95] tracking-[-0.055em]"
           >
-            {flagGreeting ? (
-              <>
-                Bonjour, <FlagGlyph decorative width="1.18em" height="0.8em" className="mx-[0.06em] align-[0.04em]" /> Bénin.
-              </>
-            ) : (
-              'Bonjour !'
-            )}
+            Vos démarches, simplement.
           </h1>
-          <p className="m-0 font-display text-[clamp(22px,3vw,36px)] font-semibold leading-[1.2] tracking-[-0.025em] text-ink-muted">
+          <p className="m-0 font-display text-[clamp(17px,3vw,36px)] font-semibold leading-[1.2] tracking-[-0.025em] text-ink-muted">
             Quelle que soit votre démarche, commencez ici
             <RebusGlyph variant="arrow-flag" flag={<FlagGlyph decorative width="1.5em" height="1.05em" />} />
           </p>
 
-          <PromptBox
-            variant="hero"
-            label="Votre question"
-            placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
-            onSubmit={ask}
-            disabled={disabled}
-            className="mt-3 w-full max-w-[780px] text-left"
-          />
+          <div ref={heroPrompt} className="mt-3 w-full max-w-[780px]">
+            <PromptBox
+              variant="hero"
+              label="Votre question"
+              placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
+              value={draft}
+              onValueChange={setDraft}
+              onSubmit={submitDraft}
+              disabled={disabled}
+              className="w-full text-left"
+            />
+          </div>
 
           <div className="flex max-w-[820px] flex-wrap justify-center gap-2">
             {SUGGESTIONS.map((s) => (
@@ -272,7 +279,7 @@ export function FrontDoor({ onAsk, disabled = false, config = siteConfig }: Fron
       </main>
 
       <footer className="bg-sunken">
-        <div className="mx-auto flex max-w-[1320px] flex-wrap items-center justify-between gap-6 px-5 py-12 md:px-6">
+        <div className="mx-auto flex max-w-[1320px] flex-wrap items-center justify-between gap-6 px-5 pb-36 pt-12 md:px-6">
           <div className="flex max-w-[640px] flex-col gap-2">
             <span className="flex items-center gap-2 text-[15px] font-bold">
               <Info className="size-[18px] shrink-0" strokeWidth={2.2} aria-hidden="true" />
@@ -298,6 +305,8 @@ export function FrontDoor({ onAsk, disabled = false, config = siteConfig }: Fron
           ) : null}
         </div>
       </footer>
+
+      <PromptDock anchor={heroPrompt} value={draft} onValueChange={setDraft} onSubmit={submitDraft} disabled={disabled} />
     </div>
   );
 }
