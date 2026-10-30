@@ -107,7 +107,19 @@ Fichiers en conflit : `CONTRACTS.md`, `contracts/manifest.json`, `contracts/v1/d
 
 **La slide 8 n’est pas jouable.** Le X-Road simulé sait qu’un dossier est fini seul (casier) ou en attente d’un agent (légalisation, vaccin). Le pont Tooling traduit `in_review` en `processing`, pas en `blocked`, et ne range pas le dossier dans **En attente** de la Justice. La console n’a pas encore ces files. Hors de ce palier.
 
-## Palier 3 — Interface + vérification (à documenter après merge + tests)
+## Palier 3 — Interface (30 octobre 2026)
 
-En attente.
+### Fusion
+
+`git merge techma/interface/redesign` (`463b8e3`, *fix(web-widget): keep the composer fixed like a real chat*) dans `integration/pivot-combo` (`12c7738`).
+
+Fichiers de l’interface conservés : console admin, widget web, adaptateur WhatsApp, `packages/ui` (look Bonjour Bénin). Contrats pivot **1.3.0** inchangés (départements, `blocked`, snapshots, `audio/webm`, `McpAuth`, pas de `scanStatus`), avec `xroad-sim.openapi.json` et `request.pay` (scope `requests:submit`). Le Backend n’appelle pas X-Road.
+
+### Conflit et résolution
+
+Seul chemin non fusionné : `pnpm-lock.yaml`. Pas de fusion manuelle. Fichier retiré, puis régénéré par `pnpm install` (pnpm 10.20.0). Le lockfile couvre les importers pivot, Tooling, `apps/xroad-sim` et l’interface. Aucun marqueur de conflit restant. Aucun autre chemin non fusionné.
+
+### Écart PowerPoint
+
+**La slide 8 (« un message, deux bureaux ») n’est pas jouable.** La console redesign n’a pas les files **En attente / Complété** ni le cloisonnement Justice / Enseignement. Le pont Tooling ne range toujours pas le dossier dans **En attente** de la Justice. Hors de ce merge.
 
