@@ -1,7 +1,7 @@
 'use client';
 
-import { Counter, CounterGrid, Tile } from '@techma/ui';
-import { ArrowRight } from 'lucide-react';
+import { Tile, cn } from '@techma/ui';
+import { ArrowRight, Ban, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';
 import { PageHeader } from '@/components/page-header';
@@ -30,26 +30,74 @@ function useSimulationFlag() {
   return { value, report };
 }
 
-function Kpis({ dashboard }: { dashboard: Dashboard }) {
+/** Part of the pending dossiers that needs attention: icon + label, highlighted only when non-zero. */
+function PendingFlag({ count, singular, plural, icon: Icon }: { count: number; singular: string; plural: string; icon: typeof Ban }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-pill px-3 py-1 text-[13px] font-semibold',
+        count > 0 ? 'bg-danger-soft text-danger' : 'bg-surface text-ink-muted',
+      )}
+    >
+      <Icon aria-hidden="true" className="size-3.5" strokeWidth={2.4} />
+      {formatInteger(count)} {count > 1 ? plural : singular}
+    </span>
+  );
+}
+
+function StatTile({ label, value, caption }: { label: string; value: string; caption?: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2 rounded-card border border-line p-5">
+      <dt className="text-sm font-medium text-ink-muted">{label}</dt>
+      <dd className="m-0 flex flex-col gap-1">
+        <span className="text-[32px] leading-none font-semibold tracking-[-0.02em] text-ink">{value}</span>
+        {caption ? <span className="text-[13px] text-ink-muted">{caption}</span> : null}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * One row: the pending count leads (it is what the ministry acts on), with its blocked/overdue
+ * share beneath; the other indicators stay compact beside it.
+ */
+function Kpis({ dashboard, simulated }: { dashboard: Dashboard; simulated: boolean }) {
+  const aiShare = dashboard.received > 0 ? Math.round((dashboard.completedByAi / dashboard.received) * 100) : null;
   return (
     <section aria-label="Indicateurs" className="flex flex-col gap-3">
-      <p className="text-sm text-ink-muted">{formatPeriod(dashboard.period)}</p>
-      <CounterGrid>
-        <Counter value={formatInteger(dashboard.received)} label="reçus" />
-        <Counter value={formatInteger(dashboard.pending)} label="en attente" />
-        <Counter value={formatInteger(dashboard.completedByAi)} label="complétés par l’IA" tone="trust" />
-        <Counter
-          value={formatInteger(dashboard.blocked)}
-          label="bloqués"
-          tone={dashboard.blocked > 0 ? 'danger' : 'default'}
+      <p className="text-sm text-ink-muted">
+        {formatPeriod(dashboard.period)}
+        {simulated ? <span className="font-semibold"> · Valeurs fictives</span> : null}
+      </p>
+      <dl className="m-0 grid gap-3 sm:grid-cols-3 lg:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))]">
+        <div className="flex min-w-0 flex-col gap-3 rounded-card bg-sunken p-5 sm:col-span-3 lg:col-span-1">
+          <dt className="text-sm font-medium text-ink-muted">En attente</dt>
+          <dd className="m-0 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+            <span className="text-[56px] leading-[0.9] font-semibold tracking-[-0.03em] text-ink">
+              {formatInteger(dashboard.pending)}
+            </span>
+            <Link href="/a-verifier" className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink underline">
+              Voir les dossiers
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </Link>
+          </dd>
+          <dd className="m-0 flex flex-wrap gap-2">
+            <PendingFlag count={dashboard.blocked} singular="bloqué" plural="bloqués" icon={Ban} />
+            <PendingFlag count={dashboard.overdue} singular="en retard" plural="en retard" icon={Clock} />
+          </dd>
+        </div>
+        <StatTile label="Reçus" value={formatInteger(dashboard.received)} caption="dossiers déposés" />
+        <StatTile
+          label="Complétés par l’IA"
+          value={formatInteger(dashboard.completedByAi)}
+          caption={aiShare === null ? undefined : `${aiShare} % des reçus`}
         />
-        <Counter
-          value={formatInteger(dashboard.overdue)}
-          label="en retard"
-          tone={dashboard.overdue > 0 ? 'danger' : 'default'}
+        <StatTile
+          label="Médiane de traitement"
+          value={formatDuration(dashboard.medianProcessingMs)}
+          caption="du dépôt à la fin"
         />
-        <Counter value={formatDuration(dashboard.medianProcessingMs)} label="médiane de traitement" />
-      </CounterGrid>
+      </dl>
     </section>
   );
 }
@@ -143,13 +191,10 @@ function Overview({ departmentId }: { departmentId: string | undefined }) {
   return (
     <>
       {HEADER}
-      <div className="flex flex-col gap-10">
-        {simulated.value ? (
-          <p className="text-sm font-semibold text-ink-muted">Valeurs fictives : certains dossiers sont des simulations.</p>
-        ) : null}
+      <div className="flex flex-col gap-8">
         {status === 'loading' && !dashboard ? <Skeleton lines={2} /> : null}
         {status === 'error' ? <RemoteError error={error} noun="les indicateurs" onRetry={reload} /> : null}
-        {dashboard ? <Kpis dashboard={dashboard} /> : null}
+        {dashboard ? <Kpis dashboard={dashboard} simulated={simulated.value} /> : null}
         <div className="grid gap-6 lg:grid-cols-2">
           <RecentTile
             title="En attente"

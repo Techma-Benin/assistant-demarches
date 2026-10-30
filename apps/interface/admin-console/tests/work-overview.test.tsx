@@ -57,13 +57,17 @@ describe('Vue d’ensemble', () => {
     const { calls } = route(true);
     render(<WorkOverview />);
     const counter = async (label: string) => (await screen.findByText(label, { selector: 'dt' })).parentElement!;
-    expect(await counter('reçus')).toHaveTextContent('128');
-    expect(await counter('en attente')).toHaveTextContent('9');
-    expect(await counter('complétés par l’IA')).toHaveTextContent('117');
-    expect(await counter('bloqués')).toHaveTextContent('2');
-    expect(await counter('en retard')).toHaveTextContent('1');
-    expect(await counter('médiane de traitement')).toHaveTextContent('2 j 4 h');
-    expect(screen.getByText('30 derniers jours')).toBeInTheDocument();
+    expect(await counter('Reçus')).toHaveTextContent('128');
+    const pending = await counter('En attente');
+    expect(pending).toHaveTextContent('9');
+    // Blocked and overdue are shown as the share of pending dossiers that needs attention.
+    expect(pending).toHaveTextContent('2 bloqués');
+    expect(pending).toHaveTextContent('1 en retard');
+    expect(within(pending).getByRole('link', { name: /Voir les dossiers/ })).toHaveAttribute('href', '/a-verifier');
+    expect(await counter('Complétés par l’IA')).toHaveTextContent('117');
+    expect(await counter('Complétés par l’IA')).toHaveTextContent('91 % des reçus');
+    expect(await counter('Médiane de traitement')).toHaveTextContent('2 j 4 h');
+    expect(screen.getByText(/^30 derniers jours/)).toBeInTheDocument();
     expect(calls.find((c) => c.url.pathname.endsWith('/dashboard'))!.url.searchParams.get('departmentId')).toBe('justice');
   });
 
@@ -95,7 +99,7 @@ describe('Vue d’ensemble', () => {
     first.unmount();
     route(false);
     render(<WorkOverview />);
-    await screen.findByText('reçus', { selector: 'dt' });
+    await screen.findByText('Reçus', { selector: 'dt' });
     await screen.findByText('Acte de naissance');
     expect(screen.queryByText(/Valeurs fictives/)).not.toBeInTheDocument();
   });
