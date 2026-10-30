@@ -97,3 +97,43 @@ describe('PaginatedTable', () => {
     expect(await screen.findByText('b')).toBeInTheDocument();
   });
 });
+
+describe('PaginatedTable filter', () => {
+  it('filters the loaded rows client-side, reports them, and keeps load more', async () => {
+    const load = vi.fn(async (cursor: string | null) =>
+      cursor === null ? { items: [{ id: 'a' }, { id: 'b' }], nextCursor: 'c1' } : { items: [{ id: 'c' }], nextCursor: null },
+    );
+    const seen: Row[][] = [];
+    render(
+      <PaginatedTable
+        label="Test"
+        noun="les lignes"
+        columns={columns}
+        rowKey={(row) => row.id}
+        load={load}
+        filter={(row) => row.id !== 'a'}
+        onItemsChange={(items) => seen.push(items)}
+      />,
+    );
+    await screen.findByText('b');
+    expect(screen.queryByText('a')).toBeNull();
+    expect(seen.at(-1)).toEqual([{ id: 'a' }, { id: 'b' }]);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Charger plus' }));
+    expect(await screen.findByText('c')).toBeInTheDocument();
+    expect(seen.at(-1)).toHaveLength(3);
+  });
+
+  it('says so when the filter hides everything that was loaded', async () => {
+    render(
+      <PaginatedTable
+        label="Test"
+        noun="les lignes"
+        columns={columns}
+        rowKey={(row) => row.id}
+        load={async () => ({ items: [{ id: 'a' }], nextCursor: null })}
+        filter={() => false}
+      />,
+    );
+    expect(await screen.findByText('Aucun élément chargé ne correspond à ce filtre.')).toBeInTheDocument();
+  });
+});

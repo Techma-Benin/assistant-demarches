@@ -1,13 +1,7 @@
-import { PageHeader } from '@/components/page-header';
-import { ModelsTable } from '@/components/resource-tables';
+import { ModelsOverview } from '@/components/models/models-overview';
 
-export const metadata = { title: 'Modèles · Console d’administration' };
+export const metadata = { title: 'Modèle IA · Console d’administration' };
 
 export default function Page() {
-  return (
-    <>
-      <PageHeader title="Modèles" description="Configuration des modèles." />
-      <ModelsTable />
-    </>
-  );
+  return <ModelsOverview />;
 }

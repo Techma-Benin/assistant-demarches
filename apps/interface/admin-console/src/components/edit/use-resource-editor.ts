@@ -102,31 +102,42 @@ export function useResourceEditor<T, D>(config: EditorConfig<T, D>) {
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
 
-  const save = useCallback(async () => {
-    if (base === null || draft === null || savingRef.current || !valid || !dirty) return;
-    const { keyPrefix, toResource, toDraft, save: put } = configRef.current;
-    const signature = JSON.stringify(draft);
-    if (attempt.current?.signature !== signature) {
-      attempt.current = { signature, key: `${keyPrefix}-${crypto.randomUUID()}` };
-    }
-    savingRef.current = true;
-    setSaving(true);
-    setResult(null);
-    try {
-      const saved = await put(toResource(draft, base), attempt.current.key);
-      attempt.current = null;
-      setBase(saved);
-      setDraft(toDraft(saved));
-      setResult({ kind: 'saved' });
-    } catch (caught) {
-      const failure = toSaveFailure(caught);
-      if (!failure.retryable) attempt.current = null;
-      setResult({ kind: 'failed', message: failure.message, conflict: failure.conflict });
-    } finally {
-      savingRef.current = false;
-      setSaving(false);
-    }
-  }, [base, draft, valid, dirty]);
+  /**
+   * PUTs the draft. `patch` is applied on top of it for this save only (e.g. the validation status of
+   * « Valider et publier »): it reaches the draft only once the server accepted it. Resolves true on success.
+   */
+  const save = useCallback(
+    async (patch?: Partial<D>): Promise<boolean> => {
+      if (base === null || draft === null || savingRef.current) return false;
+      const { keyPrefix, toResource, toDraft, save: put, validate } = configRef.current;
+      const next = patch ? { ...draft, ...patch } : draft;
+      const signature = JSON.stringify(next);
+      if (Object.keys(validate(next)).length > 0 || signature === baselineSignature) return false;
+      if (attempt.current?.signature !== signature) {
+        attempt.current = { signature, key: `${keyPrefix}-${crypto.randomUUID()}` };
+      }
+      savingRef.current = true;
+      setSaving(true);
+      setResult(null);
+      try {
+        const saved = await put(toResource(next, base), attempt.current.key);
+        attempt.current = null;
+        setBase(saved);
+        setDraft(toDraft(saved));
+        setResult({ kind: 'saved' });
+        return true;
+      } catch (caught) {
+        const failure = toSaveFailure(caught);
+        if (!failure.retryable) attempt.current = null;
+        setResult({ kind: 'failed', message: failure.message, conflict: failure.conflict });
+        return false;
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
+      }
+    },
+    [base, draft, baselineSignature],
+  );
 
   return {
     status,

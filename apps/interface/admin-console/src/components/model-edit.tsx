@@ -1,11 +1,12 @@
 'use client';
 
-import { Switch, TextField } from '@techma/ui';
+import { Switch, TextField, Toast } from '@techma/ui';
 import { c3, type ModelConfig } from '@/lib/c3-client';
 import { findInPages } from '@/lib/find-resource';
 import { toModelConfig, toModelDraft, validateModel, type ModelDraft } from '@/lib/model-form';
 import { EditForm, FormSection, ReadOnlyField } from './edit/edit-form';
 import { useResourceEditor } from './edit/use-resource-editor';
+import { useToast } from './use-toast';
 
 export function ModelEdit({ id }: { id: string }) {
   const editor = useResourceEditor<ModelConfig, ModelDraft>({
@@ -17,6 +18,7 @@ export function ModelEdit({ id }: { id: string }) {
     validate: validateModel,
   });
   const { errors, update } = editor;
+  const toast = useToast();
 
   return (
     <EditForm
@@ -25,6 +27,8 @@ export function ModelEdit({ id }: { id: string }) {
       fallbackTitle={id}
       backHref="/models"
       backLabel="Retour aux modèles"
+      onSubmit={() => void editor.save().then((saved) => saved && toast.show('Modèle enregistré'))}
+      headerActions={<Toast message={toast.message} onDismiss={toast.dismiss} />}
     >
       {(draft) => (
         <FormSection title="Configuration du modèle">
@@ -62,7 +66,7 @@ export function ModelEdit({ id }: { id: string }) {
             error={errors.temperature}
             onChange={(event) => update({ temperature: event.target.value })}
           />
-          <Switch checked={draft.active} onCheckedChange={(active) => update({ active })}>
+          <Switch checked={draft.active} tone="trust" onCheckedChange={(active) => update({ active })}>
             Actif
           </Switch>
         </FormSection>
