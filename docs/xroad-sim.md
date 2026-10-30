@@ -13,9 +13,10 @@ Hypothèse annoncée au jury : X-Road relie déjà les back-ends de toutes les a
 | Appelant | Identité | Pour le compte de | Usage |
 |---|---|---|---|
 | Tooling | client `tooling-xroad`, scopes `xroad:read`, `xroad:submit` | l'usager, en-tête `X-Applicant-Ref` (son `userRef`) | catalogue, dépôt, paiement, suivi |
+| Tooling | client `tooling-xroad`, scope `xroad:decide` | l'agent de la console, en-tête `X-Actor-Ref` (son sujet OIDC, transmis par le Backend) | décisions `approve` et `reject` prises dans la console |
 | Backend | client `backend-xroad` prévu au contrat, scopes `xroad:read`, `xroad:administer` | l'agent connecté, en-tête `X-Official-Id` | dossiers, décisions, agents, indicateurs |
 
-Dans le combo `integration/pivot-combo`, **le Backend n'appelle pas le X-Road**. Aucun client `backend-xroad` n'est branché dans `apps/backend`. La console métier passe par le Backend ; elle n'est pas encore alimentée par C5 (la slide 8 du PowerPoint n'est pas jouable). L'Interface n'appelle jamais le service directement. Le service simulé accepte encore l'identité `backend-xroad` pour ses propres tests, mais rien dans le Backend ne s'en sert. Les en-têtes `X-Applicant-Ref` et `X-Official-Id` sont construits par du code applicatif, jamais par le modèle.
+**Le Backend n'appelle pas le X-Road.** La console métier lit la file du Backend, que le Tooling alimente par des snapshots `request.snapshot` (voir « Côté Tooling »). Les boutons de la console arrivent au Tooling par `POST /internal/v1/admin/requests/{id}/actions` ; le Tooling vérifie le département et la révision, puis relaie au X-Road les décisions `approve` et `reject` avec `X-Actor-Ref`. L'Interface n'appelle jamais le service directement. Le service simulé accepte encore l'identité `backend-xroad` pour ses propres tests. Les en-têtes `X-Applicant-Ref`, `X-Official-Id` et `X-Actor-Ref` sont construits par du code applicatif, jamais par le modèle. Sur la route de décision, exactement un des deux en-têtes `X-Official-Id` ou `X-Actor-Ref` est accepté.
 
 ## Modèle
 
@@ -36,23 +37,27 @@ in_review ── décision de l'agent ────┬─► completed   (complet
                                      └─► rejected
 ```
 
-L'instruction automatique suit une règle propre à chaque démarche de la simulation. Par exemple, le casier judiciaire est délivré sans intervention, alors que le passeport exige une validation. Les deux tableaux de la console en découlent :
+L'instruction automatique suit une règle propre à chaque démarche de la simulation. Le casier judiciaire arrive toujours **En attente** de la Justice (« nouvelle demande à vérifier », slide 8) : un agent doit le voir avant qu'il soit délivré. Le relevé de notes (payant) et l'attestation de diplôme (gratuite) sont complétés par l'assistant sans intervention. Les deux tableaux de la console en découlent :
 
 | Tableau | Filtre `view` | Contenu |
 |---|---|---|
 | En attente | `pending` | `in_review` : ce que l'assistant n'a pas pu terminer |
 | Complété | `completed` | `completed`, quel que soit `completedBy` |
 
-Correspondance avec la demande côté Tooling, via le connecteur `xroad` :
+Correspondance avec la demande côté Tooling, via le connecteur `xroad`. Le statut dépend aussi de ce que la console a fait sur le dossier :
 
-| Dossier | `RequestStatus` |
-|---|---|
-| `awaiting_payment`, `received` | `submitted` |
-| `in_review` | `processing` |
-| `completed` | `completed` |
-| `rejected` | `rejected` |
+| Dossier | Console | `RequestStatus` | Écran |
+|---|---|---|---|
+| `awaiting_payment`, `received` | | `submitted` | En attente |
+| `in_review` | personne ne l'a pris en charge | `blocked`, `blocking.code = ADMINISTRATION_REVIEW` | En attente |
+| `in_review` | pris en charge (`claim`, `resume`) | `processing` | En attente |
+| tout état non clos | complément demandé (`request_information`) | `blocked`, `blocking.code = INFORMATION_REQUESTED` | En attente |
+| `completed` | | `completed`, `completedBy` `ai` ou `human` | Complété |
+| `rejected` | | `rejected` | |
 
-Le Tooling suit les dossiers par interrogation (`GET /v1/cases/{caseId}`). La simulation n'émet pas d'événement.
+Le Tooling suit les dossiers par interrogation (`GET /v1/cases/{caseId}`). La simulation n'émet pas d'événement. Le paiement et une décision de la console déclenchent un suivi immédiat.
+
+Avec `XROAD_STATE_FILE`, la simulation garde dans ce fichier ses dossiers, ses références, ses affectations et ses réponses idempotentes. Un redémarrage ne perd plus les dossiers en cours ; sans ce fichier, le Tooling les déclarerait introuvables et abandonnerait leur suivi.
 
 ## Visibilité
 
@@ -62,7 +67,7 @@ Le Tooling suit les dossiers par interrogation (`GET /v1/cases/{caseId}`). La si
 
 ## Ce que ce contrat change dans la v1
 
-- Contrat ajouté au manifeste **1.3.0** du pivot (départements, `blocked`, snapshots, `audio/webm`, `McpAuth`). Le document délivré par la simulation s'appelle `XroadIssuedDocument` : le nom `IssuedDocument` reste celui du pivot. `scanStatus` n'est pas réintroduit.
+- Contrat ajouté au manifeste **1.3.0** du pivot, complété en **1.4.0** par la décision relayée depuis la console (`X-Actor-Ref`, `xroad:decide`) (départements, `blocked`, snapshots, `audio/webm`, `McpAuth`). Le document délivré par la simulation s'appelle `XroadIssuedDocument` : le nom `IssuedDocument` reste celui du pivot. `scanStatus` n'est pas réintroduit.
 - CONTRACTS.md §7 : les états `submitted` et suivants restent produits uniquement par un connecteur. Le connecteur `xroad` vers ce service est admis en démonstration, parce que la simulation est annoncée comme telle. Le connecteur `simulated`, qui invente les statuts à partir du temps écoulé, reste réservé au poste local.
 
 ## Côté Tooling
@@ -71,10 +76,13 @@ Le Tooling suit les dossiers par interrogation (`GET /v1/cases/{caseId}`). La si
 - Le connecteur `xroad` dépose et suit les dossiers depuis l'emplacement de connecteurs du Tooling.
 - `procedures.search` et `procedures.get` lisent le catalogue de la simulation (`PROCEDURES_SOURCE=xroad`).
 - L'outil MCP `request.pay` règle les frais, sous la portée `requests:submit` : le consentement du Backend n'a pas à changer.
+- Avec les fiches du X-Road, chaque modification d'une demande publie vers le Backend un snapshot complet `bj.techma.request.snapshot.v1` (révision strictement croissante, `administrationId`, `simulation: true`, `receiptRef` et `submittedAt` dès le dépôt, `blocking`, `payment`, `documents`, `progress`, `evidence`). Les événements `request.created` et `request.status_changed` ne sont plus publiés pour ces demandes.
+- Commandes de la console : identité `backend-admin`, scope `requests:admin`, `Idempotency-Key` obligatoire, réponses rejouables 25 h. La réponse est exactement le snapshot publié ensuite.
+- Documents délivrés : le Tooling les télécharge au X-Road et les dépose au Backend (`POST /internal/v1/requests/{id}/documents`, identité `tooling-documents`), puis les référence dans `documents`. Un dépôt en échec est retenté sans bloquer le suivi.
 
 ## Points ouverts
 
-- **Complément demandé à l'usager** : un état `awaiting_applicant` exigerait de rouvrir une demande déjà déposée côté Tooling. Il est hors de cette version.
-- **Documents délivrés** : la simulation les stocke, comme le ferait l'administration émettrice. Reste à décider qui les relaie à l'usager : le Tooling par un outil, ou le Backend.
+- **Complément demandé à l'usager** : la console peut le demander (`request_information`), mais l'usager ne peut pas encore compléter un dossier déposé depuis le chat. L'agent reprend le dossier (`resume`) une fois le complément obtenu par un autre moyen.
+- **Conteneur du X-Road simulé** : pas encore d'image ni de service dans `apps/tooling/deploy/compose.yaml`. Il se lance avec `pnpm --filter @techma/xroad-sim start`.
 - **Authentification des agents** : le Backend doit savoir quel agent est connecté pour remplir `X-Official-Id`. Pour la démo, la console peut proposer de « se connecter en tant que » parmi `GET /v1/officials` appelé sans `X-Official-Id`. Cette liste complète n'a de sens qu'en simulation.
 - **Photo de profil** : `avatarUrl` est en lecture seule ici. Le téléversement relève du Backend.
