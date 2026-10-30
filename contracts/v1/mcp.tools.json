@@ -315,7 +315,8 @@
               "processing",
               "completed",
               "rejected",
-              "cancelled"
+              "cancelled",
+              "blocked"
             ]
           },
           "fields": {
@@ -432,7 +433,8 @@
               "processing",
               "completed",
               "rejected",
-              "cancelled"
+              "cancelled",
+              "blocked"
             ]
           },
           "fields": {
@@ -537,7 +539,8 @@
               "processing",
               "completed",
               "rejected",
-              "cancelled"
+              "cancelled",
+              "blocked"
             ]
           },
           "fields": {
@@ -580,6 +583,87 @@
           "fileIds",
           "officialLink",
           "updatedAt"
+        ]
+      }
+    },
+    {
+      "name": "request.pay",
+      "description": "request.pay — paiement simulé des frais auprès du X-Road simulé ; aucun paiement réel",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "bj.techma/kind": "action",
+        "bj.techma/requiresMandate": true,
+        "bj.techma/scopes": [
+          "requests:submit"
+        ]
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "pattern": "^req_[0-9A-HJKMNP-TV-Z]{26}$"
+          }
+        },
+        "required": [
+          "requestId"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "pattern": "^req_[0-9A-HJKMNP-TV-Z]{26}$"
+          },
+          "caseReference": {
+            "type": "string",
+            "pattern": "^SIM-[A-Z]{2,5}-[0-9]{4}-[0-9]{6}$"
+          },
+          "simulated": {
+            "const": true
+          },
+          "amountFcfa": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "paid",
+              "not_required"
+            ]
+          },
+          "paymentReference": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "paidAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "requestId",
+          "caseReference",
+          "simulated",
+          "amountFcfa",
+          "status",
+          "paymentReference",
+          "paidAt"
         ]
       }
     },
@@ -640,7 +724,8 @@
               "processing",
               "completed",
               "rejected",
-              "cancelled"
+              "cancelled",
+              "blocked"
             ]
           },
           "fields": {
@@ -755,7 +840,8 @@
               "processing",
               "completed",
               "rejected",
-              "cancelled"
+              "cancelled",
+              "blocked"
             ]
           },
           "fields": {
@@ -803,7 +889,7 @@
     },
     {
       "name": "documents.verify",
-      "description": "documents.verify — données fictives dans le simulateur",
+      "description": "Vérifier la disponibilité et la péremption de la référence de pièce pour cet usager ; aucune analyse du contenu ni validation administrative.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -844,7 +930,6 @@
           "status": {
             "type": "string",
             "enum": [
-              "pending",
               "valid",
               "invalid"
             ]

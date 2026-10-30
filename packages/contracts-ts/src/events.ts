@@ -49,7 +49,7 @@ export interface components {
             version: string;
         };
         /** @enum {string} */
-        RequestStatus: "draft" | "ready" | "awaiting_user_validation" | "submitted" | "processing" | "completed" | "rejected" | "cancelled";
+        RequestStatus: "draft" | "ready" | "awaiting_user_validation" | "submitted" | "processing" | "completed" | "rejected" | "cancelled" | "blocked";
         Request: {
             id: components["schemas"]["RequestId"];
             conversationId: components["schemas"]["ConversationId"];
@@ -68,10 +68,8 @@ export interface components {
         File: {
             id: components["schemas"]["FileId"];
             /** @enum {string} */
-            mimeType: "application/pdf" | "image/jpeg" | "image/png" | "audio/ogg" | "audio/mpeg" | "audio/mp4";
+            mimeType: "application/pdf" | "image/jpeg" | "image/png" | "audio/ogg" | "audio/mpeg" | "audio/mp4" | "audio/webm";
             sizeBytes: number;
-            /** @enum {string} */
-            scanStatus: "pending" | "clean" | "rejected";
             /** Format: date-time */
             expiresAt: string;
         };
@@ -283,6 +281,17 @@ export interface components {
             resource: "models" | "tools" | "procedures";
             resourceId: string;
             actorRef: string;
+            /**
+             * @description Opération de configuration ; facultative pour compatibilité avec les événements antérieurs.
+             * @enum {string}
+             */
+            operation?: "created" | "updated" | "deleted";
+        } | {
+            /** @constant */
+            kind: "request.snapshot";
+            request: components["schemas"]["DepartmentRequest"];
+            actorRef?: string;
+            action?: string;
         };
         Event: {
             /** @constant */
@@ -291,7 +300,7 @@ export interface components {
             /** @enum {string} */
             source: "urn:techma:backend" | "urn:techma:tooling" | "urn:techma:interface";
             /** @enum {string} */
-            type: "bj.techma.message.received.v1" | "bj.techma.message.sent.v1" | "bj.techma.request.created.v1" | "bj.techma.request.status_changed.v1" | "bj.techma.mandate.granted.v1" | "bj.techma.mandate.revoked.v1" | "bj.techma.tool.called.v1" | "bj.techma.configuration.changed.v1";
+            type: "bj.techma.message.received.v1" | "bj.techma.message.sent.v1" | "bj.techma.request.created.v1" | "bj.techma.request.status_changed.v1" | "bj.techma.mandate.granted.v1" | "bj.techma.mandate.revoked.v1" | "bj.techma.tool.called.v1" | "bj.techma.configuration.changed.v1" | "bj.techma.request.snapshot.v1";
             /** Format: date-time */
             time: string;
             /** @constant */
@@ -345,6 +354,362 @@ export interface components {
         FileAccess: {
             file: components["schemas"]["File"];
             userRef: components["schemas"]["UserRef"];
+        };
+        McpAuth: {
+            /** @constant */
+            type: "none";
+        } | {
+            /** @constant */
+            type: "bearer";
+            secretRef: string;
+        } | {
+            /** @constant */
+            type: "headers";
+            headers: {
+                [key: string]: string;
+            };
+        } | {
+            /** @constant */
+            type: "oauth-client-credentials";
+            /** Format: uri */
+            tokenUrl: string;
+            clientId: string;
+            clientSecretRef: string;
+            scope?: string;
+            audience?: string;
+        };
+        McpServer: {
+            id: string;
+            name: string;
+            /** Format: uri */
+            url: string;
+            enabled: boolean;
+            /** @constant */
+            transport: "streamable-http";
+            auth: components["schemas"]["McpAuth"];
+            /** @enum {unknown} */
+            policy: "generic" | "techma";
+        };
+        McpServerPage: {
+            items: components["schemas"]["McpServer"][];
+            nextCursor: string | null;
+        };
+        McpToolPermission: {
+            enabled: boolean;
+            requiresMandate: boolean;
+        };
+        McpDiscoveredTool: {
+            name: string;
+            description?: string;
+            inputSchema?: Record<string, never>;
+            outputSchema?: Record<string, never>;
+            enabled: boolean;
+            requiresMandate: boolean;
+            available: boolean;
+            modelName: string;
+        } & {
+            [key: string]: unknown;
+        };
+        McpToolPage: {
+            items: components["schemas"]["McpDiscoveredTool"][];
+            nextCursor: string | null;
+        };
+        AdminCommand: {
+            /** @enum {string} */
+            action: "claim" | "request_information" | "approve" | "reject" | "resume";
+            revision: number;
+            reason?: string;
+        };
+        BlockingReason: {
+            code: string;
+            detail: string;
+            /** Format: date-time */
+            at: string;
+        };
+        PaymentState: {
+            /** @enum {string} */
+            status: "not_required" | "pending" | "paid" | "failed" | "cancelled" | "refunded";
+            amountFcfa: number;
+            /** @constant */
+            currency: "XOF";
+            reference?: string;
+        };
+        IssuedDocument: {
+            fileId: components["schemas"]["FileId"];
+            name: string;
+            /** @enum {string} */
+            mimeType: "application/pdf" | "image/png" | "image/jpeg";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            simulation: boolean;
+        };
+        FieldEvidence: {
+            field: string;
+            /** @enum {string} */
+            source: "user" | "document" | "registry";
+            reference?: string;
+            confirmed: boolean;
+        };
+        RequestProgress: {
+            step: number;
+            total: number;
+            label: string;
+        };
+        DepartmentRequest: {
+            id: components["schemas"]["RequestId"];
+            conversationId: components["schemas"]["ConversationId"];
+            userRef: components["schemas"]["UserRef"];
+            procedureId: string;
+            status: components["schemas"]["RequestStatus"];
+            fields: {
+                [key: string]: string | number | boolean | null;
+            };
+            fileIds: components["schemas"]["FileId"][];
+            /** Format: uri */
+            officialLink: string | null;
+            /** Format: date-time */
+            updatedAt: string;
+            administrationId: string;
+            title: string;
+            revision: number;
+            /** Format: date-time */
+            createdAt: string;
+            simulation: boolean;
+            /** Format: date-time */
+            submittedAt?: string;
+            /** Format: date-time */
+            completedAt?: string;
+            /** @enum {string} */
+            completedBy?: "ai" | "human";
+            receiptRef?: string;
+            assignedTo?: string | null;
+            /** Format: date-time */
+            dueAt?: string;
+            blocking?: components["schemas"]["BlockingReason"];
+            payment?: components["schemas"]["PaymentState"];
+            documents?: components["schemas"]["IssuedDocument"][];
+            progress?: components["schemas"]["RequestProgress"];
+            evidence?: components["schemas"]["FieldEvidence"][];
+        };
+        AdminWorkItem: {
+            id: components["schemas"]["RequestId"];
+            procedureId: string;
+            status: components["schemas"]["RequestStatus"];
+            fields: {
+                [key: string]: string | number | boolean | null;
+            };
+            fileIds: components["schemas"]["FileId"][];
+            /** Format: uri */
+            officialLink: string | null;
+            /** Format: date-time */
+            updatedAt: string;
+            administrationId: string;
+            title: string;
+            revision: number;
+            /** Format: date-time */
+            createdAt: string;
+            simulation: boolean;
+            /** Format: date-time */
+            submittedAt?: string;
+            /** Format: date-time */
+            completedAt?: string;
+            /** @enum {string} */
+            completedBy?: "ai" | "human";
+            receiptRef?: string;
+            assignedTo?: string | null;
+            /** Format: date-time */
+            dueAt?: string;
+            blocking?: components["schemas"]["BlockingReason"];
+            payment?: components["schemas"]["PaymentState"];
+            documents?: components["schemas"]["IssuedDocument"][];
+            progress?: components["schemas"]["RequestProgress"];
+            evidence?: components["schemas"]["FieldEvidence"][];
+        };
+        Department: {
+            id: string;
+            name: string;
+            code?: string;
+            active: boolean;
+            revision: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        DepartmentInput: {
+            id: string;
+            name: string;
+            code?: string;
+            active?: boolean;
+        };
+        DepartmentUpdate: {
+            name: string;
+            code?: string;
+            active: boolean;
+            revision: number;
+        };
+        AdminMembership: {
+            departmentId: string;
+            /** @enum {string} */
+            role: "agent" | "admin";
+            active: boolean;
+        };
+        AdminMembershipInput: {
+            departmentId: string;
+            /** @enum {string} */
+            role: "agent" | "admin";
+            active?: boolean;
+        };
+        AdminUser: {
+            subject: string;
+            displayName: string;
+            /** Format: email */
+            email?: string;
+            /** Format: uri */
+            photoUrl?: string;
+            active: boolean;
+            superAdmin: boolean;
+            memberships: components["schemas"]["AdminMembership"][];
+            revision: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminUserInput: {
+            subject: string;
+            displayName: string;
+            /** Format: email */
+            email?: string;
+            /** Format: uri */
+            photoUrl?: string;
+            superAdmin?: boolean;
+            memberships: components["schemas"]["AdminMembershipInput"][];
+        };
+        AdminUserUpdate: {
+            displayName?: string;
+            /** Format: email */
+            email?: string | null;
+            /** Format: uri */
+            photoUrl?: string | null;
+            active?: boolean;
+            superAdmin?: boolean;
+            memberships?: components["schemas"]["AdminMembershipInput"][];
+            revision: number;
+        };
+        AdminProfileUpdate: {
+            displayName: string;
+            /** Format: email */
+            email?: string | null;
+            /** Format: uri */
+            photoUrl?: string | null;
+            revision: number;
+        };
+        AdminProfile: {
+            subject: string;
+            displayName: string;
+            /** Format: email */
+            email?: string;
+            /** Format: uri */
+            photoUrl?: string;
+            active: boolean;
+            superAdmin: boolean;
+            memberships: components["schemas"]["AdminMembership"][];
+            revision: number;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+            departmentIds: string[];
+            permissions: string[];
+            /** @constant */
+            identityProvider: "oidc";
+            /** @constant */
+            directorySource: "backend-demo-adapter";
+        };
+        DepartmentPage: {
+            items: components["schemas"]["Department"][];
+            nextCursor: string | null;
+        };
+        AdminUserPage: {
+            items: components["schemas"]["AdminUser"][];
+            nextCursor: string | null;
+        };
+        AdminWorkItemPage: {
+            items: components["schemas"]["AdminWorkItem"][];
+            nextCursor: string | null;
+        };
+        Dashboard: {
+            departmentId: string;
+            period: {
+                /** Format: date-time */
+                from: string;
+                /** Format: date-time */
+                to: string;
+            };
+            received: number;
+            pending: number;
+            blocked: number;
+            completed: number;
+            completedByAi: number;
+            rejected: number;
+            overdue: number;
+            unanswered: number;
+            medianProcessingMs: number | null;
+            channels: {
+                channel: string;
+                count: number;
+            }[];
+            mostRequested: {
+                title: string;
+                count: number;
+            }[];
+        };
+        ActivityEntry: {
+            id: string;
+            requestId: components["schemas"]["RequestId"];
+            revision: number;
+            actorRef: string | null;
+            action: string;
+            outcome: string;
+            traceId: string;
+            /** Format: date-time */
+            at: string;
+        };
+        UnansweredEntry: {
+            id: string;
+            conversationId: components["schemas"]["ConversationId"];
+            messageId: components["schemas"]["MessageId"];
+            reason: string;
+            /** @enum {string} */
+            status: "open" | "resolved";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            resolvedAt: string | null;
+        };
+        ActivityEntryPage: {
+            items: components["schemas"]["ActivityEntry"][];
+            nextCursor: string | null;
+        };
+        UnansweredEntryPage: {
+            items: components["schemas"]["UnansweredEntry"][];
+            nextCursor: string | null;
+        };
+        ResolutionResult: {
+            id: string;
+            /** @constant */
+            status: "resolved";
+        };
+        InternalAdminCommand: {
+            /** @enum {string} */
+            action: "claim" | "request_information" | "approve" | "reject" | "resume";
+            revision: number;
+            reason?: string;
+            departmentId: string;
+            actorRef: string;
         };
     };
     responses: never;

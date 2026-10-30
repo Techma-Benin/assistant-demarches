@@ -9,7 +9,11 @@ export interface paths {
         /** listAdminModels */
         get: operations["listAdminModels"];
         put?: never;
-        post?: never;
+        /**
+         * Créer une configuration models
+         * @description admin:write. Identifiant fourni dans le corps (name pour tools). 409 INVALID_TRANSITION si déjà présent. Rejeu Idempotency-Key 24 h sans nouvelle écriture.
+         */
+        post: operations["createAdminModels"];
         delete?: never;
         options?: never;
         head?: never;
@@ -23,11 +27,19 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Lire une configuration models
+         * @description admin:read. 404 si absent ou appartenant à une autre administration.
+         */
+        get: operations["getAdminModels"];
         /** updateAdminModels */
         put: operations["updateAdminModels"];
         post?: never;
-        delete?: never;
+        /**
+         * Supprimer une configuration models
+         * @description admin:write. Idempotency-Key obligatoire : même clé rejoue 204 pendant 24 h sans supprimer une éventuelle recréation ; autre clé sur ressource absente donne 404. Aucun effacement de dossiers ou audit. Fiche référencée dans les projections locales demandes/mandats/challenges : 409 INVALID_TRANSITION. Références Tooling non encore projetées non détectables. Supprimer le dernier modèle actif ou un outil requis peut rendre les prochains traitements indisponibles.
+         */
+        delete: operations["deleteAdminModels"];
         options?: never;
         head?: never;
         patch?: never;
@@ -40,10 +52,19 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** listAdminTools */
+        /**
+         * listAdminTools
+         * @deprecated
+         * @description Compatibilité historique seulement : utiliser /v1/admin/mcp-servers et les permissions des actions découvertes.
+         */
         get: operations["listAdminTools"];
         put?: never;
-        post?: never;
+        /**
+         * Créer une configuration tools
+         * @deprecated
+         * @description admin:write. Identifiant fourni dans le corps (name pour tools). 409 INVALID_TRANSITION si déjà présent. Rejeu Idempotency-Key 24 h sans nouvelle écriture. Compatibilité historique seulement : utiliser /v1/admin/mcp-servers et les permissions des actions découvertes.
+         */
+        post: operations["createAdminTools"];
         delete?: never;
         options?: never;
         head?: never;
@@ -57,11 +78,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        /** updateAdminTools */
+        /**
+         * Lire une configuration tools
+         * @deprecated
+         * @description admin:read. 404 si absent ou appartenant à une autre administration. Compatibilité historique seulement : utiliser /v1/admin/mcp-servers et les permissions des actions découvertes.
+         */
+        get: operations["getAdminTools"];
+        /**
+         * updateAdminTools
+         * @deprecated
+         * @description Compatibilité historique seulement : utiliser /v1/admin/mcp-servers et les permissions des actions découvertes.
+         */
         put: operations["updateAdminTools"];
         post?: never;
-        delete?: never;
+        /**
+         * Supprimer une configuration tools
+         * @deprecated
+         * @description admin:write. Idempotency-Key obligatoire : même clé rejoue 204 pendant 24 h sans supprimer une éventuelle recréation ; autre clé sur ressource absente donne 404. Aucun effacement de dossiers ou audit. Fiche référencée dans les projections locales demandes/mandats/challenges : 409 INVALID_TRANSITION. Références Tooling non encore projetées non détectables. Supprimer le dernier modèle actif ou un outil requis peut rendre les prochains traitements indisponibles. Compatibilité historique seulement : utiliser /v1/admin/mcp-servers et les permissions des actions découvertes.
+         */
+        delete: operations["deleteAdminTools"];
         options?: never;
         head?: never;
         patch?: never;
@@ -77,7 +112,11 @@ export interface paths {
         /** listAdminProcedures */
         get: operations["listAdminProcedures"];
         put?: never;
-        post?: never;
+        /**
+         * Créer une configuration procedures
+         * @description admin:write. Identifiant fourni dans le corps (name pour tools). 409 INVALID_TRANSITION si déjà présent. Rejeu Idempotency-Key 24 h sans nouvelle écriture. Identifiant de fiche globalement unique, y compris entre administrations (API privée Tooling).
+         */
+        post: operations["createAdminProcedures"];
         delete?: never;
         options?: never;
         head?: never;
@@ -91,11 +130,19 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Lire une configuration procedures
+         * @description admin:read. 404 si absent ou appartenant à une autre administration.
+         */
+        get: operations["getAdminProcedures"];
         /** updateAdminProcedures */
         put: operations["updateAdminProcedures"];
         post?: never;
-        delete?: never;
+        /**
+         * Supprimer une configuration procedures
+         * @description admin:write. Idempotency-Key obligatoire : même clé rejoue 204 pendant 24 h sans supprimer une éventuelle recréation ; autre clé sur ressource absente donne 404. Aucun effacement de dossiers ou audit. Fiche référencée dans les projections locales demandes/mandats/challenges : 409 INVALID_TRANSITION. Références Tooling non encore projetées non détectables. Supprimer le dernier modèle actif ou un outil requis peut rendre les prochains traitements indisponibles.
+         */
+        delete: operations["deleteAdminProcedures"];
         options?: never;
         head?: never;
         patch?: never;
@@ -152,6 +199,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/mcp-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lister les connexions MCP */
+        get: operations["listAdminMcpServers"];
+        put?: never;
+        /** Ajouter un serveur MCP */
+        post: operations["createAdminMcpServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/mcp-servers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Consulter une connexion MCP */
+        get: operations["getAdminMcpServer"];
+        /** Modifier ou activer une connexion MCP */
+        put: operations["updateAdminMcpServer"];
+        post?: never;
+        /** Supprimer une connexion et ses permissions */
+        delete: operations["deleteAdminMcpServer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/mcp-servers/{id}/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Découvrir ou actualiser les actions du serveur MCP */
+        post: operations["discoverAdminMcpServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/mcp-servers/{id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lister les actions découvertes par serveur */
+        get: operations["listAdminMcpTools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/mcp-servers/{id}/tools/{toolName}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Activer ou désactiver une action découverte */
+        put: operations["updateAdminMcpToolPermission"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -185,7 +320,7 @@ export interface components {
             version: string;
         };
         /** @enum {string} */
-        RequestStatus: "draft" | "ready" | "awaiting_user_validation" | "submitted" | "processing" | "completed" | "rejected" | "cancelled";
+        RequestStatus: "draft" | "ready" | "awaiting_user_validation" | "submitted" | "processing" | "completed" | "rejected" | "cancelled" | "blocked";
         Request: {
             id: components["schemas"]["RequestId"];
             conversationId: components["schemas"]["ConversationId"];
@@ -204,10 +339,8 @@ export interface components {
         File: {
             id: components["schemas"]["FileId"];
             /** @enum {string} */
-            mimeType: "application/pdf" | "image/jpeg" | "image/png" | "audio/ogg" | "audio/mpeg" | "audio/mp4";
+            mimeType: "application/pdf" | "image/jpeg" | "image/png" | "audio/ogg" | "audio/mpeg" | "audio/mp4" | "audio/webm";
             sizeBytes: number;
-            /** @enum {string} */
-            scanStatus: "pending" | "clean" | "rejected";
             /** Format: date-time */
             expiresAt: string;
         };
@@ -419,6 +552,17 @@ export interface components {
             resource: "models" | "tools" | "procedures";
             resourceId: string;
             actorRef: string;
+            /**
+             * @description Opération de configuration ; facultative pour compatibilité avec les événements antérieurs.
+             * @enum {string}
+             */
+            operation?: "created" | "updated" | "deleted";
+        } | {
+            /** @constant */
+            kind: "request.snapshot";
+            request: components["schemas"]["DepartmentRequest"];
+            actorRef?: string;
+            action?: string;
         };
         Event: {
             /** @constant */
@@ -427,7 +571,7 @@ export interface components {
             /** @enum {string} */
             source: "urn:techma:backend" | "urn:techma:tooling" | "urn:techma:interface";
             /** @enum {string} */
-            type: "bj.techma.message.received.v1" | "bj.techma.message.sent.v1" | "bj.techma.request.created.v1" | "bj.techma.request.status_changed.v1" | "bj.techma.mandate.granted.v1" | "bj.techma.mandate.revoked.v1" | "bj.techma.tool.called.v1" | "bj.techma.configuration.changed.v1";
+            type: "bj.techma.message.received.v1" | "bj.techma.message.sent.v1" | "bj.techma.request.created.v1" | "bj.techma.request.status_changed.v1" | "bj.techma.mandate.granted.v1" | "bj.techma.mandate.revoked.v1" | "bj.techma.tool.called.v1" | "bj.techma.configuration.changed.v1" | "bj.techma.request.snapshot.v1";
             /** Format: date-time */
             time: string;
             /** @constant */
@@ -482,6 +626,362 @@ export interface components {
             file: components["schemas"]["File"];
             userRef: components["schemas"]["UserRef"];
         };
+        McpAuth: {
+            /** @constant */
+            type: "none";
+        } | {
+            /** @constant */
+            type: "bearer";
+            secretRef: string;
+        } | {
+            /** @constant */
+            type: "headers";
+            headers: {
+                [key: string]: string;
+            };
+        } | {
+            /** @constant */
+            type: "oauth-client-credentials";
+            /** Format: uri */
+            tokenUrl: string;
+            clientId: string;
+            clientSecretRef: string;
+            scope?: string;
+            audience?: string;
+        };
+        McpServer: {
+            id: string;
+            name: string;
+            /** Format: uri */
+            url: string;
+            enabled: boolean;
+            /** @constant */
+            transport: "streamable-http";
+            auth: components["schemas"]["McpAuth"];
+            /** @enum {unknown} */
+            policy: "generic" | "techma";
+        };
+        McpServerPage: {
+            items: components["schemas"]["McpServer"][];
+            nextCursor: string | null;
+        };
+        McpToolPermission: {
+            enabled: boolean;
+            requiresMandate: boolean;
+        };
+        McpDiscoveredTool: {
+            name: string;
+            description?: string;
+            inputSchema?: Record<string, never>;
+            outputSchema?: Record<string, never>;
+            enabled: boolean;
+            requiresMandate: boolean;
+            available: boolean;
+            modelName: string;
+        } & {
+            [key: string]: unknown;
+        };
+        McpToolPage: {
+            items: components["schemas"]["McpDiscoveredTool"][];
+            nextCursor: string | null;
+        };
+        AdminCommand: {
+            /** @enum {string} */
+            action: "claim" | "request_information" | "approve" | "reject" | "resume";
+            revision: number;
+            reason?: string;
+        };
+        BlockingReason: {
+            code: string;
+            detail: string;
+            /** Format: date-time */
+            at: string;
+        };
+        PaymentState: {
+            /** @enum {string} */
+            status: "not_required" | "pending" | "paid" | "failed" | "cancelled" | "refunded";
+            amountFcfa: number;
+            /** @constant */
+            currency: "XOF";
+            reference?: string;
+        };
+        IssuedDocument: {
+            fileId: components["schemas"]["FileId"];
+            name: string;
+            /** @enum {string} */
+            mimeType: "application/pdf" | "image/png" | "image/jpeg";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            simulation: boolean;
+        };
+        FieldEvidence: {
+            field: string;
+            /** @enum {string} */
+            source: "user" | "document" | "registry";
+            reference?: string;
+            confirmed: boolean;
+        };
+        RequestProgress: {
+            step: number;
+            total: number;
+            label: string;
+        };
+        DepartmentRequest: {
+            id: components["schemas"]["RequestId"];
+            conversationId: components["schemas"]["ConversationId"];
+            userRef: components["schemas"]["UserRef"];
+            procedureId: string;
+            status: components["schemas"]["RequestStatus"];
+            fields: {
+                [key: string]: string | number | boolean | null;
+            };
+            fileIds: components["schemas"]["FileId"][];
+            /** Format: uri */
+            officialLink: string | null;
+            /** Format: date-time */
+            updatedAt: string;
+            administrationId: string;
+            title: string;
+            revision: number;
+            /** Format: date-time */
+            createdAt: string;
+            simulation: boolean;
+            /** Format: date-time */
+            submittedAt?: string;
+            /** Format: date-time */
+            completedAt?: string;
+            /** @enum {string} */
+            completedBy?: "ai" | "human";
+            receiptRef?: string;
+            assignedTo?: string | null;
+            /** Format: date-time */
+            dueAt?: string;
+            blocking?: components["schemas"]["BlockingReason"];
+            payment?: components["schemas"]["PaymentState"];
+            documents?: components["schemas"]["IssuedDocument"][];
+            progress?: components["schemas"]["RequestProgress"];
+            evidence?: components["schemas"]["FieldEvidence"][];
+        };
+        AdminWorkItem: {
+            id: components["schemas"]["RequestId"];
+            procedureId: string;
+            status: components["schemas"]["RequestStatus"];
+            fields: {
+                [key: string]: string | number | boolean | null;
+            };
+            fileIds: components["schemas"]["FileId"][];
+            /** Format: uri */
+            officialLink: string | null;
+            /** Format: date-time */
+            updatedAt: string;
+            administrationId: string;
+            title: string;
+            revision: number;
+            /** Format: date-time */
+            createdAt: string;
+            simulation: boolean;
+            /** Format: date-time */
+            submittedAt?: string;
+            /** Format: date-time */
+            completedAt?: string;
+            /** @enum {string} */
+            completedBy?: "ai" | "human";
+            receiptRef?: string;
+            assignedTo?: string | null;
+            /** Format: date-time */
+            dueAt?: string;
+            blocking?: components["schemas"]["BlockingReason"];
+            payment?: components["schemas"]["PaymentState"];
+            documents?: components["schemas"]["IssuedDocument"][];
+            progress?: components["schemas"]["RequestProgress"];
+            evidence?: components["schemas"]["FieldEvidence"][];
+        };
+        Department: {
+            id: string;
+            name: string;
+            code?: string;
+            active: boolean;
+            revision: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        DepartmentInput: {
+            id: string;
+            name: string;
+            code?: string;
+            active?: boolean;
+        };
+        DepartmentUpdate: {
+            name: string;
+            code?: string;
+            active: boolean;
+            revision: number;
+        };
+        AdminMembership: {
+            departmentId: string;
+            /** @enum {string} */
+            role: "agent" | "admin";
+            active: boolean;
+        };
+        AdminMembershipInput: {
+            departmentId: string;
+            /** @enum {string} */
+            role: "agent" | "admin";
+            active?: boolean;
+        };
+        AdminUser: {
+            subject: string;
+            displayName: string;
+            /** Format: email */
+            email?: string;
+            /** Format: uri */
+            photoUrl?: string;
+            active: boolean;
+            superAdmin: boolean;
+            memberships: components["schemas"]["AdminMembership"][];
+            revision: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminUserInput: {
+            subject: string;
+            displayName: string;
+            /** Format: email */
+            email?: string;
+            /** Format: uri */
+            photoUrl?: string;
+            superAdmin?: boolean;
+            memberships: components["schemas"]["AdminMembershipInput"][];
+        };
+        AdminUserUpdate: {
+            displayName?: string;
+            /** Format: email */
+            email?: string | null;
+            /** Format: uri */
+            photoUrl?: string | null;
+            active?: boolean;
+            superAdmin?: boolean;
+            memberships?: components["schemas"]["AdminMembershipInput"][];
+            revision: number;
+        };
+        AdminProfileUpdate: {
+            displayName: string;
+            /** Format: email */
+            email?: string | null;
+            /** Format: uri */
+            photoUrl?: string | null;
+            revision: number;
+        };
+        AdminProfile: {
+            subject: string;
+            displayName: string;
+            /** Format: email */
+            email?: string;
+            /** Format: uri */
+            photoUrl?: string;
+            active: boolean;
+            superAdmin: boolean;
+            memberships: components["schemas"]["AdminMembership"][];
+            revision: number;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+            departmentIds: string[];
+            permissions: string[];
+            /** @constant */
+            identityProvider: "oidc";
+            /** @constant */
+            directorySource: "backend-demo-adapter";
+        };
+        DepartmentPage: {
+            items: components["schemas"]["Department"][];
+            nextCursor: string | null;
+        };
+        AdminUserPage: {
+            items: components["schemas"]["AdminUser"][];
+            nextCursor: string | null;
+        };
+        AdminWorkItemPage: {
+            items: components["schemas"]["AdminWorkItem"][];
+            nextCursor: string | null;
+        };
+        Dashboard: {
+            departmentId: string;
+            period: {
+                /** Format: date-time */
+                from: string;
+                /** Format: date-time */
+                to: string;
+            };
+            received: number;
+            pending: number;
+            blocked: number;
+            completed: number;
+            completedByAi: number;
+            rejected: number;
+            overdue: number;
+            unanswered: number;
+            medianProcessingMs: number | null;
+            channels: {
+                channel: string;
+                count: number;
+            }[];
+            mostRequested: {
+                title: string;
+                count: number;
+            }[];
+        };
+        ActivityEntry: {
+            id: string;
+            requestId: components["schemas"]["RequestId"];
+            revision: number;
+            actorRef: string | null;
+            action: string;
+            outcome: string;
+            traceId: string;
+            /** Format: date-time */
+            at: string;
+        };
+        UnansweredEntry: {
+            id: string;
+            conversationId: components["schemas"]["ConversationId"];
+            messageId: components["schemas"]["MessageId"];
+            reason: string;
+            /** @enum {string} */
+            status: "open" | "resolved";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            resolvedAt: string | null;
+        };
+        ActivityEntryPage: {
+            items: components["schemas"]["ActivityEntry"][];
+            nextCursor: string | null;
+        };
+        UnansweredEntryPage: {
+            items: components["schemas"]["UnansweredEntry"][];
+            nextCursor: string | null;
+        };
+        ResolutionResult: {
+            id: string;
+            /** @constant */
+            status: "resolved";
+        };
+        InternalAdminCommand: {
+            /** @enum {string} */
+            action: "claim" | "request_information" | "approve" | "reject" | "resume";
+            revision: number;
+            reason?: string;
+            departmentId: string;
+            actorRef: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -512,6 +1012,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelConfigPage"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createAdminModels: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelConfig"];
+            };
+        };
+        responses: {
+            /** @description Succès */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConfig"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getAdminModels: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConfig"];
                 };
             };
             /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
@@ -563,6 +1132,38 @@ export interface operations {
             };
         };
     };
+    deleteAdminModels: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configuration supprimée ; réponse sans corps. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     listAdminTools: {
         parameters: {
             query?: {
@@ -584,6 +1185,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolConfigPage"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createAdminTools: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolConfig"];
+            };
+        };
+        responses: {
+            /** @description Succès */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolConfig"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getAdminTools: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolConfig"];
                 };
             };
             /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
@@ -635,6 +1305,38 @@ export interface operations {
             };
         };
     };
+    deleteAdminTools: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configuration supprimée ; réponse sans corps. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     listAdminProcedures: {
         parameters: {
             query?: {
@@ -656,6 +1358,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProcedurePage"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createAdminProcedures: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Procedure"];
+            };
+        };
+        responses: {
+            /** @description Succès */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Procedure"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getAdminProcedures: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Procedure"];
                 };
             };
             /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
@@ -695,6 +1466,38 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Procedure"];
                 };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteAdminProcedures: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configuration supprimée ; réponse sans corps. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
             default: {
@@ -793,6 +1596,283 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Metrics"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listAdminMcpServers: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header: {
+                traceparent: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServerPage"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createAdminMcpServer: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServer"];
+            };
+        };
+        responses: {
+            /** @description Succès */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServer"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getAdminMcpServer: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServer"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateAdminMcpServer: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServer"];
+            };
+        };
+        responses: {
+            /** @description Succès */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServer"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteAdminMcpServer: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    discoverAdminMcpServer: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpToolPage"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listAdminMcpTools: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpToolPage"];
+                };
+            };
+            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateAdminMcpToolPermission: {
+        parameters: {
+            query?: never;
+            header: {
+                traceparent: string;
+            };
+            path: {
+                id: string;
+                toolName: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpToolPermission"];
+            };
+        };
+        responses: {
+            /** @description Succès */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpDiscoveredTool"];
                 };
             };
             /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */

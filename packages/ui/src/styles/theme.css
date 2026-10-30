@@ -1,0 +1,282 @@
+@import './tokens.css';
+
+/* Les classes utilisées dans le package sont générées chez les consommateurs. */
+@source "../";
+
+@theme inline {
+  --color-canvas: var(--ui-canvas);
+  --color-surface: var(--ui-surface);
+  --color-sunken: var(--ui-sunken);
+  --color-shell: var(--ui-shell);
+  --color-line: var(--ui-border);
+  --color-line-subtle: var(--ui-border-subtle);
+  --color-line-strong: var(--ui-border-strong);
+  --color-field: var(--ui-field-border);
+  --color-ink: var(--ui-text);
+  --color-ink-muted: var(--ui-text-muted);
+  --color-ink-subtle: var(--ui-text-subtle);
+  --color-action: var(--ui-action);
+  --color-action-hover: var(--ui-action-hover);
+  --color-on-action: var(--ui-on-action);
+  --color-trust: var(--ui-trust);
+  --color-trust-text: var(--ui-trust-text);
+  --color-trust-soft: var(--ui-trust-soft);
+  --color-trust-line: var(--ui-trust-line);
+  --color-on-trust: var(--ui-on-trust);
+  --color-sun: var(--ui-sun);
+  --color-flag-red: var(--ui-flag-red);
+  --color-danger: var(--ui-danger-text);
+  --color-danger-soft: var(--ui-danger-soft);
+  --color-warning: var(--ui-warning-text);
+  --color-warning-soft: var(--ui-warning-soft);
+  --color-focus: var(--ui-focus);
+  --color-viz-1: var(--ui-viz-1);
+  --color-viz-2: var(--ui-viz-2);
+  --color-viz-3: var(--ui-viz-3);
+
+  --font-display: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --radius-field: var(--ui-radius-field);
+  --radius-card: var(--ui-radius-card);
+  --radius-tile: var(--ui-radius-tile);
+  --radius-pill: var(--ui-radius-pill);
+
+  --shadow-prompt: var(--ui-shadow-prompt);
+}
+
+@layer base {
+  html {
+    background: var(--ui-canvas);
+    color: var(--ui-text);
+  }
+
+  body {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+  }
+}
+
+@keyframes ui-typing {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* Points de saisie aux couleurs du drapeau : pulsation en alternance (le délai est posé par le composant). */
+@keyframes ui-typing-flag {
+  0%,
+  80%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ui-glyph-pop {
+  0% {
+    transform: scale(0.6) rotate(-12deg);
+    opacity: 0;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes ui-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Zone défilante sans barre visible : le défilement reste possible (molette, tactile, clavier). */
+.ui-scrollbar-none {
+  scrollbar-width: none;
+}
+.ui-scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Entrée des éléments de liste (opacité + 4px), désactivée si l'utilisateur réduit les animations. */
+.ui-enter {
+  animation: ui-enter var(--ui-dur-base) var(--ui-ease-out) both;
+}
+
+/* Appui : léger retrait au clic (pas sur les éléments désactivés).
+   Ne fixe pas `transition` : l'élément déclare la sienne (couleurs + transform), sinon elle serait écrasée. */
+.ui-press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Entrée d'un petit élément : opacité + échelle 0.96 (jamais depuis 0). */
+.ui-pop {
+  transition:
+    opacity var(--ui-dur-base) var(--ui-ease-out),
+    transform var(--ui-dur-base) var(--ui-ease-out);
+  transform-origin: top center;
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* Entrée d'un bloc : opacité + 4px. */
+.ui-rise {
+  transition:
+    opacity var(--ui-dur-base) var(--ui-ease-out),
+    transform var(--ui-dur-base) var(--ui-ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Fondu enchaîné d'un contenu qui change (à utiliser avec une `key` React). */
+.ui-swap {
+  transition:
+    opacity var(--ui-dur-base) var(--ui-ease-out),
+    filter var(--ui-dur-base) var(--ui-ease-out);
+  @starting-style {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+/* Enfants en cascade ; `--i` (plafonné à 9 par les composants) règle le retard. */
+.ui-stagger > * {
+  transition:
+    opacity var(--ui-dur-base) var(--ui-ease-out),
+    transform var(--ui-dur-base) var(--ui-ease-out);
+  transition-delay: calc(var(--i, 0) * 30ms);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Ligne de tableau en cascade : le retard ne touche pas la couleur de survol. */
+.ui-row-enter {
+  transition:
+    opacity var(--ui-dur-base) var(--ui-ease-out),
+    transform var(--ui-dur-base) var(--ui-ease-out),
+    background-color var(--ui-dur-fast) ease;
+  transition-delay: calc(var(--i, 0) * 30ms), calc(var(--i, 0) * 30ms), 0s;
+  @starting-style {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Icône du thème : légère rotation à l'entrée (retirée si mouvement réduit). */
+.ui-theme-icon {
+  transition-property: opacity, filter, transform;
+  @starting-style {
+    opacity: 0;
+    filter: blur(2px);
+    transform: rotate(-30deg);
+  }
+}
+
+/* Tracé unique d'une coche SVG (lucide Check ≈ 22.6 de longueur). */
+.ui-draw {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 300ms var(--ui-ease-out);
+  @starting-style {
+    stroke-dashoffset: 24;
+  }
+}
+
+@keyframes ui-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+  75% {
+    transform: translateX(-3px);
+  }
+}
+
+/* Retour d'erreur uniquement : 2 cycles de ±3px. */
+.ui-shake {
+  animation: ui-shake 220ms var(--ui-ease-in-out);
+}
+
+/* Glyphe « rebus » : apparition avec légère rotation. */
+.ui-glyph-pop {
+  animation: ui-glyph-pop 350ms var(--ui-ease-out);
+}
+
+/* Mouvement réduit : plus de déplacement ni de flou, l'opacité et les couleurs restent animées. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-enter {
+    animation: none;
+  }
+  .ui-press:active:not(:disabled) {
+    transform: none;
+  }
+  .ui-pop,
+  .ui-rise,
+  .ui-stagger > *,
+  .ui-row-enter {
+    transition-property: opacity;
+    @starting-style {
+      opacity: 0;
+      transform: none;
+    }
+  }
+  .ui-swap,
+  .ui-theme-icon {
+    transition-property: opacity;
+    @starting-style {
+      opacity: 0;
+      filter: none;
+      transform: none;
+    }
+  }
+  .ui-draw {
+    transition: none;
+    @starting-style {
+      stroke-dashoffset: 0;
+    }
+  }
+  .ui-shake,
+  .ui-glyph-pop {
+    animation: none;
+  }
+}

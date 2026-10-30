@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "C2 — Ressources Backend pour Tooling",
-    "version": "1.0.0"
+    "version": "1.3.0"
   },
   "servers": [
     {
@@ -179,6 +179,158 @@
         },
         "x-role": "resources:read"
       }
+    },
+    "/internal/v1/files/{id}/content": {
+      "get": {
+        "operationId": "downloadConnectorFile",
+        "summary": "getWorkItem",
+        "description": "JWT signé et droits du département requis. Voir docs/backend-pivot-api.md. Les essais peuvent modifier les données.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-User-Ref",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Opération réussie",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Erreur contrôlée",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/requests/{id}/documents": {
+      "post": {
+        "operationId": "uploadIssuedDocument",
+        "summary": "actOnWorkItem",
+        "description": "JWT signé et droits du département requis. Voir docs/backend-pivot-api.md. Les essais peuvent modifier les données.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-User-Ref",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-File-Mime-Type",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Erreur contrôlée",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Opération réussie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/File"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -324,7 +476,8 @@
           "processing",
           "completed",
           "rejected",
-          "cancelled"
+          "cancelled",
+          "blocked"
         ]
       },
       "Request": {
@@ -403,21 +556,14 @@
               "image/png",
               "audio/ogg",
               "audio/mpeg",
-              "audio/mp4"
+              "audio/mp4",
+              "audio/webm"
             ]
           },
           "sizeBytes": {
             "type": "integer",
             "minimum": 1,
             "maximum": 10485760
-          },
-          "scanStatus": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "clean",
-              "rejected"
-            ]
           },
           "expiresAt": {
             "type": "string",
@@ -428,7 +574,6 @@
           "id",
           "mimeType",
           "sizeBytes",
-          "scanStatus",
           "expiresAt"
         ]
       },
@@ -1312,6 +1457,15 @@
               "actorRef": {
                 "type": "string",
                 "minLength": 1
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "created",
+                  "updated",
+                  "deleted"
+                ],
+                "description": "Opération de configuration ; facultative pour compatibilité avec les événements antérieurs."
               }
             },
             "required": [
@@ -1319,6 +1473,32 @@
               "resource",
               "resourceId",
               "actorRef"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "request.snapshot"
+              },
+              "request": {
+                "$ref": "#/components/schemas/DepartmentRequest"
+              },
+              "actorRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "action": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": [
+              "kind",
+              "request"
             ]
           }
         ]
@@ -1351,7 +1531,8 @@
               "bj.techma.mandate.granted.v1",
               "bj.techma.mandate.revoked.v1",
               "bj.techma.tool.called.v1",
-              "bj.techma.configuration.changed.v1"
+              "bj.techma.configuration.changed.v1",
+              "bj.techma.request.snapshot.v1"
             ]
           },
           "time": {
@@ -1601,6 +1782,1515 @@
             "$ref": "#/components/schemas/UserRef"
           }
         }
+      },
+      "McpAuth": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "none"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "secretRef"
+            ],
+            "properties": {
+              "type": {
+                "const": "bearer"
+              },
+              "secretRef": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.:-]{1,200}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "headers"
+            ],
+            "properties": {
+              "type": {
+                "const": "headers"
+              },
+              "headers": {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 16,
+                "propertyNames": {
+                  "pattern": "^[-A-Za-z0-9]+$"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.:-]{1,200}$"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "tokenUrl",
+              "clientId",
+              "clientSecretRef"
+            ],
+            "properties": {
+              "type": {
+                "const": "oauth-client-credentials"
+              },
+              "tokenUrl": {
+                "type": "string",
+                "format": "uri"
+              },
+              "clientId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "clientSecretRef": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.:-]{1,200}$"
+              },
+              "scope": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "audience": {
+                "type": "string",
+                "maxLength": 1000
+              }
+            }
+          }
+        ]
+      },
+      "McpServer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "url",
+          "enabled",
+          "transport",
+          "auth",
+          "policy"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "transport": {
+            "const": "streamable-http"
+          },
+          "auth": {
+            "$ref": "#/components/schemas/McpAuth"
+          },
+          "policy": {
+            "enum": [
+              "generic",
+              "techma"
+            ]
+          }
+        }
+      },
+      "McpServerPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpServer"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "McpToolPermission": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "requiresMandate"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "requiresMandate": {
+            "type": "boolean"
+          }
+        }
+      },
+      "McpDiscoveredTool": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "name",
+          "enabled",
+          "requiresMandate",
+          "available",
+          "modelName"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "inputSchema": {
+            "type": "object"
+          },
+          "outputSchema": {
+            "type": "object"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "requiresMandate": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "modelName": {
+            "type": "string"
+          }
+        }
+      },
+      "McpToolPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpDiscoveredTool"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AdminCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "claim",
+              "request_information",
+              "approve",
+              "reject",
+              "resume"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "action",
+          "revision"
+        ]
+      },
+      "BlockingReason": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "code",
+          "detail",
+          "at"
+        ]
+      },
+      "PaymentState": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_required",
+              "pending",
+              "paid",
+              "failed",
+              "cancelled",
+              "refunded"
+            ]
+          },
+          "amountFcfa": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "currency": {
+            "const": "XOF"
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "status",
+          "amountFcfa",
+          "currency"
+        ]
+      },
+      "IssuedDocument": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fileId": {
+            "$ref": "#/components/schemas/FileId"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/png",
+              "image/jpeg"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "simulation": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fileId",
+          "name",
+          "mimeType",
+          "createdAt",
+          "expiresAt",
+          "simulation"
+        ]
+      },
+      "FieldEvidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "user",
+              "document",
+              "registry"
+            ]
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "confirmed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "field",
+          "source",
+          "confirmed"
+        ]
+      },
+      "RequestProgress": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "step": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "step",
+          "total",
+          "label"
+        ]
+      },
+      "DepartmentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "userRef": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "procedureId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "fileIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileId"
+            }
+          },
+          "officialLink": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "administrationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "simulation": {
+            "type": "boolean"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedBy": {
+            "type": "string",
+            "enum": [
+              "ai",
+              "human"
+            ]
+          },
+          "receiptRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "assignedTo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "blocking": {
+            "$ref": "#/components/schemas/BlockingReason"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/PaymentState"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IssuedDocument"
+            }
+          },
+          "progress": {
+            "$ref": "#/components/schemas/RequestProgress"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldEvidence"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "userRef",
+          "procedureId",
+          "status",
+          "fields",
+          "fileIds",
+          "officialLink",
+          "updatedAt",
+          "administrationId",
+          "title",
+          "revision",
+          "createdAt",
+          "simulation"
+        ]
+      },
+      "AdminWorkItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "procedureId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "fileIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileId"
+            }
+          },
+          "officialLink": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "administrationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "simulation": {
+            "type": "boolean"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedBy": {
+            "type": "string",
+            "enum": [
+              "ai",
+              "human"
+            ]
+          },
+          "receiptRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "assignedTo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "blocking": {
+            "$ref": "#/components/schemas/BlockingReason"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/PaymentState"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IssuedDocument"
+            }
+          },
+          "progress": {
+            "$ref": "#/components/schemas/RequestProgress"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldEvidence"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "procedureId",
+          "status",
+          "fields",
+          "fileIds",
+          "officialLink",
+          "updatedAt",
+          "administrationId",
+          "title",
+          "revision",
+          "createdAt",
+          "simulation"
+        ]
+      },
+      "Department": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "active",
+          "revision",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "DepartmentInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "DepartmentUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "name",
+          "active",
+          "revision"
+        ]
+      },
+      "AdminMembership": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "departmentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "admin"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "departmentId",
+          "role",
+          "active"
+        ]
+      },
+      "AdminMembershipInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "departmentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "admin"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "departmentId",
+          "role"
+        ]
+      },
+      "AdminUser": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "photoUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "superAdmin": {
+            "type": "boolean"
+          },
+          "memberships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminMembership"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "subject",
+          "displayName",
+          "active",
+          "superAdmin",
+          "memberships",
+          "revision",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AdminUserInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "photoUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "superAdmin": {
+            "type": "boolean"
+          },
+          "memberships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminMembershipInput"
+            }
+          }
+        },
+        "required": [
+          "subject",
+          "displayName",
+          "memberships"
+        ]
+      },
+      "AdminUserUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "email",
+            "maxLength": 254
+          },
+          "photoUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "superAdmin": {
+            "type": "boolean"
+          },
+          "memberships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminMembershipInput"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "minProperties": 2
+      },
+      "AdminProfileUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "email",
+            "maxLength": 254
+          },
+          "photoUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "displayName",
+          "revision"
+        ]
+      },
+      "AdminProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "photoUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "superAdmin": {
+            "type": "boolean"
+          },
+          "memberships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminMembership"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "departmentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "identityProvider": {
+            "const": "oidc"
+          },
+          "directorySource": {
+            "const": "backend-demo-adapter"
+          }
+        },
+        "required": [
+          "subject",
+          "displayName",
+          "active",
+          "superAdmin",
+          "memberships",
+          "revision",
+          "departmentIds",
+          "permissions",
+          "identityProvider",
+          "directorySource"
+        ]
+      },
+      "DepartmentPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Department"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "AdminUserPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminUser"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "AdminWorkItemPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminWorkItem"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "Dashboard": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "departmentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "period": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "to": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ]
+          },
+          "received": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "blocked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completedByAi": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rejected": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "overdue": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unanswered": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "medianProcessingMs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "channel": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 50
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "channel",
+                "count"
+              ]
+            }
+          },
+          "mostRequested": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "title",
+                "count"
+              ]
+            }
+          }
+        },
+        "required": [
+          "departmentId",
+          "period",
+          "received",
+          "pending",
+          "blocked",
+          "completed",
+          "completedByAi",
+          "rejected",
+          "overdue",
+          "unanswered",
+          "medianProcessingMs",
+          "channels",
+          "mostRequested"
+        ]
+      },
+      "ActivityEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "requestId": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "actorRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "requestId",
+          "revision",
+          "actorRef",
+          "action",
+          "outcome",
+          "traceId",
+          "at"
+        ]
+      },
+      "UnansweredEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "messageId": {
+            "$ref": "#/components/schemas/MessageId"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "messageId",
+          "reason",
+          "status",
+          "createdAt",
+          "resolvedAt"
+        ]
+      },
+      "ActivityEntryPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "UnansweredEntryPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnansweredEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "ResolutionResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "status": {
+            "const": "resolved"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ]
+      },
+      "InternalAdminCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "claim",
+              "request_information",
+              "approve",
+              "reject",
+              "resume"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "departmentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "actorRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "action",
+          "revision",
+          "departmentId",
+          "actorRef"
+        ]
       }
     }
   }

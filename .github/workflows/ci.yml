@@ -10,6 +10,33 @@ jobs:
   contracts:
     name: contracts
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: techma
+          POSTGRES_PASSWORD: synthetic-ci-password
+          POSTGRES_DB: backend_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U techma -d backend_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BACKEND_TEST_DATABASE_URL: postgresql://techma:synthetic-ci-password@127.0.0.1:5432/backend_test
+      TEST_DATABASE_URL: postgresql://techma:synthetic-ci-password@127.0.0.1:5432/backend_test
+      REDIS_TEST_URL: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,3 +56,24 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: node scripts/check-contract-version.mjs
+  portability:
+    name: portability (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Fins de ligne identiques sur tous les systèmes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm check:portable
+      - run: git diff --exit-code -- packages/contracts-ts/src

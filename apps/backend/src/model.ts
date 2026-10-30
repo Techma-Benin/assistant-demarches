@@ -1,0 +1,312 @@
+import { DiagnosticProblem, providerReason, safeProviderIdentifier } from "./diagnostics.js";
+import { readFileSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
+import { Problem, approvedMcpUrl, type ModelConfig } from "./domain.js";
+import type { ToolDefinition } from "./tooling.js";
+
+export type ModelCall = { id: string; name: string; arguments: string };
+export type Turn = {
+  role: "user" | "assistant" | "tool";
+  content: string;
+  calls?: ModelCall[];
+  callId?: string;
+  rawOutput?: unknown[];
+};
+export type ModelReply = {
+  text: string;
+  calls: ModelCall[];
+  rawOutput?: unknown[];
+};
+export interface ModelPort {
+  generate(
+    config: ModelConfig,
+    history: Turn[],
+    tools: ToolDefinition[],
+  ): Promise<ModelReply>;
+}
+export type Provider = {
+  baseUrl: string;
+  protocol: "responses" | "chat-completions";
+  apiKeyEnv?: string;
+  omitTemperature?: boolean;
+  parallelToolCalls?: boolean;
+};
+export class HttpModels implements ModelPort {
+  constructor(
+    private providers: Record<string, Provider>,
+    private environment: NodeJS.ProcessEnv = process.env,
+  ) {
+    for (const provider of Object.values(providers))
+      if (
+        !approvedMcpUrl(
+          provider.baseUrl,
+          new Set([new URL(provider.baseUrl).href]),
+        )
+      )
+        throw new Error("Model endpoint requires HTTPS outside localhost.");
+  }
+  async generate(
+    config: ModelConfig,
+    history: Turn[],
+    tools: ToolDefinition[],
+  ): Promise<ModelReply> {
+    for (let attempt = 0; ; attempt++) {
+      try { return await this.generateOnce(config, history, tools); }
+      catch (error) {
+        const diagnostic = error instanceof DiagnosticProblem ? error.diagnostic : undefined;
+        const status = diagnostic?.upstreamStatus;
+        const transient = diagnostic?.reason === "provider_network_error" || diagnostic?.reason === "provider_response_invalid" || (typeof status === "number" && ([408, 425, 429].includes(status) || status >= 500));
+        if (!transient || attempt >= 2) throw error;
+        // Only provider generation is retried; tool actions are handled by Agent.
+        await delay(250 * 2 ** attempt);
+      }
+    }
+  }
+  private async generateOnce(
+    config: ModelConfig,
+    history: Turn[],
+    tools: ToolDefinition[],
+  ): Promise<ModelReply> {
+    const wireName = (name: string) => name.replaceAll(".", "_");
+    const toolNames = new Map(
+      tools.map((tool) => [wireName(tool.name), tool.name]),
+    );
+    const provider = this.providers[config.provider];
+    if (!provider)
+      throw new Problem(
+        503,
+        "UPSTREAM_UNAVAILABLE",
+        "Fournisseur de modèle non configuré.",
+      );
+    if (!/^[a-zA-Z0-9_-]+$/.test(config.promptVersion))
+      throw new Problem(
+        503,
+        "UPSTREAM_UNAVAILABLE",
+        "Version de prompt inconnue.",
+      );
+    const prompt = readFileSync(
+      new URL(
+        "./assets/prompts/" + config.promptVersion + ".txt",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const apiKey = provider.apiKeyEnv
+      ? this.environment[provider.apiKeyEnv]
+      : undefined;
+    if (provider.apiKeyEnv && !apiKey)
+      throw new Problem(
+        503,
+        "UPSTREAM_UNAVAILABLE",
+        "Secret du fournisseur manquant.",
+      );
+    const common = {
+      model: config.model,
+      ...(!provider.omitTemperature ? { temperature: config.temperature } : {}),
+    };
+    const responses = provider.protocol === "responses";
+    let body: Record<string, unknown>;
+    if (responses) {
+      const input = history.flatMap((turn) => {
+        if (turn.role === "tool")
+          return [
+            {
+              type: "function_call_output",
+              call_id: turn.callId,
+              output: turn.content,
+            },
+          ];
+        if (turn.rawOutput) return turn.rawOutput as Record<string, unknown>[];
+        return [{ role: turn.role, content: turn.content }];
+      });
+      body = {
+        ...common,
+        instructions: prompt,
+        input,
+        store: false,
+        max_output_tokens: 2000,
+        tools: tools.map((tool) => ({
+          type: "function",
+          name: wireName(tool.name),
+          description: tool.description,
+          parameters: tool.inputSchema,
+          strict: false,
+        })),
+      };
+    } else
+      body = {
+        ...common,
+        max_tokens: 2000,
+        messages: [
+          { role: "system", content: prompt },
+          ...history.map((turn) =>
+            turn.role === "tool"
+              ? {
+                  role: "tool",
+                  tool_call_id: turn.callId,
+                  content: turn.content,
+                }
+              : {
+                  role: turn.role,
+                  content: turn.content || null,
+                  ...(turn.calls?.length
+                    ? {
+                        tool_calls: turn.calls.map((call) => ({
+                          id: call.id,
+                          type: "function",
+                          function: {
+                            name: wireName(call.name),
+                            arguments: call.arguments,
+                          },
+                        })),
+                      }
+                    : {}),
+                },
+          ),
+        ],
+        tools: tools.map((tool) => ({
+          type: "function",
+          function: {
+            name: wireName(tool.name),
+            description: tool.description,
+            parameters: tool.inputSchema,
+          },
+        })),
+      };
+    // Groq and several OpenAI-compatible services reject an empty tools array.
+    if (!tools.length) delete body.tools;
+    if (!responses && tools.length) {
+      // Groq defaults this parameter to true, but its GPT-OSS models support
+      // sequential tool use only. Leave other providers/models untouched.
+      const sequentialGroqModel = new URL(provider.baseUrl).hostname === "api.groq.com"
+        && /^openai\/gpt-oss-(?:20b|120b|safeguard-20b)$/.test(config.model);
+      if (sequentialGroqModel) body.parallel_tool_calls = false;
+      else if (provider.parallelToolCalls !== undefined) body.parallel_tool_calls = provider.parallelToolCalls;
+    }
+    const base = provider.baseUrl.endsWith("/")
+      ? provider.baseUrl
+      : provider.baseUrl + "/";
+    let res: Response;
+    try {
+    res = await fetch(
+      new URL(responses ? "responses" : "chat/completions", base),
+      {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          "Content-Type": "application/json",
+          ...(apiKey ? { Authorization: "Bearer " + apiKey } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(60000),
+      },
+    );
+    } catch (error) {
+      throw new DiagnosticProblem("Connexion au fournisseur IA impossible ou expirée.", {
+        stage: "model.request", provider: config.provider, model: config.model,
+        reason: "provider_network_error", causeCode: safeProviderIdentifier((error as any)?.cause?.code) ?? safeProviderIdentifier((error as any)?.name),
+      });
+    }
+    if (!res.ok) {
+      let upstream: any;
+      // Only classify the error; never persist a provider body that may echo a prompt or secret.
+      try {
+        const reader = res.body?.getReader();
+        if (reader) {
+          let bytes = 0;
+          const chunks: Uint8Array[] = [];
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              bytes += value.byteLength;
+              if (bytes > 16384) break;
+              chunks.push(value);
+            }
+            if (bytes <= 16384) upstream = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          } finally { await reader.cancel().catch(() => {}); }
+        }
+      } catch { /* HTTP status remains useful even for a non-JSON response. */ }
+      throw new DiagnosticProblem("Appel au fournisseur IA refusé (HTTP " + res.status + ").", {
+        stage: "model.response", provider: config.provider, model: config.model,
+        upstreamStatus: res.status,
+        upstreamCode: safeProviderIdentifier(upstream?.error?.code),
+        upstreamType: safeProviderIdentifier(upstream?.error?.type),
+        upstreamRequestId: safeProviderIdentifier(res.headers.get("x-request-id") ?? res.headers.get("request-id")),
+        reason: res.status === 400 && new URL(provider.baseUrl).hostname === "api.groq.com" && upstream?.error?.code === "tool_use_failed"
+          ? "provider_tool_generation_invalid"
+          : providerReason(res.status, upstream?.error?.message),
+      });
+    }
+    let text: string;
+    try { text = await res.text(); }
+    catch {
+      throw new DiagnosticProblem("Lecture de la réponse fournisseur interrompue.", {
+        stage: "model.response", provider: config.provider, model: config.model,
+        reason: "provider_network_error",
+      });
+    }
+    if (Buffer.byteLength(text) > 1048576)
+      throw new Problem(
+        503,
+        "UPSTREAM_UNAVAILABLE",
+        "Réponse modèle trop volumineuse.",
+      );
+    let value: any;
+    try { value = JSON.parse(text); }
+    catch {
+      throw new DiagnosticProblem("Réponse fournisseur hors contrat JSON.", {
+        stage: "model.response", provider: config.provider, model: config.model,
+        reason: "provider_response_invalid",
+      });
+    }
+    const invalidResponse = () => new DiagnosticProblem("Réponse modèle invalide.", {
+      stage: "model.response", provider: config.provider, model: config.model,
+      reason: "provider_response_invalid",
+    });
+    if (responses) {
+      if (!Array.isArray(value?.output) || value.output.some((item: unknown) => !item || typeof item !== "object")) throw invalidResponse();
+      return {
+        text: value.output
+          .filter((item: any) => item.type === "message")
+          .flatMap((item: any) => item.content ?? [])
+          .filter((item: any) => item.type === "output_text")
+          .map((item: any) => item.text)
+          .join(""),
+        calls: value.output
+          .filter((item: any) => item.type === "function_call")
+          .map((item: any) => ({
+            id: item.call_id,
+            name: toolNames.get(item.name) ?? item.name,
+            arguments: item.arguments,
+          })),
+        rawOutput: value.output,
+      };
+    }
+    const message = value?.choices?.[0]?.message;
+    if (!message || typeof message !== "object" || (message.tool_calls != null && !Array.isArray(message.tool_calls))) throw invalidResponse();
+    const content = message.content;
+    const contentText = typeof content === "string" ? content : Array.isArray(content)
+      ? content.map((part: unknown) => typeof part === "string" ? part : typeof (part as any)?.text === "string" ? (part as any).text : "").join("") : "";
+    return {
+      text: contentText,
+      calls: (message.tool_calls ?? []).map((call: any) => ({
+        id: call.id,
+        name: toolNames.get(call.function?.name) ?? call.function?.name,
+        arguments: call.function?.arguments,
+      })),
+    };
+  }
+}
+export function redact(text: string): string {
+  return text
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[EMAIL]")
+    .replace(
+      /(?<![A-Za-z0-9_])\+?\d[\d .()-]{6,}\d(?![A-Za-z0-9_])/g,
+      "[IDENTIFIANT]",
+    )
+    .replace(
+      /\b(?:npi|otp|code\s*sms|mot de passe)\s*[:=]?\s*\S+/gi,
+      "[INFORMATION MASQUÉE]",
+    );
+}
