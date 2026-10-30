@@ -160,7 +160,7 @@ Scripts `package.json`, lancés à part :
 | `pnpm --filter @techma/xroad-sim test` | 11 réussites, 0 échec, 0 ignoré |
 | `pnpm --filter @techma/tooling test` | 56 réussites, 0 échec, 2 ignorés (`TEST_DATABASE_URL` absent : répliques PostgreSQL) |
 | `pnpm --filter @techma/ui test` | 84 réussites, 0 échec, 0 ignoré |
-| `pnpm --filter @techma/web-widget test` | 137 réussites, 0 échec, 0 ignoré |
+| `pnpm --filter @techma/web-widget test` | 140 réussites, 0 échec, 0 ignoré |
 | `pnpm --filter @techma/admin-console test` | 137 réussites, 0 échec, 0 ignoré |
 
 Les quatre échecs d’interface sont alignés sur le pivot, sans réintroduire `scanStatus` :
@@ -168,6 +168,19 @@ Les quatre échecs d’interface sont alignés sur le pivot, sans réintroduire 
 - Widget : le dépôt de fichier n’attend plus `scanStatus` (absent de la réponse).
 - Console : l’audit cherche `configuration.changed.updated` (kind `configuration.changed` et `operation` `updated`).
 - Console : le libellé de jour suit le calendrier local du graphique, le même pour l’infobulle et pour « aujourd’hui », quel que soit le fuseau d’Intl.
+
+### Suite Interface
+
+Nouveau `git merge techma/interface/redesign` après `463b8e3`. Fusion sans conflit (`64738b2`). Contrats pivot inchangés : `blocked`, `request.snapshot`, `request.pay`, pas de `scanStatus`.
+
+Commits repris, absents du combo avant cette fusion :
+
+| SHA | Message |
+|---|---|
+| `cc50941` | *feat(web-widget): dock the question box and retitle the front door* |
+| `99d279f` | *style(interface): use plain hyphens instead of em dashes in UI text* |
+
+Pointe `techma/interface/redesign` : `99d279f`. Les comptes ci-dessus sont ceux d’après cette fusion (le widget gagne les tests du dock).
 
 ### Écart PowerPoint
 
