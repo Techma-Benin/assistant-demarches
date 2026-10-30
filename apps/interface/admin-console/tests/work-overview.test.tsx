@@ -117,7 +117,7 @@ describe('work formatters', () => {
   it('formats durations', () => {
     expect(formatDuration(2 * 86_400_000 + 4 * 3_600_000)).toBe('2 j 4 h');
     expect(formatDuration(3 * 3_600_000)).toBe('3 h');
-    expect(formatDuration(null)).toBe('—');
+    expect(formatDuration(null)).toBe('-');
   });
   it('formats the period', () => {
     expect(formatPeriod(dashboard.period)).toBe('30 derniers jours');

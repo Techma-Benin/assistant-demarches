@@ -45,6 +45,12 @@ describe('ConsoleProvider department rule', () => {
     await waitFor(() => expect(screen.getByTestId('p')).toHaveTextContent('justice|true'));
   });
 
+  it('keeps a department granted by the profile even when the directory does not list it', async () => {
+    stubConsole({ profile: profile({ departmentIds: ['demo-administration'] }), departments: [] });
+    renderProbe(null);
+    await waitFor(() => expect(screen.getByTestId('p')).toHaveTextContent('demo-administration|false|demo-administration'));
+  });
+
   it('never invents access: no department when none is accessible', async () => {
     stubConsole({ profile: profile({ departmentIds: [] }), departments: [JUSTICE] });
     renderProbe('justice');

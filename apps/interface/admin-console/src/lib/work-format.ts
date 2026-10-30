@@ -5,9 +5,9 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** Median processing time: « 2 j 4 h », « 3 h », « 45 min », « — » when unknown. */
+/** Median processing time: « 2 j 4 h », « 3 h », « 45 min », « - » when unknown. */
 export function formatDuration(ms: number | null | undefined): string {
-  if (ms === null || ms === undefined || Number.isNaN(ms)) return '—';
+  if (ms === null || ms === undefined || Number.isNaN(ms)) return '-';
   if (ms >= DAY) {
     const days = Math.floor(ms / DAY);
     const hours = Math.floor((ms % DAY) / HOUR);
@@ -36,7 +36,7 @@ export function humanizeKey(key: string): string {
 }
 
 export function formatFieldValue(value: unknown): string {
-  if (value === null || value === undefined) return '—';
+  if (value === null || value === undefined) return '-';
   if (typeof value === 'string') return value;
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
