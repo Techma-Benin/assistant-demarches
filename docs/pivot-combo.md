@@ -123,3 +123,54 @@ Seul chemin non fusionné : `pnpm-lock.yaml`. Pas de fusion manuelle. Fichier re
 
 **La slide 8 (« un message, deux bureaux ») n’est pas jouable.** La console redesign n’a pas les files **En attente / Complété** ni le cloisonnement Justice / Enseignement. Le pont Tooling ne range toujours pas le dossier dans **En attente** de la Justice. Hors de ce merge.
 
+## Palier 4 — Vérification (30 octobre 2026)
+
+Point de contrôle : `integration/pivot-combo` à `118a1e6`, arbre propre, pas de merge en cours. Une seule correction ensuite : le test de contrats MCP attendait 8 outils découverts ; le catalogue en a 9 depuis `request.pay`.
+
+### Présence
+
+- `apps/xroad-sim` présent.
+- `contracts/v1/xroad-sim.openapi.json` présent.
+- `request.pay` présent dans `contracts/v1/mcp.tools.json`.
+- `scanStatus` absent de `contracts/v1/domain.schema.json`.
+- `blocked` et `request.snapshot` toujours là.
+
+### Résultats
+
+`node scripts/verify-backend-pivot.mjs` (Redis du runtime local), **après** la correction 8 → 9. Exit 0.
+
+| Étape | Résultat |
+|---|---|
+| contracts | PASS — 99 schémas, 77 opérations HTTP, 9 outils MCP |
+| generate-types | PASS |
+| shared-types | PASS |
+| build-backend | PASS |
+| build-tooling | PASS |
+| contract-tests | 10 réussites, 0 échec, 0 ignoré |
+| backend-tests | 81 réussites, 0 échec, 0 ignoré |
+| tooling-tests | 58 réussites, 0 échec, 0 ignoré (le script crée `TEST_DATABASE_URL`) |
+| backend-tooling-integration | 7 réussites, 0 échec, 0 ignoré |
+
+Avant cette correction, la même commande s’arrêtait sur contract-tests : 9 réussites, 1 échec (`9 !== 8` à la découverte MCP), 0 ignoré. Les étapes suivantes n’ont pas tourné sur ce premier passage.
+
+Scripts `package.json`, lancés à part :
+
+| Suite | Résultat |
+|---|---|
+| `pnpm --filter @techma/xroad-sim test` | 11 réussites, 0 échec, 0 ignoré |
+| `pnpm --filter @techma/tooling test` | 56 réussites, 0 échec, 2 ignorés (`TEST_DATABASE_URL` absent : répliques PostgreSQL) |
+| `pnpm --filter @techma/ui test` | 84 réussites, 0 échec, 0 ignoré |
+| `pnpm --filter @techma/web-widget test` | 136 réussites, 1 échec, 0 ignoré |
+| `pnpm --filter @techma/admin-console test` | 134 réussites, 3 échecs, 0 ignoré |
+
+Échec widget : `uploads a file…` attend `scanStatus: 'clean'` sur le fichier déposé. La réponse du pivot n’a pas ce champ. Le widget s’en sert encore (état, pastille). Pas corrigé ici : ce n’est pas une ligne de merge.
+
+Échecs console :
+
+- Infobulle du jour : le test attend `ven. 30 oct. · 4 conversations`, l’écran affiche `jeu. 29 oct. · 4 conversations`.
+- Audit : les tests cherchent `configuration.changed` ; le backend écrit `configuration.changed.updated`, donc les compteurs restent à 0.
+
+### Écart PowerPoint
+
+**La slide 8 n’est toujours pas jouable.** Un message, deux bureaux : l’agent Justice devrait voir **En attente (1)** et l’agent Enseignement **En attente (0)**. Ce parcours n’est pas en place. Le pont ne range pas le dossier dans **En attente** de la Justice, et la console n’a pas ces files ni ce cloisonnement.
+

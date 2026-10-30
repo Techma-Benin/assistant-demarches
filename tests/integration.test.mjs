@@ -128,7 +128,7 @@ test('C3 MCP : connexion serveur, découverte et permissions sans création manu
  const server={id:'public-service',name:'Service public',url:'http://127.0.0.1:4020/mcp',enabled:true,transport:'streamable-http',auth:{type:'none'},policy:'generic'};
  const created=await httpCall(env,path,{token,method:'POST',body:server});assert.equal(created.status,201);valid('McpServer',created.value);
  valid('McpServerPage',(await httpCall(env,path,{token})).value);
- const discovered=await httpCall(env,path+'/'+server.id+'/discover',{token,method:'POST'});assert.equal(discovered.status,200);valid('McpToolPage',discovered.value);assert.equal(discovered.value.items.length,8);assert.ok(discovered.value.items.every(t=>!t.enabled));
+ const discovered=await httpCall(env,path+'/'+server.id+'/discover',{token,method:'POST'});assert.equal(discovered.status,200);valid('McpToolPage',discovered.value);assert.equal(discovered.value.items.length,9);assert.ok(discovered.value.items.every(t=>!t.enabled));
  const permission=await httpCall(env,path+'/'+server.id+'/tools/procedures.search',{token,method:'PUT',body:{enabled:true,requiresMandate:false}});assert.equal(permission.status,200);valid('McpDiscoveredTool',permission.value);assert.equal(permission.value.name,'procedures.search');
  assert.equal((await httpCall(env,path+'/'+server.id+'/tools/procedures.search',{token,method:'PUT',body:{name:'invented',enabled:true,requiresMandate:false}})).status,400);
  const key=randomUUID();assert.equal((await httpCall(env,path+'/'+server.id,{token,method:'DELETE',key})).status,204);assert.equal((await httpCall(env,path+'/'+server.id,{token,method:'DELETE',key})).status,204);
