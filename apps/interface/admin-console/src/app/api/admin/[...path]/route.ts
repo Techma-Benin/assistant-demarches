@@ -1,5 +1,6 @@
 import { proxyToAdmin } from '@/server/admin-proxy';
 import { getAdminToken } from '@/server/admin-token';
+import { getActiveIdentity, readIdentityCookie } from '@/server/session';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,13 @@ async function handle(request: Request, { params }: Context): Promise<Response> 
   return proxyToAdmin(request, path, {
     backendUrl: process.env.BACKEND_URL ?? 'http://127.0.0.1:4010',
     getAdminToken,
+    getIdentity: (req) => {
+      try {
+        return getActiveIdentity(readIdentityCookie(req));
+      } catch {
+        return null;
+      }
+    },
     fetch,
   });
 }

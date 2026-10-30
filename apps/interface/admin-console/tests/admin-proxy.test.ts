@@ -1,15 +1,19 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Identity } from '@/lib/permissions';
 import { proxyToAdmin } from '@/server/admin-proxy';
+import { DEMO_SESSION_IDENTITIES } from '@/server/session';
 
 const TRACE = '00-' + 'a'.repeat(32) + '-' + 'b'.repeat(16) + '-01';
 
-function setup(upstream?: () => Promise<Response>, getAdminToken = () => 'tok') {
+const [PLATFORM, ADMIN_WRITE, ADMIN_READ] = DEMO_SESSION_IDENTITIES;
+
+function setup(upstream?: () => Promise<Response>, getAdminToken = () => 'tok', identity: Identity | null = PLATFORM) {
   const fake = vi.fn(upstream ?? (async () => new Response('{"items":[],"nextCursor":null}', {
     status: 200,
     headers: { 'content-type': 'application/json', 'retry-after': '3', 'set-cookie': 'x=1', 'x-secret': 'y' },
   })));
-  const deps = { backendUrl: 'http://127.0.0.1:4010', getAdminToken, fetch: fake as unknown as typeof fetch };
+  const deps = { backendUrl: 'http://127.0.0.1:4010', getAdminToken, getIdentity: () => identity, fetch: fake as unknown as typeof fetch };
   return { fake, deps };
 }
 
@@ -255,5 +259,48 @@ describe('proxyToAdmin failures', () => {
     expect(response.status).toBe(409);
     expect(response.headers.get('content-type')).toBe('application/problem+json');
     expect(await response.text()).toBe(body);
+  });
+});
+
+describe('proxyToAdmin identity enforcement', () => {
+  const FORBIDDEN_DETAIL = 'Action non permise avec l’identité active';
+
+  it('returns 401 UNAUTHENTICATED without identity', async () => {
+    const { fake, deps } = setup(undefined, undefined, null);
+    const response = await proxyToAdmin(get(), ['v1', 'admin', 'models'], deps);
+    expect(response.status).toBe(401);
+    expect(response.headers.get('content-type')).toBe('application/problem+json');
+    expect(await response.json()).toMatchObject({ code: 'UNAUTHENTICATED', detail: 'Session requise' });
+    expect(fake).not.toHaveBeenCalled();
+  });
+
+  it('refuses a read-only administration PUT on a procedure', async () => {
+    const { fake, deps } = setup(undefined, undefined, ADMIN_READ);
+    const response = await proxyToAdmin(put('{}'), ['v1', 'admin', 'procedures', 'a'], deps);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'FORBIDDEN', detail: FORBIDDEN_DETAIL });
+    expect(fake).not.toHaveBeenCalled();
+  });
+
+  it('refuses an administration PUT on tools and GET on tools', async () => {
+    const { fake, deps } = setup(undefined, undefined, ADMIN_WRITE);
+    expect((await proxyToAdmin(put('{}'), ['v1', 'admin', 'tools', 'a'], deps)).status).toBe(403);
+    expect((await proxyToAdmin(get(), ['v1', 'admin', 'tools'], deps)).status).toBe(403);
+    expect(fake).not.toHaveBeenCalled();
+  });
+
+  it('forwards a write administration PUT on a procedure and a platform PUT on models', async () => {
+    const admin = setup(undefined, undefined, ADMIN_WRITE);
+    expect((await proxyToAdmin(put('{}'), ['v1', 'admin', 'procedures', 'a'], admin.deps)).status).toBe(200);
+    expect(admin.fake).toHaveBeenCalledTimes(1);
+    const platform = setup(undefined, undefined, PLATFORM);
+    expect((await proxyToAdmin(put('{}'), ['v1', 'admin', 'models', 'a'], platform.deps)).status).toBe(200);
+    expect(platform.fake).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a read-only administration view procedures and metrics', async () => {
+    const { deps } = setup(undefined, undefined, ADMIN_READ);
+    expect((await proxyToAdmin(get(), ['v1', 'admin', 'procedures'], deps)).status).toBe(200);
+    expect((await proxyToAdmin(get(), ['v1', 'admin', 'metrics'], deps)).status).toBe(200);
   });
 });

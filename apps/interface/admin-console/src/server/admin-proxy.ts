@@ -1,3 +1,5 @@
+import { can, type Capability, type Identity } from '@/lib/permissions';
+
 const LIST_PATH = /^\/v1\/admin\/(models|tools|procedures|conversations|audit)$/;
 const METRICS_PATH = '/v1/admin/metrics';
 const UPDATE_PATH = /^\/v1\/admin\/(models|tools|procedures)\/([^/]+)$/;
@@ -8,6 +10,7 @@ const FORWARDED_RESPONSE_HEADERS = ['content-type', 'retry-after'];
 export interface ProxyDeps {
   backendUrl: string;
   getAdminToken: () => string;
+  getIdentity: (request: Request) => Identity | null;
   fetch: typeof fetch;
 }
 
@@ -75,6 +78,7 @@ export async function proxyToAdmin(request: Request, path: string[], deps: Proxy
   const method = request.method.toUpperCase();
 
   let target: string;
+  let capability: Capability;
   let query = new URLSearchParams();
   const search = new URL(request.url).searchParams;
   if (method === 'GET' && LIST_PATH.test(pathname)) {
@@ -82,14 +86,25 @@ export async function proxyToAdmin(request: Request, path: string[], deps: Proxy
     if (!filtered) return invalid(request, 'Paramètres de pagination invalides');
     query = filtered;
     target = pathname;
+    capability = `${LIST_PATH.exec(pathname)![1]}.view` as Capability;
   } else if (method === 'GET' && pathname === METRICS_PATH) {
     target = pathname;
+    capability = 'overview.view';
   } else if (method === 'PUT' && UPDATE_PATH.test(pathname)) {
     const [, resource, id] = UPDATE_PATH.exec(pathname)!;
     if (id.length > 128) return notFound(request);
     target = `/v1/admin/${resource}/${encodeURIComponent(id)}`;
+    capability = `${resource}.edit` as Capability;
   } else {
     return notFound(request);
+  }
+
+  // Defence in depth only: the real token will carry `administrationId` and the Backend filters data by it.
+  // The demo mock shares one token, so nothing is filtered here.
+  const identity = deps.getIdentity(request);
+  if (!identity) return problem(401, 'UNAUTHENTICATED', 'Session requise', request);
+  if (!can(identity, capability)) {
+    return problem(403, 'FORBIDDEN', 'Action non permise avec l’identité active', request);
   }
 
   const tooLarge = () => invalid(request, 'Corps de requête trop volumineux');

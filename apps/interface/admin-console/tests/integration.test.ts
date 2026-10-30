@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startMocks } from '../../../../mocks/server.mjs';
 import { C3Client, C3Error } from '@/lib/c3-client';
 import { proxyToAdmin } from '@/server/admin-proxy';
+import { DEMO_SESSION_IDENTITIES } from '@/server/session';
 
 type Mocks = { backendUrl: string; close: () => Promise<void> };
 let mocks: Mocks;
@@ -23,6 +24,7 @@ const shimWith =
     return proxyToAdmin(new Request(url, init), path, {
       backendUrl: mocks.backendUrl,
       getAdminToken: () => token,
+      getIdentity: () => DEMO_SESSION_IDENTITIES[0],
       fetch,
     });
   };
