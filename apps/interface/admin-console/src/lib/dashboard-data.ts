@@ -77,6 +77,45 @@ export function conversationsByChannel(
   }));
 }
 
+export interface DayChannelCount extends DayCount {
+  channels: Record<Channel, number>;
+}
+
+/** Per-day counts split by channel, over the same window as `conversationsByDay`. */
+export function conversationsByDayAndChannel(
+  conversations: ReadonlyArray<Pick<AdminConversation, 'createdAt' | 'channel'>>,
+  days = 14,
+  now: Date = new Date(),
+): DayChannelCount[] {
+  const result = conversationsByDay(conversations, days, now).map((day) => ({
+    ...day,
+    channels: { web: 0, whatsapp: 0, mobile: 0 } as Record<Channel, number>,
+  }));
+  const index = new Map(result.map((day) => [day.key, day]));
+  for (const conversation of conversations) {
+    const created = new Date(conversation.createdAt);
+    if (Number.isNaN(created.getTime())) continue;
+    const entry = index.get(dayKey(created));
+    if (entry && conversation.channel in entry.channels) entry.channels[conversation.channel] += 1;
+  }
+  return result;
+}
+
+export const STALE_SOURCE_DAYS = 90;
+
+/** Procedures whose source was retrieved more than `maxAgeDays` days before `now`. */
+export function staleProcedures(
+  procedures: ReadonlyArray<Procedure>,
+  now: Date = new Date(),
+  maxAgeDays = STALE_SOURCE_DAYS,
+): Procedure[] {
+  const limit = now.getTime() - maxAgeDays * 86_400_000;
+  return procedures.filter((procedure) => {
+    const retrieved = Date.parse(procedure.source?.retrievedAt ?? '');
+    return !Number.isNaN(retrieved) && retrieved < limit;
+  });
+}
+
 export interface PendingItems {
   draftProcedures: { id: string; title: string }[];
   disabledTools: { name: string }[];
@@ -119,10 +158,8 @@ export interface Collection<T> {
 export interface DashboardData {
   metrics: Section<Metrics>;
   conversations: Section<Collection<AdminConversation>>;
-  audit: Section<Collection<AuditEntry>>;
   procedures: Section<Collection<Procedure>>;
   tools: Section<Collection<ToolConfig>>;
-  models: Section<Collection<ModelConfig>>;
   retry: (key: keyof Omit<DashboardData, 'retry'>) => void;
 }
 
@@ -148,27 +185,21 @@ function useSection<T>(load: () => Promise<T>): [Section<T>, () => void] {
 }
 
 const loadConversations = () => collectAll((params) => c3.listConversations(params), CAPS.conversations);
-const loadAudit = () => collectAll((params) => c3.listAudit(params), CAPS.audit);
 const loadProcedures = () => collectAll((params) => c3.listProcedures(params), CAPS.procedures);
 const loadTools = () => collectAll((params) => c3.listTools(params), CAPS.tools);
-const loadModels = () => collectAll((params) => c3.listModels(params), CAPS.models);
 
-/** Loads metrics and the five collections in parallel; each section fails and retries on its own. */
+/** Loads metrics and the collections the overview needs in parallel; each section fails and retries on its own. */
 export function useDashboardData(loadMetrics: () => Promise<Metrics> = () => c3.getMetrics()): DashboardData {
   const [metrics, retryMetrics] = useSection(loadMetrics);
   const [conversations, retryConversations] = useSection(loadConversations);
-  const [audit, retryAudit] = useSection(loadAudit);
   const [procedures, retryProcedures] = useSection(loadProcedures);
   const [tools, retryTools] = useSection(loadTools);
-  const [models, retryModels] = useSection(loadModels);
   const retries = {
     metrics: retryMetrics,
     conversations: retryConversations,
-    audit: retryAudit,
     procedures: retryProcedures,
     tools: retryTools,
-    models: retryModels,
   };
   const retry = (key: keyof typeof retries) => retries[key]();
-  return { metrics, conversations, audit, procedures, tools, models, retry };
+  return { metrics, conversations, procedures, tools, retry };
 }

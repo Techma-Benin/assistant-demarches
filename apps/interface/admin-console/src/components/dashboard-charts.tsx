@@ -11,12 +11,13 @@ import {
   cn,
 } from '@techma/ui';
 import { useState } from 'react';
-import { CHANNELS, type Channel, type DayCount } from '@/lib/dashboard-data';
-import { formatConversations, formatInteger, formatLongDay, formatShare, formatShortDay } from '@/lib/format';
+import { CHANNELS, type Channel, type DayChannelCount } from '@/lib/dashboard-data';
+import { formatConversations, formatInteger, formatLongDay, formatShortDay } from '@/lib/format';
 
 export const CHANNEL_LABEL: Record<Channel, string> = { web: 'Web', whatsapp: 'WhatsApp', mobile: 'Mobile' };
 // Colour follows the entity, never its rank.
 const CHANNEL_VIZ: Record<Channel, string> = { web: 'bg-viz-1', whatsapp: 'bg-viz-2', mobile: 'bg-viz-3' };
+const CHANNEL_FILL: Record<Channel, string> = { web: 'fill-viz-1', whatsapp: 'fill-viz-2', mobile: 'fill-viz-3' };
 
 const tooltipClass =
   'pointer-events-none absolute z-10 rounded-field border border-line bg-surface px-3 py-1.5 text-sm whitespace-nowrap text-ink shadow-(--ui-shadow-pop)';
@@ -45,13 +46,9 @@ const PLOT_W = W - M.left - M.right;
 const PLOT_H = H - M.top - M.bottom;
 const BASE = M.top + PLOT_H;
 
-function barPath(x: number, width: number, height: number): string {
-  const r = Math.min(4, height);
-  const top = BASE - height;
-  return `M${x},${BASE}V${top + r}A${r},${r} 0 0 1 ${x + r},${top}H${x + width - r}A${r},${r} 0 0 1 ${x + width},${top + r}V${BASE}Z`;
-}
+const GAP = 2;
 
-export function DailyChart({ days, partialCap }: { days: DayCount[]; partialCap?: number }) {
+export function DailyChart({ days, partialCap }: { days: DayChannelCount[]; partialCap?: number }) {
   const [active, setActive] = useState<number | null>(null);
   const [showTable, setShowTable] = useState(false);
   const total = days.reduce((sum, day) => sum + day.count, 0);
@@ -66,7 +63,7 @@ export function DailyChart({ days, partialCap }: { days: DayCount[]; partialCap?
   const barWidth = Math.min(24, band * 0.6);
   const lastNonZero = days.reduce((last, day, index) => (day.count > 0 ? index : last), -1);
   const y = (value: number) => BASE - (value / yMax) * PLOT_H;
-  const label = `Conversations par jour sur ${days.length} jours : ${formatInteger(total)} au total, jour le plus actif ${formatLongDay(peak.date)} (${formatInteger(peak.count)}).`;
+  const label = `Histogramme empilé des conversations sur ${days.length} jours par canal (web, WhatsApp, mobile) : ${formatInteger(total)} au total, jour le plus actif ${formatLongDay(peak.date)} (${formatInteger(peak.count)}).`;
   const tooltipDay = active === null ? null : days[active];
 
   return (
@@ -85,7 +82,6 @@ export function DailyChart({ days, partialCap }: { days: DayCount[]; partialCap?
           {days.map((day, index) => {
             const x = M.left + index * band;
             const center = x + band / 2;
-            const height = (day.count / yMax) * PLOT_H;
             return (
               <g key={day.key}>
                 <rect
@@ -96,7 +92,22 @@ export function DailyChart({ days, partialCap }: { days: DayCount[]; partialCap?
                   rx={4}
                   className={cn('transition-colors duration-(--ui-dur-fast)', active === index ? 'fill-sunken' : 'fill-transparent')}
                 />
-                {day.count > 0 ? <path d={barPath(center - barWidth / 2, barWidth, height)} className="fill-viz-1" /> : null}
+                {CHANNELS.map((channel, channelIndex) => {
+                  const below = CHANNELS.slice(0, channelIndex).reduce((sum, c) => sum + day.channels[c], 0);
+                  const segment = (day.channels[channel] / yMax) * PLOT_H;
+                  if (segment <= 0) return null;
+                  return (
+                    <rect
+                      key={channel}
+                      x={center - barWidth / 2}
+                      y={BASE - (below / yMax) * PLOT_H - segment}
+                      width={barWidth}
+                      height={Math.max(segment - GAP, 1)}
+                      rx={3}
+                      className={CHANNEL_FILL[channel]}
+                    />
+                  );
+                })}
                 {index === lastNonZero ? (
                   <text x={center} y={y(day.count) - 6} textAnchor="middle" fontSize={12} fontWeight={600} className="fill-ink">
                     {day.count}
@@ -139,6 +150,15 @@ export function DailyChart({ days, partialCap }: { days: DayCount[]; partialCap?
         ) : null}
       </div>
 
+      <ul aria-label="Légende des canaux" className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] font-semibold">
+        {CHANNELS.map((channel) => (
+          <li key={channel} className="flex items-center gap-1.5">
+            <span aria-hidden="true" className={cn('size-[11px] shrink-0 rounded-[3px]', CHANNEL_VIZ[channel])} />
+            {CHANNEL_LABEL[channel]}
+          </li>
+        ))}
+      </ul>
+
       {partialCap !== undefined ? (
         <p className="text-sm text-ink-muted">Calculé sur les {formatInteger(partialCap)} conversations chargées.</p>
       ) : null}
@@ -149,79 +169,31 @@ export function DailyChart({ days, partialCap }: { days: DayCount[]; partialCap?
         </Button>
       </div>
       {showTable ? (
-        <Table aria-label="Conversations par jour">
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>Jour</TableHeaderCell>
-              <TableHeaderCell>Conversations</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {days.map((day) => (
-              <TableRow key={day.key}>
-                <TableCell>{formatLongDay(day.date)}</TableCell>
-                <TableCell>{formatInteger(day.count)}</TableCell>
+        <div className="overflow-x-auto">
+          <Table aria-label="Conversations par jour">
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>Jour</TableHeaderCell>
+                {CHANNELS.map((channel) => (
+                  <TableHeaderCell key={channel}>{CHANNEL_LABEL[channel]}</TableHeaderCell>
+                ))}
+                <TableHeaderCell>Total</TableHeaderCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      ) : null}
-    </div>
-  );
-}
-
-export function ChannelBreakdown({ counts }: { counts: { channel: Channel; count: number }[] }) {
-  const [active, setActive] = useState<Channel | null>(null);
-  const total = counts.reduce((sum, item) => sum + item.count, 0);
-  const share = (count: number) => (total === 0 ? 0 : count / total);
-  const segments = counts.filter((item) => item.count > 0);
-
-  let before = 0;
-  const centers = new Map<Channel, number>();
-  for (const item of segments) {
-    centers.set(item.channel, before + share(item.count) / 2);
-    before += share(item.count);
-  }
-  const hovered = counts.find((item) => item.channel === active);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="relative pt-9">
-        <div aria-hidden="true" className={cn('flex h-[18px] gap-0.5 rounded-[4px]', total === 0 && 'bg-sunken')}>
-          {segments.map((item, index) => (
-            <div
-              key={item.channel}
-              className={cn(
-                CHANNEL_VIZ[item.channel],
-                index === 0 && 'rounded-l-[4px]',
-                index === segments.length - 1 && 'rounded-r-[4px]',
-              )}
-              style={{ flex: item.count }}
-              onMouseEnter={() => setActive(item.channel)}
-              onMouseLeave={() => setActive(null)}
-            />
-          ))}
+            </TableHead>
+            <TableBody>
+              {days.map((day) => (
+                <TableRow key={day.key}>
+                  <TableCell>{formatLongDay(day.date)}</TableCell>
+                  {CHANNELS.map((channel) => (
+                    <TableCell key={channel}>{formatInteger(day.channels[channel])}</TableCell>
+                  ))}
+                  <TableCell>{formatInteger(day.count)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
-        {hovered && active && centers.has(active) ? (
-          <div role="tooltip" className={cn(tooltipClass, 'top-0', tooltipAnchor(centers.get(active) ?? 0))} style={{ left: `${(centers.get(active) ?? 0) * 100}%` }}>
-            {CHANNEL_LABEL[hovered.channel]} · {formatConversations(hovered.count)} ({formatShare(share(hovered.count))})
-          </div>
-        ) : null}
-      </div>
-      <ul aria-label="Conversations par canal" className="flex flex-col gap-2 text-sm">
-        {CHANNELS.map((channel) => {
-          const count = counts.find((item) => item.channel === channel)?.count ?? 0;
-          return (
-            <li key={channel} className="flex items-center gap-2">
-              <span aria-hidden="true" className={cn('size-3 shrink-0 rounded-[4px]', CHANNEL_VIZ[channel])} />
-              <span className="font-semibold text-ink">{CHANNEL_LABEL[channel]}</span>
-              <span className="ml-auto text-ink-muted">
-                {formatInteger(count)} ({formatShare(share(count))})
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+      ) : null}
     </div>
   );
 }

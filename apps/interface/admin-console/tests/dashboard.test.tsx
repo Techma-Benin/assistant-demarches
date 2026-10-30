@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Dashboard } from '@/components/dashboard';
 import { json, problem, stubC3 } from './helpers/c3-fetch';
 import { C3Error, type Metrics } from '@/lib/c3-client';
-import { formatLongDay, formatDateTime, formatFcfa, formatInteger, formatMs, formatRate, shorten } from '@/lib/format';
+import { formatLongDay, formatDateTime, formatFcfa, formatInteger, formatMs, formatRate, formatSeconds, shorten } from '@/lib/format';
 
 // fr-FR separators are narrow no-break spaces: compare on a normalised string.
 const norm = (text: string | null) => (text ?? '').replace(/[  ]/g, ' ');
@@ -18,6 +18,8 @@ describe('formatters', () => {
     expect(norm(formatInteger(12345))).toBe('12 345');
     expect(norm(formatMs(1820))).toBe('1 820 ms');
     expect(norm(formatRate(0.875))).toBe('87,5 %');
+    expect(formatSeconds(3200)).toBe('3,2 s');
+    expect(formatSeconds(1820)).toBe('1,8 s');
     expect(norm(formatFcfa(15000))).toBe('15 000 FCFA');
   });
 
@@ -40,17 +42,18 @@ describe('Dashboard', () => {
   afterEach(() => vi.unstubAllGlobals());
   const stubEmpty = () => stubC3({ lists: {} });
 
-  it('shows skeletons then the four formatted metrics', async () => {
+  it('shows the four formatted metrics', async () => {
     stubEmpty();
     render(<Dashboard load={async () => metrics} />);
     expect(norm((await screen.findByText('12 345', { exact: false })).textContent)).toBe('12 345');
-    expect(screen.getByText('Conversations')).toBeInTheDocument();
-    expect(norm(screen.getByText(/ms$/).textContent)).toBe('1 820 ms');
+    expect(screen.getByText('Conversations', { selector: 'dt' })).toBeInTheDocument();
+    expect(screen.getByText('1,8 s')).toBeInTheDocument();
     const rate = screen.getByText(/%$/);
     expect(norm(rate.textContent)).toBe('87,5 %');
-    expect(rate.className).toContain('text-trust-text');
+    expect(rate.parentElement?.className).toContain('text-trust-text');
     expect(screen.getByText('Erreurs')).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('3').parentElement?.className).toContain('text-danger');
+    expect(screen.getByText('Garde-fous')).toBeInTheDocument();
   });
 
   it('shows the loading state first', () => {
@@ -91,8 +94,7 @@ describe('Dashboard', () => {
       render(<Dashboard load={async () => ({ ...metrics, sourcedAnswerRate: 0, errorCount: 0 })} />);
       expect(await screen.findByText('Aucune réponse sourcée mesurée')).toBeInTheDocument();
       expect(screen.getByText('Aucune erreur')).toBeInTheDocument();
-      const rate = screen.getByText(/%$/);
-      expect(rate.className).not.toContain('text-trust-text');
+      expect(screen.getByText(/%$/).parentElement?.className).not.toContain('text-trust-text');
     });
   });
 
@@ -107,7 +109,7 @@ describe('Dashboard', () => {
     });
     const conversations = [conv('c1', 'web'), conv('c2', 'whatsapp'), conv('c3', 'whatsapp'), conv('c4', 'whatsapp')];
 
-    it('shows the tooltip on hover and focus, and the table on demand', async () => {
+    it('shows the tooltip on hover and focus, and the per-channel table on demand', async () => {
       stubC3({ lists: { conversations: [conversations] } });
       render(<Dashboard load={async () => metrics} />);
       const hits = await screen.findAllByTestId('day-hit');
@@ -120,45 +122,43 @@ describe('Dashboard', () => {
       hits[13].focus();
       expect(await screen.findByRole('tooltip')).toHaveTextContent('4 conversations');
 
+      const legend = screen.getByRole('list', { name: 'Légende des canaux' });
+      expect(within(legend).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Web', 'WhatsApp', 'Mobile']);
+
       expect(screen.queryByRole('table')).toBeNull();
       await user.click(screen.getByRole('button', { name: 'Voir le tableau' }));
       const table = screen.getByRole('table', { name: 'Conversations par jour' });
-      expect(within(table).getAllByRole('row')).toHaveLength(15);
+      const rows = within(table).getAllByRole('row');
+      expect(rows).toHaveLength(15);
+      expect(rows[14]).toHaveTextContent(/1\s*3\s*0\s*4$/);
       await user.click(screen.getByRole('button', { name: 'Masquer le tableau' }));
       expect(screen.queryByRole('table')).toBeNull();
     });
 
-    it('shows counts and percentages in the channel legend', async () => {
-      stubC3({ lists: { conversations: [conversations] } });
-      render(<Dashboard load={async () => metrics} />);
-      const legend = await screen.findByRole('list', { name: 'Conversations par canal' });
-      const items = within(legend).getAllByRole('listitem').map((item) => norm(item.textContent));
-      expect(items).toEqual(['Web1 (25 %)', 'WhatsApp3 (75 %)', 'Mobile0 (0 %)']);
-    });
-
-    it('lists pending items with links', async () => {
+    it('lists the todo rows with filtered links, hiding empty ones', async () => {
+      const old = new Date(Date.now() - 100 * 86_400_000).toISOString();
       stubC3({
         lists: {
-          procedures: [[{ id: 'p1', title: 'Passeport', validationStatus: 'draft' }]],
+          procedures: [[
+            { id: 'p1', title: 'Passeport', validationStatus: 'draft', source: { retrievedAt: old } },
+            { id: 'p2', title: 'CIP', validationStatus: 'validated', source: { retrievedAt: now.toISOString() } },
+          ]],
           tools: [[{ name: 'search', enabled: false }]],
-          models: [[{ id: 'm1', provider: 'x', model: 'y', promptVersion: 'v1', temperature: 0.2, active: false }]],
         },
       });
       render(<Dashboard load={async () => metrics} />);
-      expect(await screen.findByText('Aucun modèle actif', { selector: 'li span' })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'Modifier Passeport' })).toHaveAttribute('href', '/procedures/p1');
-      expect(screen.getByText('Brouillon')).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /search/ })).toHaveAttribute('href', '/tools');
+      const drafts = await screen.findByRole('link', { name: /Fiches en brouillon/ });
+      expect(drafts).toHaveAttribute('href', '/procedures?status=draft');
+      expect(screen.getByRole('link', { name: /Connexions MCP désactivées/ })).toHaveAttribute('href', '/tools');
+      expect(screen.getByRole('link', { name: /Source à revérifier/ })).toHaveAttribute('href', '/procedures?stale=1');
+      expect(screen.queryByText(/Questions sans fiche/)).toBeNull();
+      expect(screen.queryByText('Rien à traiter')).toBeNull();
     });
 
-    it('reassures when nothing is pending and links the active model', async () => {
-      stubC3({
-        lists: { models: [[{ id: 'm1', provider: 'acme', model: 'big-1', promptVersion: 'v7', temperature: 0.2, active: true }]] },
-      });
+    it('says Rien à traiter when nothing is pending', async () => {
+      stubC3({ lists: { procedures: [[{ id: 'p', validationStatus: 'validated', source: { retrievedAt: now.toISOString() } }]] } });
       render(<Dashboard load={async () => metrics} />);
-      expect(await screen.findByText('Rien à traiter pour le moment.')).toBeInTheDocument();
-      expect(screen.getByText('big-1')).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'Régler m1' })).toHaveAttribute('href', '/models/m1');
+      expect(await screen.findByText('Rien à traiter')).toBeInTheDocument();
     });
 
     it('isolates a failing collection with its own retry', async () => {
@@ -167,19 +167,18 @@ describe('Dashboard', () => {
         'fetch',
         vi.fn(async (input: RequestInfo | URL) => {
           const resource = new URL(String(input), 'http://console.local').pathname.split('/').pop();
-          if (resource === 'audit' && failing) return problem(500, 'INTERNAL', 'boom');
+          if (resource === 'procedures' && failing) return problem(500, 'INTERNAL', 'boom');
           return json({ items: resource === 'conversations' ? conversations : [], nextCursor: null });
         }),
       );
       render(<Dashboard load={async () => metrics} />);
       const alert = await screen.findByRole('alert');
-      expect(alert).toHaveTextContent('Impossible de charger le journal d’audit.');
-      expect(await screen.findByText('Dernières conversations')).toBeInTheDocument();
-      expect(screen.getAllByText('Web').length).toBeGreaterThan(0);
+      expect(alert).toHaveTextContent('Impossible de charger les éléments à traiter.');
+      expect(await screen.findAllByTestId('day-hit')).toHaveLength(14);
       expect(await screen.findAllByRole('alert')).toHaveLength(1);
       failing = false;
       await userEvent.setup().click(screen.getByRole('button', { name: 'Réessayer' }));
-      expect(await screen.findByText('Aucune modification enregistrée.')).toBeInTheDocument();
+      expect(await screen.findByText('Rien à traiter')).toBeInTheDocument();
       expect(screen.queryByRole('alert')).toBeNull();
     });
   });

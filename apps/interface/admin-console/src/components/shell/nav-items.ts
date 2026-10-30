@@ -1,13 +1,20 @@
-import { Bot, FileText, Gauge, History, MessagesSquare, Wrench } from 'lucide-react';
+import { Bot, FileText, History, LayoutDashboard, MessagesSquare, Plug } from 'lucide-react';
 
-export const NAV_ITEMS = [
-  { href: '/', label: 'Tableau de bord', icon: Gauge },
-  { href: '/procedures', label: 'Fiches de démarche', icon: FileText },
-  { href: '/models', label: 'Modèles', icon: Bot },
-  { href: '/tools', label: 'Outils', icon: Wrench },
+export type BadgeKey = 'draftProcedures' | 'disabledTools';
+
+export const NAV_ITEMS: ReadonlyArray<{
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  badge?: BadgeKey;
+}> = [
+  { href: '/', label: 'Vue d’ensemble', icon: LayoutDashboard },
+  { href: '/procedures', label: 'Fiches', icon: FileText, badge: 'draftProcedures' },
   { href: '/conversations', label: 'Conversations', icon: MessagesSquare },
+  { href: '/tools', label: 'Connexions MCP', icon: Plug, badge: 'disabledTools' },
+  { href: '/models', label: 'Modèle IA', icon: Bot },
   { href: '/audit', label: 'Journal d’audit', icon: History },
-] as const;
+];
 
 export function isActive(href: string, pathname: string): boolean {
   return href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);

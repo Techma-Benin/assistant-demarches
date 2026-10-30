@@ -37,3 +37,13 @@ export const formatLongDay = (date: Date): string => longDay.format(date);
 /** « 1 conversation », « 6 conversations ». */
 export const formatConversations = (count: number): string =>
   `${integer.format(count)} conversation${count > 1 ? 's' : ''}`;
+
+const seconds = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/** Milliseconds shown in seconds with a French decimal comma (« 3,2 s »). */
+export const formatSeconds = (ms: number): string => `${seconds.format(ms / 1000)} s`;
+
+const temperatureFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/** Model temperature with one decimal (« 0,3 »). */
+export const formatTemperature = (value: number): string => temperatureFormat.format(value);

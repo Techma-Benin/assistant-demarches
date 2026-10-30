@@ -5,6 +5,8 @@ import {
   collectAll,
   conversationsByChannel,
   conversationsByDay,
+  conversationsByDayAndChannel,
+  staleProcedures,
   pendingItems,
   recentAudit,
   recentConversations,
@@ -109,5 +111,33 @@ describe('recent lists', () => {
       { id: 'c', createdAt: '2026-10-02T00:00:00Z' },
     ] as any[];
     expect(recentConversations(convs, 2).map((c) => c.id)).toEqual(['b', 'c']);
+  });
+});
+
+describe('conversationsByDayAndChannel', () => {
+  it('splits each day by channel', () => {
+    const now = new Date('2026-10-26T15:00:00Z');
+    const days = conversationsByDayAndChannel(
+      [
+        { createdAt: '2026-10-26T01:00:00Z', channel: 'web' },
+        { createdAt: '2026-10-26T02:00:00Z', channel: 'mobile' },
+        { createdAt: '2026-10-25T02:00:00Z', channel: 'whatsapp' },
+      ],
+      14,
+      now,
+    );
+    expect(days[13].channels).toEqual({ web: 1, whatsapp: 0, mobile: 1 });
+    expect(days[13].count).toBe(2);
+    expect(days[12].channels).toEqual({ web: 0, whatsapp: 1, mobile: 0 });
+  });
+});
+
+describe('staleProcedures', () => {
+  it('keeps sources retrieved more than 90 days ago', () => {
+    const now = new Date('2026-10-30T00:00:00Z');
+    const p = (id: string, retrievedAt: string) => ({ id, source: { retrievedAt } }) as any;
+    expect(
+      staleProcedures([p('old', '2026-07-01T00:00:00Z'), p('new', '2026-09-01T00:00:00Z'), p('bad', 'x')], now).map((x) => x.id),
+    ).toEqual(['old']);
   });
 });
