@@ -186,14 +186,19 @@ function useSection<T>(load: () => Promise<T>): [Section<T>, () => void] {
 
 const loadConversations = () => collectAll((params) => c3.listConversations(params), CAPS.conversations);
 const loadProcedures = () => collectAll((params) => c3.listProcedures(params), CAPS.procedures);
+const noTools = async (): Promise<Collection<ToolConfig>> => ({ items: [], partial: false });
 const loadTools = () => collectAll((params) => c3.listTools(params), CAPS.tools);
 
 /** Loads metrics and the collections the overview needs in parallel; each section fails and retries on its own. */
-export function useDashboardData(loadMetrics: () => Promise<Metrics> = () => c3.getMetrics()): DashboardData {
+export function useDashboardData(
+  loadMetrics: () => Promise<Metrics> = () => c3.getMetrics(),
+  // False when the active identity has no tools.view: skip the call instead of showing a 403.
+  { tools: withTools = true }: { tools?: boolean } = {},
+): DashboardData {
   const [metrics, retryMetrics] = useSection(loadMetrics);
   const [conversations, retryConversations] = useSection(loadConversations);
   const [procedures, retryProcedures] = useSection(loadProcedures);
-  const [tools, retryTools] = useSection(loadTools);
+  const [tools, retryTools] = useSection(withTools ? loadTools : noTools);
   const retries = {
     metrics: retryMetrics,
     conversations: retryConversations,

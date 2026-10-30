@@ -15,7 +15,15 @@ function Line({ ok, children }: { ok: boolean | null; children: string }) {
 }
 
 /** « État du service », derived from the admin APIs only. */
-export function ServiceStatusTile({ status }: { status: ServiceStatus | null }) {
+export function ServiceStatusTile({
+  status,
+  showMcp = true,
+  showModel = true,
+}: {
+  status: ServiceStatus | null;
+  showMcp?: boolean;
+  showModel?: boolean;
+}) {
   const mcp = status?.mcpConnections ?? null;
   const model = status?.activeModel ?? null;
   return (
@@ -25,12 +33,16 @@ export function ServiceStatusTile({ status }: { status: ServiceStatus | null }) 
         <Line ok={status === null ? null : status.backendReachable}>
           {status === null ? 'Backend : vérification…' : status.backendReachable ? 'Backend joignable' : 'Backend injoignable'}
         </Line>
-        <Line ok={mcp === null ? null : mcp > 0}>
-          {mcp === null ? 'Connexions MCP : inconnu' : `${formatInteger(mcp)} connexion${mcp > 1 ? 's' : ''} MCP`}
-        </Line>
-        <Line ok={model === null ? null : model !== ''}>
-          {model === null ? 'Modèle : inconnu' : model === '' ? 'Aucun modèle actif' : model}
-        </Line>
+        {showMcp ? (
+          <Line ok={mcp === null ? null : mcp > 0}>
+            {mcp === null ? 'Connexions MCP : inconnu' : `${formatInteger(mcp)} connexion${mcp > 1 ? 's' : ''} MCP`}
+          </Line>
+        ) : null}
+        {showModel ? (
+          <Line ok={model === null ? null : model !== ''}>
+            {model === null ? 'Modèle : inconnu' : model === '' ? 'Aucun modèle actif' : model}
+          </Line>
+        ) : null}
       </ul>
     </section>
   );

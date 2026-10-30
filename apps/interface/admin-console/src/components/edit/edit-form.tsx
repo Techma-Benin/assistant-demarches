@@ -23,6 +23,8 @@ export interface EditFormProps<T, D> {
   onSubmit?: () => void;
   /** Right side of the page header (the `Toast`). */
   headerActions?: ReactNode;
+  /** Short notes shown right above the action bar (acting identity, read-only). */
+  actionsNote?: ReactNode;
 }
 
 export function EditForm<T, D>({
@@ -36,6 +38,7 @@ export function EditForm<T, D>({
   actions,
   onSubmit,
   headerActions,
+  actionsNote,
 }: EditFormProps<T, D>) {
   const { status, base, draft, result, saving, dirty, canSave } = editor;
 
@@ -97,6 +100,8 @@ export function EditForm<T, D>({
               Modifications enregistrées.
             </p>
           ) : null}
+
+          {actionsNote}
 
           <div
             className={cn(

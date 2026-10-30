@@ -8,6 +8,8 @@ import { groupToolsByServer } from '@/lib/tool-servers';
 import { ServerCard } from './connections/server-card';
 import { PageHeader } from './page-header';
 import { PaginatedTable, type Column } from './paginated-table';
+import { ReadOnlyNote } from './session/read-only-note';
+import { useSession } from './session/session-context';
 import { useToast } from './use-toast';
 
 const LIMIT = 20;
@@ -45,6 +47,7 @@ export function ToolsTable() {
   // Number of failed toggles per tool: each increase replays the shake.
   const [shakes, setShakes] = useState<Record<string, number>>({});
   const toast = useToast();
+  const canEdit = useSession().can('tools.edit');
 
   const servers = useMemo(() => groupToolsByServer(loaded), [loaded]);
   const selected = servers.find((server) => server.url === selectedUrl) ?? servers[0] ?? null;
@@ -85,7 +88,7 @@ export function ToolsTable() {
               tone="trust"
               aria-label={`Activer ${t.name}`}
               checked={enabled[t.name] ?? t.enabled}
-              disabled={pending.has(t.name)}
+              disabled={!canEdit || pending.has(t.name)}
               onCheckedChange={(next) => void toggle(t, next, enabled[t.name] ?? t.enabled)}
             />
           </ShakeOnFailure>
@@ -93,7 +96,7 @@ export function ToolsTable() {
       },
     ],
     // toggle only uses state setters and c3: it never goes stale
-    [enabled, pending, shakes],
+    [enabled, pending, shakes, canEdit],
   );
 
   return (
@@ -104,6 +107,7 @@ export function ToolsTable() {
         actions={<Toast message={toast.message} onDismiss={toast.dismiss} />}
       />
       <div className="flex flex-col gap-5">
+        {canEdit ? null : <ReadOnlyNote />}
         {servers.length > 0 ? (
           <ul aria-label="Serveurs MCP" className="flex flex-wrap gap-4">
             {servers.map((server) => (

@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import { render } from './helpers/session';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToolsTable } from '@/components/tools-table';
@@ -61,7 +62,7 @@ describe('ToolsTable', () => {
     render(<ToolsTable />);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('switch', { name: 'Activer search' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Droits insuffisants : il faut le droit admin:write.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Action non permise avec l’identité active.');
     expect(screen.getByRole('switch', { name: 'Activer search' })).toHaveAttribute('aria-checked', 'true');
     await user.click(screen.getByRole('switch', { name: 'Activer search' }));
     await waitFor(() => expect(puts).toHaveLength(2));

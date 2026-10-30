@@ -1,3 +1,4 @@
+import { RequireCapability } from '@/components/session/require-capability';
 import { ModelEdit } from '@/components/model-edit';
 import { decodeParam } from '@/lib/find-resource';
 
@@ -5,5 +6,9 @@ export const metadata = { title: 'Modifier un modèle · Console d’administrat
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <ModelEdit id={decodeParam(id)} />;
+  return (
+    <RequireCapability capability="models.view">
+      <ModelEdit id={decodeParam(id)} />
+    </RequireCapability>
+  );
 }

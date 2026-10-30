@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { C3Error } from '@/lib/c3-client';
-import { toSaveFailure } from '@/lib/error-messages';
+import { FORBIDDEN, isForbidden, toSaveFailure } from '@/lib/error-messages';
 
 export interface EditorConfig<T, D> {
   /** Prefix of the Idempotency-Key, e.g. `model-demo`. */
@@ -57,9 +57,11 @@ export function useResourceEditor<T, D>(config: EditorConfig<T, D>) {
       .catch((caught: unknown) => {
         if (cancelled) return;
         setLoadError(
-          caught instanceof C3Error && (caught.status === 401 || caught.status === 403)
-            ? 'Accès administrateur requis'
-            : 'Impossible de charger la ressource.',
+          isForbidden(caught)
+            ? FORBIDDEN
+            : caught instanceof C3Error && (caught.status === 401 || caught.status === 403)
+              ? 'Accès administrateur requis'
+              : 'Impossible de charger la ressource.',
         );
         setStatus('error');
       });

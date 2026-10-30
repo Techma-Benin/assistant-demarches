@@ -18,10 +18,12 @@ export function FormSchemaSection({
   text,
   error,
   onChange,
+  readOnly = false,
 }: {
   text: string;
   error?: string;
   onChange: (text: string) => void;
+  readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const properties = useMemo(() => {
@@ -77,6 +79,7 @@ export function FormSchemaSection({
             spellCheck={false}
             className="font-mono text-[13px]"
             value={text}
+            readOnly={readOnly}
             error={error}
             onChange={(event) => onChange(event.target.value)}
           />

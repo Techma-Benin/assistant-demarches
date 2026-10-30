@@ -1,8 +1,12 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter, Inter_Tight, JetBrains_Mono } from 'next/font/google';
 import { ThemeScript } from '@techma/ui';
+import { cookies } from 'next/headers';
 import type { ReactNode } from 'react';
+import { SessionProvider } from '@/components/session/session-context';
 import { AppShell } from '@/components/shell/app-shell';
+import type { Session } from '@/lib/permissions';
+import { getSession, IDENTITY_COOKIE } from '@/server/session';
 import './globals.css';
 
 const interTight = Inter_Tight({
@@ -38,14 +42,26 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+/** The session of the request; null when it cannot be established (production, misconfiguration). */
+async function readSession(): Promise<Session | null> {
+  try {
+    return getSession((await cookies()).get(IDENTITY_COOKIE)?.value);
+  } catch {
+    return null;
+  }
+}
+
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const session = await readSession();
   return (
     <html lang="fr" className={`${interTight.variable} ${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <head>
         <ThemeScript />
       </head>
       <body className="bg-canvas font-sans text-ink antialiased">
-        <AppShell>{children}</AppShell>
+        <SessionProvider initial={session}>
+          <AppShell>{children}</AppShell>
+        </SessionProvider>
       </body>
     </html>
   );

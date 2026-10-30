@@ -6,6 +6,8 @@ import { findInPages } from '@/lib/find-resource';
 import { toModelConfig, toModelDraft, validateModel, type ModelDraft } from '@/lib/model-form';
 import { EditForm, FormSection, ReadOnlyField } from './edit/edit-form';
 import { useResourceEditor } from './edit/use-resource-editor';
+import { ReadOnlyNote } from './session/read-only-note';
+import { useSession } from './session/session-context';
 import { useToast } from './use-toast';
 
 export function ModelEdit({ id }: { id: string }) {
@@ -19,6 +21,7 @@ export function ModelEdit({ id }: { id: string }) {
   });
   const { errors, update } = editor;
   const toast = useToast();
+  const readOnly = !useSession().can('models.edit');
 
   return (
     <EditForm
@@ -27,7 +30,8 @@ export function ModelEdit({ id }: { id: string }) {
       fallbackTitle={id}
       backHref="/models"
       backLabel="Retour aux modèles"
-      onSubmit={() => void editor.save().then((saved) => saved && toast.show('Modèle enregistré'))}
+      onSubmit={() => !readOnly && void editor.save().then((saved) => saved && toast.show('Modèle enregistré'))}
+      actionsNote={readOnly ? <ReadOnlyNote /> : undefined}
       headerActions={<Toast message={toast.message} onDismiss={toast.dismiss} />}
     >
       {(draft) => (
@@ -38,6 +42,7 @@ export function ModelEdit({ id }: { id: string }) {
             required
             value={draft.provider}
             error={errors.provider}
+            readOnly={readOnly}
             onChange={(event) => update({ provider: event.target.value })}
           />
           <TextField
@@ -45,6 +50,7 @@ export function ModelEdit({ id }: { id: string }) {
             required
             value={draft.model}
             error={errors.model}
+            readOnly={readOnly}
             onChange={(event) => update({ model: event.target.value })}
           />
           <TextField
@@ -52,6 +58,7 @@ export function ModelEdit({ id }: { id: string }) {
             required
             value={draft.promptVersion}
             error={errors.promptVersion}
+            readOnly={readOnly}
             onChange={(event) => update({ promptVersion: event.target.value })}
           />
           <TextField
@@ -64,9 +71,10 @@ export function ModelEdit({ id }: { id: string }) {
             required
             value={draft.temperature}
             error={errors.temperature}
+            readOnly={readOnly}
             onChange={(event) => update({ temperature: event.target.value })}
           />
-          <Switch checked={draft.active} tone="trust" onCheckedChange={(active) => update({ active })}>
+          <Switch checked={draft.active} tone="trust" disabled={readOnly} onCheckedChange={(active) => update({ active })}>
             Actif
           </Switch>
         </FormSection>

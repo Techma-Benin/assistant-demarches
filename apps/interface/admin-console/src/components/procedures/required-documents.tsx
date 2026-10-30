@@ -9,10 +9,12 @@ export function RequiredDocuments({
   documents,
   error,
   onChange,
+  readOnly = false,
 }: {
   documents: string[];
   error?: string;
   onChange: (documents: string[]) => void;
+  readOnly?: boolean;
 }) {
   const [entry, setEntry] = useState('');
   const [adding, setAdding] = useState(false);
@@ -45,8 +47,9 @@ export function RequiredDocuments({
             <button
               type="button"
               aria-label={`Retirer ${item}`}
+              disabled={readOnly}
               onClick={() => onChange(documents.filter((d) => d !== item))}
-              className="ui-press inline-flex size-9 items-center justify-center rounded-pill hover:bg-surface"
+              className="ui-press inline-flex size-9 items-center justify-center rounded-pill hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
             >
               <X aria-hidden="true" className="size-4" />
             </button>
@@ -56,8 +59,9 @@ export function RequiredDocuments({
           <button
             type="button"
             aria-expanded={adding}
+            disabled={readOnly}
             onClick={() => setAdding((open) => !open)}
-            className="ui-press inline-flex min-h-11 items-center gap-1.5 rounded-pill border border-dashed border-field bg-surface px-4 text-sm font-semibold"
+            className="ui-press inline-flex min-h-11 items-center gap-1.5 rounded-pill border border-dashed border-field bg-surface px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus aria-hidden="true" className="size-4" />
             Ajouter une pièce
@@ -66,7 +70,7 @@ export function RequiredDocuments({
       </ul>
       {documents.length === 0 ? <p className="text-sm text-ink-muted">Aucune pièce requise.</p> : null}
       {error ? <p className="text-[13px] font-semibold text-danger">{error}</p> : null}
-      {adding ? (
+      {adding && !readOnly ? (
         <div className="flex items-end gap-3">
           <div className="min-w-0 flex-1">
             <TextField

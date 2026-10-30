@@ -12,7 +12,9 @@ import {
   type Section,
 } from '@/lib/dashboard-data';
 import { formatInteger, formatRate, formatSeconds } from '@/lib/format';
+import { visibleProcedures } from '@/lib/visible-procedures';
 import { DailyChart } from './dashboard-charts';
+import { useSession } from './session/session-context';
 import { errorMessage } from './paginated-table';
 
 const GUARDRAILS = [
@@ -87,13 +89,15 @@ function Body<T>({ section, noun, onRetry, children }: { section: Section<T>; no
 }
 
 export function Dashboard({ load }: { load?: () => Promise<Metrics> }) {
-  const { metrics, conversations, procedures, tools, retry } = useDashboardData(load);
+  const { identity, can } = useSession();
+  const canTools = can('tools.view');
+  const { metrics, conversations, procedures, tools, retry } = useDashboardData(load, { tools: canTools });
 
   const m = metrics.status === 'ready' ? metrics.data : null;
   const todo = combine(procedures, tools);
   const retryTodo = () => {
     if (procedures.status === 'error') retry('procedures');
-    if (tools.status === 'error') retry('tools');
+    if (canTools && tools.status === 'error') retry('tools');
   };
 
   return (
@@ -130,9 +134,11 @@ export function Dashboard({ load }: { load?: () => Promise<Metrics> }) {
           <h2 className={tileTitle}>À traiter aujourd’hui</h2>
           <Body section={todo} noun="les éléments à traiter" onRetry={retryTodo}>
             {([procedureData, toolData]) => {
-              const drafts = procedureData.items.filter((procedure) => procedure.validationStatus === 'draft').length;
-              const disabled = toolData.items.filter((tool) => !tool.enabled).length;
-              const stale = staleProcedures(procedureData.items).length;
+              // Scope filter is defence in depth: the Backend already filters by administration.
+              const scoped = visibleProcedures(identity, procedureData.items);
+              const drafts = scoped.filter((procedure) => procedure.validationStatus === 'draft').length;
+              const disabled = canTools ? toolData.items.filter((tool) => !tool.enabled).length : 0;
+              const stale = staleProcedures(scoped).length;
               const partial = procedureData.partial || toolData.partial;
               if (drafts + disabled + stale === 0) {
                 return <p className="text-[15px] font-semibold">Rien à traiter</p>;

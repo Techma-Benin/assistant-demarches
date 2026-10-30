@@ -11,6 +11,7 @@ import {
   TableRow,
 } from '@techma/ui';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { FORBIDDEN, isForbidden } from '@/lib/error-messages';
 import { C3Error } from '@/lib/c3-client';
 
 export interface Column<T> {
@@ -43,6 +44,7 @@ export interface PaginatedTableProps<T> {
 type Status = 'loading' | 'idle' | 'error';
 
 export function errorMessage(error: unknown, noun: string): string {
+  if (isForbidden(error)) return FORBIDDEN;
   if (error instanceof C3Error && (error.status === 401 || error.status === 403)) {
     return 'Accès administrateur requis';
   }

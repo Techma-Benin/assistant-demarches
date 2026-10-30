@@ -1,3 +1,4 @@
+import { RequireCapability } from '@/components/session/require-capability';
 import { PageHeader } from '@/components/page-header';
 import { ProcedureBrowser } from '@/components/procedures/procedure-browser';
 import { parseStatusFilter } from '@/lib/procedure-list';
@@ -11,7 +12,7 @@ export default async function Page({
 }) {
   const { status, stale } = await searchParams;
   return (
-    <>
+    <RequireCapability capability="procedures.view">
       <PageHeader
         title="Fiches de démarche"
         description="La seule source que l’assistant a le droit de citer. Une fiche n’est citée qu’une fois validée."
@@ -20,6 +21,6 @@ export default async function Page({
         initialStatus={parseStatusFilter(Array.isArray(status) ? status[0] : status)}
         initialStale={(Array.isArray(stale) ? stale[0] : stale) === '1'}
       />
-    </>
+    </RequireCapability>
   );
 }

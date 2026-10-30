@@ -1,5 +1,5 @@
 import { C3Error, c3, type ModelConfig } from './c3-client';
-import { toSaveFailure } from './error-messages';
+import { FORBIDDEN, isForbidden, toSaveFailure } from './error-messages';
 
 export interface Activation {
   /** Models as confirmed by the backend, in order (new active first). */
@@ -21,6 +21,7 @@ export async function activateModel(next: ModelConfig, current: ModelConfig | nu
 
 /** The backend's own explanation when it rejects the change (409/422…), else the generic save message. */
 export function describeActivationError(error: unknown): string {
+  if (isForbidden(error)) return FORBIDDEN;
   if (error instanceof C3Error && error.problem?.detail) return error.problem.detail;
   return toSaveFailure(error).message;
 }

@@ -10,6 +10,8 @@ import { formatTemperature } from '@/lib/format';
 import { activateModel, describeActivationError } from '@/lib/model-activation';
 import { PageHeader } from '../page-header';
 import { PagedFooter, usePagedList } from '../paginated-table';
+import { ReadOnlyNote } from '../session/read-only-note';
+import { useSession } from '../session/session-context';
 import { useToast } from '../use-toast';
 
 const LIMIT = 20;
@@ -22,6 +24,7 @@ export function ModelsOverview() {
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const canEdit = useSession().can('models.edit');
 
   const models = items.map((model) => saved[model.id] ?? model);
   const active = models.find((model) => model.active) ?? null;
@@ -63,13 +66,14 @@ export function ModelsOverview() {
         description="Le modèle en service, ses instructions et son réglage."
         actions={<Toast message={toast.message} onDismiss={toast.dismiss} />}
       />
+      {canEdit ? null : <div className="mb-4"><ReadOnlyNote /></div>}
       {failure ? <InlineAlert className="mb-4">{failure}</InlineAlert> : null}
       {status === 'idle' && models.length === 0 ? (
         <p className="rounded-card bg-sunken p-6 text-center text-ink-muted">Aucun élément à afficher.</p>
       ) : null}
       <div className="flex flex-wrap items-start gap-4">
         {active ? (
-          <ActiveModelTile key={active.id} model={active} busy={busy} onSave={saveTemperature} />
+          <ActiveModelTile key={active.id} model={active} busy={busy} readOnly={!canEdit} onSave={saveTemperature} />
         ) : status === 'idle' && models.length > 0 ? (
           <Tile tone="outline" className="min-w-0 flex-[2_1_520px]">
             <p className="font-display text-2xl font-extrabold">Aucun modèle actif</p>
@@ -106,7 +110,7 @@ export function ModelsOverview() {
                       variant="outline"
                       size="sm"
                       className="min-h-11"
-                      disabled={busy}
+                      disabled={busy || !canEdit}
                       aria-label={`Activer à la place : ${model.model} (${model.id})`}
                       onClick={() => void activate(model)}
                     >
@@ -142,10 +146,12 @@ export function ModelsOverview() {
 function ActiveModelTile({
   model,
   busy,
+  readOnly,
   onSave,
 }: {
   model: ModelConfig;
   busy: boolean;
+  readOnly: boolean;
   onSave: (model: ModelConfig, temperature: number) => Promise<void>;
 }) {
   const [temperature, setTemperature] = useState(model.temperature);
@@ -187,7 +193,7 @@ function ActiveModelTile({
           max={2}
           step={0.1}
           value={temperature}
-          disabled={busy}
+          disabled={busy || readOnly}
           onChange={(event) => setTemperature(Number(event.target.value))}
           className="min-h-11 w-full accent-sun"
         />
@@ -200,7 +206,7 @@ function ActiveModelTile({
             variant="secondary"
             size="sm"
             className="min-h-11"
-            disabled={!changed || busy}
+            disabled={!changed || busy || readOnly}
             onClick={() => void onSave(model, temperature)}
           >
             Enregistrer la température

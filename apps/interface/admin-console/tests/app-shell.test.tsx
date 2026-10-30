@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
+import { render } from './helpers/session';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from '@/components/shell/app-shell';
@@ -6,7 +7,10 @@ import { PageHeader } from '@/components/page-header';
 import { stubC3 } from './helpers/c3-fetch';
 
 let pathname = '/';
-vi.mock('next/navigation', () => ({ usePathname: () => pathname }));
+vi.mock('next/navigation', () => ({
+  usePathname: () => pathname,
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
 
 beforeEach(() => {
   pathname = '/';

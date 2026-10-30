@@ -5,7 +5,10 @@ import { Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { can, routeCapability } from '@/lib/permissions';
 import { useServiceStatus } from '@/lib/service-status';
+import { useSession } from '../session/session-context';
+import { IdentitySwitcher } from './identity-switcher';
 import { NAV_ITEMS, isActive } from './nav-items';
 import { ServiceStatusTile } from './service-status-tile';
 
@@ -21,10 +24,31 @@ function subscribeDesktop(onChange: () => void) {
 const isDesktop = () => typeof window.matchMedia === 'function' && window.matchMedia(DESKTOP_QUERY).matches;
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const { identity } = useSession();
+  if (!identity) return <SessionUnavailable />;
+  return <Shell>{children}</Shell>;
+}
+
+function SessionUnavailable() {
+  return (
+    <main className="flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
+      <h1 className="font-display text-[clamp(28px,4vw,40px)] leading-none font-extrabold tracking-[-0.04em]">
+        Session administrateur indisponible
+      </h1>
+      <p className="max-w-md text-base text-ink-muted">
+        La console ne peut pas établir votre session pour le moment. Réessayez dans quelques instants.
+      </p>
+    </main>
+  );
+}
+
+function Shell({ children }: { children: ReactNode }) {
+  const { identity } = useSession();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const desktop = useSyncExternalStore(subscribeDesktop, isDesktop, () => false);
-  const status = useServiceStatus();
+  const status = useServiceStatus(identity);
+  const navItems = NAV_ITEMS.filter(({ href }) => can(identity, routeCapability(href)));
 
   // Close the mobile menu after navigating.
   useEffect(() => setOpen(false), [pathname]);
@@ -56,15 +80,18 @@ export function AppShell({ children }: { children: ReactNode }) {
           className={cn(
             // Mobile: overlay panel kept mounted; desktop: static column.
             'absolute inset-x-0 top-full z-20 flex max-h-[calc(100dvh-3.5rem)] flex-col overflow-y-auto border-b border-line-subtle bg-shell transition-[opacity,translate,visibility] ease-(--ui-ease-out) motion-reduce:translate-y-0',
-            'md:pointer-events-auto md:visible md:static md:z-auto md:max-h-none md:flex-1 md:translate-y-0 md:border-b-0 md:bg-transparent md:opacity-100 md:transition-none',
+            'md:pointer-events-auto md:visible md:static md:z-auto md:max-h-none md:flex-1 md:overflow-visible md:translate-y-0 md:border-b-0 md:bg-transparent md:opacity-100 md:transition-none',
             open
               ? 'visible translate-y-0 opacity-100 duration-220'
               : 'pointer-events-none invisible -translate-y-2 opacity-0 duration-(--ui-dur-exit)',
           )}
         >
+          <div className="px-4 pb-3">
+            <IdentitySwitcher />
+          </div>
           <nav aria-label="Navigation principale" className="flex-1 px-4 pb-3">
             <ul className="flex flex-col gap-1">
-              {NAV_ITEMS.map(({ href, label, icon: Icon, badge }) => {
+              {navItems.map(({ href, label, icon: Icon, badge }) => {
                 const active = isActive(href, pathname);
                 const count = badge && status ? status[badge] : null;
                 return (
@@ -94,13 +121,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             </ul>
           </nav>
           <div className="flex flex-col gap-3 px-4 py-4">
-            <ServiceStatusTile status={status} />
+            <ServiceStatusTile status={status} showMcp={can(identity, 'tools.view')} showModel={can(identity, 'models.view')} />
             <ThemeToggle />
           </div>
         </div>
       </aside>
       <main className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-8">
-        <div key={pathname} className="ui-rise">
+        <div key={`${identity?.id}:${pathname}`} className="ui-rise">
           {children}
         </div>
       </main>

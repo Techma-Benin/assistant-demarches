@@ -11,7 +11,9 @@ import {
   isStaleSource,
   type StatusFilter,
 } from '@/lib/procedure-list';
+import { visibleProcedures } from '@/lib/visible-procedures';
 import { PagedFooter, usePagedList } from '../paginated-table';
+import { useSession } from '../session/session-context';
 
 const LIMIT = 20;
 const loadProcedures = (cursor: string | null) => c3.listProcedures({ cursor, limit: LIMIT });
@@ -33,7 +35,10 @@ export interface ProcedureBrowserProps {
 
 export function ProcedureBrowser({ initialStatus = 'all', initialStale = false, now }: ProcedureBrowserProps) {
   const [reference] = useState(() => now ?? new Date());
-  const { items, nextCursor, status, error, retry, loadMore } = usePagedList(loadProcedures);
+  const { items: loaded, nextCursor, status, error, retry, loadMore } = usePagedList(loadProcedures);
+  const { identity } = useSession();
+  // Defence in depth: the Backend already filters the list by administration.
+  const items = useMemo(() => visibleProcedures(identity, loaded), [identity, loaded]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatus);
   const [stale, setStale] = useState(initialStale);

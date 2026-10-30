@@ -10,6 +10,12 @@ export interface SaveFailure {
 
 const UNAVAILABLE = 'Service indisponible. Réessayez.';
 
+/** 403 FORBIDDEN: the active identity may not do this. */
+export const FORBIDDEN = 'Action non permise avec l’identité active.';
+
+export const isForbidden = (error: unknown): boolean =>
+  error instanceof C3Error && error.status === 403 && error.problem?.code === 'FORBIDDEN';
+
 /** Maps a failed PUT to a user message (never exposes technical details). */
 export function toSaveFailure(error: unknown): SaveFailure {
   if (!(error instanceof C3Error)) return { message: UNAVAILABLE, conflict: false, retryable: true };
@@ -19,7 +25,8 @@ export function toSaveFailure(error: unknown): SaveFailure {
     return { message: detail ? `Données refusées : ${detail}` : 'Données refusées.', conflict: false, retryable: false };
   }
   if (status === 403) {
-    return { message: 'Droits insuffisants : il faut le droit admin:write.', conflict: false, retryable: false };
+    const message = problem?.code === 'FORBIDDEN' ? FORBIDDEN : 'Droits insuffisants : il faut le droit admin:write.';
+    return { message, conflict: false, retryable: false };
   }
   if (status === 404) return { message: 'Cette ressource n’existe plus.', conflict: false, retryable: false };
   if (status === 409) {

@@ -5,6 +5,7 @@ import { Check, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { c3, type Procedure } from '@/lib/c3-client';
 import { findInPages } from '@/lib/find-resource';
+import { canSeeProcedure } from '@/lib/visible-procedures';
 import { isStaleSource, STALE_AFTER_DAYS } from '@/lib/procedure-list';
 import {
   toProcedure,
@@ -17,6 +18,9 @@ import { useResourceEditor, type ResourceEditor } from './edit/use-resource-edit
 import { FormSchemaSection } from './procedures/form-schema-section';
 import { RequiredDocuments } from './procedures/required-documents';
 import { UserPreview } from './procedures/user-preview';
+import { ReadOnlyNote } from './session/read-only-note';
+import { AccessDenied } from './session/require-capability';
+import { useSession } from './session/session-context';
 import { useToast } from './use-toast';
 
 type Editor = ResourceEditor<Procedure, ProcedureDraft>;
@@ -36,12 +40,25 @@ export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {
   });
   const { errors, update } = editor;
   const toast = useToast();
+  const { identity, can } = useSession();
+  const readOnly = !can('procedures.edit');
   const [reference] = useState(() => now ?? new Date());
 
   // One PUT per intent (a fresh Idempotency-Key each time): the status change travels with the pending edits.
   const run = async (patch: Partial<ProcedureDraft> | undefined, message: string) => {
     if (await editor.save(patch)) toast.show(message);
   };
+
+  // Defence in depth: the Backend does not return other administrations' fiches.
+  if (editor.base !== null && !canSeeProcedure(identity, editor.base)) {
+    const owner = editor.base.administrationId;
+    return (
+      <AccessDenied
+        capability="procedures.view"
+        accepts={(candidate) => candidate.kind === 'platform' || candidate.administrationId === owner}
+      />
+    );
+  }
 
   return (
     <EditForm
@@ -50,19 +67,25 @@ export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {
       fallbackTitle={id}
       backHref="/procedures"
       backLabel="Retour aux fiches de démarche"
-      onSubmit={() => void run(undefined, SAVED)}
+      onSubmit={() => !readOnly && void run(undefined, SAVED)}
       headerActions={<Toast message={toast.message} onDismiss={toast.dismiss} />}
       aside={(draft) => <UserPreview draft={draft} />}
+      actionsNote={
+        <div className="flex flex-col gap-1.5">
+          <p className="text-sm font-semibold">{`Vous agissez en tant que : ${identity?.label ?? ''}`}</p>
+          {readOnly ? <ReadOnlyNote /> : null}
+        </div>
+      }
       actions={({ base, draft, saving, canSave, valid, dirty, reset }) => (
         <>
-          <Button type="submit" variant="outline" className="min-w-40" disabled={!canSave}>
+          <Button type="submit" variant="outline" className="min-w-40" disabled={readOnly || !canSave}>
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </Button>
           {draft?.validationStatus === 'draft' ? (
             <Button
               variant="trust"
               leadingIcon={<Check aria-hidden="true" className="size-4" />}
-              disabled={!valid || saving}
+              disabled={readOnly || !valid || saving}
               onClick={() => void run({ validationStatus: 'validated' }, PUBLISHED)}
             >
               Valider et publier
@@ -71,13 +94,13 @@ export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {
           {base?.validationStatus === 'validated' ? (
             <Button
               variant="secondary"
-              disabled={!valid || saving}
+              disabled={readOnly || !valid || saving}
               onClick={() => void run({ validationStatus: 'draft' }, UNPUBLISHED)}
             >
               Repasser en brouillon
             </Button>
           ) : null}
-          <Button variant="ghost" disabled={!dirty || saving} onClick={reset}>
+          <Button variant="ghost" disabled={readOnly || !dirty || saving} onClick={reset}>
             Annuler les modifications
           </Button>
         </>
@@ -110,6 +133,7 @@ export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {
             required
             value={draft.title}
             error={errors.title}
+            readOnly={readOnly}
             onChange={(event) => update({ title: event.target.value })}
           />
           <TextArea
@@ -118,11 +142,13 @@ export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {
             rows={4}
             value={draft.summary}
             error={errors.summary}
+            readOnly={readOnly}
             onChange={(event) => update({ summary: event.target.value })}
           />
           <RequiredDocuments
             documents={draft.requiredDocuments}
             error={errors.requiredDocuments}
+            readOnly={readOnly}
             onChange={(requiredDocuments) => update({ requiredDocuments })}
           />
           <div className="flex flex-wrap gap-4">
@@ -137,6 +163,7 @@ export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {
                 required
                 value={draft.feeFcfa}
                 error={errors.feeFcfa}
+                readOnly={readOnly}
                 onChange={(event) => update({ feeFcfa: event.target.value })}
               />
             </div>
@@ -150,6 +177,7 @@ export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {
                 required
                 value={draft.processingDays}
                 error={errors.processingDays}
+                readOnly={readOnly}
                 onChange={(event) => update({ processingDays: event.target.value })}
               />
             </div>
@@ -165,6 +193,7 @@ export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {
               className="font-mono text-sm"
               value={draft.sourceUrl}
               error={errors.sourceUrl}
+              readOnly={readOnly}
               onChange={(event) => update({ sourceUrl: event.target.value })}
             />
             <div className="flex flex-wrap gap-4">
@@ -174,6 +203,7 @@ export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {
                   required
                   value={draft.sourceVersion}
                   error={errors.sourceVersion}
+                  readOnly={readOnly}
                   onChange={(event) => update({ sourceVersion: event.target.value })}
                 />
               </div>
@@ -184,6 +214,7 @@ export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {
                   required
                   value={draft.retrievedAt}
                   error={errors.retrievedAt}
+                  readOnly={readOnly}
                   onChange={(event) => update({ retrievedAt: event.target.value })}
                 />
               </div>
@@ -193,6 +224,7 @@ export function ProcedureEdit({ id, now }: { id: string; now?: Date }) {
           <FormSchemaSection
             text={draft.formSchemaText}
             error={errors.formSchemaText}
+            readOnly={readOnly}
             onChange={(formSchemaText) => update({ formSchemaText })}
           />
         </Tile>
