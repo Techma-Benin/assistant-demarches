@@ -100,7 +100,7 @@ Le test charge `.env` en mémoire, sans afficher ses secrets. Il est hors du glo
 1. **Tooling** : implémenter/raccorder le contrat d’intervention `backend-admin`, publier un snapshot après chaque mutation, brancher la simulation de dépôt/paiement/suivi et l’annuaire distant final. Client `tooling-documents` pour les octets privés et les documents délivrés.
 2. **Interface** : consommer les nouveaux OpenAPI, rendre les dossiers/KPI/profils/permissions, panneau de progression et provenance ; utiliser la session OIDC réelle. Présenter explicitement le caractère simulé et le traitement éventuel des vocaux par le fournisseur.
 3. **Fournisseur** : le parcours Groq sur données fictives est validé. Vérifier les limites de débit/tokens disponibles pour la démo et la charge attendue ; la répétition des essais a rencontré un `429`. Sa clé n’a pas été exposée ni modifiée. L’audio réel reste à valider séparément.
-4. **Déploiement** : appliquer migrations 008/009, initialiser les départements et comptes depuis un super administrateur, configurer les identités de service et lancer API + worker. Les garanties infrastructure (TLS, sauvegardes, hébergement, etc.) ne sont pas établies par les tests locaux.
+4. **Déploiement** : appliquer migrations 008/009, initialiser `justice` / `enseignement` via `apps/backend/seeds/demo-deux-bureaux.json`, configurer les identités de service et lancer API + worker. Les garanties infrastructure (TLS, sauvegardes, hébergement, etc.) ne sont pas établies par les tests locaux.
 
 ## Consignes de reprise
 

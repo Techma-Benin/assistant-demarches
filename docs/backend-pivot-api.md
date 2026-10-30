@@ -163,7 +163,7 @@ Les données vocales sont traitées par le fournisseur configuré : l'accueil et
 2. Installer les dépendances verrouillées et générer les contrats.
 3. Construire puis appliquer les migrations, notamment `008_admin_directory.sql` et `009_department_work.sql`, avant les nouvelles routes. Ne pas éditer une migration déjà déployée.
 4. Configurer l'OIDC, les clients de service, le stockage, PostgreSQL et Redis ; lancer API **et** worker.
-5. Initialiser deux départements et les affectations administratives, puis raccorder Tooling aux contrats 1.3.0.
+5. Initialiser deux départements et les affectations administratives (`pnpm --filter @techma/backend seed ./seeds/demo-deux-bureaux.json`), puis raccorder Tooling aux contrats 1.3.0. Les jetons OIDC de démo doivent utiliser les `sub` `justice-agent`, `enseignement-agent` et `demo-super-admin`.
 6. Vérifier le scénario multi-ministères et l'essai Groq explicite avant une démo réelle.
 
 Les identifiants, clés et preuves des tests sont synthétiques. Aucun secret local du dossier parent n'est publié. Le suivi contient les résultats effectifs et les limites restantes ; il prime sur les anciens documents d'avancement du socle.
