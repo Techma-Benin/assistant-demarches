@@ -26,7 +26,14 @@ async function setup(t: TestContext, env: NodeJS.ProcessEnv = { CONNECTORS: 'sim
 }
 
 test('connecteur : envoi avec accusé de réception, puis suivi jusqu’à completed', async (t) => {
-  const s = await setup(t);
+  const s = await setup(t, { CONNECTORS: 'simulated', CONNECTOR_SIMULATED_STEP_MS: '60000' });
+  const sentAgo = (ms: number) =>
+    s.db.transaction('system', (tx) =>
+      tx.query("update requests set external_ref = regexp_replace(external_ref, '-[0-9]+$', '-' || $2::text), next_check_at = now() where id = $1", [
+        s.requestId,
+        String(Date.now() - ms),
+      ]),
+    );
   assert.equal(s.submitted.structuredContent!.status, 'awaiting_user_validation');
   assert.equal((await s.row()).submission_state, 'queued');
 
@@ -39,10 +46,10 @@ test('connecteur : envoi avec accusé de réception, puis suivi jusqu’à compl
   assert.match(String(stored.external_ref), /^SIMULATION-req_/);
   assert.match(String((stored.receipt as { reference: string }).reference), /^SIMULATION-/);
 
-  await pause(160);
+  await sentAgo(90_000);
   await s.worker.tick();
   assert.equal((await s.status()).status, 'processing');
-  await pause(160);
+  await sentAgo(150_000);
   await s.worker.tick();
   assert.equal((await s.status()).status, 'completed');
   assert.equal((await s.row()).submission_state, 'done');
