@@ -8,26 +8,27 @@ import { isolatedDatabase } from "./helpers.mjs";
 
 const fixture = JSON.parse(readFileSync(fileURLToPath(new URL("../seeds/demo-deux-bureaux.json", import.meta.url)), "utf8"));
 
-test("demo directory seed inserts justice and enseignement once", async t => {
+test("demo directory seed inserts justice, enseignement and anip once", async t => {
   const pg = await isolatedDatabase(), pool = database(pg.connection);
   t.after(async () => { await pool.end(); await pg.close(); });
   await migrate(pool);
 
   const parsed = parseDirectorySeed(fixture);
-  assert.deepEqual(parsed.departments.map(d => d.id), ["justice", "enseignement"]);
-  assert.deepEqual(parsed.users.map(u => u.subject), ["justice-agent", "enseignement-agent", "demo-super-admin"]);
+  assert.deepEqual(parsed.departments.map(d => d.id), ["justice", "enseignement", "anip"]);
+  assert.deepEqual(parsed.users.map(u => u.subject), ["justice-agent", "enseignement-agent", "anip-agent", "demo-super-admin"]);
 
   const first = await seedDirectory(pool, fixture);
-  assert.equal(first.departments, 2);
-  assert.equal(first.users, 3);
+  assert.equal(first.departments, 3);
+  assert.equal(first.users, 4);
   const second = await seedDirectory(pool, fixture);
   assert.equal(second.departments, 0);
   assert.equal(second.users, 0);
 
   const departments = (await pool.query("SELECT id FROM backend_departments ORDER BY id")).rows.map(row => row.id);
-  assert.deepEqual(departments, ["enseignement", "justice"]);
+  assert.deepEqual(departments, ["anip", "enseignement", "justice"]);
   const memberships = (await pool.query("SELECT subject,department_id,role FROM backend_admin_memberships ORDER BY subject")).rows;
   assert.deepEqual(memberships, [
+    { subject: "anip-agent", department_id: "anip", role: "agent" },
     { subject: "enseignement-agent", department_id: "enseignement", role: "agent" },
     { subject: "justice-agent", department_id: "justice", role: "agent" },
   ]);
