@@ -114,3 +114,15 @@ Décision sur les pièces : [stockage sans antivirus](../docs/file-storage-decis
 La pile conserve le premier serveur MCP Techma et ses permissions issues du provisioning historique. Dans Swagger `admin`, le groupe **Serveurs MCP** permet de lister cette connexion, découvrir ses huit actions et les désactiver individuellement ou désactiver tout le serveur. Le champ `policy:techma` conserve les contrôles métier et de provenance. Les connexions externes `generic` se configurent via les mêmes endpoints, après autorisation de leurs URLs côté déploiement. Voir [guide multi-MCP](../docs/mcp-connections.md).
 
 Le test backend `mcp-connections.test.mjs` ajoute le cas de deux serveurs MCP avec actions hors catalogue et noms identiques, plusieurs authentifications et contrôle immédiat des permissions. Les fixtures locales ne prouvent pas une compatibilité avec tout fournisseur OAuth ni une soumission administrative réelle.
+
+## Slide 8 : un message, deux bureaux
+
+`pnpm test:slide8` joue la démo du PowerPoint avec le vrai Backend, le vrai Tooling et le X-Road simulé : consentement, dépôt d’un casier, paiement simulé, file **En attente** de la Justice, file vide pour l’Enseignement, puis prise en charge et approbation depuis la route de la console jusqu’au X-Road. Ni Redis ni modèle : les appels d’outils de l’agent passent directement par le `McpGateway` du Backend. PostgreSQL reste requis (`BACKEND_TEST_DATABASE_URL` ou `PG_BIN`).
+
+`pnpm dev:slide8` démarre la même pile (Backend sur 4110) avec un casier en attente pour la Justice et une authentification de diplôme complétée pour l’Enseignement supérieur (fiches officielles de service-public.bj), puis écrit les jetons des trois sessions de démo dans `admin-demo-tokens.json`. Pour la console :
+
+```sh
+BACKEND_URL=http://127.0.0.1:4110 ADMIN_DEMO_TOKENS="$(cat <chemin affiché>)" pnpm --filter @techma/admin-console dev
+```
+
+Ouvrir <http://localhost:3100> (pas `127.0.0.1` : Next.js bloque alors ses ressources de développement).

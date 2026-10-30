@@ -19,6 +19,8 @@
     "test:apps": "turbo run test",
     "test:integration": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && node --env-file-if-exists=integration/.env --test integration/backend-tooling.test.mjs",
     "dev:integration": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && node --env-file-if-exists=integration/.env integration/local-stack.mjs",
+    "test:slide8": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && pnpm --filter @techma/xroad-sim build && node --env-file-if-exists=integration/.env --test integration/slide8.test.mjs",
+    "dev:slide8": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && pnpm --filter @techma/xroad-sim build && node --env-file-if-exists=integration/.env integration/slide8-demo.mjs",
     "check:portable": "pnpm contracts:check && pnpm contracts:generate && pnpm typecheck && pnpm test && pnpm --filter @techma/tooling test && pnpm --filter @techma/backend build",
     "check:pivot": "node scripts/verify-backend-pivot.mjs"
   },

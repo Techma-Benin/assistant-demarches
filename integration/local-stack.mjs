@@ -18,7 +18,7 @@ import { loadConfig } from "../apps/tooling/dist/src/config.js";
 import { Database as ToolingDatabase } from "../apps/tooling/dist/src/database/database.js";
 
 const backendRequire = createRequire(new URL("../apps/backend/package.json", import.meta.url));
-const { generateKeyPair, exportJWK, exportPKCS8, SignJWT } = await import(backendRequire.resolve("jose"));
+const { generateKeyPair, exportJWK, exportPKCS8, SignJWT } = await import(pathToFileURL(backendRequire.resolve("jose")).href);
 const { Queue } = backendRequire("bullmq");
 const repository = fileURLToPath(new URL("../", import.meta.url));
 export const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -109,7 +109,11 @@ function modelReply(body, procedure) {
   return { content: JSON.stringify({ blocks: [{ type: "text", text: "Action refusée. Consulter les événements de la conversation.", sources: [] }] }) };
 }
 
-export async function startStack({ backendPort = 0, toolingPort = 0 } = {}) {
+/**
+ * `worker: false` skips Redis and the BullMQ worker (no chat replies, the agent's tool calls are made directly).
+ * `xroad: true` adds the simulated X-Road as catalogue and connector, and wires the console actions Backend → Tooling.
+ */
+export async function startStack({ backendPort = 0, toolingPort = 0, worker: withWorker = true, xroad = false } = {}) {
   const cleanup = [];
   const previousEnvironment = { ...process.env };
   const directory = mkdtempSync(join(tmpdir(), "techma-integration-"));
@@ -125,7 +129,7 @@ export async function startStack({ backendPort = 0, toolingPort = 0 } = {}) {
     if (errors.length) throw new AggregateError(errors, "Nettoyage de la pile d’intégration");
   })();
   try {
-    const redisUrl = await startRedis(cleanup);
+    const redisUrl = withWorker ? await startRedis(cleanup) : "";
     if (process.env.INTEGRATION_DATABASE_URL) process.env.BACKEND_TEST_DATABASE_URL = process.env.INTEGRATION_DATABASE_URL;
     const pg = await isolatedDatabase();
     cleanup.push(() => pg.close());
@@ -150,6 +154,11 @@ export async function startStack({ backendPort = 0, toolingPort = 0 } = {}) {
       "backend-mandates": { scope: "mandates:grant", audience: "techma-tooling" },
       "tooling-resources": { scope: "resources:read", audience: "techma-backend" },
       "tooling-events": { scope: "events:publish", audience: "techma-backend" },
+      ...(xroad ? {
+        "backend-admin": { scope: "requests:admin", audience: "techma-tooling" },
+        "tooling-xroad": { scope: "xroad:read xroad:submit xroad:decide", audience: "techma-xroad" },
+        "tooling-documents": { scope: "documents:transfer", audience: "techma-backend" },
+      } : {}),
     };
     const secrets = Object.fromEntries(Object.keys(clients).map(name => [name, randomBytes(24).toString("hex")]));
     const tokenRequests = [];
@@ -183,16 +192,26 @@ export async function startStack({ backendPort = 0, toolingPort = 0 } = {}) {
 
     const syntheticFile = Buffer.from("TECHMA SYNTHETIC INTEGRATION FILE\n");
     const prefix = "integration-" + randomUUID();
-    const redis = new URL(redisUrl);
-    const queue = new Queue("techma-conversations", { prefix, connection: {
-      host: redis.hostname, port: Number(redis.port || 6379), db: Number(redis.pathname.slice(1) || 0),
-      connectTimeout: 5000, maxRetriesPerRequest: 1, retryStrategy: attempt => attempt <= 3 ? 100 : null,
-      username: redis.username ? decodeURIComponent(redis.username) : undefined,
-      password: redis.password ? decodeURIComponent(redis.password) : undefined,
-      ...(redis.protocol === "rediss:" ? { tls: {} } : {}),
-    } });
-    cleanup.push(async () => { try { await queue.obliterate({ force: true }); } finally { await queue.close(); } });
-    await queue.waitUntilReady();
+    if (withWorker) {
+      const redis = new URL(redisUrl);
+      const queue = new Queue("techma-conversations", { prefix, connection: {
+        host: redis.hostname, port: Number(redis.port || 6379), db: Number(redis.pathname.slice(1) || 0),
+        connectTimeout: 5000, maxRetriesPerRequest: 1, retryStrategy: attempt => attempt <= 3 ? 100 : null,
+        username: redis.username ? decodeURIComponent(redis.username) : undefined,
+        password: redis.password ? decodeURIComponent(redis.password) : undefined,
+        ...(redis.protocol === "rediss:" ? { tls: {} } : {}),
+      } });
+      cleanup.push(async () => { try { await queue.obliterate({ force: true }); } finally { await queue.close(); } });
+      await queue.waitUntilReady();
+    }
+
+    let xroadSim;
+    if (xroad) {
+      const { createXroadServer } = await import("../apps/xroad-sim/dist/src/server.js");
+      const { loadConfig: loadXroadConfig } = await import("../apps/xroad-sim/dist/src/config.js");
+      xroadSim =await createXroadServer(loadXroadConfig({ NODE_ENV: "development", AUTH_MODE: "jwt", XROAD_HOST: "127.0.0.1", XROAD_PORT: "0", XROAD_SEED_HISTORY: "off", JWT_JWKS_URL: issuer + "/jwks", JWT_ISSUER: issuer })).listen();
+      cleanup.push(() => xroadSim.close());
+    }
 
     const env = {
       ...process.env, NODE_ENV: "development", HOST: "127.0.0.1", DATABASE_URL: pg.connection,
@@ -204,6 +223,7 @@ export async function startStack({ backendPort = 0, toolingPort = 0 } = {}) {
       REDIS_URL: redisUrl, QUEUE_PREFIX: prefix, WHATSAPP_CALLBACK_URL: "", MCP_SECRET_REFERENCES: "{}",
       STORAGE_DRIVER: "local", STORAGE_LOCAL_DIRECTORY: join(directory, "files"),
       MODEL_PROVIDERS_JSON: JSON.stringify({ integration: { baseUrl: issuer + "/v1/", protocol: "chat-completions" } }),
+      ...(xroad ? { TOOLING_ADMIN_CLIENT_SECRET: secrets["backend-admin"], TOOLING_ADMIN_TOKEN: "" } : {}),
     };
     // Bind the Backend first; no model job can run until the worker starts below.
     Object.assign(process.env, env, { MCP_ALLOWED_URLS: "", TOOLING_CONTROL_URL: "http://127.0.0.1:4030" });
@@ -226,6 +246,11 @@ export async function startStack({ backendPort = 0, toolingPort = 0 } = {}) {
       TOOLING_RESOURCES_CLIENT_ID: "tooling-resources", TOOLING_RESOURCES_CLIENT_SECRET: secrets["tooling-resources"],
       TOOLING_EVENTS_CLIENT_ID: "tooling-events", TOOLING_EVENTS_CLIENT_SECRET: secrets["tooling-events"],
       EVENTS_PUBLISHER: "on", EVENTS_INTERVAL_MS: "100", PROCEDURES_ALLOW_DRAFTS: "false",
+      ...(xroad ? {
+        XROAD_URL: xroadSim.url, PROCEDURES_SOURCE: "xroad", CONNECTORS: "xroad", CONNECTOR_INTERVAL_MS: "100", CONNECTOR_POLL_MS: "200",
+        TOOLING_XROAD_CLIENT_ID: "tooling-xroad", TOOLING_XROAD_CLIENT_SECRET: secrets["tooling-xroad"],
+        TOOLING_DOCUMENTS_CLIENT_ID: "tooling-documents", TOOLING_DOCUMENTS_CLIENT_SECRET: secrets["tooling-documents"],
+      } : {}),
     }), { shutdownHooks: false });
     cleanup.push(() => tooling.close());
     await tooling.listen(toolingPort, "127.0.0.1");
@@ -233,6 +258,7 @@ export async function startStack({ backendPort = 0, toolingPort = 0 } = {}) {
     env.MCP_ALLOWED_URLS = toolingUrl + "/mcp";
     env.TOOLING_CONTROL_URL = toolingUrl;
     env.PUBLIC_BACKEND_URL = backendUrl;
+    if (xroad) env.TOOLING_ADMIN_URL = toolingUrl;
     allowed.add(env.MCP_ALLOWED_URLS);
     Object.assign(process.env, env);
     const { runtime } = await loadRuntime(pool, auth, allowed);
@@ -249,11 +275,13 @@ export async function startStack({ backendPort = 0, toolingPort = 0 } = {}) {
       for (const stream of [worker.stdout, worker.stderr]) stream.on("data", chunk => { workerLogs = (workerLogs + chunk).slice(-12000); });
       worker.on("error", error => { workerLogs += error.message; });
     };
-    startWorker();
-    cleanup.push(() => stop(worker));
+    if (withWorker) {
+      startWorker();
+      cleanup.push(() => stop(worker));
+    }
     return {
-      backendUrl, toolingUrl, pool, toolingDb: tooling.get(ToolingDatabase), procedure, tokens, syntheticFile, tokenRequests,
-      directory, close, get workerLogs() { return workerLogs; },
+      backendUrl, toolingUrl, xroadUrl: xroadSim?.url, xroadStore: xroadSim?.store, pool, toolingDb: tooling.get(ToolingDatabase), procedure, tokens, syntheticFile, tokenRequests,
+      directory, close, sign, get workerLogs() { return workerLogs; },
       async restartWorker() { await stop(worker); startWorker(); },
       assertWorker() { if (worker.exitCode !== null || worker.signalCode !== null) throw new Error(`Worker arrêté : ${workerLogs}`); },
     };
