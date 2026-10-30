@@ -6,10 +6,11 @@ const CNV = 'cnv_' + '0'.repeat(25) + '1';
 const pad = (n: number) => String(n).padStart(26, '0');
 const MSG = `msg_${pad(1)}`;
 const attachment = { name: 'doc.pdf', sizeBytes: 1200, mimeType: 'application/pdf' };
-const file = (): UploadedFile => ({
+const file = (scanStatus: UploadedFile['scanStatus']): UploadedFile => ({
   id: `fil_${pad(1)}`,
   mimeType: 'application/pdf',
   sizeBytes: 1200,
+  scanStatus,
   expiresAt: '2026-10-23T18:00:00Z',
 });
 
@@ -27,11 +28,11 @@ describe('file upload states', () => {
   it('goes uploading -> sending -> accepted -> received', () => {
     let s = started();
     expect(user(s)).toMatchObject({ delivery: 'uploading', content: null, attachment });
-    s = conversationReducer(s, { type: 'fileUploadSucceeded', id: MSG, file: file() });
+    s = conversationReducer(s, { type: 'fileUploadSucceeded', id: MSG, file: file('clean') });
     expect(user(s)).toMatchObject({
       delivery: 'sending',
       content: { type: 'file', fileId: `fil_${pad(1)}` },
-      attachment,
+      attachment: { scanStatus: 'clean' },
     });
     s = conversationReducer(s, { type: 'userMessageAccepted', id: MSG });
     expect(user(s).delivery).toBe('accepted');
@@ -54,10 +55,17 @@ describe('file upload states', () => {
     expect(user(s).delivery).toBe('received');
   });
 
-  it('sends a stored file straight away: no content scan', () => {
-    const s = conversationReducer(started(), { type: 'fileUploadSucceeded', id: MSG, file: file() });
-    expect(user(s)).toMatchObject({ delivery: 'sending', error: undefined });
-    expect(user(s).attachment).not.toHaveProperty('scanStatus');
+  it('marks a rejected scan', () => {
+    const s = conversationReducer(started(), { type: 'fileUploadSucceeded', id: MSG, file: file('rejected') });
+    expect(user(s)).toMatchObject({
+      delivery: 'scanRejected',
+      error: 'Pièce refusée par l’analyse de sécurité.',
+    });
+  });
+
+  it('keeps a pending scan in sending', () => {
+    const s = conversationReducer(started(), { type: 'fileUploadSucceeded', id: MSG, file: file('pending') });
+    expect(user(s)).toMatchObject({ delivery: 'sending', attachment: { scanStatus: 'pending' } });
   });
 
   it('records retryable and non-retryable failures, retry resets to uploading', () => {

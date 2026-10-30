@@ -10,15 +10,19 @@ export type EventPage = Schemas['EventPage'];
 export type Delivery =
   | 'uploading'
   | 'uploadFailed'
+  | 'scanRejected'
   | 'sending'
   | 'accepted'
   | 'received'
   | 'failed';
 
+export type ScanStatus = UploadedFile['scanStatus'];
+
 export interface Attachment {
   name: string;
   sizeBytes: number;
   mimeType: string;
+  scanStatus?: ScanStatus;
 }
 
 export type TimelineEntry =
@@ -145,15 +149,16 @@ export function conversationReducer(state: ConversationState, action: Conversati
         ],
       };
     case 'fileUploadSucceeded': {
-      // Files are usable as soon as they are stored (no content scan, see docs/file-storage-decision.md).
       const { file } = action;
+      const rejected = file.scanStatus === 'rejected';
       return {
         ...state,
         timeline: updateUser(state.timeline, action.id, (e) => ({
           ...e,
           content: { type: contentTypeFor(file.mimeType), fileId: file.id },
-          delivery: 'sending',
-          error: undefined,
+          attachment: e.attachment && { ...e.attachment, scanStatus: file.scanStatus },
+          delivery: rejected ? 'scanRejected' : 'sending',
+          error: rejected ? 'Pièce refusée par l’analyse de sécurité.' : undefined,
           retryable: undefined,
         })),
       };

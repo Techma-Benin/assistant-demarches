@@ -29,7 +29,7 @@ export function deriveDossierSteps(timeline: TimelineEntry[]): Step[] {
     (e) => e.kind === 'user' && e.content?.type === 'interaction' && formIds.has(e.content.actionId),
   );
   const fileDone = timeline.some(
-    (e) => e.kind === 'user' && e.attachment !== undefined && e.content !== null,
+    (e) => e.kind === 'user' && e.attachment !== undefined && e.content !== null && e.delivery !== 'scanRejected',
   );
 
   const steps: { label: string; done: boolean; description?: string }[] = [
