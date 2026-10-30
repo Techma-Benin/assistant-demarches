@@ -85,9 +85,6 @@ export function useConversation(client?: C1Client) {
       try {
         const uploaded = await c1.uploadFile(entry.file, entry.mimeType, entry.uploadKey);
         dispatch({ type: 'fileUploadSucceeded', id, file: uploaded });
-        if (uploaded.scanStatus === 'rejected') return;
-        // Pending files are sent anyway: v1 has no scan-status endpoint, the Backend owns usability
-        // (open question in README).
         const input: MessageInput = {
           id,
           content: { type: contentTypeFor(uploaded.mimeType), fileId: uploaded.id },

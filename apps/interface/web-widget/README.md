@@ -47,5 +47,5 @@ Le widget utilise la fondation de design « Sceau » du paquet `@techma/ui` (tok
 
 - Encodage des réponses de formulaire : non défini en v1. Provisoire : `interaction` avec `actionId = form.id` et `value` = JSON des valeurs (`src/lib/interactions.ts`), à confirmer avec le Backend.
 - Jeton usager : l'échange session portail → jeton OIDC court n'est pas branché (CONTRACTS.md §3) ; seul le jeton `mock-user` fonctionne, en local.
-- Suivi de l'analyse de sécurité : aucun endpoint ni événement ne permet de suivre un fichier `scanStatus: pending`. Les fichiers `pending` sont envoyés comme message quand même ; l'utilisabilité relève du Backend.
+- Pièces : pas d'analyse de contenu (décision du pivot, `docs/file-storage-decision.md`). Un fichier déposé est utilisable tout de suite.
 - Rattachement d'une pièce à une demande : aucun moyen en v1 de lier un fichier déposé au `documentType` d'un bloc `fileRequest`.

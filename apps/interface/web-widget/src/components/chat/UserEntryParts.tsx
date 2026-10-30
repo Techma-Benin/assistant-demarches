@@ -1,4 +1,4 @@
-import { Badge, Button, InlineAlert, cn } from '@techma/ui';
+import { Button, InlineAlert, cn } from '@techma/ui';
 import { AudioLines, Check, CheckCheck, Clock, FileText, Image as ImageIcon, Loader } from 'lucide-react';
 import type { TimelineEntry } from '@/lib/conversation-state';
 import { formatFileSize, mimeLabel } from '@/lib/files';
@@ -65,8 +65,6 @@ export function DeliveryLine({
           )}
         </div>
       );
-    case 'scanRejected':
-      return <div className={`${base} text-danger`}>{entry.error}</div>;
   }
 }
 
@@ -86,11 +84,6 @@ export function AttachmentRow({ attachment }: { attachment: NonNullable<UserEntr
         <p className="text-[13px] text-ink-muted">
           {formatFileSize(attachment.sizeBytes)} · {mimeLabel(attachment.mimeType)}
         </p>
-        {attachment.scanStatus === 'pending' && (
-          <Badge tone="warning" className="mt-1">
-            Analyse de sécurité en cours
-          </Badge>
-        )}
       </div>
     </div>
   );

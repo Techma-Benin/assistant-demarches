@@ -56,13 +56,12 @@ describe('deriveDossierSteps', () => {
     expect(summary(button)[1]).toBe('Vos informations:current');
   });
 
-  it('marks the file done only for an accepted, clean attachment', () => {
+  it('marks the file done only for an accepted attachment', () => {
     const base = [user(1), agent(1, fileRequest)];
     const attachment = { name: 'a.pdf', sizeBytes: 3, mimeType: 'application/pdf' };
     const upload = (e: Partial<Extract<TimelineEntry, { kind: 'user' }>>) => [...base, user(2, { attachment, ...e })];
     expect(summary(base)).toEqual(['Question comprise:done', 'Pièce d’identité:current']);
     expect(summary(upload({ content: null, delivery: 'uploading' }))[1]).toBe('Pièce d’identité:current');
-    expect(summary(upload({ delivery: 'scanRejected' }))[1]).toBe('Pièce d’identité:current');
     expect(summary(upload({ delivery: 'received' }))[1]).toBe('Pièce d’identité:done');
   });
 
