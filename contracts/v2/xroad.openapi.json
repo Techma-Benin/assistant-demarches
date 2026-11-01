@@ -1,0 +1,3646 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "X-Road simulé — administrations, catalogue, dossiers, annuaire",
+    "version": "2.0.0",
+    "description": "Simulation déclarée : chaque dossier porte simulated: true et une référence SIM-…. Jetons de service Keycloak : client tooling (scope xroad:apply) et client backend (scopes xroad:apply et xroad:administer). Une ressource hors de portée répond 404."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:4040",
+      "description": "Poste local (pnpm dev)"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/v1/administrations": {
+      "get": {
+        "operationId": "xroadListAdministrations",
+        "summary": "Administrations (connectées ou non)",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdministrationList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/procedures": {
+      "get": {
+        "operationId": "xroadSearchProcedures",
+        "summary": "Recherche classée dans le catalogue officiel",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "description": "Texte libre.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          {
+            "name": "administrationId",
+            "in": "query",
+            "required": false,
+            "description": "Filtre.",
+            "schema": {
+              "$ref": "#/components/schemas/AdministrationId"
+            }
+          },
+          {
+            "name": "assisted",
+            "in": "query",
+            "required": false,
+            "description": "true = seulement les démarches déposables.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Taille de page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcedurePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/procedures/{procedureId}": {
+      "get": {
+        "operationId": "xroadGetProcedure",
+        "summary": "Fiche complète",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "procedureId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ProcedureId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Procedure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/uploads": {
+      "post": {
+        "operationId": "xroadUpload",
+        "summary": "Transmettre une pièce avant dépôt",
+        "description": "Scope xroad:apply. Pièce conservée 1 h si elle n’est pas rattachée à un dossier.",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Applicant-Ref",
+            "in": "header",
+            "required": true,
+            "description": "Usager pour le compte duquel agit le client (userRef du Backend).",
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          },
+          {
+            "name": "X-File-Mime-Type",
+            "in": "header",
+            "required": true,
+            "description": "Type.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "application/pdf",
+                "image/jpeg",
+                "image/png"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases": {
+      "get": {
+        "operationId": "xroadListCases",
+        "summary": "Dossiers visibles",
+        "description": "Avec X-Applicant-Ref : ceux de l’usager. Avec X-Official-Subject : ceux des administrations de l’agent, filtrés par view.",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Applicant-Ref",
+            "in": "header",
+            "required": false,
+            "description": "Vue usager (exclusif avec X-Official-Subject).",
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": false,
+            "description": "Vue administration (exclusif avec X-Applicant-Ref).",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          {
+            "name": "administrationId",
+            "in": "query",
+            "required": false,
+            "description": "Filtre (super_admin).",
+            "schema": {
+              "$ref": "#/components/schemas/AdministrationId"
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "description": "Filtre administration.",
+            "schema": {
+              "$ref": "#/components/schemas/CaseView"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Curseur opaque retourné par la page précédente.",
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Taille de page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "xroadCreateCase",
+        "summary": "Déposer un dossier",
+        "description": "Scope xroad:apply. Refusé (409 NOT_ASSISTED) si la démarche n’a pas de filing. Frais > 0 → awaiting_payment, sinon received puis instruction automatique selon la règle de la démarche.",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Applicant-Ref",
+            "in": "header",
+            "required": true,
+            "description": "Usager pour le compte duquel agit le client (userRef du Backend).",
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Clé de 8 à 128 caractères. Même clé + même corps = même réponse pendant 24 h ; corps différent = 409 IDEMPOTENCY_CONFLICT.",
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{caseId}": {
+      "get": {
+        "operationId": "xroadGetCase",
+        "summary": "Un dossier",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          },
+          {
+            "name": "X-Applicant-Ref",
+            "in": "header",
+            "required": false,
+            "description": "Vue usager (exclusif avec X-Official-Subject).",
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": false,
+            "description": "Vue administration (exclusif avec X-Applicant-Ref).",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{caseId}/payment": {
+      "post": {
+        "operationId": "xroadPayCase",
+        "summary": "Paiement simulé",
+        "description": "Une seule fois par dossier.",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          },
+          {
+            "name": "X-Applicant-Ref",
+            "in": "header",
+            "required": true,
+            "description": "Usager pour le compte duquel agit le client (userRef du Backend).",
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Clé de 8 à 128 caractères. Même clé + même corps = même réponse pendant 24 h ; corps différent = 409 IDEMPOTENCY_CONFLICT.",
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{caseId}/responses": {
+      "post": {
+        "operationId": "xroadRespondToCase",
+        "summary": "Répondre à une demande de complément",
+        "description": "information_requested → in_review.",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          },
+          {
+            "name": "X-Applicant-Ref",
+            "in": "header",
+            "required": true,
+            "description": "Usager pour le compte duquel agit le client (userRef du Backend).",
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Clé de 8 à 128 caractères. Même clé + même corps = même réponse pendant 24 h ; corps différent = 409 IDEMPOTENCY_CONFLICT.",
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseResponseInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{caseId}/actions": {
+      "post": {
+        "operationId": "xroadActOnCase",
+        "summary": "Action d’un agent",
+        "description": "Scope xroad:administer. Mêmes transitions que la console.",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": true,
+            "description": "sub Keycloak de l’agent connecté, transmis par le Backend.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Clé de 8 à 128 caractères. Même clé + même corps = même réponse pendant 24 h ; corps différent = 409 IDEMPOTENCY_CONFLICT.",
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseActionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{caseId}/documents/{documentId}": {
+      "get": {
+        "operationId": "xroadDownloadDocument",
+        "summary": "Télécharger une pièce ou un document délivré",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            }
+          },
+          {
+            "name": "X-Applicant-Ref",
+            "in": "header",
+            "required": false,
+            "description": "Vue usager (exclusif avec X-Official-Subject).",
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": false,
+            "description": "Vue administration (exclusif avec X-Applicant-Ref).",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/officials/me": {
+      "get": {
+        "operationId": "xroadGetMe",
+        "summary": "Agent correspondant au sub",
+        "description": "404 si le sub n’est inscrit dans aucune administration.",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": true,
+            "description": "sub Keycloak de l’agent connecté, transmis par le Backend.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "xroadUpdateMe",
+        "summary": "Modifier son profil",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": true,
+            "description": "sub Keycloak de l’agent connecté, transmis par le Backend.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Official"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/officials/me/avatar": {
+      "put": {
+        "operationId": "xroadSetAvatar",
+        "summary": "Enregistrer l’URL de la photo",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": true,
+            "description": "sub Keycloak de l’agent connecté, transmis par le Backend.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AvatarInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Official"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/officials": {
+      "get": {
+        "operationId": "xroadListOfficials",
+        "summary": "Agents visibles par l’agent connecté",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": true,
+            "description": "sub Keycloak de l’agent connecté, transmis par le Backend.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          {
+            "name": "administrationId",
+            "in": "query",
+            "required": false,
+            "description": "Filtre.",
+            "schema": {
+              "$ref": "#/components/schemas/AdministrationId"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Curseur opaque retourné par la page précédente.",
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Taille de page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficialPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "xroadCreateOfficial",
+        "summary": "Inscrire un agent (super_admin)",
+        "description": "Le Backend crée d’abord le compte Keycloak, puis inscrit son sub ici.",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": true,
+            "description": "sub Keycloak de l’agent connecté, transmis par le Backend.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Clé de 8 à 128 caractères. Même clé + même corps = même réponse pendant 24 h ; corps différent = 409 IDEMPOTENCY_CONFLICT.",
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OfficialRegistration"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Official"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/officials/{officialId}": {
+      "put": {
+        "operationId": "xroadUpdateOfficial",
+        "summary": "Affectation, rôle, activation",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "officialId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OfficialId"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": true,
+            "description": "sub Keycloak de l’agent connecté, transmis par le Backend.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OfficialUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Official"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/metrics": {
+      "get": {
+        "operationId": "xroadGetMetrics",
+        "summary": "Indicateurs d’une administration",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": true,
+            "description": "sub Keycloak de l’agent connecté, transmis par le Backend.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          {
+            "name": "administrationId",
+            "in": "query",
+            "required": false,
+            "description": "Obligatoire pour un super_admin.",
+            "schema": {
+              "$ref": "#/components/schemas/AdministrationId"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Début inclus.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Fin exclue.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Metrics"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/activity": {
+      "get": {
+        "operationId": "xroadListActivity",
+        "summary": "Journal des dossiers",
+        "tags": [
+          "X-Road simulé"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-Official-Subject",
+            "in": "header",
+            "required": true,
+            "description": "sub Keycloak de l’agent connecté, transmis par le Backend.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          {
+            "name": "administrationId",
+            "in": "query",
+            "required": false,
+            "description": "Filtre.",
+            "schema": {
+              "$ref": "#/components/schemas/AdministrationId"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "query",
+            "required": false,
+            "description": "Filtre.",
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Curseur opaque retourné par la page précédente.",
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Taille de page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "ActivityEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ActivityId"
+          },
+          "caseId": {
+            "$ref": "#/components/schemas/CaseId"
+          },
+          "caseReference": {
+            "type": "string"
+          },
+          "administrationId": {
+            "$ref": "#/components/schemas/AdministrationId"
+          },
+          "actor": {
+            "type": "string",
+            "enum": [
+              "assistant",
+              "applicant",
+              "administration"
+            ]
+          },
+          "officialId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OfficialId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "case.created",
+              "case.paid",
+              "step.completed",
+              "case.claimed",
+              "information.requested",
+              "information.provided",
+              "case.approved",
+              "case.rejected",
+              "document.issued"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "caseId",
+          "caseReference",
+          "administrationId",
+          "actor",
+          "officialId",
+          "action",
+          "note",
+          "at"
+        ]
+      },
+      "ActivityId": {
+        "type": "string",
+        "pattern": "^act_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "ActivityPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Curseur opaque de la page suivante ; null en fin de liste."
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "Administration": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/AdministrationId"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "shortName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "themes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "description": "Thèmes affichés à l’accueil usager."
+          },
+          "connection": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "not_connected"
+                ]
+              },
+              "since": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "status",
+              "since"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "shortName",
+          "themes",
+          "connection"
+        ]
+      },
+      "AdministrationId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{1,62}$",
+        "description": "Identifiant stable d’une administration du X-Road simulé (ex. justice, anip)."
+      },
+      "AdministrationList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Administration"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "AvatarInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "avatarUrl"
+        ]
+      },
+      "Case": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/CaseId"
+          },
+          "reference": {
+            "type": "string",
+            "pattern": "^SIM-[A-Z]{2,5}-[0-9]{4}-[0-9]{6}$"
+          },
+          "simulated": {
+            "const": true
+          },
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "administrationId": {
+            "$ref": "#/components/schemas/AdministrationId"
+          },
+          "applicantRef": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "requestId": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Valeurs du formulaire de la démarche, conformes à Procedure.filing.formSchema."
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseDocument"
+            }
+          },
+          "payment": {
+            "$ref": "#/components/schemas/CasePayment"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/CaseStep"
+            }
+          },
+          "informationRequest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InformationRequest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Renseigné tant que status = information_requested."
+          },
+          "claimedBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OfficialId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "assistant",
+              "administration",
+              null
+            ]
+          },
+          "decisionNote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "simulated",
+          "procedureId",
+          "title",
+          "administrationId",
+          "applicantRef",
+          "requestId",
+          "channel",
+          "status",
+          "fields",
+          "documents",
+          "payment",
+          "steps",
+          "informationRequest",
+          "claimedBy",
+          "completedBy",
+          "decisionNote",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CaseActionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "claim",
+              "request_information",
+              "approve",
+              "reject"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1000,
+            "description": "Obligatoire pour request_information et reject."
+          }
+        },
+        "required": [
+          "action",
+          "note"
+        ]
+      },
+      "CaseDocument": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/DocumentId"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "submitted",
+              "issued"
+            ],
+            "description": "submitted = pièce de l’usager ; issued = document délivré par l’administration (simulation)."
+          },
+          "documentType": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,62}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png"
+            ]
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10485760
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "documentType",
+          "name",
+          "mimeType",
+          "sizeBytes",
+          "createdAt"
+        ]
+      },
+      "CaseId": {
+        "type": "string",
+        "pattern": "^cas_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "CaseInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Valeurs du formulaire de la démarche, conformes à Procedure.filing.formSchema."
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentRef"
+            }
+          }
+        },
+        "required": [
+          "requestId",
+          "procedureId",
+          "channel",
+          "fields",
+          "documents"
+        ]
+      },
+      "CasePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Case"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Curseur opaque de la page suivante ; null en fin de liste."
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "CasePayment": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "amountFcfa": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_required",
+              "pending",
+              "paid"
+            ]
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paidAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "simulated": {
+            "const": true
+          }
+        },
+        "required": [
+          "amountFcfa",
+          "status",
+          "reference",
+          "paidAt",
+          "simulated"
+        ]
+      },
+      "CaseResponseInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Valeurs du formulaire de la démarche, conformes à Procedure.filing.formSchema."
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentRef"
+            }
+          }
+        },
+        "required": [
+          "message",
+          "fields",
+          "documents"
+        ]
+      },
+      "CaseStatus": {
+        "type": "string",
+        "enum": [
+          "awaiting_payment",
+          "received",
+          "in_review",
+          "information_requested",
+          "completed",
+          "rejected"
+        ]
+      },
+      "CaseStep": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,62}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "blocked",
+              "pending"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "enum": [
+              "assistant",
+              "applicant",
+              "administration"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "state",
+          "actor",
+          "note",
+          "at"
+        ]
+      },
+      "CaseView": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "completed",
+          "rejected",
+          "all"
+        ],
+        "description": "pending = received, in_review, information_requested."
+      },
+      "Channel": {
+        "type": "string",
+        "enum": [
+          "web",
+          "whatsapp"
+        ]
+      },
+      "DocumentId": {
+        "type": "string",
+        "pattern": "^doc_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "DocumentRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "documentType": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,62}$"
+          },
+          "uploadId": {
+            "$ref": "#/components/schemas/UploadId"
+          }
+        },
+        "required": [
+          "documentType",
+          "uploadId"
+        ]
+      },
+      "Filing": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Cas couverts par le dépôt via l’assistant ; les autres cas suivent la fiche officielle."
+          },
+          "formSchema": {
+            "type": "object",
+            "description": "JSON Schema 2020-12 des champs du dossier."
+          },
+          "requiredDocuments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequiredDocument"
+            }
+          },
+          "feeFcfa": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "processingDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        },
+        "required": [
+          "scope",
+          "formSchema",
+          "requiredDocuments",
+          "feeFcfa",
+          "processingDays"
+        ]
+      },
+      "InformationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestedBy": {
+            "$ref": "#/components/schemas/OfficialId"
+          }
+        },
+        "required": [
+          "note",
+          "requestedAt",
+          "requestedBy"
+        ]
+      },
+      "Me": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "official": {
+            "$ref": "#/components/schemas/Official"
+          },
+          "administration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Administration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            }
+          }
+        },
+        "required": [
+          "official",
+          "administration",
+          "permissions"
+        ]
+      },
+      "Metrics": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "administrationId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdministrationId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "to": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ]
+          },
+          "received": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "informationRequested": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completedByAssistant": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rejected": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "medianProcessingHours": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "byChannel": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "channel": {
+                  "$ref": "#/components/schemas/Channel"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "channel",
+                "count"
+              ]
+            }
+          },
+          "topProcedures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "procedureId": {
+                  "$ref": "#/components/schemas/ProcedureId"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "procedureId",
+                "title",
+                "count"
+              ]
+            }
+          }
+        },
+        "required": [
+          "administrationId",
+          "period",
+          "received",
+          "pending",
+          "informationRequested",
+          "completed",
+          "completedByAssistant",
+          "rejected",
+          "medianProcessingHours",
+          "byChannel",
+          "topProcedures"
+        ]
+      },
+      "Official": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/OfficialId"
+          },
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Identifiant Keycloak (claim sub) de la personne."
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "jobTitle": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "administrationId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdministrationId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null pour un super_admin."
+          },
+          "role": {
+            "$ref": "#/components/schemas/OfficialRole"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "subject",
+          "email",
+          "displayName",
+          "jobTitle",
+          "administrationId",
+          "role",
+          "avatarUrl",
+          "active"
+        ]
+      },
+      "OfficialId": {
+        "type": "string",
+        "pattern": "^off_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "OfficialPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Official"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Curseur opaque de la page suivante ; null en fin de liste."
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "OfficialRegistration": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "jobTitle": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "administrationId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdministrationId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/OfficialRole"
+          }
+        },
+        "required": [
+          "subject",
+          "email",
+          "displayName",
+          "jobTitle",
+          "administrationId",
+          "role"
+        ]
+      },
+      "OfficialRole": {
+        "type": "string",
+        "enum": [
+          "agent",
+          "admin",
+          "super_admin"
+        ]
+      },
+      "OfficialUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "administrationId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdministrationId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/OfficialRole"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "administrationId",
+          "role",
+          "active"
+        ]
+      },
+      "PaymentInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "method": {
+            "const": "mobile_money"
+          }
+        },
+        "required": [
+          "method"
+        ]
+      },
+      "Permission": {
+        "type": "string",
+        "enum": [
+          "cases:read",
+          "cases:act",
+          "officials:read",
+          "officials:manage",
+          "administrations:all"
+        ]
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "INVALID_REQUEST",
+              "UNAUTHORIZED",
+              "LOGIN_REQUIRED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "CONFLICT",
+              "IDEMPOTENCY_CONFLICT",
+              "MANDATE_MISSING",
+              "MANDATE_EXPIRED",
+              "MANDATE_REVOKED",
+              "MANDATE_SCOPE_DENIED",
+              "REQUEST_INCOMPLETE",
+              "INVALID_TRANSITION",
+              "NOT_ASSISTED",
+              "REPLAY_EXPIRED",
+              "UNSUPPORTED_MEDIA_TYPE",
+              "FILE_TOO_LARGE",
+              "RATE_LIMITED",
+              "UPSTREAM_UNAVAILABLE",
+              "MCP_AUTH_FAILED",
+              "MCP_CONNECTION_FAILED",
+              "MCP_DISCOVERY_FAILED"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "traceId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "detail",
+          "traceId"
+        ]
+      },
+      "Procedure": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "administrationId": {
+            "$ref": "#/components/schemas/AdministrationId"
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          },
+          "target": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authority": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "feeFcfa": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Montant unique publié par la fiche, sinon null (voir inPerson/online)."
+          },
+          "processingDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "inPerson": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "fee": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "delay": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "documents": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "process": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "where": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "fee",
+                  "delay",
+                  "documents",
+                  "process",
+                  "where",
+                  "url"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Texte officiel du canal « sur place », sans réécriture."
+          },
+          "online": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "fee": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "delay": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "documents": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "process": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "where": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "fee",
+                  "delay",
+                  "documents",
+                  "process",
+                  "where",
+                  "url"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Texte officiel du canal « en ligne », sans réécriture."
+          },
+          "hours": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/Source"
+          },
+          "filing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Présent si l’assistant peut déposer le dossier ; null = information seulement."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "administrationId",
+          "summary",
+          "target",
+          "authority",
+          "feeFcfa",
+          "processingDays",
+          "inPerson",
+          "online",
+          "hours",
+          "source",
+          "filing"
+        ]
+      },
+      "ProcedureId": {
+        "type": "string",
+        "pattern": "^PS[0-9]{5}$",
+        "description": "Identifiant officiel de la fiche sur service-public.bj."
+      },
+      "ProcedurePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Procedure"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Curseur opaque de la page suivante ; null en fin de liste."
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "ProfileUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "jobTitle": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "displayName",
+          "jobTitle"
+        ]
+      },
+      "RequestId": {
+        "type": "string",
+        "pattern": "^req_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "RequiredDocument": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "documentType": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,62}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "acceptedMimeTypes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "application/pdf",
+                "image/jpeg",
+                "image/png"
+              ]
+            }
+          }
+        },
+        "required": [
+          "documentType",
+          "label",
+          "acceptedMimeTypes"
+        ]
+      },
+      "Source": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Fiche publique sur service-public.bj."
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date de collecte de la fiche."
+          }
+        },
+        "required": [
+          "procedureId",
+          "url",
+          "retrievedAt"
+        ]
+      },
+      "Upload": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UploadId"
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png"
+            ]
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10485760
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "mimeType",
+          "sizeBytes",
+          "expiresAt"
+        ]
+      },
+      "UploadId": {
+        "type": "string",
+        "pattern": "^upl_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "UserRef": {
+        "type": "string",
+        "pattern": "^usr_[0-9A-HJKMNP-TV-Z]{26}$",
+        "description": "Référence opaque de l’usager, attribuée par le Backend. Jamais fournie par le navigateur ni par le modèle."
+      }
+    }
+  }
+}

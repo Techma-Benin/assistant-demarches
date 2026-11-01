@@ -1,162 +1,52 @@
+// Généré par pnpm contracts:generate depuis contracts/v2. Ne pas modifier.
 export interface paths {
-    "/v1/admin/models": {
+    "/v1/admin/me": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** listAdminModels */
-        get: operations["listAdminModels"];
-        put?: never;
-        /**
-         * Créer une configuration models
-         * @description admin:write. Identifiant fourni dans le corps (name pour tools). 409 INVALID_TRANSITION si déjà présent. Rejeu Idempotency-Key 24 h sans nouvelle écriture.
-         */
-        post: operations["createAdminModels"];
+        /** Profil, administration et permissions */
+        get: operations["getMe"];
+        /** Modifier son nom et sa fonction */
+        put: operations["updateMe"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/models/{id}": {
+    "/v1/admin/me/avatar": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
+        get?: never;
         /**
-         * Lire une configuration models
-         * @description admin:read. 404 si absent ou appartenant à une autre administration.
+         * Changer sa photo
+         * @description JPEG ou PNG, 2 Mio maximum. Le Backend stocke l’image et met à jour avatarUrl.
          */
-        get: operations["getAdminModels"];
-        /** updateAdminModels */
-        put: operations["updateAdminModels"];
+        put: operations["updateMyAvatar"];
         post?: never;
-        /**
-         * Supprimer une configuration models
-         * @description admin:write. Idempotency-Key obligatoire : même clé rejoue 204 pendant 24 h sans supprimer une éventuelle recréation ; autre clé sur ressource absente donne 404. Aucun effacement de dossiers ou audit. Fiche référencée dans les projections locales demandes/mandats/challenges : 409 INVALID_TRANSITION. Références Tooling non encore projetées non détectables. Supprimer le dernier modèle actif ou un outil requis peut rendre les prochains traitements indisponibles.
-         */
-        delete: operations["deleteAdminModels"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/admin/tools": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * listAdminTools
-         * @deprecated
-         * @description Compatibilité historique seulement : utiliser /v1/admin/mcp-servers et les permissions des actions découvertes.
-         */
-        get: operations["listAdminTools"];
-        put?: never;
-        /**
-         * Créer une configuration tools
-         * @deprecated
-         * @description admin:write. Identifiant fourni dans le corps (name pour tools). 409 INVALID_TRANSITION si déjà présent. Rejeu Idempotency-Key 24 h sans nouvelle écriture. Compatibilité historique seulement : utiliser /v1/admin/mcp-servers et les permissions des actions découvertes.
-         */
-        post: operations["createAdminTools"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/tools/{id}": {
+    "/v1/admin/avatars/{officialId}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Lire une configuration tools
-         * @deprecated
-         * @description admin:read. 404 si absent ou appartenant à une autre administration. Compatibilité historique seulement : utiliser /v1/admin/mcp-servers et les permissions des actions découvertes.
-         */
-        get: operations["getAdminTools"];
-        /**
-         * updateAdminTools
-         * @deprecated
-         * @description Compatibilité historique seulement : utiliser /v1/admin/mcp-servers et les permissions des actions découvertes.
-         */
-        put: operations["updateAdminTools"];
-        post?: never;
-        /**
-         * Supprimer une configuration tools
-         * @deprecated
-         * @description admin:write. Idempotency-Key obligatoire : même clé rejoue 204 pendant 24 h sans supprimer une éventuelle recréation ; autre clé sur ressource absente donne 404. Aucun effacement de dossiers ou audit. Fiche référencée dans les projections locales demandes/mandats/challenges : 409 INVALID_TRANSITION. Références Tooling non encore projetées non détectables. Supprimer le dernier modèle actif ou un outil requis peut rendre les prochains traitements indisponibles. Compatibilité historique seulement : utiliser /v1/admin/mcp-servers et les permissions des actions découvertes.
-         */
-        delete: operations["deleteAdminTools"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/admin/procedures": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** listAdminProcedures */
-        get: operations["listAdminProcedures"];
-        put?: never;
-        /**
-         * Créer une configuration procedures
-         * @description admin:write. Identifiant fourni dans le corps (name pour tools). 409 INVALID_TRANSITION si déjà présent. Rejeu Idempotency-Key 24 h sans nouvelle écriture. Identifiant de fiche globalement unique, y compris entre administrations (API privée Tooling).
-         */
-        post: operations["createAdminProcedures"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/admin/procedures/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Lire une configuration procedures
-         * @description admin:read. 404 si absent ou appartenant à une autre administration.
-         */
-        get: operations["getAdminProcedures"];
-        /** updateAdminProcedures */
-        put: operations["updateAdminProcedures"];
-        post?: never;
-        /**
-         * Supprimer une configuration procedures
-         * @description admin:write. Idempotency-Key obligatoire : même clé rejoue 204 pendant 24 h sans supprimer une éventuelle recréation ; autre clé sur ressource absente donne 404. Aucun effacement de dossiers ou audit. Fiche référencée dans les projections locales demandes/mandats/challenges : 409 INVALID_TRANSITION. Références Tooling non encore projetées non détectables. Supprimer le dernier modèle actif ou un outil requis peut rendre les prochains traitements indisponibles.
-         */
-        delete: operations["deleteAdminProcedures"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/admin/conversations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** listAdminConversations */
-        get: operations["listAdminConversations"];
+        /** Photo d’un agent */
+        get: operations["getAvatar"];
         put?: never;
         post?: never;
         delete?: never;
@@ -165,15 +55,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/audit": {
+    "/v1/admin/administrations": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** listAdminAudit */
-        get: operations["listAdminAudit"];
+        /**
+         * Administrations visibles
+         * @description Toutes pour un super_admin (y compris non connectées), sinon la sienne.
+         */
+        get: operations["listAdministrations"];
         put?: never;
         post?: never;
         delete?: never;
@@ -182,15 +75,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/metrics": {
+    "/v1/admin/officials": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** getAdminMetrics */
-        get: operations["getAdminMetrics"];
+        /** Agents visibles */
+        get: operations["listOfficials"];
+        put?: never;
+        /**
+         * Créer un agent (compte Keycloak + affectation)
+         * @description super_admin uniquement.
+         */
+        post: operations["createOfficial"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/officials/{officialId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Changer l’affectation, le rôle ou désactiver
+         * @description super_admin pour tout agent ; admin pour les agents de son administration, sans pouvoir élargir ses propres droits.
+         */
+        put: operations["updateOfficial"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dossiers (En attente, Complété, Rejeté) */
+        get: operations["listCases"];
         put?: never;
         post?: never;
         delete?: never;
@@ -199,44 +133,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/mcp-servers": {
+    "/v1/admin/cases/{caseId}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Lister les connexions MCP */
-        get: operations["listAdminMcpServers"];
+        /** Détail d’un dossier */
+        get: operations["getCase"];
         put?: never;
-        /** Ajouter un serveur MCP */
-        post: operations["createAdminMcpServer"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/mcp-servers/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Consulter une connexion MCP */
-        get: operations["getAdminMcpServer"];
-        /** Modifier ou activer une connexion MCP */
-        put: operations["updateAdminMcpServer"];
-        post?: never;
-        /** Supprimer une connexion et ses permissions */
-        delete: operations["deleteAdminMcpServer"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/admin/mcp-servers/{id}/discover": {
+    "/v1/admin/cases/{caseId}/actions": {
         parameters: {
             query?: never;
             header?: never;
@@ -245,23 +159,26 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Découvrir ou actualiser les actions du serveur MCP */
-        post: operations["discoverAdminMcpServer"];
+        /**
+         * Prendre en charge, demander un complément, approuver, rejeter
+         * @description Transitions : claim (received|in_review → in_review), request_information (in_review → information_requested, note obligatoire), approve (in_review → completed, document délivré), reject (in_review|information_requested → rejected, note obligatoire).
+         */
+        post: operations["actOnCase"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/mcp-servers/{id}/tools": {
+    "/v1/admin/cases/{caseId}/documents/{documentId}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Lister les actions découvertes par serveur */
-        get: operations["listAdminMcpTools"];
+        /** Télécharger une pièce ou un document délivré */
+        get: operations["downloadCaseDocument"];
         put?: never;
         post?: never;
         delete?: never;
@@ -270,7 +187,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/mcp-servers/{id}/tools/{toolName}": {
+    "/v1/admin/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Vue d’ensemble d’une administration */
+        get: operations["getDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Journal des actions sur les dossiers */
+        get: operations["listActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/unanswered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Questions sans réponse (thème et motif, sans texte) */
+        get: operations["listUnanswered"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/unanswered/{unansweredId}/resolve": {
         parameters: {
             query?: never;
             header?: never;
@@ -278,9 +246,9 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Activer ou désactiver une action découverte */
-        put: operations["updateAdminMcpToolPermission"];
-        post?: never;
+        put?: never;
+        /** Marquer comme résolu */
+        post: operations["resolveUnanswered"];
         delete?: never;
         options?: never;
         head?: never;
@@ -291,660 +259,149 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        ConversationId: string;
-        UserRef: string;
-        MessageId: string;
-        RequestId: string;
-        FileId: string;
-        MandateId: string;
-        ChallengeId: string;
-        EventId: string;
-        /** @enum {string} */
-        Locale: "fr" | "fon" | "yo";
-        Problem: {
-            /** Format: uri */
-            type: string;
-            title: string;
-            status: number;
-            detail: string;
+        ActivityEntry: {
+            id: components["schemas"]["ActivityId"];
+            caseId: components["schemas"]["CaseId"];
+            caseReference: string;
+            administrationId: components["schemas"]["AdministrationId"];
             /** @enum {string} */
-            code: "INVALID_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "IDEMPOTENCY_CONFLICT" | "MANDATE_MISSING" | "MANDATE_EXPIRED" | "MANDATE_REVOKED" | "MANDATE_SCOPE_DENIED" | "REQUEST_INCOMPLETE" | "INVALID_TRANSITION" | "UPSTREAM_UNAVAILABLE" | "RATE_LIMITED" | "UNSUPPORTED_MEDIA_TYPE" | "FILE_TOO_LARGE" | "REPLAY_EXPIRED";
-            traceId: string;
-        };
-        Source: {
-            procedureId: string;
-            /** Format: uri */
-            url: string;
+            actor: "assistant" | "applicant" | "administration";
+            officialId: components["schemas"]["OfficialId"] | null;
+            /** @enum {string} */
+            action: "case.created" | "case.paid" | "step.completed" | "case.claimed" | "information.requested" | "information.provided" | "case.approved" | "case.rejected" | "document.issued";
+            note: string | null;
             /** Format: date-time */
-            retrievedAt: string;
-            version: string;
+            at: string;
         };
-        /** @enum {string} */
-        RequestStatus: "draft" | "ready" | "awaiting_user_validation" | "submitted" | "processing" | "completed" | "rejected" | "cancelled" | "blocked";
-        Request: {
-            id: components["schemas"]["RequestId"];
-            conversationId: components["schemas"]["ConversationId"];
-            userRef: components["schemas"]["UserRef"];
-            procedureId: string;
-            status: components["schemas"]["RequestStatus"];
+        ActivityId: string;
+        ActivityPage: {
+            items: components["schemas"]["ActivityEntry"][];
+            /** @description Curseur opaque de la page suivante ; null en fin de liste. */
+            nextCursor: string | null;
+        };
+        Administration: {
+            id: components["schemas"]["AdministrationId"];
+            name: string;
+            shortName: string;
+            /** @description Thèmes affichés à l’accueil usager. */
+            themes: string[];
+            connection: {
+                /** @enum {string} */
+                status: "connected" | "not_connected";
+                /** Format: date-time */
+                since: string | null;
+            };
+        };
+        /** @description Identifiant stable d’une administration du X-Road simulé (ex. justice, anip). */
+        AdministrationId: string;
+        AdministrationList: {
+            items: components["schemas"]["Administration"][];
+        };
+        Case: {
+            id: components["schemas"]["CaseId"];
+            reference: string;
+            /** @constant */
+            simulated: true;
+            procedureId: components["schemas"]["ProcedureId"];
+            title: string;
+            administrationId: components["schemas"]["AdministrationId"];
+            applicantRef: components["schemas"]["UserRef"];
+            requestId: components["schemas"]["RequestId"];
+            channel: components["schemas"]["Channel"];
+            status: components["schemas"]["CaseStatus"];
+            /** @description Valeurs du formulaire de la démarche, conformes à Procedure.filing.formSchema. */
             fields: {
                 [key: string]: string | number | boolean | null;
             };
-            fileIds: components["schemas"]["FileId"][];
-            /** Format: uri */
-            officialLink: string | null;
+            documents: components["schemas"]["CaseDocument"][];
+            payment: components["schemas"]["CasePayment"];
+            steps: components["schemas"]["CaseStep"][];
+            /** @description Renseigné tant que status = information_requested. */
+            informationRequest: components["schemas"]["InformationRequest"] | null;
+            claimedBy: components["schemas"]["OfficialId"] | null;
+            /** @enum {string|null} */
+            completedBy: "assistant" | "administration" | null;
+            decisionNote: string | null;
+            /** Format: date-time */
+            createdAt: string;
             /** Format: date-time */
             updatedAt: string;
         };
-        File: {
-            id: components["schemas"]["FileId"];
+        CaseActionInput: {
             /** @enum {string} */
-            mimeType: "application/pdf" | "image/jpeg" | "image/png" | "audio/ogg" | "audio/mpeg" | "audio/mp4" | "audio/webm";
-            sizeBytes: number;
-            /** Format: date-time */
-            expiresAt: string;
+            action: "claim" | "request_information" | "approve" | "reject";
+            /** @description Obligatoire pour request_information et reject. */
+            note: string | null;
         };
-        Procedure: {
-            id: string;
-            title: string;
-            administrationId: string;
-            summary: string;
-            requiredDocuments: string[];
-            /** @description Montant en FCFA quand la fiche officielle en donne un seul sans condition ; sinon null et voir official. */
-            feeFcfa: number | null;
-            /** @description Délai en jours quand la fiche officielle en donne un seul sans condition ; sinon null et voir official. */
-            processingDays: number | null;
-            source: components["schemas"]["Source"];
-            /** @enum {string} */
-            validationStatus: "draft" | "validated";
-            formSchema: {
-                [key: string]: unknown;
-            };
-            /** @description Fiche officielle du Portail national des services publics (service-public.bj), recopiée sans réécriture. Fait foi sur feeFcfa et processingDays. */
-            official?: {
-                serviceId: string;
-                target: string | null;
-                authority: string | null;
-                /** @description Canal tel que publié par le portail officiel (texte exact, Markdown d'origine). */
-                inPerson: {
-                    fee: string | null;
-                    delay: string | null;
-                    documents: string | null;
-                    process: string | null;
-                    where: string | null;
-                    /** Format: uri */
-                    url: string | null;
-                } | null;
-                /** @description Canal tel que publié par le portail officiel (texte exact, Markdown d'origine). */
-                online: {
-                    fee: string | null;
-                    delay: string | null;
-                    documents: string | null;
-                    process: string | null;
-                    where: string | null;
-                    /** Format: uri */
-                    url: string | null;
-                } | null;
-                hours: string | null;
-            };
-            /** @description true : l'assistant peut déposer le dossier (dépôt simulé via le X-Road). Absent ou false : information seulement, orienter l'usager vers source.url. */
-            assistedFiling?: boolean;
-        };
-        /** @enum {string} */
-        Scope: "requests:write" | "documents:write" | "requests:submit";
-        Mandate: {
-            id: components["schemas"]["MandateId"];
-            conversationId: components["schemas"]["ConversationId"];
-            userRef: components["schemas"]["UserRef"];
-            procedureId: string;
-            scopes: components["schemas"]["Scope"][];
-            /** @enum {string} */
-            status: "active" | "revoked" | "expired";
-            /** Format: date-time */
-            expiresAt: string;
-        };
-        ChallengeInput: {
-            procedureId: string;
-            scopes: components["schemas"]["Scope"][];
-        };
-        Challenge: {
-            id: components["schemas"]["ChallengeId"];
-            conversationId: components["schemas"]["ConversationId"];
-            userRef: components["schemas"]["UserRef"];
-            procedureId: string;
-            scopes: components["schemas"]["Scope"][];
-            consentText: string;
-            /** Format: date-time */
-            expiresAt: string;
-            /** @description JWT signé du challenge en production ; opaque pour Interface et le modèle. */
-            proofToken: string;
-        };
-        Consent: {
-            challengeId: components["schemas"]["ChallengeId"];
-            /** @constant */
-            accepted: true;
-        };
-        ConversationInput: {
-            /** @enum {string} */
-            channel: "whatsapp" | "web" | "mobile";
-            locale: components["schemas"]["Locale"];
-        };
-        Conversation: {
-            id: components["schemas"]["ConversationId"];
-            userRef: components["schemas"]["UserRef"];
-            /** @enum {string} */
-            channel: "whatsapp" | "web" | "mobile";
-            locale: components["schemas"]["Locale"];
-            /** Format: date-time */
-            createdAt: string;
-        };
-        Content: {
-            /** @constant */
-            type: "text";
-            text: string;
-        } | {
-            /** @enum {string} */
-            type: "audio" | "image" | "file";
-            fileId: components["schemas"]["FileId"];
-        } | {
-            /** @constant */
-            type: "interaction";
-            actionId: string;
-            value?: string;
-        };
-        MessageInput: {
-            id: components["schemas"]["MessageId"];
-            content: components["schemas"]["Content"];
-            /** Format: date-time */
-            sentAt: string;
-        };
-        MessageAccepted: {
-            messageId: components["schemas"]["MessageId"];
-            conversationId: components["schemas"]["ConversationId"];
-            /** @constant */
-            status: "accepted";
-        };
-        Block: {
-            /** @constant */
-            type: "text";
-            text: string;
-            sources: components["schemas"]["Source"][];
-        } | {
-            /** @constant */
-            type: "buttons";
-            items: {
-                id: string;
-                label: string;
-            }[];
-        } | {
-            /** @constant */
-            type: "form";
-            id: string;
-            fields: {
-                name: string;
-                label: string;
-                required: boolean;
-                /** @enum {string} */
-                type: "text" | "number" | "date";
-            }[];
-        } | {
-            /** @constant */
-            type: "fileRequest";
-            documentType: string;
-            label: string;
-            acceptedMimeTypes: string[];
-        } | {
-            /** @constant */
-            type: "statusCard";
-            request: components["schemas"]["Request"];
-        };
-        AgentMessage: {
-            id: components["schemas"]["MessageId"];
-            conversationId: components["schemas"]["ConversationId"];
-            blocks: components["schemas"]["Block"][];
-            /** Format: date-time */
-            createdAt: string;
-        };
-        ToolContext: {
-            conversationId: components["schemas"]["ConversationId"];
-            userRef: components["schemas"]["UserRef"];
-            mandateId?: components["schemas"]["MandateId"];
-            traceId: string;
-        };
-        ModelConfig: {
-            id: string;
-            provider: string;
-            model: string;
-            promptVersion: string;
-            temperature: number;
-            active: boolean;
-        };
-        ToolConfig: {
-            name: string;
-            enabled: boolean;
-            /** Format: uri */
-            serverUrl: string;
-            secretRef: string;
-        };
-        Metrics: {
-            conversationCount: number;
-            p95LatencyMs: number;
-            sourcedAnswerRate: number;
-            errorCount: number;
-        };
-        AuditEntry: {
-            id: string;
-            actorRef: string;
-            action: string;
-            resourceId: string;
-            /** Format: date-time */
-            at: string;
-            traceId: string;
-        };
-        EventData: {
-            /** @constant */
-            kind: "message.received";
-            conversationId: components["schemas"]["ConversationId"];
-            messageId: components["schemas"]["MessageId"];
-        } | {
-            /** @constant */
-            kind: "message.sent";
-            conversationId: components["schemas"]["ConversationId"];
-            message: components["schemas"]["AgentMessage"];
-        } | {
-            /** @constant */
-            kind: "request.created";
-            request: components["schemas"]["Request"];
-        } | {
-            /** @constant */
-            kind: "request.status_changed";
-            requestId: components["schemas"]["RequestId"];
-            conversationId: components["schemas"]["ConversationId"];
-            from: components["schemas"]["RequestStatus"];
-            to: components["schemas"]["RequestStatus"];
-            /** Format: date-time */
-            at: string;
-        } | {
-            /** @enum {string} */
-            kind: "mandate.granted" | "mandate.revoked";
-            mandate: components["schemas"]["Mandate"];
-        } | {
-            /** @constant */
-            kind: "tool.called";
-            toolName: string;
-            conversationId: components["schemas"]["ConversationId"];
-            /** @enum {string} */
-            outcome: "success" | "error";
-            code: string;
-        } | {
-            /** @constant */
-            kind: "configuration.changed";
-            /** @enum {string} */
-            resource: "models" | "tools" | "procedures";
-            resourceId: string;
-            actorRef: string;
+        CaseDocument: {
+            id: components["schemas"]["DocumentId"];
             /**
-             * @description Opération de configuration ; facultative pour compatibilité avec les événements antérieurs.
+             * @description submitted = pièce de l’usager ; issued = document délivré par l’administration (simulation).
              * @enum {string}
              */
-            operation?: "created" | "updated" | "deleted";
-        } | {
-            /** @constant */
-            kind: "request.snapshot";
-            request: components["schemas"]["DepartmentRequest"];
-            actorRef?: string;
-            action?: string;
-        };
-        Event: {
-            /** @constant */
-            specversion: "1.0";
-            id: components["schemas"]["EventId"];
-            /** @enum {string} */
-            source: "urn:techma:backend" | "urn:techma:tooling" | "urn:techma:interface";
-            /** @enum {string} */
-            type: "bj.techma.message.received.v1" | "bj.techma.message.sent.v1" | "bj.techma.request.created.v1" | "bj.techma.request.status_changed.v1" | "bj.techma.mandate.granted.v1" | "bj.techma.mandate.revoked.v1" | "bj.techma.tool.called.v1" | "bj.techma.configuration.changed.v1" | "bj.techma.request.snapshot.v1";
-            /** Format: date-time */
-            time: string;
-            /** @constant */
-            datacontenttype: "application/json";
-            traceparent: string;
-            data: components["schemas"]["EventData"];
-        };
-        EventPage: {
-            items: components["schemas"]["Event"][];
-            nextCursor: string | null;
-        };
-        SocketTicket: {
-            ticket: string;
-            /** Format: date-time */
-            expiresAt: string;
-            /** Format: uri */
-            url: string;
-        };
-        MandateGrant: {
-            challenge: components["schemas"]["Challenge"];
-            /** Format: date-time */
-            acceptedAt: string;
-            evidenceRef: string;
-        };
-        Verification: {
-            fileId: components["schemas"]["FileId"];
-            /** @enum {string} */
-            status: "pending" | "valid" | "invalid";
-            reasons: string[];
-        };
-        ModelConfigPage: {
-            items: components["schemas"]["ModelConfig"][];
-            nextCursor: string | null;
-        };
-        ToolConfigPage: {
-            items: components["schemas"]["ToolConfig"][];
-            nextCursor: string | null;
-        };
-        ProcedurePage: {
-            items: components["schemas"]["Procedure"][];
-            nextCursor: string | null;
-        };
-        ConversationPage: {
-            items: components["schemas"]["Conversation"][];
-            nextCursor: string | null;
-        };
-        AuditEntryPage: {
-            items: components["schemas"]["AuditEntry"][];
-            nextCursor: string | null;
-        };
-        FileAccess: {
-            file: components["schemas"]["File"];
-            userRef: components["schemas"]["UserRef"];
-        };
-        McpAuth: {
-            /** @constant */
-            type: "none";
-        } | {
-            /** @constant */
-            type: "bearer";
-            secretRef: string;
-        } | {
-            /** @constant */
-            type: "headers";
-            headers: {
-                [key: string]: string;
-            };
-        } | {
-            /** @constant */
-            type: "oauth-client-credentials";
-            /** Format: uri */
-            tokenUrl: string;
-            clientId: string;
-            clientSecretRef: string;
-            scope?: string;
-            audience?: string;
-        };
-        McpServer: {
-            id: string;
+            kind: "submitted" | "issued";
+            documentType: string;
             name: string;
-            /** Format: uri */
-            url: string;
-            enabled: boolean;
-            /** @constant */
-            transport: "streamable-http";
-            auth: components["schemas"]["McpAuth"];
-            /** @enum {unknown} */
-            policy: "generic" | "techma";
-        };
-        McpServerPage: {
-            items: components["schemas"]["McpServer"][];
-            nextCursor: string | null;
-        };
-        McpToolPermission: {
-            enabled: boolean;
-            requiresMandate: boolean;
-        };
-        McpDiscoveredTool: {
-            name: string;
-            description?: string;
-            inputSchema?: Record<string, never>;
-            outputSchema?: Record<string, never>;
-            enabled: boolean;
-            requiresMandate: boolean;
-            available: boolean;
-            modelName: string;
-        } & {
-            [key: string]: unknown;
-        };
-        McpToolPage: {
-            items: components["schemas"]["McpDiscoveredTool"][];
-            nextCursor: string | null;
-        };
-        AdminCommand: {
             /** @enum {string} */
-            action: "claim" | "request_information" | "approve" | "reject" | "resume";
-            revision: number;
-            reason?: string;
-        };
-        BlockingReason: {
-            code: string;
-            detail: string;
+            mimeType: "application/pdf" | "image/jpeg" | "image/png";
+            sizeBytes: number;
             /** Format: date-time */
-            at: string;
+            createdAt: string;
         };
-        PaymentState: {
-            /** @enum {string} */
-            status: "not_required" | "pending" | "paid" | "failed" | "cancelled" | "refunded";
+        CaseId: string;
+        CasePage: {
+            items: components["schemas"]["Case"][];
+            /** @description Curseur opaque de la page suivante ; null en fin de liste. */
+            nextCursor: string | null;
+        };
+        CasePayment: {
             amountFcfa: number;
+            /** @enum {string} */
+            status: "not_required" | "pending" | "paid";
+            reference: string | null;
+            /** Format: date-time */
+            paidAt: string | null;
             /** @constant */
-            currency: "XOF";
-            reference?: string;
+            simulated: true;
         };
-        IssuedDocument: {
-            fileId: components["schemas"]["FileId"];
-            name: string;
-            /** @enum {string} */
-            mimeType: "application/pdf" | "image/png" | "image/jpeg";
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            expiresAt: string;
-            simulation: boolean;
-        };
-        FieldEvidence: {
-            field: string;
-            /** @enum {string} */
-            source: "user" | "document" | "registry";
-            reference?: string;
-            confirmed: boolean;
-        };
-        RequestProgress: {
-            step: number;
-            total: number;
+        /** @enum {string} */
+        CaseStatus: "awaiting_payment" | "received" | "in_review" | "information_requested" | "completed" | "rejected";
+        CaseStep: {
+            id: string;
             label: string;
-        };
-        DepartmentRequest: {
-            id: components["schemas"]["RequestId"];
-            conversationId: components["schemas"]["ConversationId"];
-            userRef: components["schemas"]["UserRef"];
-            procedureId: string;
-            status: components["schemas"]["RequestStatus"];
-            fields: {
-                [key: string]: string | number | boolean | null;
-            };
-            fileIds: components["schemas"]["FileId"][];
-            /** Format: uri */
-            officialLink: string | null;
-            /** Format: date-time */
-            updatedAt: string;
-            administrationId: string;
-            title: string;
-            revision: number;
-            /** Format: date-time */
-            createdAt: string;
-            simulation: boolean;
-            /** Format: date-time */
-            submittedAt?: string;
-            /** Format: date-time */
-            completedAt?: string;
             /** @enum {string} */
-            completedBy?: "ai" | "human";
-            receiptRef?: string;
-            assignedTo?: string | null;
-            /** Format: date-time */
-            dueAt?: string;
-            blocking?: components["schemas"]["BlockingReason"];
-            payment?: components["schemas"]["PaymentState"];
-            documents?: components["schemas"]["IssuedDocument"][];
-            progress?: components["schemas"]["RequestProgress"];
-            evidence?: components["schemas"]["FieldEvidence"][];
-        };
-        AdminWorkItem: {
-            id: components["schemas"]["RequestId"];
-            procedureId: string;
-            status: components["schemas"]["RequestStatus"];
-            fields: {
-                [key: string]: string | number | boolean | null;
-            };
-            fileIds: components["schemas"]["FileId"][];
-            /** Format: uri */
-            officialLink: string | null;
-            /** Format: date-time */
-            updatedAt: string;
-            administrationId: string;
-            title: string;
-            revision: number;
-            /** Format: date-time */
-            createdAt: string;
-            simulation: boolean;
-            /** Format: date-time */
-            submittedAt?: string;
-            /** Format: date-time */
-            completedAt?: string;
+            state: "done" | "blocked" | "pending";
             /** @enum {string} */
-            completedBy?: "ai" | "human";
-            receiptRef?: string;
-            assignedTo?: string | null;
+            actor: "assistant" | "applicant" | "administration";
+            note: string | null;
             /** Format: date-time */
-            dueAt?: string;
-            blocking?: components["schemas"]["BlockingReason"];
-            payment?: components["schemas"]["PaymentState"];
-            documents?: components["schemas"]["IssuedDocument"][];
-            progress?: components["schemas"]["RequestProgress"];
-            evidence?: components["schemas"]["FieldEvidence"][];
+            at: string | null;
         };
-        Department: {
-            id: string;
-            name: string;
-            code?: string;
-            active: boolean;
-            revision: number;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        DepartmentInput: {
-            id: string;
-            name: string;
-            code?: string;
-            active?: boolean;
-        };
-        DepartmentUpdate: {
-            name: string;
-            code?: string;
-            active: boolean;
-            revision: number;
-        };
-        AdminMembership: {
-            departmentId: string;
-            /** @enum {string} */
-            role: "agent" | "admin";
-            active: boolean;
-        };
-        AdminMembershipInput: {
-            departmentId: string;
-            /** @enum {string} */
-            role: "agent" | "admin";
-            active?: boolean;
-        };
-        AdminUser: {
-            subject: string;
-            displayName: string;
-            /** Format: email */
-            email?: string;
-            /** Format: uri */
-            photoUrl?: string;
-            active: boolean;
-            superAdmin: boolean;
-            memberships: components["schemas"]["AdminMembership"][];
-            revision: number;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        AdminUserInput: {
-            subject: string;
-            displayName: string;
-            /** Format: email */
-            email?: string;
-            /** Format: uri */
-            photoUrl?: string;
-            superAdmin?: boolean;
-            memberships: components["schemas"]["AdminMembershipInput"][];
-        };
-        AdminUserUpdate: {
-            displayName?: string;
-            /** Format: email */
-            email?: string | null;
-            /** Format: uri */
-            photoUrl?: string | null;
-            active?: boolean;
-            superAdmin?: boolean;
-            memberships?: components["schemas"]["AdminMembershipInput"][];
-            revision: number;
-        };
-        AdminProfileUpdate: {
-            displayName: string;
-            /** Format: email */
-            email?: string | null;
-            /** Format: uri */
-            photoUrl?: string | null;
-            revision: number;
-        };
-        AdminProfile: {
-            subject: string;
-            displayName: string;
-            /** Format: email */
-            email?: string;
-            /** Format: uri */
-            photoUrl?: string;
-            active: boolean;
-            superAdmin: boolean;
-            memberships: components["schemas"]["AdminMembership"][];
-            revision: number;
-            /** Format: date-time */
-            createdAt?: string;
-            /** Format: date-time */
-            updatedAt?: string;
-            departmentIds: string[];
-            permissions: string[];
-            /** @constant */
-            identityProvider: "oidc";
-            /** @constant */
-            directorySource: "backend-demo-adapter";
-        };
-        DepartmentPage: {
-            items: components["schemas"]["Department"][];
-            nextCursor: string | null;
-        };
-        AdminUserPage: {
-            items: components["schemas"]["AdminUser"][];
-            nextCursor: string | null;
-        };
-        AdminWorkItemPage: {
-            items: components["schemas"]["AdminWorkItem"][];
-            nextCursor: string | null;
-        };
+        /**
+         * @description pending = received, in_review, information_requested.
+         * @enum {string}
+         */
+        CaseView: "pending" | "completed" | "rejected" | "all";
+        /** @enum {string} */
+        Channel: "web" | "whatsapp";
         Dashboard: {
-            departmentId: string;
+            metrics: components["schemas"]["Metrics"];
+            unansweredOpen: number;
+        };
+        DocumentId: string;
+        InformationRequest: {
+            note: string;
+            /** Format: date-time */
+            requestedAt: string;
+            requestedBy: components["schemas"]["OfficialId"];
+        };
+        Me: {
+            official: components["schemas"]["Official"];
+            administration: components["schemas"]["Administration"] | null;
+            permissions: components["schemas"]["Permission"][];
+        };
+        Metrics: {
+            administrationId: components["schemas"]["AdministrationId"] | null;
             period: {
                 /** Format: date-time */
                 from: string;
@@ -953,38 +410,87 @@ export interface components {
             };
             received: number;
             pending: number;
-            blocked: number;
+            informationRequested: number;
             completed: number;
-            completedByAi: number;
+            completedByAssistant: number;
             rejected: number;
-            overdue: number;
-            unanswered: number;
-            medianProcessingMs: number | null;
-            channels: {
-                channel: string;
+            medianProcessingHours: number | null;
+            byChannel: {
+                channel: components["schemas"]["Channel"];
                 count: number;
             }[];
-            mostRequested: {
+            topProcedures: {
+                procedureId: components["schemas"]["ProcedureId"];
                 title: string;
                 count: number;
             }[];
         };
-        ActivityEntry: {
-            id: string;
-            requestId: components["schemas"]["RequestId"];
-            revision: number;
-            actorRef: string | null;
-            action: string;
-            outcome: string;
-            traceId: string;
-            /** Format: date-time */
-            at: string;
+        Official: {
+            id: components["schemas"]["OfficialId"];
+            /** @description Identifiant Keycloak (claim sub) de la personne. */
+            subject: string;
+            /** Format: email */
+            email: string;
+            displayName: string;
+            jobTitle: string;
+            /** @description null pour un super_admin. */
+            administrationId: components["schemas"]["AdministrationId"] | null;
+            role: components["schemas"]["OfficialRole"];
+            /** Format: uri */
+            avatarUrl: string | null;
+            active: boolean;
         };
+        OfficialCreated: {
+            official: components["schemas"]["Official"];
+            /** @description Mot de passe Keycloak à changer à la première connexion. Retourné une seule fois. */
+            temporaryPassword: string;
+        };
+        OfficialId: string;
+        OfficialInput: {
+            /** Format: email */
+            email: string;
+            displayName: string;
+            jobTitle: string;
+            administrationId: components["schemas"]["AdministrationId"] | null;
+            role: components["schemas"]["OfficialRole"];
+        };
+        OfficialPage: {
+            items: components["schemas"]["Official"][];
+            /** @description Curseur opaque de la page suivante ; null en fin de liste. */
+            nextCursor: string | null;
+        };
+        /** @enum {string} */
+        OfficialRole: "agent" | "admin" | "super_admin";
+        OfficialUpdate: {
+            administrationId: components["schemas"]["AdministrationId"] | null;
+            role: components["schemas"]["OfficialRole"];
+            active: boolean;
+        };
+        /** @enum {string} */
+        Permission: "cases:read" | "cases:act" | "officials:read" | "officials:manage" | "administrations:all";
+        Problem: {
+            type: string;
+            title: string;
+            status: number;
+            /** @enum {string} */
+            code: "INVALID_REQUEST" | "UNAUTHORIZED" | "LOGIN_REQUIRED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATE_MISSING" | "MANDATE_EXPIRED" | "MANDATE_REVOKED" | "MANDATE_SCOPE_DENIED" | "REQUEST_INCOMPLETE" | "INVALID_TRANSITION" | "NOT_ASSISTED" | "REPLAY_EXPIRED" | "UNSUPPORTED_MEDIA_TYPE" | "FILE_TOO_LARGE" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "MCP_AUTH_FAILED" | "MCP_CONNECTION_FAILED" | "MCP_DISCOVERY_FAILED";
+            detail: string;
+            traceId: string;
+        };
+        /** @description Identifiant officiel de la fiche sur service-public.bj. */
+        ProcedureId: string;
+        ProfileUpdate: {
+            displayName: string;
+            jobTitle: string;
+        };
+        RequestId: string;
         UnansweredEntry: {
-            id: string;
-            conversationId: components["schemas"]["ConversationId"];
-            messageId: components["schemas"]["MessageId"];
-            reason: string;
+            id: components["schemas"]["UnansweredId"];
+            /** @description null si aucune administration n’a pu être rattachée (visible du super admin seulement). */
+            administrationId: components["schemas"]["AdministrationId"] | null;
+            theme: string | null;
+            /** @enum {string} */
+            reason: "no_procedure_found" | "no_source" | "model_unavailable" | "tool_failed";
             /** @enum {string} */
             status: "open" | "resolved";
             /** Format: date-time */
@@ -992,27 +498,14 @@ export interface components {
             /** Format: date-time */
             resolvedAt: string | null;
         };
-        ActivityEntryPage: {
-            items: components["schemas"]["ActivityEntry"][];
-            nextCursor: string | null;
-        };
-        UnansweredEntryPage: {
+        UnansweredId: string;
+        UnansweredPage: {
             items: components["schemas"]["UnansweredEntry"][];
+            /** @description Curseur opaque de la page suivante ; null en fin de liste. */
             nextCursor: string | null;
         };
-        ResolutionResult: {
-            id: string;
-            /** @constant */
-            status: "resolved";
-        };
-        InternalAdminCommand: {
-            /** @enum {string} */
-            action: "claim" | "request_information" | "approve" | "reject" | "resume";
-            revision: number;
-            reason?: string;
-            departmentId: string;
-            actorRef: string;
-        };
+        /** @description Référence opaque de l’usager, attribuée par le Backend. Jamais fournie par le navigateur ni par le modèle. */
+        UserRef: string;
     };
     responses: never;
     parameters: never;
@@ -1022,31 +515,47 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    listAdminModels: {
+    getMe: {
         parameters: {
-            query?: {
-                cursor?: string;
-                limit?: number;
-            };
-            header: {
-                traceparent: string;
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ModelConfigPage"];
+                    "application/json": components["schemas"]["Me"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1056,33 +565,366 @@ export interface operations {
             };
         };
     };
-    createAdminModels: {
+    updateMe: {
         parameters: {
             query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ModelConfig"];
+                "application/json": components["schemas"]["ProfileUpdate"];
             };
         };
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Official"];
+                };
+            };
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateMyAvatar: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+                /** @description image/jpeg ou image/png */
+                "X-File-Mime-Type": "image/jpeg" | "image/png";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Official"];
+                };
+            };
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getAvatar: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path: {
+                officialId: components["schemas"]["OfficialId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listAdministrations: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdministrationList"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listOfficials: {
+        parameters: {
+            query?: {
+                /** @description Obligatoire pour un super_admin ; ignoré (forcé) pour un agent ou admin rattaché. */
+                administrationId?: components["schemas"]["AdministrationId"];
+                /** @description Curseur opaque retourné par la page précédente. */
+                cursor?: string;
+                /** @description Taille de page. */
+                limit?: number;
+            };
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficialPage"];
+                };
+            };
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createOfficial: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfficialInput"];
+            };
+        };
+        responses: {
+            /** @description Succès. */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ModelConfig"];
+                    "application/json": components["schemas"]["OfficialCreated"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1092,68 +934,80 @@ export interface operations {
             };
         };
     };
-    getAdminModels: {
+    updateOfficial: {
         parameters: {
             query?: never;
-            header: {
-                traceparent: string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Succès */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ModelConfig"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    updateAdminModels: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
-            };
-            path: {
-                id: string;
+                officialId: components["schemas"]["OfficialId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ModelConfig"];
+                "application/json": components["schemas"]["OfficialUpdate"];
             };
         };
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ModelConfig"];
+                    "application/json": components["schemas"]["Official"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1163,63 +1017,65 @@ export interface operations {
             };
         };
     };
-    deleteAdminModels: {
+    listCases: {
         parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Configuration supprimée ; réponse sans corps. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    listAdminTools: {
-        parameters: {
-            query?: {
+            query: {
+                /** @description Obligatoire pour un super_admin ; ignoré (forcé) pour un agent ou admin rattaché. */
+                administrationId?: components["schemas"]["AdministrationId"];
+                /** @description Filtre. */
+                view: components["schemas"]["CaseView"];
+                /** @description Curseur opaque retourné par la page précédente. */
                 cursor?: string;
+                /** @description Taille de page. */
                 limit?: number;
             };
-            header: {
-                traceparent: string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ToolConfigPage"];
+                    "application/json": components["schemas"]["CasePage"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1229,66 +1085,58 @@ export interface operations {
             };
         };
     };
-    createAdminTools: {
+    getCase: {
         parameters: {
             query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ToolConfig"];
-            };
-        };
-        responses: {
-            /** @description Succès */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ToolConfig"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    getAdminTools: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path: {
-                id: string;
+                caseId: components["schemas"]["CaseId"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ToolConfig"];
+                    "application/json": components["schemas"]["Case"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1298,35 +1146,82 @@ export interface operations {
             };
         };
     };
-    updateAdminTools: {
+    actOnCase: {
         parameters: {
             query?: never;
             header: {
-                traceparent: string;
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+                /** @description Clé de 8 à 128 caractères. Même clé + même corps = même réponse pendant 24 h ; corps différent = 409 IDEMPOTENCY_CONFLICT. */
                 "Idempotency-Key": string;
             };
             path: {
-                id: string;
+                caseId: components["schemas"]["CaseId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ToolConfig"];
+                "application/json": components["schemas"]["CaseActionInput"];
             };
         };
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ToolConfig"];
+                    "application/json": components["schemas"]["Case"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1336,29 +1231,61 @@ export interface operations {
             };
         };
     };
-    deleteAdminTools: {
+    downloadCaseDocument: {
         parameters: {
             query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path: {
-                id: string;
+                caseId: components["schemas"]["CaseId"];
+                documentId: components["schemas"]["DocumentId"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Configuration supprimée ; réponse sans corps. */
-            204: {
+            /** @description Succès. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/pdf": string;
+                    "image/jpeg": string;
+                    "image/png": string;
+                };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1368,100 +1295,63 @@ export interface operations {
             };
         };
     };
-    listAdminProcedures: {
+    getDashboard: {
         parameters: {
             query?: {
-                cursor?: string;
-                limit?: number;
+                /** @description Obligatoire pour un super_admin ; ignoré (forcé) pour un agent ou admin rattaché. */
+                administrationId?: components["schemas"]["AdministrationId"];
+                /** @description Début (inclus), défaut : il y a 30 jours. */
+                from?: string;
+                /** @description Fin (exclue), défaut : maintenant. */
+                to?: string;
             };
-            header: {
-                traceparent: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Succès */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProcedurePage"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    createAdminProcedures: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Procedure"];
-            };
-        };
-        responses: {
-            /** @description Succès */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Procedure"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    getAdminProcedures: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Procedure"];
+                    "application/json": components["schemas"]["Dashboard"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1471,101 +1361,65 @@ export interface operations {
             };
         };
     };
-    updateAdminProcedures: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Procedure"];
-            };
-        };
-        responses: {
-            /** @description Succès */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Procedure"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    deleteAdminProcedures: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Configuration supprimée ; réponse sans corps. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    listAdminConversations: {
+    listActivity: {
         parameters: {
             query?: {
+                /** @description Obligatoire pour un super_admin ; ignoré (forcé) pour un agent ou admin rattaché. */
+                administrationId?: components["schemas"]["AdministrationId"];
+                /** @description Limiter à un dossier. */
+                caseId?: components["schemas"]["CaseId"];
+                /** @description Curseur opaque retourné par la page précédente. */
                 cursor?: string;
+                /** @description Taille de page. */
                 limit?: number;
             };
-            header: {
-                traceparent: string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConversationPage"];
+                    "application/json": components["schemas"]["ActivityPage"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1575,31 +1429,65 @@ export interface operations {
             };
         };
     };
-    listAdminAudit: {
+    listUnanswered: {
         parameters: {
             query?: {
+                /** @description Obligatoire pour un super_admin ; ignoré (forcé) pour un agent ou admin rattaché. */
+                administrationId?: components["schemas"]["AdministrationId"];
+                /** @description Filtre. */
+                status?: "open" | "resolved";
+                /** @description Curseur opaque retourné par la page précédente. */
                 cursor?: string;
+                /** @description Taille de page. */
                 limit?: number;
             };
-            header: {
-                traceparent: string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AuditEntryPage"];
+                    "application/json": components["schemas"]["UnansweredPage"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1609,131 +1497,31 @@ export interface operations {
             };
         };
     };
-    getAdminMetrics: {
+    resolveUnanswered: {
         parameters: {
             query?: never;
-            header: {
-                traceparent: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Succès */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Metrics"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    listAdminMcpServers: {
-        parameters: {
-            query?: {
-                cursor?: string;
-                limit?: number;
-            };
-            header: {
-                traceparent: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Succès */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpServerPage"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    createAdminMcpServer: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["McpServer"];
-            };
-        };
-        responses: {
-            /** @description Succès */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpServer"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    getAdminMcpServer: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path: {
-                id: string;
+                unansweredId: components["schemas"]["UnansweredId"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["McpServer"];
+                    "application/json": components["schemas"]["UnansweredEntry"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1741,37 +1529,8 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-        };
-    };
-    updateAdminMcpServer: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["McpServer"];
-            };
-        };
-        responses: {
-            /** @description Succès */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpServer"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1779,31 +1538,8 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-        };
-    };
-    deleteAdminMcpServer: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Succès */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1811,32 +1547,8 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-        };
-    };
-    discoverAdminMcpServer: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Succès */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpToolPage"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1844,70 +1556,8 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-        };
-    };
-    listAdminMcpTools: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Succès */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpToolPage"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    updateAdminMcpToolPermission: {
-        parameters: {
-            query?: never;
-            header: {
-                traceparent: string;
-            };
-            path: {
-                id: string;
-                toolName: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["McpToolPermission"];
-            };
-        };
-        responses: {
-            /** @description Succès */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpDiscoveredTool"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

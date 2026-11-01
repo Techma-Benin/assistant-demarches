@@ -1,0 +1,1653 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Interne — Tooling → Backend",
+    "version": "2.0.0",
+    "description": "Jeton de service Keycloak du client tooling (azp = tooling, audience techma-backend)."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:4010",
+      "description": "Poste local (pnpm dev)"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/internal/v1/events": {
+      "post": {
+        "operationId": "publishEvent",
+        "summary": "Publier un événement (case.updated, tool.called, mandate.*)",
+        "description": "Scope events:publish. 202 après persistance ; même id = sans effet. Le Backend notifie l’usager (web et WhatsApp) à chaque case.updated.",
+        "tags": [
+          "Interne"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Event"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/files/{fileId}": {
+      "get": {
+        "operationId": "getFileAccess",
+        "summary": "Vérifier la propriété et la validité d’une pièce",
+        "description": "Scope files:read. 404 si la pièce n’appartient pas à X-User-Ref.",
+        "tags": [
+          "Interne"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FileId"
+            }
+          },
+          {
+            "name": "X-User-Ref",
+            "in": "header",
+            "required": true,
+            "description": "Usager propriétaire attendu.",
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileAccess"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/files/{fileId}/content": {
+      "get": {
+        "operationId": "getFileContent",
+        "summary": "Lire le contenu d’une pièce pour la transmettre au X-Road",
+        "description": "Scope files:read. Jamais appelé pour le modèle.",
+        "tags": [
+          "Interne"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FileId"
+            }
+          },
+          {
+            "name": "X-User-Ref",
+            "in": "header",
+            "required": true,
+            "description": "Usager propriétaire attendu.",
+            "schema": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "AdministrationId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{1,62}$",
+        "description": "Identifiant stable d’une administration du X-Road simulé (ex. justice, anip)."
+      },
+      "AgentMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/MessageId"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "blocks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "blocks",
+          "createdAt"
+        ]
+      },
+      "Block": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "text"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Source"
+                },
+                "description": "Obligatoire et non vide pour toute information administrative."
+              }
+            },
+            "required": [
+              "type",
+              "text",
+              "sources"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "buttons"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 24
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "type",
+              "items"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "form"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "fields": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "number",
+                        "date"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "label",
+                    "required",
+                    "type"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "fields"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "fileRequest"
+              },
+              "requestId": {
+                "$ref": "#/components/schemas/RequestId"
+              },
+              "documentType": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,62}$"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "acceptedMimeTypes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "received": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "requestId",
+              "documentType",
+              "label",
+              "acceptedMimeTypes",
+              "received"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "loginRequired"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              }
+            },
+            "required": [
+              "type",
+              "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "consent"
+              },
+              "challenge": {
+                "$ref": "#/components/schemas/Challenge"
+              }
+            },
+            "required": [
+              "type",
+              "challenge"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "requestCard"
+              },
+              "request": {
+                "$ref": "#/components/schemas/Request"
+              }
+            },
+            "required": [
+              "type",
+              "request"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "caseCard"
+              },
+              "case": {
+                "$ref": "#/components/schemas/Case"
+              }
+            },
+            "required": [
+              "type",
+              "case"
+            ]
+          }
+        ]
+      },
+      "Case": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/CaseId"
+          },
+          "reference": {
+            "type": "string",
+            "pattern": "^SIM-[A-Z]{2,5}-[0-9]{4}-[0-9]{6}$"
+          },
+          "simulated": {
+            "const": true
+          },
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "administrationId": {
+            "$ref": "#/components/schemas/AdministrationId"
+          },
+          "applicantRef": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "requestId": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Valeurs du formulaire de la démarche, conformes à Procedure.filing.formSchema."
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseDocument"
+            }
+          },
+          "payment": {
+            "$ref": "#/components/schemas/CasePayment"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/CaseStep"
+            }
+          },
+          "informationRequest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InformationRequest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Renseigné tant que status = information_requested."
+          },
+          "claimedBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OfficialId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "assistant",
+              "administration",
+              null
+            ]
+          },
+          "decisionNote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "simulated",
+          "procedureId",
+          "title",
+          "administrationId",
+          "applicantRef",
+          "requestId",
+          "channel",
+          "status",
+          "fields",
+          "documents",
+          "payment",
+          "steps",
+          "informationRequest",
+          "claimedBy",
+          "completedBy",
+          "decisionNote",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CaseDocument": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/DocumentId"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "submitted",
+              "issued"
+            ],
+            "description": "submitted = pièce de l’usager ; issued = document délivré par l’administration (simulation)."
+          },
+          "documentType": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,62}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png"
+            ]
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10485760
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "documentType",
+          "name",
+          "mimeType",
+          "sizeBytes",
+          "createdAt"
+        ]
+      },
+      "CaseId": {
+        "type": "string",
+        "pattern": "^cas_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "CasePayment": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "amountFcfa": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_required",
+              "pending",
+              "paid"
+            ]
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paidAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "simulated": {
+            "const": true
+          }
+        },
+        "required": [
+          "amountFcfa",
+          "status",
+          "reference",
+          "paidAt",
+          "simulated"
+        ]
+      },
+      "CaseStatus": {
+        "type": "string",
+        "enum": [
+          "awaiting_payment",
+          "received",
+          "in_review",
+          "information_requested",
+          "completed",
+          "rejected"
+        ]
+      },
+      "CaseStep": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,62}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "blocked",
+              "pending"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "enum": [
+              "assistant",
+              "applicant",
+              "administration"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "state",
+          "actor",
+          "note",
+          "at"
+        ]
+      },
+      "Challenge": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ChallengeId"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "userRef": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "scopes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            }
+          },
+          "consentText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "Texte affiché tel quel par l’Interface."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "proofToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192,
+            "description": "JWT RS256 signé par le Backend, opaque pour l’Interface et le modèle."
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "userRef",
+          "procedureId",
+          "scopes",
+          "consentText",
+          "expiresAt",
+          "proofToken"
+        ]
+      },
+      "ChallengeId": {
+        "type": "string",
+        "pattern": "^chl_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "Channel": {
+        "type": "string",
+        "enum": [
+          "web",
+          "whatsapp"
+        ]
+      },
+      "Content": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "text"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "audio"
+              },
+              "fileId": {
+                "$ref": "#/components/schemas/FileId"
+              }
+            },
+            "required": [
+              "type",
+              "fileId"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "file"
+              },
+              "fileId": {
+                "$ref": "#/components/schemas/FileId"
+              },
+              "documentType": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Réponse à un bloc fileRequest ; null pour une pièce libre."
+              }
+            },
+            "required": [
+              "type",
+              "fileId",
+              "documentType"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "interaction"
+              },
+              "actionId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "type",
+              "actionId",
+              "value"
+            ]
+          }
+        ]
+      },
+      "ConversationId": {
+        "type": "string",
+        "pattern": "^cnv_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "DocumentId": {
+        "type": "string",
+        "pattern": "^doc_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "Event": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "specversion": {
+            "const": "1.0"
+          },
+          "id": {
+            "$ref": "#/components/schemas/EventId"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "urn:techma:backend",
+              "urn:techma:tooling"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "bj.techma.message.received.v2",
+              "bj.techma.message.sent.v2",
+              "bj.techma.case.updated.v2",
+              "bj.techma.tool.called.v2",
+              "bj.techma.mandate.granted.v2",
+              "bj.techma.mandate.revoked.v2"
+            ],
+            "description": "Toujours bj.techma.{data.kind}.v2."
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "datacontenttype": {
+            "const": "application/json"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EventData"
+          }
+        },
+        "required": [
+          "specversion",
+          "id",
+          "source",
+          "type",
+          "time",
+          "datacontenttype",
+          "data"
+        ]
+      },
+      "EventData": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "message.received"
+              },
+              "conversationId": {
+                "$ref": "#/components/schemas/ConversationId"
+              },
+              "message": {
+                "$ref": "#/components/schemas/UserMessage"
+              }
+            },
+            "required": [
+              "kind",
+              "conversationId",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "message.sent"
+              },
+              "conversationId": {
+                "$ref": "#/components/schemas/ConversationId"
+              },
+              "message": {
+                "$ref": "#/components/schemas/AgentMessage"
+              }
+            },
+            "required": [
+              "kind",
+              "conversationId",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "case.updated"
+              },
+              "conversationId": {
+                "$ref": "#/components/schemas/ConversationId"
+              },
+              "case": {
+                "$ref": "#/components/schemas/Case"
+              }
+            },
+            "required": [
+              "kind",
+              "conversationId",
+              "case"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "tool.called"
+              },
+              "conversationId": {
+                "$ref": "#/components/schemas/ConversationId"
+              },
+              "toolName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "success",
+                  "error"
+                ]
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": [
+              "kind",
+              "conversationId",
+              "toolName",
+              "outcome",
+              "code"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "mandate.granted",
+                  "mandate.revoked"
+                ]
+              },
+              "mandate": {
+                "$ref": "#/components/schemas/Mandate"
+              }
+            },
+            "required": [
+              "kind",
+              "mandate"
+            ]
+          }
+        ]
+      },
+      "EventId": {
+        "type": "string",
+        "pattern": "^evt_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "File": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/FileId"
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png",
+              "audio/ogg",
+              "audio/mpeg",
+              "audio/mp4",
+              "audio/webm"
+            ]
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10485760
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "mimeType",
+          "sizeBytes",
+          "expiresAt"
+        ]
+      },
+      "FileAccess": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "$ref": "#/components/schemas/File"
+          },
+          "userRef": {
+            "$ref": "#/components/schemas/UserRef"
+          }
+        },
+        "required": [
+          "file",
+          "userRef"
+        ]
+      },
+      "FileId": {
+        "type": "string",
+        "pattern": "^fil_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "InformationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestedBy": {
+            "$ref": "#/components/schemas/OfficialId"
+          }
+        },
+        "required": [
+          "note",
+          "requestedAt",
+          "requestedBy"
+        ]
+      },
+      "Mandate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/MandateId"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "userRef": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "scopes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "revoked",
+              "expired"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "userRef",
+          "procedureId",
+          "scopes",
+          "status",
+          "expiresAt"
+        ]
+      },
+      "MandateId": {
+        "type": "string",
+        "pattern": "^mdt_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "MessageId": {
+        "type": "string",
+        "pattern": "^msg_[0-9A-HJKMNP-TV-Z]{26}$",
+        "description": "Généré par le client pour dédupliquer les envois."
+      },
+      "OfficialId": {
+        "type": "string",
+        "pattern": "^off_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "INVALID_REQUEST",
+              "UNAUTHORIZED",
+              "LOGIN_REQUIRED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "CONFLICT",
+              "IDEMPOTENCY_CONFLICT",
+              "MANDATE_MISSING",
+              "MANDATE_EXPIRED",
+              "MANDATE_REVOKED",
+              "MANDATE_SCOPE_DENIED",
+              "REQUEST_INCOMPLETE",
+              "INVALID_TRANSITION",
+              "NOT_ASSISTED",
+              "REPLAY_EXPIRED",
+              "UNSUPPORTED_MEDIA_TYPE",
+              "FILE_TOO_LARGE",
+              "RATE_LIMITED",
+              "UPSTREAM_UNAVAILABLE",
+              "MCP_AUTH_FAILED",
+              "MCP_CONNECTION_FAILED",
+              "MCP_DISCOVERY_FAILED"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "traceId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "detail",
+          "traceId"
+        ]
+      },
+      "ProcedureId": {
+        "type": "string",
+        "pattern": "^PS[0-9]{5}$",
+        "description": "Identifiant officiel de la fiche sur service-public.bj."
+      },
+      "Request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "administrationId": {
+            "$ref": "#/components/schemas/AdministrationId"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestField"
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestDocument"
+            }
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "description": "Champs et pièces encore requis avant dépôt."
+          },
+          "caseId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "procedureId",
+          "title",
+          "administrationId",
+          "status",
+          "fields",
+          "documents",
+          "missing",
+          "caseId",
+          "updatedAt"
+        ]
+      },
+      "RequestDocument": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "documentType": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,62}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "fileId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "documentType",
+          "label",
+          "fileId"
+        ]
+      },
+      "RequestField": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "value": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "answer",
+              "document",
+              null
+            ],
+            "description": "Provenance affichée dans le panneau « vos informations »."
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "value",
+          "source"
+        ]
+      },
+      "RequestId": {
+        "type": "string",
+        "pattern": "^req_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "RequestStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "ready",
+          "submitted",
+          "cancelled"
+        ],
+        "description": "Brouillon côté Tooling. Après submitted, l’état fait foi dans le dossier X-Road (caseId)."
+      },
+      "Scope": {
+        "type": "string",
+        "enum": [
+          "requests:write",
+          "documents:write",
+          "requests:submit"
+        ]
+      },
+      "Source": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Fiche publique sur service-public.bj."
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date de collecte de la fiche."
+          }
+        },
+        "required": [
+          "procedureId",
+          "url",
+          "retrievedAt"
+        ]
+      },
+      "UserMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/MessageId"
+          },
+          "content": {
+            "$ref": "#/components/schemas/Content"
+          },
+          "transcript": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Transcription d’un message vocal."
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "transcript",
+          "sentAt"
+        ]
+      },
+      "UserRef": {
+        "type": "string",
+        "pattern": "^usr_[0-9A-HJKMNP-TV-Z]{26}$",
+        "description": "Référence opaque de l’usager, attribuée par le Backend. Jamais fournie par le navigateur ni par le modèle."
+      }
+    }
+  }
+}

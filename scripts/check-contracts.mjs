@@ -1,26 +1,47 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import SwaggerParser from '@apidevtools/swagger-parser';
-import {ajv,load,domain,catalog,valid,validateEvent} from './lib.mjs';
-for(const name of Object.keys(domain.$defs)) assert.ok(ajv.getSchema(domain.$id+'#/$defs/'+name),name);
-const operationIds=new Set();
-for(const file of load('contracts/manifest.json').documents.filter(f=>f.endsWith('.openapi.json'))){
- const api=load('contracts/'+file);
- for(const [n,s] of Object.entries(api.components.schemas)) assert.deepEqual(s,JSON.parse(JSON.stringify(domain.$defs[n]).replaceAll('#/$defs/','#/components/schemas/')),file+' shared '+n);
- await SwaggerParser.validate(structuredClone(api));
- for(const methods of Object.values(api.paths))for(const op of Object.values(methods)){
-  assert.ok(!operationIds.has(op.operationId));operationIds.add(op.operationId);
- }
+import { ajv, load, domain, catalog, valid, validateEvent } from './lib.mjs';
+
+execFileSync(process.execPath, [fileURLToPath(new URL('./sync-contracts.mjs', import.meta.url)), '--check'], { stdio: 'inherit' });
+
+for (const name of Object.keys(domain.$defs)) assert.ok(ajv.getSchema(`${domain.$id}#/$defs/${name}`), name);
+
+const manifest = load('manifest.json');
+const operationIds = new Set();
+for (const file of manifest.documents.filter((name) => name.endsWith('.openapi.json'))) {
+  const api = load(file);
+  assert.equal(api.info.version, manifest.version, `${file} : version différente du manifeste`);
+  await SwaggerParser.validate(structuredClone(api));
+  for (const methods of Object.values(api.paths)) {
+    for (const operation of Object.values(methods)) {
+      assert.ok(!operationIds.has(operation.operationId), `operationId en double : ${operation.operationId}`);
+      operationIds.add(operation.operationId);
+    }
+  }
 }
-for(const t of catalog.tools){ajv.compile(t.inputSchema);ajv.compile(t.outputSchema);assert.equal(t.annotations.readOnlyHint,!t._meta['bj.techma/requiresMandate']);}
-const inline=s=>JSON.parse(JSON.stringify(s),(k,v)=>v&&typeof v.$ref==='string'&&v.$ref.startsWith('#/$defs/')?inline(domain.$defs[v.$ref.slice(8)]):v);
-const tool=name=>catalog.tools.find(t=>t.name===name);
-assert.deepEqual(tool('procedures.search').outputSchema.properties.items.items,inline(domain.$defs.Procedure),'procedures.search embarque Procedure');
-assert.deepEqual(tool('procedures.get').outputSchema,inline(domain.$defs.Procedure),'procedures.get embarque Procedure');
-const fixtures=load('mocks/fixtures.json');
-for(const [name,value] of Object.entries(fixtures.schemas)) valid(name,value);
-validateEvent(fixtures.event);
-assert.throws(()=>valid('Case',{...fixtures.schemas.Case,simulated:false}),'dossier sans marque de simulation');
-assert.throws(()=>valid('Case',{...fixtures.schemas.Case,status:'awaiting_applicant'}),'état de dossier hors contrat');
-assert.throws(()=>valid('OfficialAssignment',{administrationId:'justice',role:'chef'}),'rôle inconnu');
-for(const t of catalog.tools){const f=fixtures.tools[t.name];assert.ok(f,t.name);assert.ok(ajv.compile(t.inputSchema)(f.input),t.name+' input');assert.ok(ajv.compile(t.outputSchema)(f.output),t.name+' output');}
-console.log(`Contrats valides : ${Object.keys(domain.$defs).length} schémas, ${operationIds.size} opérations HTTP, ${catalog.tools.length} outils MCP et exemples.`);
+
+const compileTool = (schema) => ajv.compile({ ...schema, $defs: catalog.$defs });
+for (const tool of catalog.tools) {
+  compileTool(tool.inputSchema);
+  compileTool(tool.outputSchema);
+  assert.equal(tool.annotations.readOnlyHint, !tool._meta['bj.techma/requiresMandate'], `${tool.name} : readOnlyHint incohérent`);
+}
+
+const examples = load('examples.json');
+for (const [name, value] of Object.entries(examples.schemas)) valid(name, value);
+for (const event of examples.events) validateEvent(event);
+for (const tool of catalog.tools) {
+  const example = examples.tools[tool.name];
+  assert.ok(example, `exemple manquant pour ${tool.name}`);
+  const validate = compileTool(tool.inputSchema);
+  assert.ok(validate(example.input), `${tool.name} : ${ajv.errorsText(validate.errors)}`);
+}
+
+assert.throws(() => valid('Case', { ...examples.schemas.Case, simulated: false }), 'un dossier doit être marqué simulé');
+assert.throws(() => valid('Case', { ...examples.schemas.Case, status: 'processing' }), 'état de dossier hors contrat');
+assert.throws(() => valid('Official', { ...examples.schemas.Official, role: 'chef' }), 'rôle inconnu');
+assert.throws(() => valid('Procedure', { ...examples.schemas.Procedure, id: 'demo-procedure' }), 'fiche non officielle');
+
+console.log(`Contrats ${manifest.version} valides : ${Object.keys(domain.$defs).length} schémas, ${operationIds.size} opérations HTTP, ${catalog.tools.length} outils MCP.`);
