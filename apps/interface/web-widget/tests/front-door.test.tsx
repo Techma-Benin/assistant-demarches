@@ -44,6 +44,14 @@ describe('FrontDoor', () => {
     expect(onAsk).toHaveBeenCalledExactlyOnceWith('Comment faire légaliser une signature ?');
   });
 
+  it('lists the residence certificate in the showcase and the catalogue', async () => {
+    const onAsk = vi.fn();
+    render(<FrontDoor onAsk={onAsk} config={base} />);
+    expect(screen.getAllByRole('button', { name: /Certificat de résidence/ }).length).toBeGreaterThanOrEqual(2);
+    await userEvent.setup().click(screen.getAllByRole('button', { name: /Certificat de résidence/ }).at(-1)!);
+    expect(onAsk).toHaveBeenCalledExactlyOnceWith('Comment obtenir un certificat de résidence ?');
+  });
+
   it('shows the trust board', () => {
     render(<FrontDoor onAsk={() => {}} config={base} />);
     expect(screen.getByText('Vous demander votre NPI')).toBeInTheDocument();
@@ -152,7 +160,7 @@ describe('FrontDoor', () => {
     const footer = document.querySelector('footer') as HTMLElement;
     expect(footer).toHaveTextContent('Photos :');
     const links = within(footer).getAllByRole('link', { name: /^«.*»$/ });
-    expect(links).toHaveLength(6);
+    expect(links).toHaveLength(5);
     expect(links[0]).toHaveAttribute('href', 'https://commons.wikimedia.org/wiki/File:Le_monument_de_l%27Amazone.jpg');
   });
 

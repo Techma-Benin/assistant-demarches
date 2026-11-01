@@ -10,6 +10,7 @@ import { formatRelative } from '@/lib/format-time';
 import { siteConfig, type SiteConfig } from '@/lib/site-config';
 import { DocumentArt, type DocumentKind } from './DocumentArt';
 import { HERO_PHOTOS, HeroSlideshow } from './HeroSlideshow';
+import { AskDemo, PrepareDemo, ValidateDemo } from './HowItWorksDemos';
 import { PromptDock } from './PromptDock';
 import { useReveal } from './use-reveal';
 
@@ -29,6 +30,7 @@ const SHOWCASE: { name: string; kind: DocumentKind; question: string }[] = [
   { name: 'Casier judiciaire', kind: 'casier', question: 'Comment obtenir un extrait de casier judiciaire ?' },
   { name: 'Passeport', kind: 'passeport', question: 'Comment renouveler mon passeport ?' },
   { name: 'Carte d’identité', kind: 'cni', question: 'Comment obtenir ma carte d’identité ?' },
+  { name: 'Certificat de résidence', kind: 'residence', question: 'Comment obtenir un certificat de résidence ?' },
   { name: 'Création d’entreprise', kind: 'entreprise', question: 'Comment créer mon entreprise ?' },
   { name: 'Permis de construire', kind: 'permis', question: 'Comment obtenir un permis de construire ?' },
 ];
@@ -39,12 +41,13 @@ const STEPS = [
   { name: 'Vous validez sur le portail', text: 'La validation officielle se fait toujours par vous, jamais par l’assistant.' },
 ];
 
-const CATALOGUE: { title: string; kind: DocumentKind; items: { name: string; question: string }[] }[] = [
+const CATALOGUE: { title: string; kind: DocumentKind; items: { name: string; question: string; kind?: DocumentKind }[] }[] = [
   {
     title: 'Identité',
     kind: 'cni',
     items: [
       { name: 'Carte d’identité', question: 'Comment obtenir ma carte d’identité ?' },
+      { name: 'Certificat de résidence', question: 'Comment obtenir un certificat de résidence ?', kind: 'residence' },
       { name: 'Certificat d’identification personnelle', question: 'Comment obtenir mon certificat d’identification personnelle ?' },
       { name: 'Certificat de nationalité', question: 'Comment obtenir un certificat de nationalité ?' },
     ],
@@ -300,7 +303,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
             </h2>
             {STEPS.map((step, i) => {
               const span = ['lg:col-span-3 lg:col-start-1', 'lg:col-span-4 lg:col-start-4', 'lg:col-span-5 lg:col-start-8'][i]!;
-              const height = ['h-[34vw] lg:h-[30vh]', 'h-[46vw] lg:h-[44vh]', 'h-[62vw] lg:h-[60vh]'][i]!;
+              const height = ['h-[34vw] min-h-[300px] lg:h-[38vh] lg:min-h-[300px]', 'h-[46vw] min-h-[440px] lg:h-[50vh] lg:min-h-[400px]', 'h-[62vw] min-h-[480px] lg:h-[62vh] lg:min-h-[480px]'][i]!;
               return [
                 <div
                   key={`tile-${i}`}
@@ -312,17 +315,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
                     i === 2 ? 'bg-(--home-field-green)' : 'bg-sunken',
                   )}
                 >
-                  {i === 0 ? (
-                    <div className="absolute inset-x-[8%] bottom-[14%] rounded-[22px] bg-surface px-5 py-3.5 text-[16px] leading-snug">
-                      Il me faut un acte de naissance pour mon fils
-                    </div>
-                  ) : (
-                    <DocumentArt
-                      kind="acte-naissance"
-                      stamped={i === 2}
-                      className="absolute left-1/2 top-[12%] h-full w-auto -translate-x-1/2"
-                    />
-                  )}
+                  {[<AskDemo key="d" />, <PrepareDemo key="d" />, <ValidateDemo key="d" />][i]}
                 </div>,
                 <div key={`text-${i}`} {...rv(1)} className={cn('mb-6 lg:row-start-2 lg:mb-0 lg:mt-5', span)}>
                   <p className="m-0 text-[20px] font-semibold">{step.name}</p>
@@ -360,7 +353,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
                             aria-hidden="true"
                             className="relative size-14 shrink-0 overflow-hidden rounded-full bg-sunken transition-transform duration-200 motion-reduce:transition-none group-enabled:group-hover:scale-105"
                           >
-                            <DocumentArt kind={cat.kind} className="absolute left-1/2 top-[16%] w-[70%] -translate-x-1/2" />
+                            <DocumentArt kind={item.kind ?? cat.kind} className="absolute left-1/2 top-[16%] w-[70%] -translate-x-1/2" />
                           </span>
                           <span className="flex min-w-0 flex-col">
                             <span className="text-[18px] font-semibold group-enabled:group-hover:underline">{item.name}</span>
