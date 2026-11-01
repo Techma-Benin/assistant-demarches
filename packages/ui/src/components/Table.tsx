@@ -1,10 +1,10 @@
 import type { CSSProperties, HTMLAttributes, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react';
 import { cn } from '../cn';
 
-/** Dense data table (console). The wrapper scrolls horizontally on small screens. */
+/** Dense data table (console). The wrapper scrolls horizontally only (entering rows must not flash a vertical bar). */
 export function Table({ className, ...props }: TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-surface">
+    <div className="overflow-x-auto overflow-y-hidden rounded-card border border-line bg-surface">
       <table className={cn('w-full border-collapse text-left text-sm text-ink', className)} {...props} />
     </div>
   );

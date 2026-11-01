@@ -18,7 +18,7 @@ function agentBlocks(timeline: TimelineEntry[]): Block[] {
  * Side-panel steps, derived ONLY from the timeline. A step is present only when the matching
  * block was received; exactly one step is `current` (the first one not done).
  */
-export function deriveDossierSteps(timeline: TimelineEntry[]): Step[] {
+export function deriveDossierSteps(timeline: TimelineEntry[], consent?: 'pending' | 'active'): Step[] {
   const blocks = agentBlocks(timeline);
   const formIds = new Set(blocks.flatMap((b) => (b.type === 'form' ? [b.id] : [])));
   const hasFileRequest = blocks.some((b) => b.type === 'fileRequest');
@@ -29,12 +29,19 @@ export function deriveDossierSteps(timeline: TimelineEntry[]): Step[] {
     (e) => e.kind === 'user' && e.content?.type === 'interaction' && formIds.has(e.content.actionId),
   );
   const fileDone = timeline.some(
-    (e) => e.kind === 'user' && e.attachment !== undefined && e.content !== null && e.delivery !== 'scanRejected',
+    (e) => e.kind === 'user' && e.attachment !== undefined && e.content !== null,
   );
 
   const steps: { label: string; done: boolean; description?: string }[] = [
     { label: 'Question comprise', done: blocks.length > 0 },
   ];
+  if (consent) {
+    steps.push({
+      label: 'Autorisation',
+      done: consent === 'active',
+      description: consent === 'active' ? 'Accordée' : 'À donner',
+    });
+  }
   if (formIds.size > 0) {
     steps.push({ label: 'Vos informations', done: formDone, description: formDone ? 'Enregistrées' : 'À compléter' });
   }

@@ -15,7 +15,7 @@ function roleLabel(user: AdminUser, departmentId: string | undefined): string {
   const roles = new Set(memberships.map((m) => m.role));
   if (roles.has('admin')) return 'Administrateur';
   if (roles.has('agent')) return 'Agent';
-  return '—';
+  return '-';
 }
 
 function Users({ departmentId }: { departmentId: string | undefined }) {
@@ -44,7 +44,7 @@ function Users({ departmentId }: { departmentId: string | undefined }) {
       header: 'Ministères',
       cell: (u) =>
         u.memberships.length === 0
-          ? '—'
+          ? '-'
           : u.memberships.map((m) => names.get(m.departmentId) ?? m.departmentId).join(', '),
     },
   ];

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import type { components } from '@techma/contracts-ts';
 import { describe, expect, it, vi } from 'vitest';
 import { ConversationView } from '@/components/chat/ConversationView';
+import { noopConsent } from '@/lib/consent';
 import type { useConversation } from '@/hooks/use-conversation';
 import { initialState, type ConversationState, type TimelineEntry } from '@/lib/conversation-state';
 
@@ -33,6 +34,7 @@ function build(state: Partial<ConversationState>, overrides: Partial<Conversatio
     sendForm: vi.fn(),
     sendFile: vi.fn(),
     retry: vi.fn(),
+    consent: noopConsent,
     ...overrides,
   };
 }
