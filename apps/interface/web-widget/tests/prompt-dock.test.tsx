@@ -2,16 +2,19 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useRef, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PromptDock } from '@/components/home/PromptDock';
+import { useStagedFiles } from '@/hooks/use-staged-files';
+import { CONTRACT_MIME_TYPES } from '@/lib/files';
 
 let heroBottom = 400;
 
 function Harness({ onSubmit = () => {} }: { onSubmit?: (text: string) => void }) {
   const anchor = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState('Brouillon déjà tapé');
+  const staged = useStagedFiles(CONTRACT_MIME_TYPES);
   return (
     <>
       <div ref={anchor} data-testid="hero" />
-      <PromptDock anchor={anchor} value={value} onValueChange={setValue} onSubmit={onSubmit} />
+      <PromptDock anchor={anchor} value={value} onValueChange={setValue} onSubmit={onSubmit} onFiles={() => {}} staged={staged} />
     </>
   );
 }

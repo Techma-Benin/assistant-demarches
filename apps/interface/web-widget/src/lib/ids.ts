@@ -1,7 +1,7 @@
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 /** Crockford ULID with a prefix: 10 chars of time (ms, base32) + 16 random chars. */
-export function newId(prefix: 'msg'): string {
+export function newId(prefix: 'msg' | 'batch'): string {
   let ms = Date.now();
   let time = '';
   for (let i = 0; i < 10; i++) {

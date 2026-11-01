@@ -11,18 +11,26 @@ import {
   Info,
   Lock,
   MessageCircle,
+  MessageSquare,
   Scale,
   User,
 } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
-import { BrandMark, Chip, Counter, CounterGrid, FlagGlyph, PromptBox, RebusGlyph, ThemeToggle, Tile, cn } from '@techma/ui';
+import { BrandMark, Button, Chip, Counter, CounterGrid, FlagGlyph, RebusGlyph, ThemeToggle, Tile, cn } from '@techma/ui';
+import { Composer } from '@/components/chat/Composer';
+import { useStagedFiles } from '@/hooks/use-staged-files';
+import { CONTRACT_MIME_TYPES } from '@/lib/files';
+import { formatRelative } from '@/lib/format-time';
 import { siteConfig, type SiteConfig } from '@/lib/site-config';
 import { PromptDock } from './PromptDock';
 
 export type FrontDoorProps = {
   onAsk: (text: string) => void;
+  onFiles?: (files: File[], note?: string, voice?: { durationMs: number; waveform: number[] }) => void;
   disabled?: boolean;
   config?: SiteConfig;
+  /** A saved conversation the visitor can go back to; shown after mount only. */
+  resume?: { title: string | null; at: string; onResume: () => void };
 };
 
 const SUGGESTIONS = [
@@ -45,13 +53,35 @@ const navLink =
   'inline-flex min-h-11 items-center rounded-pill px-3.5 text-[15px] font-medium text-ink no-underline hover:bg-sunken';
 const tileTitle = 'font-display font-extrabold tracking-[-0.035em]';
 
-export function FrontDoor({ onAsk, disabled = false, config = siteConfig }: FrontDoorProps) {
+function ResumeBanner({ title, at, onResume }: NonNullable<FrontDoorProps['resume']>) {
+  const when = formatRelative(at);
+  return (
+    <div className="flex w-full max-w-[780px] items-center gap-3 rounded-[22px] border border-line bg-surface px-4 py-3 text-left motion-safe:animate-[ui-enter_150ms_ease-out_both]">
+      <MessageSquare aria-hidden="true" className="size-5 shrink-0 text-ink-muted" />
+      <div className="min-w-0 flex-1">
+        <p className="m-0 text-[15px] font-semibold">Conversation en cours</p>
+        <p className="m-0 truncate text-[14px] text-ink-muted">
+          {title !== null && `« ${title} »`}
+          {title !== null && when && ' · '}
+          {when}
+        </p>
+      </div>
+      <Button variant="secondary" size="sm" onClick={onResume}>
+        Reprendre
+      </Button>
+    </div>
+  );
+}
+
+export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config = siteConfig, resume }: FrontDoorProps) {
   const { brandFlag, whatsappNumber, reportUrl, privacyUrl } = config;
   const ask = (text: string) => {
     if (!disabled) onAsk(text);
   };
   // One draft shared by the hero box and the docked box, so typing carries over when the dock appears.
   const [draft, setDraft] = useState('');
+  // Staged files are shared too, so a document attached in the hero box follows into the dock.
+  const staged = useStagedFiles(CONTRACT_MIME_TYPES);
   const heroPrompt = useRef<HTMLDivElement>(null);
   const submitDraft = (text: string) => {
     ask(text);
@@ -95,14 +125,19 @@ export function FrontDoor({ onAsk, disabled = false, config = siteConfig }: Fron
             <RebusGlyph variant="arrow-flag" flag={<FlagGlyph decorative width="1.5em" height="1.05em" />} />
           </p>
 
+          {resume && <ResumeBanner {...resume} />}
+
           <div ref={heroPrompt} className="mt-3 w-full max-w-[780px]">
-            <PromptBox
+            <Composer
               variant="hero"
               label="Votre question"
               placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
               value={draft}
               onValueChange={setDraft}
-              onSubmit={submitDraft}
+              onSend={submitDraft}
+              onFiles={onFiles}
+              staged={staged}
+              hint={false}
               disabled={disabled}
               className="w-full text-left"
             />
@@ -306,7 +341,15 @@ export function FrontDoor({ onAsk, disabled = false, config = siteConfig }: Fron
         </div>
       </footer>
 
-      <PromptDock anchor={heroPrompt} value={draft} onValueChange={setDraft} onSubmit={submitDraft} disabled={disabled} />
+      <PromptDock
+        anchor={heroPrompt}
+        value={draft}
+        onValueChange={setDraft}
+        onSubmit={submitDraft}
+        onFiles={onFiles}
+        staged={staged}
+        disabled={disabled}
+      />
     </div>
   );
 }

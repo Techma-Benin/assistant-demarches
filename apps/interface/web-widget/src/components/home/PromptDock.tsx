@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState, type RefObject } from 'react';
-import { PromptBox, cn } from '@techma/ui';
+import { cn } from '@techma/ui';
+import { Composer } from '@/components/chat/Composer';
+import type { useStagedFiles } from '@/hooks/use-staged-files';
 
 /** How far (px) the hero box must scroll above the viewport before the dock shows. */
 const REVEAL_OFFSET = 200;
@@ -12,6 +14,9 @@ type PromptDockProps = {
   value: string;
   onValueChange: (value: string) => void;
   onSubmit: (text: string) => void;
+  onFiles: (files: File[], note?: string, voice?: { durationMs: number; waveform: number[] }) => void;
+  /** Staged files shared with the hero box. */
+  staged: ReturnType<typeof useStagedFiles>;
   disabled?: boolean;
 };
 
@@ -19,7 +24,7 @@ type PromptDockProps = {
  * Compact question box docked at the bottom of the screen while the hero box is out of view.
  * It grows from a small pill to full width when it appears, and folds back when the hero box returns.
  */
-export function PromptDock({ anchor, value, onValueChange, onSubmit, disabled }: PromptDockProps) {
+export function PromptDock({ anchor, value, onValueChange, onSubmit, onFiles, staged, disabled }: PromptDockProps) {
   const [shown, setShown] = useState(false);
 
   useEffect(() => {
@@ -62,15 +67,17 @@ export function PromptDock({ anchor, value, onValueChange, onSubmit, disabled }:
             : 'invisible translate-y-3 opacity-0 motion-reduce:translate-y-0',
         )}
       >
-        <PromptBox
+        <Composer
           variant="compact"
           label="Poser une question"
           placeholder="Posez votre question…"
           value={value}
           onValueChange={onValueChange}
-          onSubmit={onSubmit}
-          disabled={disabled}
-          className="shadow-prompt"
+          onSend={onSubmit}
+          onFiles={onFiles}
+          staged={staged}
+          hint={false}
+          disabled={disabled ?? false}
         />
       </div>
     </div>

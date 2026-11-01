@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { components } from '@techma/contracts-ts';
 import { describe, expect, it, vi } from 'vitest';
 import { ConversationView } from '@/components/chat/ConversationView';
 import { noopConsent } from '@/lib/consent';
 import type { useConversation } from '@/hooks/use-conversation';
+import { turnDelivery, userTurns, type UserEntry as UserEntryT } from '@/components/chat/UserEntryParts';
 import { initialState, type ConversationState, type TimelineEntry } from '@/lib/conversation-state';
 
 type Block = components['schemas']['Block'];
@@ -33,6 +34,7 @@ function build(state: Partial<ConversationState>, overrides: Partial<Conversatio
     sendButton: vi.fn(),
     sendForm: vi.fn(),
     sendFile: vi.fn(),
+    sendFiles: vi.fn(),
     retry: vi.fn(),
     consent: noopConsent,
     ...overrides,
@@ -42,7 +44,7 @@ const view = (conversation: Conversation, onRestart = () => {}) =>
   render(<ConversationView conversation={conversation} onRestart={onRestart} />);
 
 describe('ConversationView', () => {
-  it('shows the first question as the only h1 and later messages as bubbles', () => {
+  it('shows every user message as a bubble, the first question in the header, and one sr-only h1', () => {
     view(
       build({
         timeline: [
@@ -54,10 +56,47 @@ describe('ConversationView', () => {
     );
     const h1 = screen.getAllByRole('heading', { level: 1 });
     expect(h1).toHaveLength(1);
-    expect(h1[0]).toHaveTextContent('Comment obtenir un casier judiciaire ?');
-    const bubble = screen.getByText('Préparer ma demande');
-    expect(bubble.tagName).not.toBe('H1');
+    expect(h1[0]).toHaveTextContent('Conversation avec l’Assistant Démarches');
+    expect(h1[0]).toHaveClass('sr-only');
+    expect(screen.getAllByText('Comment obtenir un casier judiciaire ?')).toHaveLength(2);
+    const bubble = within(screen.getByRole('log')).getByText('Comment obtenir un casier judiciaire ?');
     expect(bubble).toHaveClass('bg-sunken');
+    expect(screen.getByText('Préparer ma demande')).toHaveClass('bg-sunken');
+  });
+
+  it('groups consecutive entries, with the sender and time on agent groups and the time on the last user bubble', () => {
+    view(
+      build({
+        timeline: [
+          user('u1', 'Q1'),
+          user('u2', 'Q2'),
+          agent('a1', { type: 'text', text: 'R1', sources: [] }),
+          agent('a2', { type: 'text', text: 'R2', sources: [] }),
+        ],
+      }),
+    );
+    const log = screen.getByRole('log');
+    expect(within(log).getAllByText('Assistant Démarches')).toHaveLength(1);
+    const times = log.querySelectorAll('time');
+    expect(times).toHaveLength(2);
+    times.forEach((t) => {
+      expect(t).toHaveAttribute('dateTime', at);
+      expect(t.textContent).toMatch(/^\d{2}:\d{2}$/);
+    });
+  });
+
+  it('does not animate the history present at mount, but reveals a live answer', () => {
+    const history = [user('u1', 'Q'), agent('a1', { type: 'text', text: 'Un deux', sources: [] })];
+    const { container, rerender } = view(build({ timeline: history }));
+    expect(container.querySelector('.chat-word, .chat-reveal, .ui-enter')).toBeNull();
+    rerender(
+      <ConversationView
+        conversation={build({ timeline: [...history, agent('a2', { type: 'text', text: 'Trois quatre', sources: [] })] })}
+        onRestart={() => {}}
+      />,
+    );
+    expect(container.querySelectorAll('.chat-word')).toHaveLength(2);
+    expect(screen.getByRole('log')).toHaveTextContent('Trois quatre');
   });
 
   it('keeps the log region and the delivery states, with retry', async () => {
@@ -95,25 +134,97 @@ describe('ConversationView', () => {
     expect(screen.queryByRole('heading', { name: 'Sources' })).toBeNull();
   });
 
-  it('shows the dossier steps and an accordion toggle for small screens', async () => {
-    view(build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [] })] }));
-    expect(screen.getByText('Question comprise')).toBeInTheDocument();
-    const toggle = screen.getByRole('button', { name: 'Votre dossier' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await userEvent.setup().click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  it('shows the dossier steps, and a header pill opening the dossier sheet on small screens', async () => {
+    view(
+      build({
+        timeline: [
+          user('u1', 'Q'),
+          agent('a1', { type: 'text', text: 'R', sources: [source('casier', 'https://a.example/c')] }, { type: 'form', id: 'frm', title: 'T', fields: [] } as unknown as Block),
+        ],
+      }),
+    );
+    expect(screen.getByRole('heading', { name: 'Votre demande' })).toBeInTheDocument();
+    expect(screen.getByText('Démarche identifiée')).toBeInTheDocument();
+    const pill = screen.getByRole('button', { name: 'Dossier 1/5' });
+    expect(screen.getAllByText('Démarche identifiée')).toHaveLength(1);
+    await userEvent.setup().click(pill);
+    expect(screen.getAllByText('Démarche identifiée')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Fermer' })).toBeInTheDocument();
   });
 
-  it('shows the typing indicator while waiting for the agent', () => {
+  it('offers a Sources (n) header button when there is no request, opening the sources dialog', async () => {
+    view(build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [source('casier', 'https://a.example/c')] })] }));
+    expect(screen.queryByRole('button', { name: /^Dossier/ })).toBeNull();
+    expect(screen.getAllByText('casier')).toHaveLength(2);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Sources (1)' }));
+    expect(screen.getAllByText('casier')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Fermer' })).toBeInTheDocument();
+  });
+
+  it('opens the panels in a right drawer from md up', async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      view(build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [source('casier', 'https://a.example/c')] })] }));
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Sources (1)' }));
+      const drawer = document.querySelector('dialog.chat-drawer') as HTMLDialogElement;
+      expect(drawer).not.toBeNull();
+      expect(within(drawer).getByText('casier')).toBeInTheDocument();
+      expect(document.querySelector('dialog.chat-sheet')).toBeNull();
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it('hides the dossier panel and pill on a simple Q&A', () => {
+    view(build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [] })] }));
+    expect(screen.queryByRole('button', { name: /^Dossier/ })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Votre demande' })).toBeNull();
+  });
+
+  it('shows the agent activity while waiting, announced once outside the log', () => {
     const { rerender } = view(build({ timeline: [user('u1', 'Q', 'accepted')] }));
-    expect(screen.getByRole('status')).toHaveTextContent('L’assistant écrit…');
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Je réfléchis…');
+    expect(screen.getByRole('log').contains(status)).toBe(false);
+    expect(screen.getByRole('log').querySelector('[role="status"]')).toBeNull();
+    rerender(
+      <ConversationView
+        conversation={build({
+          timeline: [user('u1', 'Q', 'accepted')],
+          activity: { toolName: 'procedures.get', at },
+        })}
+        onRestart={() => {}}
+      />,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Je consulte la fiche officielle…');
     rerender(
       <ConversationView
         conversation={build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [] })] })}
         onRestart={() => {}}
       />,
     );
-    expect(screen.queryByRole('status')).toBeNull();
+    // Only the copy buttons' empty live regions remain.
+    expect(screen.queryAllByRole('status').filter((s) => s.textContent !== '')).toHaveLength(0);
+  });
+
+  it('adds a reassurance line after 8 seconds of waiting', () => {
+    vi.useFakeTimers();
+    try {
+      view(build({ timeline: [user('u1', 'Q', 'accepted')] }));
+      expect(screen.queryByText(/prend un peu plus de temps/)).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(8000);
+      });
+      expect(screen.getByText('Cela prend un peu plus de temps que d’habitude.')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('only the last agent message is interactive', () => {
@@ -130,16 +241,15 @@ describe('ConversationView', () => {
     expect(screen.getByRole('button', { name: 'Nouveau' })).toBeEnabled();
   });
 
-  it('sends the typed question and shows the disclaimer', async () => {
+  it('sends the typed question and shows the disclaimer at the top of the thread', async () => {
     const sendText = vi.fn();
     view(build({}, { sendText }));
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText('Poser une autre question'), 'Bonjour');
+    await user.type(screen.getByLabelText('Votre message'), 'Bonjour');
     await user.click(screen.getByRole('button', { name: 'Envoyer' }));
     expect(sendText).toHaveBeenCalledWith('Bonjour');
-    expect(
-      screen.getByText('L’IA peut se tromper. Vérifiez les informations importantes sur le portail officiel.'),
-    ).toBeInTheDocument();
+    const disclaimer = screen.getByText('L’IA peut se tromper. Vérifiez les informations importantes sur le portail officiel.');
+    expect(disclaimer.closest('.overflow-y-auto')).not.toBeNull();
   });
 
   it.each([
@@ -156,13 +266,57 @@ describe('ConversationView', () => {
   it('shows a connecting state while starting', () => {
     view(build({ status: 'starting', conversationId: null }));
     expect(screen.getByRole('status')).toHaveTextContent('Connexion…');
-    expect(screen.getByLabelText('Poser une autre question')).toBeDisabled();
+    expect(screen.getByLabelText('Votre message')).toBeDisabled();
   });
 
-  it('restarts from the header', async () => {
+  it('restarts from the header at once when nothing would be lost', async () => {
     const onRestart = vi.fn();
-    view(build({}), onRestart);
+    view(build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [] })] }), onRestart);
     await userEvent.setup().click(screen.getByRole('button', { name: 'Nouvelle question' }));
+    expect(onRestart).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a full-size preview from a sent image card', async () => {
+    const proto = HTMLDialogElement.prototype;
+    const original = proto.showModal;
+    proto.showModal = vi.fn(function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    });
+    try {
+      const image: TimelineEntry = {
+        ...(user('u2', 'photo.png') as Extract<TimelineEntry, { kind: 'user' }>),
+        content: null,
+        batchId: 'batch_img',
+        attachment: { name: 'photo.png', sizeBytes: 10, mimeType: 'image/png', previewUrl: 'blob:sent' },
+      };
+      view(build({ timeline: [image] }));
+      const u = userEvent.setup();
+      await u.click(screen.getByRole('button', { name: 'Voir photo.png' }));
+      const dialog = screen.getByRole('dialog', { name: 'Aperçu de photo.png' });
+      expect(within(dialog).getByRole('img', { name: 'photo.png' })).toHaveAttribute('src', 'blob:sent');
+      await u.click(within(dialog).getByRole('button', { name: 'Fermer l’aperçu' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+    } finally {
+      proto.showModal = original;
+    }
+  });
+
+  it('asks for confirmation before restarting a conversation holding a dossier', async () => {
+    const onRestart = vi.fn();
+    const attached: TimelineEntry = {
+      ...(user('u2', 'cni.pdf') as Extract<TimelineEntry, { kind: 'user' }>),
+      attachment: { name: 'cni.pdf', sizeBytes: 10, mimeType: 'application/pdf' },
+    };
+    view(build({ timeline: [user('u1', 'Q'), attached] }), onRestart);
+    const u = userEvent.setup();
+    await u.click(screen.getByRole('button', { name: 'Nouvelle question' }));
+    expect(onRestart).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog', { name: 'Recommencer une conversation ?' });
+    expect(dialog).toHaveTextContent('Vous perdrez l’affichage de cette conversation.');
+    await u.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByRole('dialog', { name: 'Recommencer une conversation ?' })).toBeNull();
+    await u.click(screen.getByRole('button', { name: 'Nouvelle question' }));
+    await u.click(screen.getByRole('button', { name: 'Recommencer' }));
     expect(onRestart).toHaveBeenCalledTimes(1);
   });
 });
@@ -180,7 +334,7 @@ describe('ConversationView scrolling', () => {
 
   it('keeps the composer outside the scrolling thread', () => {
     view(build({ timeline }));
-    const composer = screen.getByRole('textbox', { name: 'Poser une autre question' });
+    const composer = screen.getByRole('textbox', { name: 'Votre message' });
     expect(thread().contains(composer)).toBe(false);
   });
 
@@ -218,5 +372,131 @@ describe('ConversationView scrolling', () => {
       />,
     );
     expect(el.scrollTop).toBe(2000);
+  });
+
+  describe('batched user turn', () => {
+    const file = (id: string, name: string, delivery: 'received' | 'uploadFailed' | 'uploading' = 'received'): TimelineEntry => ({
+      kind: 'user',
+      id,
+      content: null,
+      display: name,
+      sentAt: at,
+      delivery,
+      batchId: 'batch_1',
+      attachment: { name, sizeBytes: 1200, mimeType: 'application/pdf' },
+      ...(delivery === 'uploadFailed' ? { error: 'Échec de l’envoi de la pièce.', retryable: true } : {}),
+    });
+    const note = (delivery: 'received' | 'sending' = 'received'): TimelineEntry => ({
+      ...(user('n1', 'Voici mes pièces', delivery as 'received') as Extract<TimelineEntry, { kind: 'user' }>),
+      batchId: 'batch_1',
+    });
+
+    it('renders files and note as one turn with one status line', () => {
+      view(build({ timeline: [file('f1', 'recto.pdf'), file('f2', 'verso.pdf'), note()] }));
+      const log = screen.getByRole('log');
+      const turns = log.querySelectorAll('[data-turn]');
+      expect(turns).toHaveLength(1);
+      const group = within(turns[0] as HTMLElement).getByRole('group', { name: '2 pièces jointes' });
+      expect(group.querySelectorAll('[data-entry-id]')).toHaveLength(2);
+      const bubble = within(turns[0] as HTMLElement).getByText('Voici mes pièces');
+      expect(group.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(within(log).getAllByText('Reçu')).toHaveLength(1);
+      expect(log.querySelectorAll('time')).toHaveLength(1);
+    });
+
+    it('shows a failed file error and retry under its card while the turn still shows', async () => {
+      const retry = vi.fn();
+      const user_ = userEvent.setup();
+      view(build({ timeline: [file('f1', 'recto.pdf'), file('f2', 'verso.pdf', 'uploadFailed'), note('sending')] }, { retry }));
+      const card = screen.getByText('verso.pdf').closest('[data-entry-id]') as HTMLElement;
+      expect(within(card).getByText('Échec de l’envoi de la pièce.')).toBeInTheDocument();
+      await user_.click(within(card).getByRole('button', { name: 'Réessayer' }));
+      expect(retry).toHaveBeenCalledWith('f2');
+      const log = screen.getByRole('log');
+      expect(within(log).getByText('Voici mes pièces')).toBeInTheDocument();
+      expect(within(log).getByText('Envoi…')).toBeInTheDocument();
+    });
+  });
+});
+
+describe('userTurns and turnDelivery', () => {
+  const e = (id: string, batchId?: string, delivery: 'received' | 'accepted' | 'sending' | 'uploading' | 'failed' | 'uploadFailed' = 'received') =>
+    ({ ...(user(id, id) as Extract<TimelineEntry, { kind: 'user' }>), batchId, delivery });
+
+  it('groups consecutive entries sharing a batchId and leaves others alone', () => {
+    const items = [e('a'), e('b', 'x'), e('c', 'x'), e('d'), e('f', 'y'), e('g', 'x')].map((entry) => ({ entry }));
+    expect(userTurns(items).map((t) => t.map((i) => i.entry.kind === 'user' && i.entry.id))).toEqual([
+      ['a'],
+      ['b', 'c'],
+      ['d'],
+      ['f'],
+      ['g'],
+    ]);
+  });
+
+  it('aggregates delivery, ignoring failed entries', () => {
+    expect(turnDelivery([e('a', 'x', 'uploading'), e('b', 'x', 'received')])).toBe('sending');
+    expect(turnDelivery([e('a', 'x', 'accepted'), e('b', 'x', 'received')])).toBe('accepted');
+    expect(turnDelivery([e('a', 'x', 'received'), e('b', 'x', 'received')])).toBe('received');
+    expect(turnDelivery([e('a', 'x', 'uploadFailed'), e('b', 'x', 'received')])).toBe('received');
+    expect(turnDelivery([e('a', 'x', 'failed'), e('b', 'x', 'uploadFailed')])).toBeNull();
+  });
+
+  it('renders an audio entry as a voice bubble with a single status line', () => {
+    const voice: TimelineEntry = {
+      kind: 'user',
+      id: 'v1',
+      content: { type: 'audio', fileId: 'fil_1' },
+      display: 'Message vocal.m4a',
+      sentAt: at,
+      delivery: 'received',
+      batchId: 'batch_v',
+      attachment: {
+        name: 'Message vocal.m4a',
+        sizeBytes: 10,
+        mimeType: 'audio/mp4',
+        previewUrl: 'blob:voice',
+        durationMs: 7000,
+        waveform: Array(32).fill(0.5),
+      },
+    };
+    view(build({ timeline: [voice] }));
+    expect(screen.getByRole('button', { name: 'Écouter le message vocal' })).toBeEnabled();
+    expect(screen.getByText('0:07')).toBeInTheDocument();
+    expect(screen.getAllByText('Reçu')).toHaveLength(1);
+  });
+
+  describe('voice transcript', () => {
+    const voiceWith = (transcript?: UserEntryT['transcript']): TimelineEntry => ({
+      kind: 'user',
+      id: 'v1',
+      content: { type: 'audio', fileId: 'fil_1' },
+      display: 'Message vocal.m4a',
+      sentAt: at,
+      delivery: 'received',
+      attachment: { name: 'Message vocal.m4a', sizeBytes: 10, mimeType: 'audio/mp4', previewUrl: 'blob:voice', durationMs: 7000 },
+      ...(transcript ? { transcript } : {}),
+    });
+
+    it('toggles a done transcript', async () => {
+      view(build({ timeline: [voiceWith({ status: 'done', text: 'Bonjour le monde' })] }));
+      const button = screen.getByRole('button', { name: 'Afficher la transcription' });
+      expect(button).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByText('Bonjour le monde')).not.toBeInTheDocument();
+      await userEvent.click(button);
+      expect(screen.getByText('Bonjour le monde')).toBeInTheDocument();
+      const hide = screen.getByRole('button', { name: 'Masquer la transcription' });
+      expect(hide).toHaveAttribute('aria-expanded', 'true');
+    });
+    it('shows a failed transcript as plain text', () => {
+      view(build({ timeline: [voiceWith({ status: 'failed' })] }));
+      expect(screen.getByText('Transcription indisponible')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /transcription/ })).not.toBeInTheDocument();
+    });
+    it('shows nothing without transcript', () => {
+      view(build({ timeline: [voiceWith()] }));
+      expect(screen.queryByText('Transcription indisponible')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /transcription/ })).not.toBeInTheDocument();
+    });
   });
 });

@@ -1,2 +1,103 @@
 @import "tailwindcss";
 @import "@techma/ui/styles.css";
+
+/* Progressive reveal of a live answer: opacity + 4px (blocks) and opacity only (words). */
+@keyframes chat-word-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.chat-reveal {
+  animation: ui-enter var(--ui-dur-base) var(--ui-ease-out) both;
+}
+.chat-word {
+  animation: chat-word-in 160ms var(--ui-ease-out) both;
+}
+.chat-fade-in {
+  animation: chat-word-in var(--ui-dur-base) var(--ui-ease-out) both;
+}
+
+/* Bottom sheet and dialogs: transform/opacity only, entry via @starting-style. */
+.chat-sheet {
+  transform: translateY(0);
+  transition: transform 250ms var(--ui-ease-out);
+  @starting-style {
+    transform: translateY(100%);
+  }
+}
+.chat-sheet[data-closing] {
+  transform: translateY(100%);
+  transition-duration: 150ms;
+}
+.chat-sheet::backdrop,
+.chat-drawer::backdrop,
+.chat-dialog::backdrop {
+  background: rgb(0 0 0 / 0.4);
+  transition: opacity 200ms var(--ui-ease-out);
+  @starting-style {
+    opacity: 0;
+  }
+}
+.chat-drawer {
+  transform: translateX(0);
+  transition: transform 250ms var(--ui-ease-out);
+  @starting-style {
+    transform: translateX(100%);
+  }
+}
+.chat-drawer[data-closing] {
+  transform: translateX(100%);
+  transition-duration: 150ms;
+}
+.chat-sheet[data-closing]::backdrop,
+.chat-drawer[data-closing]::backdrop {
+  opacity: 0;
+}
+.chat-dialog {
+  transition:
+    opacity 200ms var(--ui-ease-out),
+    transform 200ms var(--ui-ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* Image lightbox: fade in the overlay, scale the image. Skipped under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .image-preview {
+    animation: image-preview-fade 200ms var(--ui-ease-out) both;
+  }
+  .image-preview-img {
+    animation: image-preview-zoom 200ms var(--ui-ease-out) both;
+  }
+}
+@keyframes image-preview-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes image-preview-zoom {
+  from {
+    transform: scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-reveal,
+  .chat-word,
+  .chat-fade-in {
+    animation: none;
+  }
+  .chat-sheet,
+  .chat-drawer,
+  .chat-dialog,
+  .chat-sheet::backdrop,
+  .chat-drawer::backdrop,
+  .chat-dialog::backdrop {
+    transition: none;
+  }
+}

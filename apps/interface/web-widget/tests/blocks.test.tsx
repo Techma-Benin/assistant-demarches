@@ -1,16 +1,17 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { components } from '@techma/contracts-ts';
 import { describe, expect, it, vi } from 'vitest';
 import { BlockRenderer } from '@/components/blocks/BlockRenderer';
 import { fixtures } from '@/dev/fixtures';
+import { TextBlock } from '@/components/blocks/TextBlock';
 
 type Block = components['schemas']['Block'];
 type RequestStatus = components['schemas']['RequestStatus'];
 
 const noop = () => {};
 function renderBlock(block: Block, props: Partial<Parameters<typeof BlockRenderer>[0]> = {}) {
-  return render(<BlockRenderer block={block} interactive onButton={noop} onForm={noop} onFile={noop} {...props} />);
+  return render(<BlockRenderer block={block} interactive onButton={noop} onForm={noop} onFiles={noop} {...props} />);
 }
 const source = (url: string) => ({
   procedureId: 'p',
@@ -120,25 +121,43 @@ describe('BlockRenderer', () => {
     });
 
     it('shows an alert for an invalid type and stays usable', async () => {
-      const onFile = vi.fn();
-      renderBlock(block, { onFile });
+      const onFiles = vi.fn();
+      renderBlock(block, { onFiles });
       const user = userEvent.setup({ applyAccept: false });
       await user.upload(screen.getByLabelText('Joindre une pièce'), new File(['x'], 'a.txt', { type: 'text/plain' }));
-      expect(screen.getByRole('alert')).toHaveTextContent('Format non accepté');
-      expect(onFile).not.toHaveBeenCalled();
+      expect(screen.getByRole('alert')).toHaveTextContent('a.txt : format non accepté');
+      expect(onFiles).not.toHaveBeenCalled();
       expect(screen.getByRole('button', { name: 'Choisir un fichier' })).toBeEnabled();
     });
 
-    it('calls onFile once then disables', async () => {
-      const onFile = vi.fn();
-      renderBlock(block, { onFile });
+    it('stages the file and shows its chip without sending', async () => {
+      const onFiles = vi.fn();
+      renderBlock(block, { onFiles });
       const user = userEvent.setup();
       const file = pdf();
       await user.upload(screen.getByLabelText('Joindre une pièce'), file);
-      expect(onFile).toHaveBeenCalledTimes(1);
-      expect(onFile).toHaveBeenCalledWith(file);
+      expect(onFiles).not.toHaveBeenCalled();
+      expect(screen.getByTitle('doc.pdf')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Envoyer cette pièce' })).toBeEnabled();
+    });
+
+    it('sends several files with « Envoyer les pièces » then disables', async () => {
+      const onFiles = vi.fn();
+      renderBlock(block, { onFiles });
+      const user = userEvent.setup();
+      const file = pdf();
+      await user.upload(screen.getByLabelText('Joindre une pièce'), file);
+      expect(onFiles).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Ajouter une autre pièce' })).toBeEnabled();
+      const other = new File(['y'], 'autre.pdf', { type: 'application/pdf' });
+      await user.upload(screen.getByLabelText('Joindre une pièce'), other);
+      await user.click(screen.getByRole('button', { name: 'Retirer doc.pdf' }));
+      await user.upload(screen.getByLabelText('Joindre une pièce'), file);
+      await user.click(screen.getByRole('button', { name: 'Envoyer les pièces' }));
+      expect(onFiles).toHaveBeenCalledTimes(1);
+      expect(onFiles).toHaveBeenCalledWith([other, file]);
       expect(screen.queryByRole('button', { name: 'Choisir un fichier' })).toBeNull();
-      expect(screen.getByText(/doc\.pdf · 8 o/)).toBeInTheDocument();
+      expect(screen.getByText(/autre\.pdf · 1 o, doc\.pdf · 8 o/)).toBeInTheDocument();
       expect(screen.getByLabelText('Joindre une pièce')).toBeDisabled();
     });
 
@@ -170,7 +189,7 @@ describe('BlockRenderer', () => {
     expect(link).toHaveAttribute('target', '_blank');
     expect(link.getAttribute('rel')).toContain('noopener');
     expect(screen.getByRole('heading', { name: 'Votre demande est prête.' })).toBeInTheDocument();
-    expect(screen.getByText(/Réf\. req_/)).toHaveClass('font-mono');
+    expect(screen.getByText(/^req_/)).toHaveClass('font-mono');
     unmount();
     renderBlock(statusCard('awaiting_user_validation', 'javascript:alert(1)'));
     expect(screen.queryByRole('link')).toBeNull();
@@ -179,8 +198,58 @@ describe('BlockRenderer', () => {
     expect(screen.queryByRole('link')).toBeNull();
   });
 
+  it('hides the procedure id and offers to copy the reference', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const block = statusCard('draft', null);
+    const id = (block as Extract<Block, { type: 'statusCard' }>).request.id;
+    renderBlock(block);
+    expect(screen.queryByText(/Démarche/)).toBeNull();
+    expect(screen.getByText('Référence')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Copier la référence' }));
+    expect(writeText).toHaveBeenCalledWith(id);
+    expect(await screen.findByText('Copiée')).toBeInTheDocument();
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+  });
+
+  it('hides the copy button without Clipboard API', () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    renderBlock(statusCard('draft', null));
+    expect(screen.queryByRole('button', { name: 'Copier la référence' })).toBeNull();
+  });
+
   it('opens the portal link of other statuses too', () => {
     renderBlock(statusCard('processing', 'https://example.org/demonstration'));
     expect(screen.getByRole('link', { name: 'Ouvrir le portail officiel' })).toBeInTheDocument();
+  });
+});
+
+describe('TextBlock progressive reveal', () => {
+  const live = (text: string, sources: Extract<Block, { type: 'text' }>['sources'] = []) =>
+    render(<TextBlock block={{ type: 'text', text, sources }} revealDelay={70} />);
+
+  it('keeps the full text and wraps words with capped delays', () => {
+    const { container } = live('Un deux trois');
+    expect(container).toHaveTextContent('Un deux trois');
+    const words = Array.from(container.querySelectorAll<HTMLElement>('.chat-word'));
+    expect(words.map((w) => w.style.animationDelay)).toEqual(['70ms', '88ms', '106ms']);
+  });
+
+  it('spreads long texts within 600 ms', () => {
+    const { container } = live(Array(200).fill('mot').join(' '));
+    const words = container.querySelectorAll<HTMLElement>('.chat-word');
+    expect(words).toHaveLength(200);
+    expect(parseInt(words[199].style.animationDelay) - 70).toBeLessThanOrEqual(600);
+  });
+
+  it('reveals per paragraph above 400 words, without wrapping words', () => {
+    const { container } = live(Array(450).fill('mot').join(' '));
+    expect(container.querySelector('.chat-word')).toBeNull();
+    expect(container.querySelector('p.chat-reveal')).not.toBeNull();
+  });
+
+  it('does not wrap anything without a reveal delay', () => {
+    const { container } = render(<TextBlock block={{ type: 'text', text: 'Un deux', sources: [] }} />);
+    expect(container.querySelector('.chat-word, .chat-reveal')).toBeNull();
   });
 });

@@ -39,9 +39,19 @@ describe('ConsentCard', () => {
     const region = screen.getByRole('region', { name: 'Autorisation demandée' });
     expect(region).toHaveTextContent('J’autorise <b>tout</b>');
     expect(region.querySelector('b')).toBeNull();
-    expect(region).toHaveTextContent(/Valable jusqu’à \d{2}:\d{2}/);
-    expect(region).toHaveTextContent('Vous pourrez retirer cette autorisation à tout moment, ou écrire STOP.');
-    expect(screen.getByRole('button', { name: 'J’autorise' })).toHaveFocus();
+    expect(region).toHaveTextContent('Texte de l’autorisation');
+    expect(region).toHaveTextContent(/Valable jusqu’au \p{L}+ \d{1,2} \p{L}+( \d{4})? à \d{2}:\d{2}/u);
+    expect(region).toHaveTextContent('Vous pourrez retirer cette autorisation à tout moment.');
+    expect(region).not.toHaveTextContent('STOP');
+    expect(region).toHaveTextContent('créer et remplir votre demande');
+    expect(region).toHaveTextContent('joindre vos pièces à la demande');
+    expect(region).toHaveTextContent('transmettre la demande pour que vous la validiez sur le portail officiel');
+    expect(region).toHaveTextContent('payer à votre place');
+    expect(region).toHaveTextContent('valider la demande à votre place');
+    const title = screen.getByRole('heading', { name: 'Autoriser l’assistant à agir pour vous ?' });
+    expect(title).toHaveAttribute('tabindex', '-1');
+    expect(title).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'J’autorise' })).not.toHaveFocus();
   });
 
   it('calls accept and refuse', async () => {
@@ -54,7 +64,7 @@ describe('ConsentCard', () => {
 
   it('active state shows the mandate expiry, resume and retract', async () => {
     const consent = card({ phase: 'active', mandate: { id: 'mdt_1', expiresAt: iso(30 * 60_000) } });
-    expect(screen.getByText(/Autorisation active jusqu’à \d{2}:\d{2}/)).toBeInTheDocument();
+    expect(screen.getByText(/Autorisation active jusqu’au \p{L}+ \d{1,2} \p{L}+( \d{4})? à \d{2}:\d{2}/u)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Reprendre ma demande' }));
     await userEvent.click(screen.getByRole('button', { name: 'Retirer l’autorisation' }));
     expect(consent.resume).toHaveBeenCalledOnce();

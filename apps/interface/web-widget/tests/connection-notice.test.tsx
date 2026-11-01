@@ -14,6 +14,7 @@ vi.mock('@/hooks/use-conversation', () => ({
     sendButton: () => {},
     sendForm: () => {},
     sendFile: () => {},
+    sendFiles: () => {},
     retry: () => {},
     consent: noopConsent,
   }),

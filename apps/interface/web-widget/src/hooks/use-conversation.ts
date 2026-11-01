@@ -12,7 +12,8 @@ import {
   type ConsentFlow,
   type PublicChallenge,
 } from '@/lib/consent';
-import { conversationReducer, initialState } from '@/lib/conversation-state';
+import { conversationReducer, initialState, type ConversationState } from '@/lib/conversation-state';
+import { saveConversation, type ConversationSnapshot } from '@/lib/conversation-persistence';
 import { CONTRACT_MIME_TYPES, contentTypeFor, validateFile, type ContractMimeType } from '@/lib/files';
 import { newId } from '@/lib/ids';
 import { buttonInteraction, formInteraction } from '@/lib/interactions';
@@ -25,17 +26,41 @@ interface PendingUpload {
 }
 
 const MAX_TEXT_LENGTH = 4000;
+const SAVE_DEBOUNCE_MS = 150;
 
-export function useConversation(client?: C1Client) {
+function stateFromSnapshot(snapshot: ConversationSnapshot | null | undefined): ConversationState {
+  if (!snapshot) return initialState;
+  const { mandate: _mandate, ...rest } = snapshot;
+  return { ...initialState, ...rest, status: 'ready' };
+}
+
+/** `restored`: a conversation saved before a reload; it is resumed instead of creating a new one. */
+export function useConversation(client?: C1Client, restored?: ConversationSnapshot | null) {
   const c1 = useMemo(() => client ?? new C1Client(), [client]);
-  const [state, dispatch] = useReducer(conversationReducer, initialState);
+  const [state, dispatch] = useReducer(conversationReducer, restored, stateFromSnapshot);
+  const resumed = useRef(restored ?? null);
   // Stable across StrictMode's double effect: the second create hits the same idempotent result.
   const idempotencyKey = useRef<string>(crypto.randomUUID());
   const pending = useRef(new Map<string, MessageInput>());
   // Message id -> file and upload Idempotency-Key, kept so retries reuse both.
   const uploads = useRef(new Map<string, PendingUpload>());
+  // Ordered chain of one send (file 1, file 2, ..., note): a message carries ONE file or text, and message POSTs go out in order.
+  const nextOf = useRef(new Map<string, string>()); // message id -> id of the following message
+  const prevOf = useRef(new Map<string, string>()); // message id -> id of the preceding message
+  const held = useRef(new Map<string, MessageInput>()); // ready to post, waiting for the preceding message to be accepted
+  const accepted = useRef(new Set<string>());
+  const previewUrls = useRef<string[]>([]); // blob URLs of image thumbnails, revoked on unmount
 
   useEffect(() => {
+    const urls = previewUrls.current;
+    return () => {
+      for (const url of urls) URL.revokeObjectURL(url);
+      urls.length = 0;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (resumed.current) return;
     let cancelled = false;
     c1.createConversation({ channel: 'web', locale: 'fr' }, idempotencyKey.current)
       .then((conversation) => {
@@ -59,6 +84,7 @@ export function useConversation(client?: C1Client) {
     const stream = new ConversationStream({
       client: c1,
       conversationId,
+      initialCursor: resumed.current?.conversationId === conversationId ? resumed.current.cursor : null,
       onEvents: (items) =>
         dispatch({ type: 'eventsReceived', page: { items, nextCursor: items[items.length - 1].id } }),
       onReplayExpired: () => dispatch({ type: 'replayExpired' }),
@@ -77,13 +103,26 @@ export function useConversation(client?: C1Client) {
   }, [c1, conversationId]);
 
   const post = useCallback(
-    async (input: MessageInput) => {
+    async (input: MessageInput): Promise<void> => {
       if (!conversationId) return;
-      try {
-        await c1.sendMessage(conversationId, input);
-        dispatch({ type: 'userMessageAccepted', id: input.id });
-      } catch {
-        dispatch({ type: 'userMessageFailed', id: input.id });
+      let next: MessageInput | undefined = input;
+      while (next) {
+        const current: MessageInput = next;
+        try {
+          await c1.sendMessage(conversationId, current);
+          dispatch({ type: 'userMessageAccepted', id: current.id });
+        } catch {
+          dispatch({ type: 'userMessageFailed', id: current.id });
+          return;
+        }
+        // The following message of the chain goes out once this one is accepted (also after a retry).
+        accepted.current.add(current.id);
+        const nextId = nextOf.current.get(current.id);
+        next = nextId ? held.current.get(nextId) : undefined;
+        if (next && nextId) {
+          held.current.delete(nextId);
+          pending.current.set(nextId, next);
+        }
       }
     },
     [c1, conversationId],
@@ -99,6 +138,12 @@ export function useConversation(client?: C1Client) {
           content: { type: contentTypeFor(uploaded.mimeType), fileId: uploaded.id },
           sentAt: entry.sentAt,
         };
+        const prevId = prevOf.current.get(id);
+        if (prevId && !accepted.current.has(prevId)) {
+          // The previous message is not accepted yet: it releases this one.
+          held.current.set(id, input);
+          return;
+        }
         pending.current.set(id, input);
         await post(input);
       } catch (error) {
@@ -115,30 +160,75 @@ export function useConversation(client?: C1Client) {
     [c1, post],
   );
 
-  const sendFile = useCallback(
-    (file: File) => {
+  const sendFiles = useCallback(
+    (files: File[], note?: string, voice?: { durationMs: number; waveform: number[] }) => {
       if (!conversationId) return;
-      const validation = validateFile(file, CONTRACT_MIME_TYPES);
-      if (!validation.ok) return;
-      const id = newId('msg');
-      const entry: PendingUpload = {
-        file,
-        mimeType: validation.mimeType,
-        uploadKey: crypto.randomUUID(),
-        sentAt: new Date().toISOString(),
-      };
-      uploads.current.set(id, entry);
-      // The file name stays local: it is never sent to the backend.
-      dispatch({
-        type: 'fileUploadStarted',
-        id,
-        attachment: { name: file.name, sizeBytes: file.size, mimeType: validation.mimeType },
-        sentAt: entry.sentAt,
+      const text = note?.trim();
+      if (text && text.length > MAX_TEXT_LENGTH) return;
+      const valid = files.flatMap((file) => {
+        const validation = validateFile(file, CONTRACT_MIME_TYPES);
+        return validation.ok ? [{ file, mimeType: validation.mimeType }] : [];
       });
-      void upload(id, entry);
+      if (valid.length === 0) return;
+      const batchId = newId('batch');
+      const started: [string, PendingUpload][] = [];
+      let previousId: string | undefined;
+      const link = (id: string) => {
+        if (previousId) {
+          prevOf.current.set(id, previousId);
+          nextOf.current.set(previousId, id);
+        }
+        previousId = id;
+      };
+      for (const { file, mimeType } of valid) {
+        const id = newId('msg');
+        const entry: PendingUpload = {
+          file,
+          mimeType,
+          uploadKey: crypto.randomUUID(),
+          sentAt: new Date().toISOString(),
+        };
+        uploads.current.set(id, entry);
+        link(id);
+        started.push([id, entry]);
+        // The file name stays local: it is never sent to the backend.
+        let previewUrl: string | undefined;
+        if ((mimeType.startsWith('image/') || mimeType.startsWith('audio/')) && typeof URL.createObjectURL === 'function') {
+          previewUrl = URL.createObjectURL(file);
+          previewUrls.current.push(previewUrl);
+        }
+        dispatch({
+          type: 'fileUploadStarted',
+          id,
+          attachment: {
+            name: file.name,
+            sizeBytes: file.size,
+            mimeType,
+            previewUrl,
+            ...(voice && mimeType.startsWith('audio/') ? { durationMs: voice.durationMs, waveform: voice.waveform } : {}),
+          },
+          sentAt: entry.sentAt,
+          batchId,
+        });
+      }
+      if (text) {
+        // Shown right after the files; posted only once the last file message is accepted.
+        const noteInput: MessageInput = {
+          id: newId('msg'),
+          content: { type: 'text', text },
+          sentAt: new Date().toISOString(),
+        };
+        link(noteInput.id);
+        held.current.set(noteInput.id, noteInput);
+        dispatch({ type: 'userMessageQueued', id: noteInput.id, content: noteInput.content, display: text, sentAt: noteInput.sentAt, batchId });
+      }
+      // Uploads run in parallel; the message POSTs are chained.
+      for (const [id, entry] of started) void upload(id, entry);
     },
     [conversationId, upload],
   );
+
+  const sendFile = useCallback((file: File, note?: string) => sendFiles([file], note), [sendFiles]);
 
   const enqueue = useCallback(
     (content: MessageInput['content'], display: string) => {
@@ -173,8 +263,16 @@ export function useConversation(client?: C1Client) {
 
   const retry = useCallback(
     (entryId: string) => {
-      const input = pending.current.get(entryId);
+      let input = pending.current.get(entryId);
       const entry = uploads.current.get(entryId);
+      if (!input && !entry) {
+        // Restored after a reload: the content is in the timeline entry.
+        const restoredEntry = state.timeline.find((e) => e.kind === 'user' && e.id === entryId);
+        if (restoredEntry?.kind === 'user' && restoredEntry.delivery === 'failed' && restoredEntry.content) {
+          input = { id: restoredEntry.id, content: restoredEntry.content, sentAt: restoredEntry.sentAt };
+          pending.current.set(entryId, input);
+        }
+      }
       if (!input && entry) {
         // Upload step failed: redo it with the same Idempotency-Key.
         const current = state.timeline.find((e) => e.kind === 'user' && e.id === entryId);
@@ -203,13 +301,16 @@ export function useConversation(client?: C1Client) {
   );
 
   // Consent (mandate) flow, driven by the Backend `tool.called` MANDATE_* trigger held in the reducer state.
-  const [flow, setFlow] = useState<ConsentFlow>(idleFlow);
+  const [flow, setFlow] = useState<ConsentFlow>(() =>
+    restored?.mandate ? { phase: 'active', mandate: restored.mandate } : idleFlow,
+  );
   const attempt = useRef(0); // results of an older attempt are ignored
   const challengeKey = useRef('');
   const revokeKey = useRef('');
   const challenge = useRef<PublicChallenge | null>(null);
-  const mandate = useRef<{ id: string; expiresAt: string } | null>(null);
-  const handledTrigger = useRef<string | null>(null);
+  const mandate = useRef<{ id: string; expiresAt: string } | null>(restored?.mandate ?? null);
+  // A trigger answered by a restored active mandate must not request a new challenge.
+  const handledTrigger = useRef<string | null>(restored?.mandate ? (restored.consent?.eventId ?? null) : null);
   const procedureId = resolveProcedureId(state);
   const lastProcedure = useRef<string | null>(null);
   lastProcedure.current = procedureId;
@@ -317,6 +418,35 @@ export function useConversation(client?: C1Client) {
     if (lastText?.kind === 'user' && lastText.content?.type === 'text') sendText(lastText.content.text);
   }, [state.timeline, sendText]);
 
+  // Persist after state changes (debounced) and when the page goes away.
+  const snapshot = useRef<ConversationSnapshot | null>(null);
+  snapshot.current =
+    state.conversationId && state.timeline.length > 0
+      ? {
+          conversationId: state.conversationId,
+          cursor: state.cursor,
+          seenEventIds: state.seenEventIds,
+          timeline: state.timeline,
+          requestProcedureId: state.requestProcedureId,
+          consent: state.consent,
+          // A request in flight counts as the previous stable phase: only an active mandate is kept.
+          mandate: flow.phase === 'active' || flow.phase === 'revoking' ? flow.mandate : null,
+        }
+      : null;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (snapshot.current) saveConversation(snapshot.current);
+    }, SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [state, flow]);
+  useEffect(() => {
+    const flush = () => {
+      if (snapshot.current) saveConversation(snapshot.current);
+    };
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, []);
+
   const consent: ConsentControls = useMemo(
     () => ({
       flow,
@@ -330,5 +460,5 @@ export function useConversation(client?: C1Client) {
     [flow, accept, refuse, renew, retryConsent, retract, resume],
   );
 
-  return { state, connection, sendText, sendButton, sendForm, sendFile, retry, consent };
+  return { state, connection, sendText, sendButton, sendForm, sendFile, sendFiles, retry, consent };
 }

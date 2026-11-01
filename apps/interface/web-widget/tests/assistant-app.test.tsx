@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssistantApp } from '@/components/app/AssistantApp';
@@ -19,6 +19,7 @@ function build(state: Partial<ConversationState>): Conversation {
     sendButton: vi.fn(),
     sendForm: vi.fn(),
     sendFile: vi.fn(),
+    sendFiles: vi.fn(),
     retry: vi.fn(),
     consent: noopConsent,
   };
@@ -38,13 +39,24 @@ describe('AssistantApp', () => {
     expect(conversation.sendText).toHaveBeenCalledWith('Renouveler mon passeport');
   });
 
+  it('sends a file from the front door through the hook', async () => {
+    const conversation = build({});
+    hook.current = conversation;
+    const { container } = render(<AssistantApp />);
+    const file = new File(['x'], 'acte.pdf', { type: 'application/pdf' });
+    const input = container.querySelector('input[type=file]') as HTMLInputElement;
+    await userEvent.upload(input, file);
+    await userEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
+    expect(conversation.sendFiles).toHaveBeenCalledWith([file], undefined);
+  });
+
   it('keeps the front door disabled while the conversation is starting', () => {
     hook.current = build({ status: 'starting', conversationId: null });
     render(<AssistantApp />);
     expect(screen.getByRole('button', { name: 'Renouveler mon passeport' })).toBeDisabled();
   });
 
-  it('switches to the conversation view once a question is in the timeline', () => {
+  it('switches to the conversation view once a question is sent', async () => {
     hook.current = build({
       timeline: [
         {
@@ -57,8 +69,12 @@ describe('AssistantApp', () => {
         },
       ],
     });
+    window.history.replaceState(null, '', '/');
     render(<AssistantApp />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Renouveler mon passeport');
+    await userEvent.click(screen.getByRole('button', { name: 'Renouveler mon passeport' }));
+    expect(window.location.pathname).toBe('/conversation');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Conversation avec l’Assistant Démarches');
+    expect(within(screen.getByRole('log')).getByText('Renouveler mon passeport')).toBeInTheDocument();
     expect(screen.getByRole('log')).toBeInTheDocument();
   });
 

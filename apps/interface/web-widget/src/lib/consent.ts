@@ -90,6 +90,36 @@ export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** « samedi 31 octobre à 16:19 » in the reader's local time; the year is added only when it is not the current one. */
+export function formatExpiry(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  const parts = new Intl.DateTimeFormat('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' as const } : {}),
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  const day = [get('weekday'), get('day'), get('month'), get('year')].filter(Boolean).join(' ');
+  return `${day} à ${get('hour')}:${get('minute')}`;
+}
+
+const SCOPE_LABELS: Partial<Record<Scope, string>> = {
+  'requests:write': 'créer et remplir votre demande',
+  'documents:write': 'joindre vos pièces à la demande',
+  'requests:submit': 'transmettre la demande pour que vous la validiez sur le portail officiel',
+};
+
+/** What the assistant may do for these scopes, in plain French; unknown scopes are skipped. */
+export function scopeLabels(scopes: readonly string[]): string[] {
+  return scopes.flatMap((scope) => SCOPE_LABELS[scope as Scope] ?? []);
+}
+
+/** What the assistant never does, whatever the scopes (payment and final validation stay with the user). */
+export const NEVER_DO = ['payer à votre place', 'valider la demande à votre place'] as const;
+
 /** Dossier-panel step state: undefined = no consent requested yet. */
 export function consentStepState(flow: ConsentFlow): 'pending' | 'active' | undefined {
   if (flow.phase === 'idle') return undefined;

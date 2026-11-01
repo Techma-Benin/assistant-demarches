@@ -118,7 +118,7 @@ export function BlocksGallery() {
             interactive={interactive}
             onButton={(item) => push(`button: ${item.id}`)}
             onForm={(formId, values, summary) => push(`form ${formId}: ${JSON.stringify(values)} (${summary})`)}
-            onFile={(file) => push(`fichier: ${file.name} (${formatFileSize(file.size)})`)}
+            onFiles={(files) => push(`fichiers: ${files.map((file) => `${file.name} (${formatFileSize(file.size)})`).join(', ')}`)}
           />
         </Section>
       ))}

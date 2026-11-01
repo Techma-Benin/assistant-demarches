@@ -69,3 +69,32 @@ describe('file upload states', () => {
     expect(user(s)).toMatchObject({ delivery: 'uploadFailed', retryable: false });
   });
 });
+
+describe('batchId', () => {
+  const ready = () => conversationReducer(initialState, { type: 'conversationStarted', conversationId: CNV });
+  const sentAt = '2026-10-22T18:00:00Z';
+
+  it('is stored on file entries and on the queued note', () => {
+    let s = conversationReducer(ready(), { type: 'fileUploadStarted', id: MSG, attachment, sentAt, batchId: 'batch_1' });
+    s = conversationReducer(s, {
+      type: 'userMessageQueued',
+      id: `msg_${pad(2)}`,
+      content: { type: 'text', text: 'n' },
+      display: 'n',
+      sentAt,
+      batchId: 'batch_1',
+    });
+    expect(s.timeline.map((e) => e.kind === 'user' && e.batchId)).toEqual(['batch_1', 'batch_1']);
+  });
+
+  it('keeps the existing batchId on retry paths', () => {
+    let s = conversationReducer(ready(), { type: 'fileUploadStarted', id: MSG, attachment, sentAt, batchId: 'batch_1' });
+    s = conversationReducer(s, { type: 'fileUploadFailed', id: MSG, error: 'x', retryable: true });
+    s = conversationReducer(s, { type: 'fileUploadStarted', id: MSG, attachment, sentAt });
+    expect(user(s)).toMatchObject({ delivery: 'uploading', batchId: 'batch_1' });
+    s = conversationReducer(s, { type: 'fileUploadSucceeded', id: MSG, file: file() });
+    s = conversationReducer(s, { type: 'userMessageFailed', id: MSG });
+    s = conversationReducer(s, { type: 'userMessageQueued', id: MSG, content: { type: 'text', text: '' }, display: '', sentAt });
+    expect(user(s)).toMatchObject({ delivery: 'sending', batchId: 'batch_1' });
+  });
+});

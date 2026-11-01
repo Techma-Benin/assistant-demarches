@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveProcedureId, MANDATE_SCOPES } from '@/lib/consent';
+import { formatExpiry, resolveProcedureId, scopeLabels, MANDATE_SCOPES } from '@/lib/consent';
 import { conversationReducer, initialState, type ConversationState } from '@/lib/conversation-state';
 import type { EventPage } from '@/lib/c1-client';
 import type { TimelineEntry } from '@/lib/conversation-state';
@@ -95,10 +95,28 @@ describe('scopes and dossier step', () => {
     const timeline: TimelineEntry[] = [
       { kind: 'agent', message: { id: 'msg_1', conversationId: CNV, createdAt: base.time, blocks: [{ type: 'text', text: 't', sources: [] }] } },
     ];
-    expect(deriveDossierSteps(timeline).map((s) => s.label)).not.toContain('Autorisation');
-    const pending = deriveDossierSteps(timeline, 'pending');
+    expect(deriveDossierSteps(timeline)).toBeNull();
+    const sourced: TimelineEntry[] = [
+      { kind: 'agent', message: { id: 'msg_1', conversationId: CNV, createdAt: base.time, blocks: [{ type: 'text', text: 't', sources: [{ procedureId: 'p', url: 'https://a.example/x', retrievedAt: base.time, version: 'v1' }] }] } },
+    ];
+    const pending = deriveDossierSteps(sourced, 'pending')!;
     expect(pending.find((s) => s.label === 'Autorisation')?.status).toBe('current');
-    const active = deriveDossierSteps(timeline, 'active');
+    const active = deriveDossierSteps(sourced, 'active')!;
     expect(active.find((s) => s.label === 'Autorisation')?.status).toBe('done');
+  });
+});
+
+describe('consent display helpers', () => {
+  it('formats the expiry with the full date, and the year only when it differs', () => {
+    const now = new Date(2026, 9, 31, 10, 0);
+    expect(formatExpiry(new Date(2026, 9, 31, 16, 19).toISOString(), now)).toBe('samedi 31 octobre à 16:19');
+    expect(formatExpiry(new Date(2027, 0, 5, 9, 5).toISOString(), now)).toBe('mardi 5 janvier 2027 à 09:05');
+  });
+
+  it('maps scopes to plain labels and skips unknown ones', () => {
+    expect(scopeLabels(['requests:write', 'bogus', 'requests:submit'])).toEqual([
+      'créer et remplir votre demande',
+      'transmettre la demande pour que vous la validiez sur le portail officiel',
+    ]);
   });
 });

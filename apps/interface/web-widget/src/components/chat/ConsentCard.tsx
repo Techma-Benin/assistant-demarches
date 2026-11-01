@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Button, InlineAlert, Tile, TypingIndicator } from '@techma/ui';
+import { Button, InlineAlert, Tile, TypingIndicator, cn } from '@techma/ui';
 import { ShieldCheck } from 'lucide-react';
-import { formatTime, type ConsentControls } from '@/lib/consent';
+import { NEVER_DO, formatExpiry, scopeLabels, type ConsentControls } from '@/lib/consent';
 
 const BUTTON = 'min-h-11';
 const MAX_TIMEOUT = 2 ** 31 - 1;
@@ -49,8 +49,8 @@ export function ConsentCard({
   const mandate = flow.phase === 'active' || flow.phase === 'revoking' ? flow.mandate : undefined;
   const expired = useExpired(challenge?.expiresAt ?? mandate?.expiresAt, now);
 
-  // Move focus to the primary action when the card appears, unless the user is typing.
-  const actions = useRef<HTMLDivElement>(null);
+  // Move focus to the title (never to « J’autorise ») when the card appears, unless the user is typing.
+  const title = useRef<HTMLHeadingElement>(null);
   const actionable = flow.phase === 'pending' && !expired;
   useEffect(() => {
     if (!actionable) return;
@@ -58,12 +58,14 @@ export function ConsentCard({
     const typing =
       active instanceof HTMLElement &&
       (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable);
-    if (!typing) actions.current?.querySelector('button')?.focus();
+    if (!typing) title.current?.focus();
   }, [actionable]);
 
   if (flow.phase === 'idle') return null;
 
   let content: ReactNode;
+  let heading = 'Autorisation';
+  let accent = 'border-l-line-strong';
   if (flow.phase === 'requesting') {
     content = (
       <div className="flex items-center gap-2 text-ink-muted">
@@ -74,6 +76,7 @@ export function ConsentCard({
   } else if (flow.phase === 'noProcedure') {
     content = <Body>L’assistant doit d’abord identifier la démarche. Précisez votre demande.</Body>;
   } else if (challenge && expired) {
+    heading = 'Autoriser l’assistant à agir pour vous ?';
     content = (
       <>
         <Body>Cette demande d’autorisation a expiré.</Body>
@@ -86,11 +89,36 @@ export function ConsentCard({
     );
   } else if (challenge) {
     const busy = flow.phase === 'accepting';
+    heading = 'Autoriser l’assistant à agir pour vous ?';
+    accent = 'border-l-sun';
     content = (
       <>
-        <p className="m-0 whitespace-pre-wrap break-words text-[15px] leading-[1.55]">{challenge.consentText}</p>
-        <p className="m-0 text-[13px] text-ink-muted">Valable jusqu’à {formatTime(challenge.expiresAt)}</p>
-        <div ref={actions} className="flex flex-wrap gap-3">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <p className="m-0 mb-2 text-[15px] font-semibold">L’assistant pourra :</p>
+            <ul className="m-0 list-disc space-y-1 pl-5 text-[15px] leading-[1.45]">
+              {scopeLabels(challenge.scopes).map((label) => (
+                <li key={label}>{label}</li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <p className="m-0 mb-2 text-[15px] font-semibold">Il ne fera jamais :</p>
+            <ul className="m-0 list-disc space-y-1 pl-5 text-[15px] leading-[1.45]">
+              {NEVER_DO.map((label) => (
+                <li key={label}>{label}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <p className="m-0 text-[15px] font-semibold">Valable jusqu’au {formatExpiry(challenge.expiresAt)}</p>
+        <div className="flex flex-col gap-1 border-t border-line pt-3">
+          <p className="m-0 text-[13px] font-semibold text-ink-muted">Texte de l’autorisation</p>
+          <p className="m-0 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-ink-muted">
+            {challenge.consentText}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
           <Button variant="trust" className={BUTTON} disabled={busy} onClick={accept}>
             J’autorise
           </Button>
@@ -98,9 +126,7 @@ export function ConsentCard({
             Refuser
           </Button>
         </div>
-        <p className="m-0 text-[13px] text-ink-muted">
-          Vous pourrez retirer cette autorisation à tout moment, ou écrire STOP.
-        </p>
+        <p className="m-0 text-[13px] text-ink-muted">Vous pourrez retirer cette autorisation à tout moment.</p>
       </>
     );
   } else if (mandate && expired) {
@@ -115,12 +141,11 @@ export function ConsentCard({
       </>
     );
   } else if (mandate) {
+    heading = 'Autorisation active';
+    accent = 'border-l-trust';
     content = (
       <>
-        <p className="m-0 flex items-center gap-2 text-[15px] font-semibold">
-          <ShieldCheck aria-hidden="true" className="size-5 shrink-0" />
-          Autorisation active jusqu’à {formatTime(mandate.expiresAt)}
-        </p>
+        <p className="m-0 text-[15px] font-semibold">Autorisation active jusqu’au {formatExpiry(mandate.expiresAt)}</p>
         <div className="flex flex-wrap gap-3">
           <Button className={BUTTON} disabled={flow.phase === 'revoking'} onClick={resume}>
             Reprendre ma demande
@@ -182,9 +207,18 @@ export function ConsentCard({
       tone="outline"
       role="region"
       aria-label="Autorisation demandée"
-      className="ui-enter flex flex-col gap-4 rounded-[28px] p-7 md:p-7"
+      className={cn('ui-enter flex flex-col gap-4 rounded-[28px] border-l-4 p-7 md:p-7', accent)}
     >
-      <h2 className="m-0 font-display text-[20px] font-extrabold tracking-[-0.02em]">Autorisation demandée</h2>
+      <div className="flex items-start gap-3">
+        <ShieldCheck aria-hidden="true" className="mt-1 size-6 shrink-0" />
+        <h2
+          ref={title}
+          tabIndex={-1}
+          className="m-0 font-display text-[24px] font-extrabold leading-[1.15] tracking-[-0.02em] outline-none"
+        >
+          {heading}
+        </h2>
+      </div>
       {content}
     </Tile>
   );

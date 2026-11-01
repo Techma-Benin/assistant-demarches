@@ -1,0 +1,104 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { Check, Copy } from 'lucide-react';
+import { IconButton, cn } from '@techma/ui';
+import type { components } from '@techma/contracts-ts';
+import { STATUS_LABELS } from '@/components/blocks/StatusCardBlock';
+
+type AgentMessage = components['schemas']['AgentMessage'];
+type CopyState = 'idle' | 'copied' | 'failed';
+
+const RESET_MS = 2000;
+
+/**
+ * Plain-text version of an answer, for the clipboard. Included: text blocks (markdown `**` and heading
+ * hashes removed, list numbering kept), buttons labels, form field labels, file request label and
+ * status card (procedure + status label), blocks separated by blank lines, then a « Sources : » list.
+ */
+export function messagePlainText(message: AgentMessage): string {
+  const parts: string[] = [];
+  const sources: string[] = [];
+  for (const block of message.blocks) {
+    if (block.type === 'text') {
+      parts.push(
+        block.text
+          .replace(/\*\*([^*\n]+?)\*\*/g, '$1')
+          .replace(/^\s*#{2,3}\s+/gm, '')
+          .trim(),
+      );
+      for (const source of block.sources) sources.push(`${sources.length + 1}. ${source.procedureId} ${source.url}`);
+    } else if (block.type === 'buttons') {
+      parts.push(block.items.map((item) => item.label).join('\n'));
+    } else if (block.type === 'form') {
+      parts.push(block.fields.map((field) => field.label).join('\n'));
+    } else if (block.type === 'fileRequest') {
+      parts.push(block.label);
+    } else if (block.type === 'statusCard') {
+      parts.push(`${block.request.procedureId} : ${STATUS_LABELS[block.request.status]}`);
+    }
+  }
+  const text = parts.filter((part) => part !== '').join('\n\n');
+  return sources.length > 0 ? `${text}\n\nSources :\n${sources.join('\n')}` : text;
+}
+
+function legacyCopy(text: string): boolean {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  const active = document.activeElement as HTMLElement | null;
+  textarea.select();
+  try {
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+    active?.focus?.();
+  }
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // falls through to the legacy path
+  }
+  return legacyCopy(text);
+}
+
+export function MessageActions({ message, alwaysVisible }: { message: AgentMessage; alwaysVisible?: boolean }) {
+  const [state, setState] = useState<CopyState>('idle');
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const copy = async () => {
+    const ok = await copyText(messagePlainText(message));
+    setState(ok ? 'copied' : 'failed');
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState('idle'), RESET_MS);
+  };
+
+  return (
+    <div
+      className={cn(
+        'flex items-center',
+        !alwaysVisible &&
+          'opacity-0 motion-safe:transition-opacity motion-safe:duration-150 group-focus-within:opacity-100 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100',
+      )}
+    >
+      <IconButton label="Copier la réponse" onClick={copy} className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+        {state === 'copied' ? <Check aria-hidden="true" className="size-5" /> : <Copy aria-hidden="true" className="size-5" />}
+      </IconButton>
+      <span role="status" className="sr-only">
+        {state === 'copied' ? 'Réponse copiée' : state === 'failed' ? 'Copie impossible' : ''}
+      </span>
+    </div>
+  );
+}

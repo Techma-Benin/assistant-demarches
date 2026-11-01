@@ -20,6 +20,11 @@ export interface Attachment {
   name: string;
   sizeBytes: number;
   mimeType: string;
+  /** Local blob URL for image thumbnails and voice playback; never sent to the backend. */
+  previewUrl?: string;
+  /** Voice messages only, local: recorded duration and 32 waveform bars in 0..1. */
+  durationMs?: number;
+  waveform?: number[];
 }
 
 export type TimelineEntry =
@@ -34,6 +39,10 @@ export type TimelineEntry =
       attachment?: Attachment;
       error?: string;
       retryable?: boolean;
+      /** Entries of one send (files + note) share a batchId and render as one turn. */
+      batchId?: string;
+      /** Voice message transcription, when the Backend sends it. */
+      transcript?: { status: 'done'; text: string } | { status: 'failed' };
     }
   | { kind: 'agent'; message: AgentMessage };
 
@@ -47,6 +56,29 @@ export interface ConsentNeeded {
   anchorMessageId: string | null;
 }
 
+/** Last successful tool call of the agent's current turn; drives the « Je consulte… » line while waiting. */
+export interface AgentActivity {
+  toolName: string;
+  at: string;
+}
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  'procedures.search': 'Je consulte la fiche officielle…',
+  'procedures.get': 'Je consulte la fiche officielle…',
+  'request.create': 'Je prépare votre dossier…',
+  'request.update': 'Je prépare votre dossier…',
+  'documents.attach': 'Je vérifie votre pièce…',
+  'documents.verify': 'Je vérifie votre pièce…',
+  'request.submit': 'J’envoie votre demande…',
+  'request.status': 'Je vérifie l’état de votre demande…',
+  'request.pay': 'Je prépare le paiement…',
+};
+
+/** User-facing label of what the agent is doing; generic when unknown or when no tool was called yet. */
+export function activityLabel(toolName?: string | null): string {
+  return (toolName && ACTIVITY_LABELS[toolName]) || 'Je réfléchis…';
+}
+
 export interface ConversationState {
   status: 'starting' | 'ready' | 'error';
   conversationId: string | null;
@@ -55,6 +87,8 @@ export interface ConversationState {
   timeline: TimelineEntry[];
   /** Procedure of the latest `request.created` event, if any. */
   requestProcedureId: string | null;
+  /** Set by a successful `tool.called`, cleared when the agent answers or the user sends a message. */
+  activity: AgentActivity | null;
   consent?: ConsentNeeded;
   error?: string;
   /** The conversation can't be resumed (session expired, access denied, gone): only a new one helps. */
@@ -68,16 +102,17 @@ export const initialState: ConversationState = {
   seenEventIds: [],
   timeline: [],
   requestProcedureId: null,
+  activity: null,
 };
 
 export type ConversationAction =
   | { type: 'conversationStarted'; conversationId: string }
   | { type: 'startFailed'; error: string }
   | { type: 'conversationLost'; error: string }
-  | { type: 'userMessageQueued'; id: string; content: Content; display: string; sentAt: string }
+  | { type: 'userMessageQueued'; id: string; content: Content; display: string; sentAt: string; batchId?: string }
   | { type: 'userMessageAccepted'; id: string }
   | { type: 'userMessageFailed'; id: string }
-  | { type: 'fileUploadStarted'; id: string; attachment: Attachment; sentAt: string }
+  | { type: 'fileUploadStarted'; id: string; attachment: Attachment; sentAt: string; batchId?: string }
   | { type: 'fileUploadSucceeded'; id: string; file: UploadedFile }
   | { type: 'fileUploadFailed'; id: string; error: string; retryable: boolean }
   | { type: 'eventsReceived'; page: EventPage }
@@ -115,10 +150,11 @@ export function conversationReducer(state: ConversationState, action: Conversati
     case 'userMessageQueued':
       if (state.timeline.some((e) => e.kind === 'user' && e.id === action.id)) {
         // Retry of a failed message: same id, back to "sending".
-        return { ...state, timeline: setDelivery(state.timeline, action.id, 'sending') };
+        return { ...state, activity: null, timeline: setDelivery(state.timeline, action.id, 'sending') };
       }
       return {
         ...state,
+        activity: null,
         timeline: [
           ...state.timeline,
           {
@@ -128,6 +164,7 @@ export function conversationReducer(state: ConversationState, action: Conversati
             display: action.display,
             sentAt: action.sentAt,
             delivery: 'sending',
+            batchId: action.batchId,
           },
         ],
       };
@@ -156,6 +193,7 @@ export function conversationReducer(state: ConversationState, action: Conversati
             sentAt: action.sentAt,
             delivery: 'uploading',
             attachment: action.attachment,
+            batchId: action.batchId,
           },
         ],
       };
@@ -196,29 +234,47 @@ export function conversationReducer(state: ConversationState, action: Conversati
       let timeline = state.timeline;
       let consent = state.consent;
       let requestProcedureId = state.requestProcedureId;
+      let activity = state.activity;
       for (const event of action.page.items) {
         if (seen.has(event.id)) continue;
         const data = event.data;
         // Events of another conversation are ignored (and not marked as seen).
         if ('conversationId' in data && data.conversationId !== state.conversationId) continue;
         seen.add(event.id);
+        // Proposed 1.4.0 event (message.transcribed), not in the generated contract types yet.
+        const raw = data as unknown as Record<string, unknown>;
+        if (raw.kind === 'message.transcribed') {
+          const id = raw.messageId;
+          if (typeof id === 'string') {
+            if (raw.status === 'failed') {
+              timeline = updateUser(timeline, id, (e) => ({ ...e, transcript: { status: 'failed' } }));
+            } else if (raw.status === 'done' && typeof raw.text === 'string' && raw.text !== '') {
+              const text = raw.text;
+              timeline = updateUser(timeline, id, (e) => ({ ...e, transcript: { status: 'done', text } }));
+            }
+          }
+          continue;
+        }
         if (data.kind === 'message.received') {
           timeline = setDelivery(timeline, data.messageId, 'received');
         } else if (data.kind === 'message.sent') {
           const message = data.message;
           if (!timeline.some((e) => e.kind === 'agent' && e.message.id === message.id)) {
             timeline = [...timeline, { kind: 'agent', message }];
+            activity = null;
             if (consent && consent.anchorMessageId === null) consent = { ...consent, anchorMessageId: message.id };
           }
         } else if (data.kind === 'request.created') {
           if (data.request.conversationId === state.conversationId) requestProcedureId = data.request.procedureId;
+        } else if (data.kind === 'tool.called' && data.outcome === 'success') {
+          activity = { toolName: data.toolName, at: event.time };
         } else if (data.kind === 'tool.called' && data.outcome === 'error' && isMandateTriggerCode(data.code)) {
           // A trigger already waiting for its announcing message is the same agent turn: keep it.
           if (!consent || consent.anchorMessageId !== null) {
             consent = { status: 'needed', toolName: data.toolName, eventId: event.id, code: data.code, anchorMessageId: null };
           }
         }
-        // Other kinds (request.status_changed, successful tool.called, ...) are ignored.
+        // Other kinds (request.status_changed, ...) are ignored.
       }
       return {
         ...state,
@@ -226,6 +282,7 @@ export function conversationReducer(state: ConversationState, action: Conversati
         timeline,
         consent,
         requestProcedureId,
+        activity,
         cursor: action.page.nextCursor ?? state.cursor,
       };
     }

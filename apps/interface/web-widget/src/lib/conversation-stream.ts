@@ -9,6 +9,8 @@ const PAGE_SIZE = 100;
 export interface ConversationStreamDeps {
   client: Pick<C1Client, 'createSocketTicket' | 'listEvents'>;
   conversationId: string;
+  /** Replay from this event (restored conversation) instead of from the beginning. */
+  initialCursor?: string | null;
   onEvents(items: ConversationEvent[]): void;
   onReplayExpired(): void;
   onStatus(status: StreamStatus): void;
@@ -58,6 +60,7 @@ export class ConversationStream {
   };
 
   constructor(private readonly deps: ConversationStreamDeps) {
+    this.cursor = deps.initialCursor ?? null;
     this.setT = deps.setTimeout ?? ((fn, ms) => globalThis.setTimeout(fn, ms));
     this.clearT = deps.clearTimeout ?? ((handle) => globalThis.clearTimeout(handle as never));
     this.newKey = deps.newKey ?? (() => crypto.randomUUID());

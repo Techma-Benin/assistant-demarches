@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FrontDoor } from '@/components/home/FrontDoor';
 import type { SiteConfig } from '@/lib/site-config';
 
@@ -79,5 +79,42 @@ describe('FrontDoor', () => {
     render(<FrontDoor onAsk={() => {}} config={base} />);
     expect(screen.getByText('L’IA peut se tromper.')).toBeInTheDocument();
     expect(screen.getByText(/Assistant Démarches est une proposition de Techma Bénin/)).toBeInTheDocument();
+  });
+
+  describe('attachments and voice from the hero box', () => {
+    afterEach(() => vi.unstubAllGlobals());
+    const pdf = () => new File(['x'], 'acte.pdf', { type: 'application/pdf' });
+    const heroInput = (container: HTMLElement) => container.querySelector('input[type=file]') as HTMLInputElement;
+
+    it('offers attach and the mic when the box is empty', async () => {
+      class FakeRecorder {
+        static isTypeSupported = () => true;
+      }
+      vi.stubGlobal('MediaRecorder', FakeRecorder);
+      Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: () => Promise.resolve({}) }, configurable: true });
+      render(<FrontDoor onAsk={() => {}} config={base} />);
+      expect(await screen.findByRole('button', { name: 'Enregistrer un message vocal' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Joindre un fichier' })).toBeInTheDocument();
+    });
+
+    it('sends a staged file with the typed note through onFiles', async () => {
+      const onFiles = vi.fn();
+      const onAsk = vi.fn();
+      const { container } = render(<FrontDoor onAsk={onAsk} onFiles={onFiles} config={base} />);
+      const user = userEvent.setup();
+      const file = pdf();
+      await user.upload(heroInput(container), file);
+      await user.type(screen.getByLabelText('Votre question'), 'Mon acte{Enter}');
+      expect(onFiles).toHaveBeenCalledExactlyOnceWith([file], 'Mon acte');
+      expect(onAsk).not.toHaveBeenCalled();
+    });
+
+    it('shares the staged file with the docked box', async () => {
+      const { container } = render(<FrontDoor onAsk={() => {}} config={base} />);
+      await userEvent.setup().upload(heroInput(container), pdf());
+      const docks = document.querySelectorAll('[data-shown]');
+      expect(docks).toHaveLength(1);
+      expect(within(docks[0] as HTMLElement).getByText('acte.pdf')).toBeInTheDocument();
+    });
   });
 });
