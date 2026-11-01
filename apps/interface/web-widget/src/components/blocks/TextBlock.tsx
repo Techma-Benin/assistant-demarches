@@ -66,11 +66,16 @@ function trimUrl(raw: string): string {
   return url;
 }
 
-function linkLabel(url: string): string {
-  const label = url.replace(/^https?:\/\//, '');
-  if (label.length <= MAX_LINK_LABEL) return label;
-  const tail = 19;
-  return `${label.slice(0, MAX_LINK_LABEL - tail - 1)}…${label.slice(-tail)}`;
+/**
+ * Label built from the parsed URL: the real host (punycode, no credentials) is always shown in full,
+ * only the path is shortened, so a long or crafted link cannot pass for an official domain.
+ */
+function linkLabel(url: URL): string {
+  const rest = `${url.pathname === '/' ? '' : url.pathname}${url.search}${url.hash}`;
+  const room = Math.max(MAX_LINK_LABEL - url.host.length, 12);
+  if (rest.length <= room) return url.host + rest;
+  const tail = Math.floor((room - 1) / 2);
+  return `${url.host}${rest.slice(0, room - 1 - tail)}…${rest.slice(-tail)}`;
 }
 
 /** Splits a line of text into plain text, `**bold**` and http(s) links. Unbalanced `**` stays literal. */
@@ -93,15 +98,16 @@ export function parseInline(text: string): Inline[] {
       continue;
     }
     const url = trimUrl(match[0]);
-    let valid = false;
+    let parsed: URL | null = null;
     try {
-      const { protocol } = new URL(url);
-      valid = protocol === 'http:' || protocol === 'https:';
+      parsed = new URL(url);
     } catch {
-      valid = false;
+      parsed = null;
     }
-    if (valid) out.push({ kind: 'link', href: url, label: linkLabel(url) });
-    else pushText(url);
+    // Links with credentials (https://official.bj@elsewhere.com) stay plain text.
+    if (parsed && (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password) {
+      out.push({ kind: 'link', href: parsed.href, label: linkLabel(parsed) });
+    } else pushText(url);
     cursor = start + url.length;
   }
   pushText(text.slice(cursor));

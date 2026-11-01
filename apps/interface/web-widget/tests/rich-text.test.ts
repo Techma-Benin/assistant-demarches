@@ -45,6 +45,19 @@ describe('parseInline', () => {
     }
   });
 
+  it('always shows the full host, even for a long crafted host', () => {
+    const url = `https://service-public.bj.${'x'.repeat(40)}.example.com/${'a'.repeat(60)}`;
+    const link = parseInline(url)[0];
+    expect(link.kind).toBe('link');
+    if (link.kind === 'link') expect(link.label.startsWith(new URL(url).host)).toBe(true);
+  });
+
+  it('does not link urls with credentials', () => {
+    expect(parseInline('https://service-public.bj@example.com/x')).toEqual([
+      { kind: 'text', text: 'https://service-public.bj@example.com/x' },
+    ]);
+  });
+
   it('does not link other protocols', () => {
     expect(parseInline('javascript:alert(1) ftp://x.fr')).toEqual([{ kind: 'text', text: 'javascript:alert(1) ftp://x.fr' }]);
   });
