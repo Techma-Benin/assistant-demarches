@@ -168,7 +168,6 @@ export function TextBlock({ block, revealDelay }: Props) {
     markList
   );
   const lastIndex = segments.length - 1;
-  const endsWithParagraph = segments[lastIndex]?.kind === 'paragraph';
 
   return (
     <div className="flex flex-col gap-[22px]">
@@ -177,24 +176,43 @@ export function TextBlock({ block, revealDelay }: Props) {
           if (segment.kind === 'list') {
             const ListTag = segment.ordered ? 'ol' : 'ul';
             return (
-              <ListTag key={index} style={paragraphStyle(index)} className={cn('m-0 flex list-none flex-col gap-2.5 p-0', reveal && !byWord && 'chat-reveal')}>
-                {segment.items.map((item, itemIndex) => (
-                  <li key={itemIndex} className="flex items-start gap-4 rounded-[22px] bg-sunken px-5 py-[18px]">
-                    {segment.ordered ? (
+              <ListTag
+                key={index}
+                style={paragraphStyle(index)}
+                className={cn(
+                  'm-0 flex list-none flex-col p-0',
+                  segment.ordered ? 'gap-2.5' : 'gap-1.5',
+                  reveal && !byWord && 'chat-reveal',
+                )}
+              >
+                {segment.items.map((item, itemIndex) => {
+                  // A reply ending on a list carries its citation marks on the last item, not on a line of their own.
+                  const tail = index === lastIndex && itemIndex === segment.items.length - 1 ? marks : null;
+                  return segment.ordered ? (
+                    <li key={itemIndex} className="flex items-start gap-4 rounded-[22px] bg-sunken px-5 py-[18px]">
                       <span
                         aria-hidden="true"
                         className="w-7 shrink-0 font-display text-[26px] font-extrabold leading-none tracking-[-0.04em]"
                       >
                         {itemIndex + 1}
                       </span>
-                    ) : (
-                      <span aria-hidden="true" className="flex h-[1.4em] w-7 shrink-0 items-center justify-center text-[17px]">
-                        <span className="size-2 rounded-full bg-ink" />
+                      <span className="min-w-0 break-words text-[17px] font-medium leading-snug">
+                        {inline(item)}
+                        {tail}
                       </span>
-                    )}
-                    <span className="min-w-0 break-words text-[17px] font-bold leading-snug">{inline(item)}</span>
-                  </li>
-                ))}
+                    </li>
+                  ) : (
+                    <li key={itemIndex} className="flex items-start gap-3">
+                      <span aria-hidden="true" className="flex h-[1.6em] w-4 shrink-0 items-center justify-center">
+                        <span className="size-1.5 rounded-full bg-ink" />
+                      </span>
+                      <span className="min-w-0 break-words">
+                        {inline(item)}
+                        {tail}
+                      </span>
+                    </li>
+                  );
+                })}
               </ListTag>
             );
           }
@@ -209,7 +227,6 @@ export function TextBlock({ block, revealDelay }: Props) {
             </p>
           );
         })}
-        {sources.length > 0 && !endsWithParagraph && <p className="text-base">{marks}</p>}
       </div>
       {sources.length > 0 && (
         <ul
