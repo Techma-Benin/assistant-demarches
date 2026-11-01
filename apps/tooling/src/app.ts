@@ -2,7 +2,6 @@ import 'reflect-metadata';
 import { Global, Module, RequestMethod, type DynamicModule, type INestApplication, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { AdminModule } from './admin/admin.module.js';
 import { AuditModule } from './audit/audit-log.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ProblemFilter } from './common/problem.js';
@@ -49,7 +48,6 @@ class AppModule implements NestModule {
         ProceduresModule,
         ConnectorsModule,
         RequestsModule,
-        AdminModule,
         GatewayModule,
       ],
       controllers: [HealthController],

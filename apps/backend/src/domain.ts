@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import type { components } from "../../../packages/contracts-ts/src/admin.js";
+import type { components } from "../../../packages/contracts-ts/src/schemas.js";
 
 export type ModelConfig = components["schemas"]["ModelConfig"];
 export type ToolConfig = components["schemas"]["ToolConfig"];

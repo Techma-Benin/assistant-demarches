@@ -31,12 +31,6 @@ import {
 } from "./domain.js";
 import { McpConnections, type McpServer } from "./mcp-connections.js";
 import { Settings } from "./settings.js";
-import { AdminDirectory } from "./admin-directory.js";
-import { AdminDirectoryController, ADMIN_DIRECTORY_RUNTIME } from "./admin-directory.controller.js";
-import { DepartmentWork } from "./department-work.js";
-import { DepartmentWorkController, DEPARTMENT_WORK_RUNTIME } from "./department-work.controller.js";
-import { departmentCommandsFromEnvironment, type DepartmentCommands } from "./department-commands.js";
-import { requireDepartmentPrincipal, assertDepartmentPermission } from "./department-auth.js";
 import {
   ConversationController,
   InternalController,
@@ -282,20 +276,15 @@ export async function createBackend(options: {
   corsOrigins?: string[];
   runtime?: Runtime;
   developmentTokens?: Record<string, string>;
-  departmentCommands?: DepartmentCommands;
 }) {
   let closeSockets = () => {};
   @Module({
     controllers: [
       HealthController,
-      AdminDirectoryController,
-      DepartmentWorkController,
       AdminController,
       ...(options.runtime ? [ConversationController, InternalController] : []),
     ],
     providers: [
-      { provide: ADMIN_DIRECTORY_RUNTIME, useValue: {pool: options.pool, auth: options.auth, directory: new AdminDirectory(options.pool)} },
-      { provide: DEPARTMENT_WORK_RUNTIME, useValue: {pool: options.pool, auth: options.auth, work: new DepartmentWork(options.pool), commands: options.departmentCommands ?? departmentCommandsFromEnvironment(), files: options.runtime?.files} },
       {provide:McpConnections,useValue:new McpConnections(options.pool,options.allowedMcpUrls,options.mcpGateway??options.runtime?.tooling)},
       { provide: DB, useValue: options.pool },
       { provide: AUTH, useValue: options.auth },
