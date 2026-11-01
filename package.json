@@ -8,30 +8,27 @@
     "node": ">=22 <23"
   },
   "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:infra": "node scripts/dev.mjs --infra",
+    "dev:reset": "node scripts/dev.mjs --reset",
+    "contracts:sync": "node scripts/sync-contracts.mjs",
     "contracts:check": "node scripts/check-contracts.mjs",
     "contracts:generate": "node scripts/generate-types.mjs",
-    "typecheck": "tsc --noEmit",
-    "test": "node --test tests/*.test.mjs",
-    "mocks": "node mocks/server.mjs",
-    "check": "pnpm contracts:check && pnpm contracts:generate && pnpm typecheck && pnpm test && pnpm test:apps && pnpm test:integration",
+    "catalogue:import": "node scripts/import-service-public.mjs",
     "build": "turbo run build",
-    "dev": "pnpm --filter @techma/backend dev",
-    "test:apps": "turbo run test",
-    "test:integration": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && node --env-file-if-exists=integration/.env --test integration/backend-tooling.test.mjs",
-    "dev:integration": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && node --env-file-if-exists=integration/.env integration/local-stack.mjs",
-    "test:slide8": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && pnpm --filter @techma/xroad-sim build && node --env-file-if-exists=integration/.env --test integration/slide8.test.mjs",
-    "dev:slide8": "pnpm --filter @techma/backend build && pnpm --filter @techma/tooling build && pnpm --filter @techma/xroad-sim build && node --env-file-if-exists=integration/.env integration/slide8-demo.mjs",
-    "check:portable": "pnpm contracts:check && pnpm contracts:generate && pnpm typecheck && pnpm test && pnpm --filter @techma/tooling test && pnpm --filter @techma/backend build",
-    "check:pivot": "node scripts/verify-backend-pivot.mjs"
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "check": "pnpm contracts:check && pnpm contracts:generate && git diff --exit-code -- packages/contracts-ts/src && pnpm typecheck && pnpm test"
   },
   "devDependencies": {
-    "ajv": "8.20.0",
-    "ajv-formats": "3.0.1",
-    "openapi-typescript": "7.13.0",
     "@apidevtools/swagger-parser": "13.1.0",
     "@modelcontextprotocol/sdk": "1.32.1",
-    "ws": "8.22.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "embedded-postgres": "18.6.0-beta.19",
+    "openapi-typescript": "7.13.0",
+    "turbo": "2.11.10",
     "typescript": "5.9.3",
-    "turbo": "2.11.10"
+    "ws": "8.22.0"
   }
 }
