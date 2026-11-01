@@ -26,7 +26,6 @@ const card = (flow: ConsentFlow, over: Partial<ConsentControls> = {}) => {
     renew: vi.fn(),
     retry: vi.fn(),
     retract: vi.fn(),
-    resume: vi.fn(),
     ...over,
   };
   render(<ConsentCard consent={consent} />);
@@ -62,13 +61,20 @@ describe('ConsentCard', () => {
     expect(consent.refuse).toHaveBeenCalledOnce();
   });
 
-  it('active state shows the mandate expiry, resume and retract', async () => {
+  it('active state shows a compact row with the expiry and a retract button', async () => {
     const consent = card({ phase: 'active', mandate: { id: 'mdt_1', expiresAt: iso(30 * 60_000) } });
-    expect(screen.getByText(/Valable jusqu’au \p{L}+ \d{1,2} \p{L}+( \d{4})? à \d{2}:\d{2}/u)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Reprendre ma demande' }));
+    expect(screen.getByRole('region', { name: 'Autorisation demandée' })).toHaveTextContent(
+      /L’assistant peut agir sur votre demande jusqu’(à \d{2}:\d{2}|au \p{L}+ \d{1,2} \p{L}+( \d{4})? à \d{2}:\d{2})/u,
+    );
+    expect(screen.queryByRole('button', { name: 'Reprendre ma demande' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Retirer l’autorisation' }));
-    expect(consent.resume).toHaveBeenCalledOnce();
     expect(consent.retract).toHaveBeenCalledOnce();
+  });
+
+  it('revoking disables the retract button', () => {
+    card({ phase: 'revoking', mandate: { id: 'mdt_1', expiresAt: iso(30 * 60_000) } });
+    expect(screen.getByRole('button', { name: 'Retirer l’autorisation' })).toBeDisabled();
+    expect(screen.getByRole('button')).toHaveTextContent('Retrait…');
   });
 
   it('refused: no accept offered, can change mind', async () => {
@@ -180,7 +186,7 @@ function fakeClient(page: EventPage, over: Partial<Record<string, unknown>> = {}
 }
 
 describe('useConversation consent flow', () => {
-  it('requests a challenge on the trigger, accepts with a stable key, resumes and revokes', async () => {
+  it('requests a challenge on the trigger, accepts with a stable key, auto-continues and revokes', async () => {
     const client = fakeClient(triggerPage());
     const { result } = renderHook(() => useConversation(client as unknown as C1Client));
     await waitFor(() => expect(result.current.state.status).toBe('ready'));
@@ -199,14 +205,32 @@ describe('useConversation consent flow', () => {
     await waitFor(() => expect(result.current.consent.flow.phase).toBe('active'));
     expect(client.createMandate).toHaveBeenCalledWith(CNV, { challengeId: 'chl_1', accepted: true }, 'consent-chl_1');
 
-    client.sendMessage.mockClear();
-    act(() => result.current.consent.resume());
-    await waitFor(() => expect(client.sendMessage).toHaveBeenCalledOnce());
-    expect(client.sendMessage.mock.calls[0][1]).toMatchObject({ content: { type: 'text', text: 'Je veux demander un acte' } });
+    // The conversation continues by itself, once, with a visible user message.
+    await waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(2));
+    expect(client.sendMessage.mock.calls[1][1]).toMatchObject({
+      content: { type: 'text', text: 'J’ai donné mon autorisation, vous pouvez continuer.' },
+    });
 
     act(() => result.current.consent.retract());
     await waitFor(() => expect(result.current.consent.flow.phase).toBe('revoked'));
     expect(client.revokeMandate).toHaveBeenCalledWith(CNV, 'mdt_1', expect.any(String));
+  });
+
+  it('does not resend the continue message when the same trigger is accepted again', async () => {
+    const client = fakeClient(triggerPage());
+    const { result } = renderHook(() => useConversation(client as unknown as C1Client));
+    await waitFor(() => expect(result.current.consent.flow.phase).toBe('pending'));
+    act(() => result.current.consent.accept());
+    await waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.consent.flow.phase).toBe('active'));
+    act(() => result.current.consent.retract());
+    await waitFor(() => expect(result.current.consent.flow.phase).toBe('revoked'));
+    act(() => result.current.consent.renew());
+    await waitFor(() => expect(result.current.consent.flow.phase).toBe('pending'));
+    act(() => result.current.consent.accept());
+    await waitFor(() => expect(client.createMandate).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.consent.flow.phase).toBe('active'));
+    expect(client.sendMessage).toHaveBeenCalledTimes(1);
   });
 
   it('says the procedure is unknown when there is none, and makes no API call', async () => {

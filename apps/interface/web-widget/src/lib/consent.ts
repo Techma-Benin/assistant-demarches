@@ -72,7 +72,6 @@ export interface ConsentControls {
   /** Retry after a network/server error, reusing the Idempotency-Key of the failed attempt. */
   retry: () => void;
   retract: () => void;
-  resume: () => void;
 }
 
 export const noopConsent: ConsentControls = {
@@ -82,7 +81,6 @@ export const noopConsent: ConsentControls = {
   renew: () => {},
   retry: () => {},
   retract: () => {},
-  resume: () => {},
 };
 
 /** « HH:MM » in the reader's local time. */
@@ -104,6 +102,14 @@ export function formatExpiry(iso: string, now: Date = new Date()): string {
   const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
   const day = [get('weekday'), get('day'), get('month'), get('year')].filter(Boolean).join(' ');
   return `${day} à ${get('hour')}:${get('minute')}`;
+}
+
+/** « jusqu’à 21:05 » when the expiry is today (local), else « jusqu’au dimanche 2 novembre à 09:00 ». */
+export function formatExpiryShort(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  const sameDay =
+    date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+  return sameDay ? `jusqu’à ${formatTime(iso)}` : `jusqu’au ${formatExpiry(iso, now)}`;
 }
 
 const SCOPE_LABELS: Partial<Record<Scope, string>> = {

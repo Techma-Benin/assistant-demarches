@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, InlineAlert, Tile, TypingIndicator, cn } from '@techma/ui';
 import { ShieldCheck } from 'lucide-react';
-import { NEVER_DO, formatExpiry, scopeLabels, type ConsentControls } from '@/lib/consent';
+import { NEVER_DO, formatExpiry, formatExpiryShort, scopeLabels, type ConsentControls } from '@/lib/consent';
 
 const BUTTON = 'min-h-11';
 const MAX_TIMEOUT = 2 ** 31 - 1;
@@ -44,7 +44,7 @@ export function ConsentCard({
   /** Clock, injectable in tests. */
   now?: () => number;
 }) {
-  const { flow, accept, refuse, renew, retry, retract, resume } = consent;
+  const { flow, accept, refuse, renew, retry, retract } = consent;
   const challenge = flow.phase === 'pending' || flow.phase === 'accepting' ? flow.challenge : undefined;
   const mandate = flow.phase === 'active' || flow.phase === 'revoking' ? flow.mandate : undefined;
   const expired = useExpired(challenge?.expiresAt ?? mandate?.expiresAt, now);
@@ -142,21 +142,7 @@ export function ConsentCard({
       </>
     );
   } else if (mandate) {
-    heading = 'Autorisation active';
-    badge = 'bg-trust-soft text-trust-text';
-    content = (
-      <>
-        <p className="m-0 text-[15px] font-semibold">Valable jusqu’au {formatExpiry(mandate.expiresAt)}</p>
-        <div className="flex flex-wrap gap-3">
-          <Button className={BUTTON} disabled={flow.phase === 'revoking'} onClick={resume}>
-            Reprendre ma demande
-          </Button>
-          <Button variant="secondary" className={BUTTON} disabled={flow.phase === 'revoking'} onClick={retract}>
-            Retirer l’autorisation
-          </Button>
-        </div>
-      </>
-    );
+    // Handled by the compact row below.
   } else if (flow.phase === 'refused') {
     content = (
       <>
@@ -200,6 +186,35 @@ export function ConsentCard({
           </Button>
         </div>
       </>
+    );
+  }
+
+  if (mandate && !expired) {
+    const revoking = flow.phase === 'revoking';
+    return (
+      <Tile
+        tone="outline"
+        role="region"
+        aria-label="Autorisation demandée"
+        className="ui-enter flex items-center gap-3 rounded-[18px] px-4 py-3 md:px-4 md:py-3 shadow-[0_1px_2px_rgb(13_13_15/0.04)]"
+      >
+        <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-trust-soft text-trust-text">
+          <ShieldCheck className="size-4" />
+        </span>
+        <h2 className="sr-only">Autorisation active</h2>
+        <p className="m-0 min-w-0 flex-1 text-[15px] leading-[1.4] text-ink">
+          L’assistant peut agir sur votre demande {formatExpiryShort(mandate.expiresAt, new Date(now()))}
+        </p>
+        <button
+          type="button"
+          aria-label="Retirer l’autorisation"
+          disabled={revoking}
+          onClick={retract}
+          className="min-h-11 shrink-0 px-2 text-[14px] font-medium text-ink-muted underline underline-offset-2 hover:text-ink disabled:opacity-60"
+        >
+          {revoking ? 'Retrait…' : 'Retirer'}
+        </button>
+      </Tile>
     );
   }
 

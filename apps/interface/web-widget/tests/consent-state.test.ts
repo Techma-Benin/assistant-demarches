@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatExpiry, resolveProcedureId, scopeLabels, MANDATE_SCOPES } from '@/lib/consent';
+import { formatExpiry, formatExpiryShort, resolveProcedureId, scopeLabels, MANDATE_SCOPES } from '@/lib/consent';
 import { conversationReducer, initialState, type ConversationState } from '@/lib/conversation-state';
 import type { EventPage } from '@/lib/c1-client';
 import type { TimelineEntry } from '@/lib/conversation-state';
@@ -118,5 +118,15 @@ describe('consent display helpers', () => {
       'créer et remplir votre demande',
       'transmettre la demande pour que vous la validiez sur le portail officiel',
     ]);
+  });
+});
+
+describe('formatExpiryShort', () => {
+  const now = new Date(2026, 10, 1, 12, 0);
+  it('uses the time only when the expiry is today', () => {
+    expect(formatExpiryShort(new Date(2026, 10, 1, 21, 5).toISOString(), now)).toBe('jusqu’à 21:05');
+  });
+  it('uses the full date on another day', () => {
+    expect(formatExpiryShort(new Date(2026, 10, 2, 9, 0).toISOString(), now)).toBe('jusqu’au lundi 2 novembre à 09:00');
   });
 });

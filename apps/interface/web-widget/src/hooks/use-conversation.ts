@@ -27,6 +27,7 @@ interface PendingUpload {
 
 const MAX_TEXT_LENGTH = 4000;
 const SAVE_DEBOUNCE_MS = 150;
+const CONTINUE_TEXT = 'J’ai donné mon autorisation, vous pouvez continuer.';
 
 function stateFromSnapshot(snapshot: ConversationSnapshot | null | undefined): ConversationState {
   if (!snapshot) return initialState;
@@ -359,6 +360,12 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
     }
   }, [trigger, conversationId, procedureId, flow.phase, renew]);
 
+  const triggerRef = useRef(trigger);
+  triggerRef.current = trigger;
+  // eventId of the trigger already answered by the automatic « continue » message (a ref is enough:
+  // after a reload the challenge is gone, so `accept` can only run again after a new `renew`).
+  const continuedFor = useRef<string | null>(null);
+
   const accept = useCallback(async () => {
     const current = challenge.current;
     if (!conversationId || !current) return;
@@ -369,6 +376,11 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
       if (mine !== attempt.current) return;
       mandate.current = { id: granted.id, expiresAt: granted.expiresAt };
       setFlow({ phase: 'active', mandate: mandate.current });
+      const blocked = triggerRef.current;
+      if (blocked && continuedFor.current !== blocked.eventId) {
+        continuedFor.current = blocked.eventId;
+        sendText(CONTINUE_TEXT);
+      }
     } catch (error) {
       if (mine !== attempt.current) return;
       const status = error instanceof C1Error ? error.status : undefined;
@@ -378,7 +390,7 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
           : { phase: 'error', during: 'accept', message: 'Impossible d’enregistrer votre autorisation pour le moment.' },
       );
     }
-  }, [c1, conversationId]);
+  }, [c1, conversationId, sendText]);
 
   const retract = useCallback(
     async (reuseKey = false) => {
@@ -411,12 +423,6 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
     attempt.current++;
     setFlow({ phase: 'refused' });
   }, []);
-
-  const resume = useCallback(() => {
-    // Re-send the user's last text message so the agent retries the action now that a mandate exists.
-    const lastText = [...state.timeline].reverse().find((e) => e.kind === 'user' && e.content?.type === 'text');
-    if (lastText?.kind === 'user' && lastText.content?.type === 'text') sendText(lastText.content.text);
-  }, [state.timeline, sendText]);
 
   // Persist after state changes (debounced) and when the page goes away.
   const snapshot = useRef<ConversationSnapshot | null>(null);
@@ -455,9 +461,8 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
       renew,
       retry: retryConsent,
       retract: () => void retract(),
-      resume,
     }),
-    [flow, accept, refuse, renew, retryConsent, retract, resume],
+    [flow, accept, refuse, renew, retryConsent, retract],
   );
 
   return { state, connection, sendText, sendButton, sendForm, sendFile, sendFiles, retry, consent };

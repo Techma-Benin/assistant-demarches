@@ -133,7 +133,6 @@ export function BlocksGallery() {
               renew: () => push('consent: redemander'),
               retry: () => push('consent: réessayer'),
               retract: () => push('consent: retirer'),
-              resume: () => push('consent: reprendre'),
             }}
           />
         </Section>
