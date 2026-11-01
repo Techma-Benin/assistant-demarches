@@ -1,13 +1,10 @@
 ## Résultat
 
-Décrire le comportement et les groupes concernés.
+Ce que la PR rend possible, et la fonctionnalité de [docs/spec.md](../docs/spec.md) concernée (U…, A…, X…, O…, W…).
 
 ## Vérification
 
-- [ ] `pnpm check` passe ; types générés à jour.
-- [ ] Les contrats, fixtures et mocks couvrent le changement de frontière.
-- [ ] Version du manifeste mise à jour si un contrat change ; migration décrite si rupture.
-- [ ] Un membre de chaque groupe concerné a relu (Interface / Backend / Tooling).
-- [ ] Revue sécurité si mandat, authentification, données personnelles ou connecteurs.
-- [ ] Aucune donnée réelle ni secret.
-- [ ] Déploiement de test vérifié, ou limitation explicitée pour le socle.
+- [ ] `pnpm check` passe.
+- [ ] Essayé de bout en bout avec `pnpm dev` (comptes de démo).
+- [ ] Aucune donnée, réponse, jeton ou liste en dur ; aucun mock dans l'application.
+- [ ] Si `contracts/` change : version augmentée, CONTRACTS.md à jour, relu par Interface, Backend et Tooling.

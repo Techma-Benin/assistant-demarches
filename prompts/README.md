@@ -1,5 +1,5 @@
 # Prompts
 
-`agent-v1.txt` définit le prompt système initial du Backend : réponses sourcées, usage des outils autorisés, consentement hors modèle et absence de code SMS officiel dans l’assistant. Sa version est sélectionnée par `ModelConfig.promptVersion`.
+`agent-v1.txt` est le prompt système du Backend : réponses sourcées, usage des outils annoncés, consentement hors modèle, aucun code SMS officiel.
 
-Toute modification du comportement doit passer par revue et évaluation sur le jeu métier ; les tests de transport ne prouvent pas la qualité des réponses.
+Le modèle répond en phrases naturelles. Seules les informations administratives (coût, délai, pièces, liens) exigent une source, et le Backend le vérifie. Toute modification du comportement est évaluée sur des questions réelles avant fusion.
