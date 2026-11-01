@@ -192,3 +192,79 @@ describe('activityLabel', () => {
     });
   });
 });
+
+describe('request.created', () => {
+  const REQ = (conversationId = CNV, id = 'req_1') => ({
+    id,
+    conversationId,
+    userRef: 'usr_1',
+    procedureId: 'proc_1',
+    status: 'draft' as const,
+    fields: {},
+    fileIds: [],
+    officialLink: null,
+    updatedAt: '2026-10-22T18:00:00Z',
+  });
+  const created = (evt: number, request = REQ()): EventPage['items'][number] => ({
+    ...sent(evt, 99),
+    type: 'bj.techma.request.created.v1',
+    data: { kind: 'request.created', request },
+  });
+  const changed = (evt: number, conversationId = CNV): EventPage['items'][number] => ({
+    ...sent(evt, 99),
+    type: 'bj.techma.request.status_changed.v1',
+    data: {
+      kind: 'request.status_changed',
+      requestId: 'req_1',
+      conversationId,
+      from: 'draft',
+      to: 'ready',
+      at: '2026-10-22T19:00:00Z',
+    },
+  });
+  const apply = (s: ConversationState, ...items: EventPage['items']) =>
+    conversationReducer(s, { type: 'eventsReceived', page: page(items, null) });
+
+  it('adds a request entry once', () => {
+    let s = apply(ready(), created(1));
+    expect(s.timeline.filter((e) => e.kind === 'request')).toHaveLength(1);
+    expect(s.requestProcedureId).toBe('proc_1');
+    s = apply(s, created(1), created(2));
+    expect(s.timeline.filter((e) => e.kind === 'request')).toHaveLength(1);
+  });
+
+  it('is skipped when a status card already shows the request', () => {
+    const s0 = ready();
+    const withCard = {
+      ...s0,
+      timeline: [
+        ...s0.timeline,
+        {
+          kind: 'agent' as const,
+          message: {
+            id: `msg_${pad(5)}`,
+            conversationId: CNV,
+            blocks: [{ type: 'statusCard' as const, request: REQ() }],
+            createdAt: '2026-10-22T18:00:00Z',
+          },
+        },
+      ],
+    };
+    expect(apply(withCard, created(1)).timeline.some((e) => e.kind === 'request')).toBe(false);
+  });
+
+  it('applies status_changed to the entry', () => {
+    const s = apply(ready(), created(1), changed(2));
+    const entry = s.timeline.find((e) => e.kind === 'request');
+    expect(entry?.kind === 'request' && entry.request.status).toBe('ready');
+    expect(entry?.kind === 'request' && entry.request.updatedAt).toBe('2026-10-22T19:00:00Z');
+  });
+
+  it('ignores other conversations', () => {
+    const s = apply(ready(), created(1, REQ(OTHER)), created(2, REQ(OTHER, 'req_2')));
+    expect(s.timeline.some((e) => e.kind === 'request')).toBe(false);
+    const s2 = apply(apply(ready(), created(3)), changed(4, OTHER));
+    const entry = s2.timeline.find((e) => e.kind === 'request');
+    expect(entry?.kind === 'request' && entry.request.status).toBe('draft');
+  });
+});

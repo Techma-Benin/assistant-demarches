@@ -7,6 +7,7 @@ type Schemas = components['schemas'];
 export type Content = Schemas['Content'];
 export type AgentMessage = Schemas['AgentMessage'];
 export type EventPage = Schemas['EventPage'];
+export type Request = Schemas['Request'];
 
 export type Delivery =
   | 'uploading'
@@ -44,7 +45,9 @@ export type TimelineEntry =
       /** Voice message transcription, when the Backend sends it. */
       transcript?: { status: 'done'; text: string } | { status: 'failed' };
     }
-  | { kind: 'agent'; message: AgentMessage };
+  | { kind: 'agent'; message: AgentMessage }
+  /** Request announced by the server (`request.created`), shown even if the model's reply has no status card. */
+  | { kind: 'request'; id: string; request: Request; at: string };
 
 /** A tool needed a mandate (Backend `tool.called` error event). The card is shown after `anchorMessageId`. */
 export interface ConsentNeeded {
@@ -265,7 +268,22 @@ export function conversationReducer(state: ConversationState, action: Conversati
             if (consent && consent.anchorMessageId === null) consent = { ...consent, anchorMessageId: message.id };
           }
         } else if (data.kind === 'request.created') {
-          if (data.request.conversationId === state.conversationId) requestProcedureId = data.request.procedureId;
+          if (data.request.conversationId === state.conversationId) {
+            requestProcedureId = data.request.procedureId;
+            const request = data.request;
+            const shown = timeline.some((e) =>
+              e.kind === 'request'
+                ? e.request.id === request.id
+                : e.kind === 'agent' && e.message.blocks.some((b) => b.type === 'statusCard' && b.request.id === request.id),
+            );
+            if (!shown) timeline = [...timeline, { kind: 'request', id: event.id, request, at: event.time }];
+          }
+        } else if (data.kind === 'request.status_changed') {
+          timeline = timeline.map((e) =>
+            e.kind === 'request' && e.request.id === data.requestId
+              ? { ...e, request: { ...e.request, status: data.to, updatedAt: data.at } }
+              : e,
+          );
         } else if (data.kind === 'tool.called' && data.outcome === 'success') {
           activity = { toolName: data.toolName, at: event.time };
         } else if (data.kind === 'tool.called' && data.outcome === 'error' && isMandateTriggerCode(data.code)) {
@@ -274,7 +292,7 @@ export function conversationReducer(state: ConversationState, action: Conversati
             consent = { status: 'needed', toolName: data.toolName, eventId: event.id, code: data.code, anchorMessageId: null };
           }
         }
-        // Other kinds (request.status_changed, ...) are ignored.
+        // Other kinds are ignored.
       }
       return {
         ...state,

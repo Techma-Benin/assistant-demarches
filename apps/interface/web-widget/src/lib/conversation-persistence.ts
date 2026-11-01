@@ -42,6 +42,9 @@ function validEntry(value: unknown): value is TimelineEntry {
   if (value.kind === 'agent') {
     return isRecord(value.message) && isString(value.message.id) && Array.isArray(value.message.blocks);
   }
+  if (value.kind === 'request') {
+    return isString(value.id) && isString(value.at) && isRecord(value.request) && isString(value.request.id);
+  }
   return (
     value.kind === 'user' &&
     isString(value.id) &&

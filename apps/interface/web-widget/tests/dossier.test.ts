@@ -188,3 +188,27 @@ describe('prepareRequestAction', () => {
     expect(prepareRequestAction([agent(1, card('draft' as RequestStatus)), user(2), agent(2, text([src('F1')]))], null)).toBeNull();
   });
 });
+
+describe('request entry', () => {
+  const entry = (status: RequestStatus): TimelineEntry => ({
+    kind: 'request',
+    id: 'evt_1',
+    at: '2026-10-22T18:00:00Z',
+    request: (card(status) as Extract<Block, { type: 'statusCard' }>).request,
+  });
+
+  it('counts as a created request', () => {
+    expect(summary([user(1), entry('draft')])).toEqual([
+      'Démarche identifiée:done',
+      'Autorisation:done',
+      'Validation sur le portail:current',
+    ]);
+    expect(summary([user(1), entry('submitted')]).at(-1)).toBe('Validation sur le portail:done');
+  });
+
+  it('hides the prepare chip', () => {
+    const sourced = agent(1, { type: 'text', text: 't', sources: [src] });
+    expect(prepareRequestAction([sourced], null)).toEqual({ procedureId: 'p' });
+    expect(prepareRequestAction([entry('draft'), sourced], null)).toBeNull();
+  });
+});

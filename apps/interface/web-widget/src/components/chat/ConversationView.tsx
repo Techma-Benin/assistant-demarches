@@ -2,8 +2,9 @@
 
 import { Fragment, useEffect, useId, useState } from 'react';
 import { BrandMark, Button, Chip, FlagGlyph, InlineAlert, SourceList, StepTracker, ThemeToggle, TypingIndicator, cn } from '@techma/ui';
-import { ArrowDown, FilePlus2, Plus } from 'lucide-react';
+import { ArrowDown, FileCheck2, FilePlus2, Plus } from 'lucide-react';
 import { BlockRenderer } from '@/components/blocks/BlockRenderer';
+import { StatusCardBlock } from '@/components/blocks/StatusCardBlock';
 import { useThreadScroll } from '@/hooks/use-thread-scroll';
 import { useUnreadTitle } from '@/hooks/use-unread-title';
 import type { useConversation } from '@/hooks/use-conversation';
@@ -78,20 +79,22 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-type Group = { kind: 'user' | 'agent'; items: { entry: TimelineEntry; index: number }[] };
+type Group = { kind: TimelineEntry['kind']; items: { entry: TimelineEntry; index: number }[] };
 
 /** Consecutive entries from the same sender form a group. */
 function groupEntries(timeline: TimelineEntry[]): Group[] {
   const groups: Group[] = [];
   timeline.forEach((entry, index) => {
     const last = groups.at(-1);
-    if (last && last.kind === entry.kind) last.items.push({ entry, index });
+    // A request entry never merges with another group.
+    if (last && last.kind === entry.kind && entry.kind !== 'request') last.items.push({ entry, index });
     else groups.push({ kind: entry.kind, items: [{ entry, index }] });
   });
   return groups;
 }
 
-const entryDate = (entry: TimelineEntry) => (entry.kind === 'agent' ? entry.message.createdAt : entry.sentAt);
+const entryDate = (entry: TimelineEntry) =>
+  entry.kind === 'agent' ? entry.message.createdAt : entry.kind === 'request' ? entry.at : entry.sentAt;
 
 /** Day labels to show before some groups (by index): only when the chat spans several days or starts before today. */
 function daySeparators(groups: Group[], now: Date): Map<number, string> {
@@ -118,9 +121,11 @@ function holdsDossier(state: Conversation['state']): boolean {
     state.timeline.flatMap((e) => (e.kind === 'agent' ? e.message.blocks.flatMap((b) => (b.type === 'form' ? [b.id] : [])) : [])),
   );
   return state.timeline.some((e) =>
-    e.kind === 'agent'
-      ? e.message.blocks.some((b) => b.type === 'statusCard')
-      : e.attachment !== undefined || (e.content?.type === 'interaction' && formIds.has(e.content.actionId)),
+    e.kind === 'request'
+      ? true
+      : e.kind === 'agent'
+        ? e.message.blocks.some((b) => b.type === 'statusCard')
+        : e.attachment !== undefined || (e.content?.type === 'interaction' && formIds.has(e.content.actionId)),
   );
 }
 
@@ -160,7 +165,7 @@ export function ConversationView({
 
   const last = state.timeline[state.timeline.length - 1];
   const { scrollRef, contentRef, onScroll, atBottom, jumpToLatest } = useThreadScroll(
-    last ? { key: entryId(last), kind: last.kind } : null,
+    last ? { key: entryId(last), kind: last.kind === 'user' ? 'user' : 'agent' } : null,
   );
   const waitingForAgent = last?.kind === 'user' && (last.delivery === 'accepted' || last.delivery === 'received');
   const label = activityLabel(state.activity?.toolName);
@@ -168,6 +173,8 @@ export function ConversationView({
   let lastAgentIndex = -1;
   let agentCount = 0;
   state.timeline.forEach((entry, index) => {
+    // A new request is news too: it counts as an unread reply.
+    if (entry.kind === 'request') agentCount += 1;
     if (entry.kind !== 'agent') return;
     lastAgentIndex = index;
     agentCount += 1;
@@ -325,6 +332,15 @@ export function ConversationView({
                       <Time iso={group.items[0].entry.message.createdAt} />
                     </div>
                   )}
+                  {group.kind === 'request' && group.items[0].entry.kind === 'request' && (
+                    <div data-group-header className="flex items-center gap-2">
+                      <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-trust-soft text-trust-text">
+                        <FileCheck2 aria-hidden="true" className="size-3.5" />
+                      </span>
+                      <span className="text-[14px] font-semibold text-ink">Demande créée</span>
+                      <Time iso={group.items[0].entry.at} />
+                    </div>
+                  )}
                   {group.kind === 'user' &&
                     userTurns(group.items).map((turn, turnIndex, turns) => {
                       const entries = turn.flatMap(({ entry }) => (entry.kind === 'user' ? [entry] : []));
@@ -414,6 +430,13 @@ export function ConversationView({
                     })}
                   {group.items.map(({ entry, index }, position) => {
                     const live = !seenAtMount.has(entryId(entry));
+                    if (entry.kind === 'request') {
+                      return (
+                        <div key={entry.id} data-entry-id={entry.id} className={cn(live && 'ui-enter')}>
+                          <StatusCardBlock block={{ type: 'statusCard', request: entry.request }} />
+                        </div>
+                      );
+                    }
                     if (entry.kind === 'agent') {
                       const delays = live ? revealDelays(entry.message.blocks) : null;
                       // Successive replies sit apart (group gap + 32px, about twice the gap inside a reply) so a source never reads as the next reply's.

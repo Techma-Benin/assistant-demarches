@@ -26,7 +26,7 @@ function conversationTitle(timeline: TimelineEntry[]): string | null {
 
 function lastActivity(timeline: TimelineEntry[]): string {
   const last = timeline[timeline.length - 1];
-  return last.kind === 'agent' ? last.message.createdAt : last.sentAt;
+  return last.kind === 'agent' ? last.message.createdAt : last.kind === 'request' ? last.at : last.sentAt;
 }
 
 function Session({

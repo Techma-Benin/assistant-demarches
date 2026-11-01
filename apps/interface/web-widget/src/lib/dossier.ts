@@ -28,8 +28,9 @@ export function deriveDossierSteps(
   const formIds = new Set(blocks.flatMap((b) => (b.type === 'form' ? [b.id] : [])));
   const hasFileRequest = blocks.some((b) => b.type === 'fileRequest');
   const statusCards = blocks.flatMap((b) => (b.type === 'statusCard' ? [b] : []));
-  const lastStatus = statusCards.at(-1)?.request.status;
-  const hasStatusCard = statusCards.length > 0;
+  const requestEntries = timeline.flatMap((e) => (e.kind === 'request' ? [e.request] : []));
+  const lastStatus = statusCards.at(-1)?.request.status ?? requestEntries.at(-1)?.status;
+  const hasStatusCard = statusCards.length > 0 || requestEntries.length > 0;
 
   if (consent === undefined && formIds.size === 0 && !hasFileRequest && !hasStatusCard && !requestCreated) return null;
 
@@ -101,6 +102,7 @@ export function prepareRequestAction(
   if (requestProcedureId !== null) return null;
   const last = timeline[timeline.length - 1];
   if (last?.kind !== 'agent') return null;
+  if (timeline.some((e) => e.kind === 'request')) return null;
   if (agentBlocks(timeline).some((b) => b.type === 'statusCard')) return null;
   const blocks = last.message.blocks;
   if (blocks.some((b) => b.type === 'buttons' || b.type === 'form' || b.type === 'fileRequest' || b.type === 'statusCard')) return null;

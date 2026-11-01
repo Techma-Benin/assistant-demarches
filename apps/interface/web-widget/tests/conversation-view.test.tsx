@@ -528,3 +528,24 @@ describe('userTurns and turnDelivery', () => {
     });
   });
 });
+
+describe('request entry', () => {
+  const requestEntry = (): TimelineEntry => ({
+    kind: 'request',
+    id: 'evt_1',
+    at,
+    request: { id: 'req_abc123', conversationId: 'cnv_1', userRef: 'u', procedureId: 'p', status: 'draft', fields: {}, fileIds: [], officialLink: null, updatedAt: at },
+  });
+
+  it('shows « Demande créée » with the reference, without the prepare chip', () => {
+    view(
+      build({
+        requestProcedureId: 'p',
+        timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'Rép', sources: [source('p', 'https://a.example/x')] }), requestEntry()],
+      }),
+    );
+    expect(screen.getByText('Demande créée')).toBeInTheDocument();
+    expect(screen.getByText('req_abc123')).toBeInTheDocument();
+    expect(screen.queryByText('Préparer ma demande')).toBeNull();
+  });
+});

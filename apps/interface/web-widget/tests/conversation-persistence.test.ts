@@ -86,3 +86,17 @@ describe('conversation persistence', () => {
     expect(loadConversation()).toBeNull();
   });
 });
+
+describe('request entry persistence', () => {
+  it('round-trips a request entry', () => {
+    const entry = {
+      kind: 'request',
+      id: 'evt_1',
+      at: '2026-11-01T10:00:00Z',
+      request: { id: 'req_1', conversationId: 'cnv_1', userRef: 'u', procedureId: 'p', status: 'draft', fields: {}, fileIds: [], officialLink: null, updatedAt: '2026-11-01T10:00:00Z' },
+    } as TimelineEntry;
+    const snap = snapshot([user({}), entry]);
+    saveConversation(snap);
+    expect(loadConversation()).toEqual(snap);
+  });
+});
