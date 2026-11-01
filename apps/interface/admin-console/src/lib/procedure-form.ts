@@ -74,8 +74,8 @@ export const toProcedureDraft = (procedure: Procedure): ProcedureDraft => ({
   title: procedure.title,
   summary: procedure.summary,
   requiredDocuments: [...procedure.requiredDocuments],
-  feeFcfa: String(procedure.feeFcfa),
-  processingDays: String(procedure.processingDays),
+  feeFcfa: procedure.feeFcfa === null ? '' : String(procedure.feeFcfa),
+  processingDays: procedure.processingDays === null ? '' : String(procedure.processingDays),
   sourceUrl: procedure.source.url,
   sourceVersion: procedure.source.version,
   retrievedAt: isoToLocalInput(procedure.source.retrievedAt),
@@ -84,6 +84,9 @@ export const toProcedureDraft = (procedure: Procedure): ProcedureDraft => ({
 });
 
 const isNonNegativeInteger = (value: string) => /^\d+$/.test(value.trim());
+/** Empty: the official sheet gives no single value (null in the contract). */
+const isOptionalCount = (value: string) => !value.trim() || isNonNegativeInteger(value);
+const optionalCount = (value: string) => (value.trim() ? Number(value) : null);
 
 function isHttpUrl(value: string): boolean {
   try {
@@ -102,9 +105,11 @@ export function validateProcedure(draft: ProcedureDraft): ProcedureErrors {
   if (documents.some((item) => !item) || new Set(documents).size !== documents.length) {
     errors.requiredDocuments = 'Les pièces requises ne peuvent être ni vides ni en double.';
   }
-  if (!isNonNegativeInteger(draft.feeFcfa)) errors.feeFcfa = 'Les frais doivent être un entier positif ou nul.';
-  if (!isNonNegativeInteger(draft.processingDays)) {
-    errors.processingDays = 'Le délai doit être un entier positif ou nul.';
+  if (!isOptionalCount(draft.feeFcfa)) {
+    errors.feeFcfa = 'Les frais doivent être un entier positif ou nul, ou vides si la fiche officielle n’en donne pas un seul.';
+  }
+  if (!isOptionalCount(draft.processingDays)) {
+    errors.processingDays = 'Le délai doit être un entier positif ou nul, ou vide si la fiche officielle n’en donne pas un seul.';
   }
   if (!isHttpUrl(draft.sourceUrl)) errors.sourceUrl = 'L’adresse doit être une URL http ou https valide.';
   if (!draft.sourceVersion.trim()) errors.sourceVersion = 'La version de la source est obligatoire.';
@@ -127,8 +132,8 @@ export function toProcedure(draft: ProcedureDraft, base: Procedure): Procedure {
     title: draft.title,
     summary: draft.summary,
     requiredDocuments: draft.requiredDocuments,
-    feeFcfa: Number(draft.feeFcfa),
-    processingDays: Number(draft.processingDays),
+    feeFcfa: optionalCount(draft.feeFcfa),
+    processingDays: optionalCount(draft.processingDays),
     source: { ...base.source, url: draft.sourceUrl, version: draft.sourceVersion, retrievedAt },
     validationStatus: draft.validationStatus,
     formSchema: schema.ok ? schema.value : base.formSchema,

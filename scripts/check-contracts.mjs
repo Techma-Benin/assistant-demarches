@@ -12,6 +12,10 @@ for(const file of load('contracts/manifest.json').documents.filter(f=>f.endsWith
  }
 }
 for(const t of catalog.tools){ajv.compile(t.inputSchema);ajv.compile(t.outputSchema);assert.equal(t.annotations.readOnlyHint,!t._meta['bj.techma/requiresMandate']);}
+const inline=s=>JSON.parse(JSON.stringify(s),(k,v)=>v&&typeof v.$ref==='string'&&v.$ref.startsWith('#/$defs/')?inline(domain.$defs[v.$ref.slice(8)]):v);
+const tool=name=>catalog.tools.find(t=>t.name===name);
+assert.deepEqual(tool('procedures.search').outputSchema.properties.items.items,inline(domain.$defs.Procedure),'procedures.search embarque Procedure');
+assert.deepEqual(tool('procedures.get').outputSchema,inline(domain.$defs.Procedure),'procedures.get embarque Procedure');
 const fixtures=load('mocks/fixtures.json');
 for(const [name,value] of Object.entries(fixtures.schemas)) valid(name,value);
 validateEvent(fixtures.event);

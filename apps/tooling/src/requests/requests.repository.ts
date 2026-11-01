@@ -12,7 +12,7 @@ export interface AttachedDocument {
 export interface RequestRoute {
   administrationId: string;
   title: string;
-  processingDays: number;
+  processingDays: number | null;
 }
 
 export interface RequestRecord {

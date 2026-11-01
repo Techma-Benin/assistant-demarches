@@ -7,6 +7,7 @@ import { test, type TestContext } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ConfigError, loadConfig } from '../src/config.js';
+import { ConnectorRegistry } from '../src/connectors/connector.js';
 import { ConnectorWorker } from '../src/connectors/connector-worker.js';
 import {
   TRACEPARENT,
@@ -25,7 +26,15 @@ import {
 } from './helpers.js';
 
 const JUSTICE_AGENT = `off_01JC${'0'.repeat(20)}11`;
-const ENSEIGNEMENT_AGENT = `off_01JC${'0'.repeat(20)}15`;
+const ENSEIGNEMENT_AGENT = `off_01JC${'0'.repeat(20)}13`;
+// Official sheets of service-public.bj that the assistant files through the simulated X-Road.
+const CASIER = 'PS00373';
+const CASIER_FIELDS = { adresseDomicile: 'Cotonou, Cadjèhoun', profession: 'Comptable', nombreEnfantsACharge: 2, situationMatrimoniale: 'Marié' };
+const CASIER_DOCUMENTS = ['extrait-acte-naissance'];
+const ACTE_NAISSANCE = 'PS00393';
+const ACTE_NAISSANCE_DOCUMENTS = ['recepisse-ravip', 'ancien-acte-naissance'];
+const DIPLOME = 'PS00254';
+const DIPLOME_DOCUMENTS = ['diplome-a-authentifier', 'diplome-entree-formation'];
 
 async function official(simUrl: string, method: string, path: string, officialId: string, body?: unknown) {
   const res = await fetch(`${simUrl}${path}`, {
@@ -135,17 +144,29 @@ test('catalogue : les fiches viennent du X-Road simulé, avec frais et administr
   const client = await mcpClient(t, s.url, 'mock-agent');
   const search = await callTool(client, 'procedures.search', { query: 'casier', locale: 'fr' });
   const items = search.structuredContent!.items as any[];
-  assert.deepEqual(items.map((item) => item.id), ['casier-judiciaire']);
+  assert.equal(items[0].id, CASIER, 'la fiche du casier en premier');
   assert.equal(items[0].administrationId, 'justice');
-  assert.equal(items[0].feeFcfa, 1000);
-  const procedure = await callTool(client, 'procedures.get', { procedureId: 'certificat-nationalite' });
+  assert.equal(items[0].feeFcfa, 1900);
+  assert.equal(items[0].source.url, 'https://service-public.bj/public/services/service/PS00373');
+  const procedure = await callTool(client, 'procedures.get', { procedureId: 'PS00328' });
   assertSchema('Procedure', procedure.structuredContent);
+  assert.equal(procedure.structuredContent!.assistedFiling, false, 'passeport : information seulement');
   assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: 'demo-procedure' })).code, 'NOT_FOUND', 'plus de fiche Backend');
 });
 
-test('parcours complet : relevé de notes payé, complété par l’assistant, document transmis, un snapshot par changement', async (t) => {
+test('fiche d’information seulement : aucune demande créée, l’agent reçoit le lien officiel', async (t) => {
   const s = await stack(t);
-  const r = await prepare(s, 'releve-notes', { session: 2012 }, ['piece-identite']);
+  const { body } = await grantMandate(s.url, { procedureId: 'PS00328' });
+  const refused = await act(s.url, 'request.create', { procedureId: 'PS00328' }, { mandateId: body.id as string });
+  assert.equal(toolError(refused).code, 'INVALID_TRANSITION');
+  assert.match(toolError(refused).detail, /https:\/\/service-public\.bj\/public\/services\/service\/PS00328/);
+  const rows = await s.db.transaction('system', (tx) => tx.query('select id from requests'));
+  assert.equal(rows.length, 0);
+});
+
+test('parcours complet : acte de naissance sécurisé payé, complété par l’assistant, document transmis, un snapshot par changement', async (t) => {
+  const s = await stack(t);
+  const r = await prepare(s, ACTE_NAISSANCE, {}, ACTE_NAISSANCE_DOCUMENTS);
   assert.equal((await r.row()).submission_state, 'queued');
 
   const early = await act(s.url, 'request.pay', { requestId: r.requestId }, { mandateId: r.mandateId });
@@ -157,9 +178,9 @@ test('parcours complet : relevé de notes payé, complété par l’assistant, d
   assertSchema('Request', sent);
   const stored = await r.row();
   assert.match(stored.external_ref, /^cas_/);
-  assert.match(stored.receipt.reference, /^SIM-ENS-2026-\d{6}$/);
+  assert.match(stored.receipt.reference, /^SIM-ANIP-2026-\d{6}$/);
   const filed = await latest(s, r.requestId);
-  assert.equal(filed.administrationId, 'enseignement');
+  assert.equal(filed.administrationId, 'anip');
   assert.equal(filed.receiptRef, stored.receipt.reference);
   assert.deepEqual(filed.payment, { status: 'pending', amountFcfa: 1000, currency: 'XOF' });
   assert.ok(Date.parse(filed.dueAt) > Date.parse(filed.submittedAt));
@@ -182,8 +203,9 @@ test('parcours complet : relevé de notes payé, complété par l’assistant, d
     all.map((item) => `${item.action}:${item.request.status}`),
     [
       'request.created:draft',
-      'request.updated:draft',
-      'request.updated:ready',
+      'request.updated:draft', // champs (aucun sur cette fiche)
+      'request.updated:draft', // récépissé RAVIP
+      'request.updated:ready', // ancien acte de naissance
       'request.validated:awaiting_user_validation',
       'request.submitted:submitted',
       'request.paid:completed',
@@ -197,7 +219,6 @@ test('parcours complet : relevé de notes payé, complété par l’assistant, d
   assert.match(done.documents[0].fileId, /^fil_/);
   assert.equal(done.documents[0].mimeType, 'application/pdf');
   assert.equal(done.documents[0].simulation, true);
-  assert.deepEqual(done.evidence, [{ field: 'session', source: 'user', confirmed: true }]);
   assert.deepEqual(done.progress, { step: 5, total: 5, label: 'Démarche terminée' });
   assert.equal(await legacyEvents(s), 0, 'plus d’événement request.* hérité une fois les snapshots adoptés');
   assert.equal(await s.worker.tick(), 0, 'plus rien à suivre');
@@ -220,7 +241,7 @@ test('parcours complet : relevé de notes payé, complété par l’assistant, d
 
 test('casier judiciaire : En attente pour la Justice, pris en charge, complément, reprise et approbation depuis la console', async (t) => {
   const s = await stack(t);
-  const r = await prepare(s, 'casier-judiciaire', { motif: 'emploi' }, ['piece-identite']);
+  const r = await prepare(s, CASIER, CASIER_FIELDS, CASIER_DOCUMENTS);
   await s.worker.tick();
   await act(s.url, 'request.pay', { requestId: r.requestId }, { mandateId: r.mandateId });
   assert.equal((await r.status()).status, 'blocked');
@@ -300,7 +321,7 @@ test('casier judiciaire : En attente pour la Justice, pris en charge, complémen
 
 test('rejet depuis la console : dossier rejeté, sans document, suivi terminé', async (t) => {
   const s = await stack(t);
-  const r = await prepare(s, 'certificat-nationalite', { motif: 'passeport' }, ['acte-naissance', 'piece-identite']);
+  const r = await prepare(s, CASIER, CASIER_FIELDS, CASIER_DOCUMENTS);
   await s.worker.tick();
   const early = await latest(s, r.requestId);
   assert.equal(
@@ -311,7 +332,7 @@ test('rejet depuis la console : dossier rejeté, sans document, suivi terminé',
   await act(s.url, 'request.pay', { requestId: r.requestId }, { mandateId: r.mandateId });
   const waiting = await latest(s, r.requestId);
   assert.equal(waiting.blocking.code, 'ADMINISTRATION_REVIEW');
-  const rejected = await command(s, r.requestId, { action: 'reject', revision: waiting.revision, reason: 'Filiation non établie', departmentId: 'justice', actorRef: 'agent-2' });
+  const rejected = await command(s, r.requestId, { action: 'reject', revision: waiting.revision, reason: "Extrait d'acte de naissance illisible", departmentId: 'justice', actorRef: 'agent-2' });
   assert.equal(rejected.status, 200, JSON.stringify(rejected.body));
   assertBackendAccepts(rejected.body);
   assert.equal(rejected.body.status, 'rejected');
@@ -321,11 +342,35 @@ test('rejet depuis la console : dossier rejeté, sans document, suivi terminé',
   assert.equal((await r.status()).status, 'rejected');
 });
 
+test('suivi pendant un paiement : réponse X-Road antérieure ignorée, pas de révision fantôme, la console agit du premier coup', async (t) => {
+  const s = await stack(t);
+  const r = await prepare(s, CASIER, CASIER_FIELDS, CASIER_DOCUMENTS);
+  await s.worker.tick();
+  await s.db.transaction('system', (tx) => tx.query('update requests set next_check_at = now() where id = $1', [r.requestId]));
+  const connector = s.app.get(ConnectorRegistry).get('xroad')!;
+  const status = connector.status.bind(connector);
+  // The worker read the case before payment; the citizen pays while the worker asks the X-Road for news.
+  connector.status = async (...args) => {
+    const paid = await act(s.url, 'request.pay', { requestId: r.requestId }, { mandateId: r.mandateId });
+    assert.equal(paid.isError, undefined, paid.content[0].text);
+    return status(...args);
+  };
+  await s.worker.tick();
+  connector.status = status;
+  const waiting = await latest(s, r.requestId);
+  assert.equal(waiting.status, 'blocked');
+  assert.deepEqual((await snapshots(s, r.requestId)).slice(-1).map((item) => item.action), ['request.paid'], 'pas de second snapshot pour le même état');
+  await s.worker.tick();
+  assert.equal((await latest(s, r.requestId)).revision, waiting.revision, 'aucun snapshot sans changement');
+  const claimed = await command(s, r.requestId, { action: 'claim', revision: waiting.revision, departmentId: 'justice', actorRef: 'agent-justice-1' });
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.body));
+});
+
 test('X-Road redémarré : dossiers conservés dans son fichier d’état, le suivi reprend sans échec', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'xroad-tooling-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const s = await stack(t, {}, { XROAD_STATE_FILE: join(dir, 'state.json') });
-  const r = await prepare(s, 'casier-judiciaire', { motif: 'voyage' }, ['piece-identite']);
+  const r = await prepare(s, CASIER, CASIER_FIELDS, CASIER_DOCUMENTS);
   await s.worker.tick();
   await s.sim.restart();
   const paid = await act(s.url, 'request.pay', { requestId: r.requestId }, { mandateId: r.mandateId });
@@ -339,7 +384,7 @@ test('X-Road redémarré : dossiers conservés dans son fichier d’état, le su
 
 test('paiement refusé sans mandat valide : aucun argent ne bouge au X-Road', async (t) => {
   const s = await stack(t);
-  const r = await prepare(s, 'casier-judiciaire', { motif: 'voyage' }, ['piece-identite']);
+  const r = await prepare(s, CASIER, CASIER_FIELDS, CASIER_DOCUMENTS);
   await s.worker.tick();
   assert.equal((await postInternal(s.url, `/internal/v1/mandates/${r.mandateId}/revoke`, undefined)).status, 200);
   const refused = await act(s.url, 'request.pay', { requestId: r.requestId }, { mandateId: r.mandateId });
@@ -353,22 +398,22 @@ test('paiement refusé sans mandat valide : aucun argent ne bouge au X-Road', as
 
 test('refus définitif de l’administration : abandon immédiat, lien officiel conservé', async (t) => {
   const s = await stack(t);
-  const r = await prepare(s, 'authentification-diplome', { session: 2010, examen: 'BAC' }, ['diplome']);
+  const r = await prepare(s, DIPLOME, {}, DIPLOME_DOCUMENTS);
   // The administration already holds a case for this request: filing it again is refused for good.
-  s.sim.store.createCase(USER_REF, { requestId: r.requestId, procedureId: 'authentification-diplome', fields: { session: 2010, examen: 'BAC' }, documents: [{ documentType: 'diplome', fileId: `fil_${'0'.repeat(25)}1`, mimeType: 'application/pdf', sizeBytes: 1 }] });
+  s.sim.store.createCase(USER_REF, { requestId: r.requestId, procedureId: DIPLOME, fields: {}, documents: DIPLOME_DOCUMENTS.map((documentType) => ({ documentType, fileId: `fil_${'0'.repeat(25)}1`, mimeType: 'application/pdf', sizeBytes: 1 })) });
   await s.worker.tick();
   const stored = await r.row();
   assert.equal(stored.submission_state, 'failed');
   assert.equal(stored.connector_error, 'INVALID_TRANSITION');
   const after = await r.status();
   assert.equal(after.status, 'awaiting_user_validation');
-  assert.match(String(after.officialLink), /^https:\/\/example\.org\/xroad-simulation\//);
+  assert.equal(after.officialLink, 'https://service-public.bj/public/services/service/PS00254');
   assert.equal(await s.worker.tick(), 0, 'plus de nouvel essai');
 });
 
 test('X-Road injoignable : nouvel essai différé, rien d’inventé', async (t) => {
   const s = await stack(t);
-  const r = await prepare(s, 'casier-judiciaire', { motif: 'emploi' }, ['piece-identite']);
+  const r = await prepare(s, CASIER, CASIER_FIELDS, CASIER_DOCUMENTS);
   await s.sim.close();
   await s.worker.tick();
   const stored = await r.row();

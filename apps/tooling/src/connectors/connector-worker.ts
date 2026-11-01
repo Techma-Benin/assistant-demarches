@@ -182,6 +182,12 @@ export class ConnectorWorker implements OnApplicationBootstrap, OnApplicationShu
     const relayed = await this.relay(row, connector, row.external_ref as string, state, trace);
     const changed = relayed.added > 0 || row.external_state === null || canonicalJson(state) !== canonicalJson(row.external_state);
     await this.db.transaction('system', async (tx) => {
+      const [current] = await tx.query<{ external_state: ExternalCase | null }>('select external_state from requests where id = $1 for update', [row.id]);
+      if (canonicalJson(current?.external_state ?? null) !== canonicalJson(row.external_state)) {
+        // Paid or decided from the console while the X-Road answered: that answer may predate the change. Ask again.
+        await tx.query(`update requests set next_check_at = now() where id = $1`, [row.id]);
+        return;
+      }
       await tx.query(`update requests set connector_attempts = 0, connector_error = null where id = $1`, [row.id]);
       await this.planNextCheck(tx, row.id, state, relayed);
       if (!changed) return;
