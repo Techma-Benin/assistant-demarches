@@ -11,6 +11,10 @@ export type EventPage = Schemas['EventPage'];
 export type ConversationEvent = Schemas['Event'];
 export type SocketTicket = Schemas['SocketTicket'];
 export type Problem = Schemas['Problem'];
+export type ChallengeInput = Schemas['ChallengeInput'];
+export type Challenge = Schemas['Challenge'];
+export type Consent = Schemas['Consent'];
+export type Mandate = Schemas['Mandate'];
 export type UploadedFile = Schemas['File'];
 
 export class C1Error extends Error {
@@ -53,6 +57,19 @@ export class C1Client {
   // Single-use ticket (60 s): every call needs a NEW Idempotency-Key, or a consumed ticket is replayed.
   createSocketTicket(conversationId: string, idempotencyKey: string): Promise<SocketTicket> {
     return this.request('POST', `/v1/conversations/${conversationId}/socket-ticket`, { idempotencyKey });
+  }
+
+  // Challenge: 5 min, single use. Consent: stable key `consent-<challengeId>` so a retry replays.
+  createMandateChallenge(conversationId: string, input: ChallengeInput, idempotencyKey: string): Promise<Challenge> {
+    return this.request('POST', `/v1/conversations/${conversationId}/mandate-challenges`, { body: input, idempotencyKey });
+  }
+
+  createMandate(conversationId: string, consent: Consent, idempotencyKey: string): Promise<Mandate> {
+    return this.request('POST', `/v1/conversations/${conversationId}/mandates`, { body: consent, idempotencyKey });
+  }
+
+  revokeMandate(conversationId: string, mandateId: string, idempotencyKey: string): Promise<Mandate> {
+    return this.request('POST', `/v1/conversations/${conversationId}/mandates/${mandateId}/revoke`, { idempotencyKey });
   }
 
   uploadFile(body: Blob, mimeType: ContractMimeType, idempotencyKey: string, signal?: AbortSignal): Promise<UploadedFile> {

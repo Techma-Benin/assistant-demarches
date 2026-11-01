@@ -37,7 +37,7 @@ class RequestTools implements OnModuleInit {
   onModuleInit(): void {
     const create: ToolHandler<Procedure> = {
       name: 'request.create',
-      prepare: (args, call) => this.catalog.get(args.procedureId as string, call.trace),
+      prepare: (args, call) => this.catalog.getFileable(args.procedureId as string, call.trace),
       run: (_args, call) => this.create(call),
     };
     const update: ToolHandler<Loaded> = {
@@ -119,7 +119,7 @@ class RequestTools implements OnModuleInit {
       fields: {},
       documents: [],
       officialLink: null,
-    }, { administrationId: procedure.administrationId as string, title: String(procedure.title).slice(0, 200), processingDays: procedure.processingDays as number });
+    }, { administrationId: procedure.administrationId as string, title: String(procedure.title).slice(0, 200), processingDays: (procedure.processingDays as number | null) ?? null });
     const output = toContract(request);
     if (this.workflow.snapshots) await this.workflow.publish(call.tx, request.id, call.trace.traceId, 'request.created');
     else call.emit({ kind: 'request.created', request: output });

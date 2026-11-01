@@ -64,7 +64,7 @@ function Log({ departmentId }: { departmentId: string | undefined }) {
       ),
     },
     { header: 'Révision', cell: (a) => a.revision },
-    { header: 'Acteur', cell: (a) => <span className={mono}>{a.actorRef ?? '—'}</span> },
+    { header: 'Acteur', cell: (a) => <span className={mono}>{a.actorRef ?? '-'}</span> },
     { header: 'Trace', cell: (a) => <CopyTrace traceId={a.traceId} onCopied={() => toast.show('Trace copiée.')} /> },
   ];
   return (

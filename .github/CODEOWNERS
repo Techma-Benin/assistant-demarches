@@ -1,6 +1,15 @@
-# Remplacer / compléter par les équipes GitHub réelles lorsqu'elles sont connues.
-* @billos-e
-/contracts/ @billos-e
-/CONTRACTS.md @billos-e
+# Une PR qui touche le contrat demande la revue des trois équipes (CONTRACTS.md §14).
+/contracts/ @billos-e @Lamakira @byKenVi
+/CONTRACTS.md @billos-e @Lamakira @byKenVi
+/packages/contracts-ts/ @billos-e @Lamakira @byKenVi
+
+/apps/backend/ @billos-e
+/prompts/ @billos-e
+/apps/tooling/ @byKenVi @Naldo-56
+/apps/xroad-sim/ @byKenVi @Naldo-56
+/content/ @byKenVi @Naldo-56
+/apps/interface/ @Lamakira
+/packages/ui/ @Lamakira
+/infra/ @billos-e
+/scripts/ @billos-e
 /.github/ @billos-e
-/apps/tooling/ @billos-e

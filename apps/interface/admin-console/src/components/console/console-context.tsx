@@ -64,8 +64,12 @@ async function loadDepartments(signal: AbortSignal): Promise<Department[]> {
 function accessibleDepartments(profile: AdminProfile | null, departments: Department[]): Department[] {
   if (!profile) return [];
   if (profile.superAdmin) return departments;
-  const own = new Set(profile.departmentIds);
-  return departments.filter((department) => own.has(department.id));
+  const listed = new Map(departments.map((department) => [department.id, department]));
+  // A department granted by the profile but absent from the directory listing (signed identity not yet
+  // enrolled) stays selectable, named by its id, instead of leaving the console without a ministry.
+  return profile.departmentIds.map(
+    (id) => listed.get(id) ?? { id, name: id, active: true, revision: 0, createdAt: '', updatedAt: '' },
+  );
 }
 
 async function postJson(path: string, body: unknown): Promise<Response> {

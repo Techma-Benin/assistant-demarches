@@ -2,20 +2,21 @@ import type { INestApplication } from '@nestjs/common';
 import type { Server } from 'node:http';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
-import { installFatalHandlers, notifyReady, onShutdownRequest, startHeartbeat } from './runtime/worker-guards.js';
 
 let app: INestApplication | undefined;
-const worker = process.env.TOOLING_WORKER_INDEX ?? '0';
-const log = (message: string) => console.error(`[tooling ${worker}] ${message}`);
+const log = (message: string) => console.error(`[tooling] ${message}`);
 
-startHeartbeat();
-installFatalHandlers(() => app, log);
-onShutdownRequest(() => {
+const shutdown = (code: number) => {
   setTimeout(() => process.exit(1), 10_000).unref();
-  void (app ? app.close() : Promise.resolve()).then(
-    () => process.exit(0),
-    () => process.exit(1),
-  );
+  void (app ? app.close() : Promise.resolve()).then(() => process.exit(code), () => process.exit(1));
+};
+process.on('uncaughtException', (error) => {
+  log(`Exception non rattrapée : ${error.stack ?? error.message}`);
+  shutdown(1);
+});
+process.on('unhandledRejection', (reason) => {
+  log(`Promesse rejetée sans gestionnaire : ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`);
+  shutdown(1);
 });
 
 try {
@@ -26,8 +27,7 @@ try {
   server.headersTimeout = 15_000;
   server.keepAliveTimeout = 5_000;
   await app.listen(config.port, config.host);
-  notifyReady();
-  console.log(`[tooling ${worker}] à l'écoute sur http://${config.host}:${config.port} (auth ${config.authMode}, base ${config.database.kind})`);
+  console.log(`[tooling] à l'écoute sur http://${config.host}:${config.port}`);
 } catch (error) {
   log(`Démarrage impossible : ${error instanceof Error ? error.message : String(error)}`);
   await app?.close().catch(() => undefined);

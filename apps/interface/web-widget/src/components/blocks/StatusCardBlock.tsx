@@ -17,6 +17,7 @@ export const STATUS_LABELS: Record<RequestStatus, string> = {
   completed: 'Terminée',
   rejected: 'Rejetée',
   cancelled: 'Annulée',
+  blocked: 'Bloquée',
 };
 
 const PILL_STATUS: Record<RequestStatus, PillStatus> = {
@@ -28,6 +29,7 @@ const PILL_STATUS: Record<RequestStatus, PillStatus> = {
   completed: 'validated',
   rejected: 'danger',
   cancelled: 'danger',
+  blocked: 'danger',
 };
 
 export function StatusCardBlock({ block }: Props) {

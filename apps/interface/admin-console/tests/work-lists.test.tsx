@@ -1,6 +1,6 @@
 process.env.TZ = 'UTC';
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkList } from '@/components/work/work-list';
@@ -22,14 +22,18 @@ vi.mock('next/link', () => ({
 beforeEach(() => resetConsole());
 afterEach(() => vi.unstubAllGlobals());
 
-const rowText = (text: string) => screen.getByText((_, el) => el?.tagName === 'P' && el.textContent === text);
+/** The table row of a dossier, found through its title link. */
+const row = (title: string) => screen.getByRole('link', { name: title }).closest('tr')!;
 
 describe('À vérifier (issue #1 acceptance criteria)', () => {
   it('Justice agent sees « En attente (1) » and the row « Casier judiciaire — simulation · nouvelle demande · à vérifier »', async () => {
     const { calls } = stubFetch(() => json({ items: [item()], nextCursor: null }));
     render(<WorkList mode="pending" />);
     expect(await screen.findByRole('heading', { level: 1, name: 'En attente (1)' })).toBeInTheDocument();
-    expect(rowText('Casier judiciaire — simulation · nouvelle demande · à vérifier')).toBeInTheDocument();
+    const casier = row('Casier judiciaire — simulation');
+    expect(within(casier).getByText('Nouvelle demande')).toBeInTheDocument();
+    expect(within(casier).getByText('à vérifier')).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'En attente' })).toBeInTheDocument();
     expect(screen.getByText('Simulation')).toBeInTheDocument();
     expect(screen.getByText('REC-0001')).toBeInTheDocument();
     expect(calls[0]!.url.searchParams.get('departmentId')).toBe('justice');
@@ -67,9 +71,11 @@ describe('À vérifier (issue #1 acceptance criteria)', () => {
     );
     render(<WorkList mode="pending" />);
     expect(await screen.findByRole('heading', { level: 1, name: 'En attente (2)' })).toBeInTheDocument();
-    expect(rowText('Acte · en cours · pris en charge par Awa')).toBeInTheDocument();
-    expect(rowText('Permis · bloqué · paiement échoué')).toBeInTheDocument();
-    expect(screen.getByText(/En retard/)).toBeInTheDocument();
+    expect(within(row('Acte')).getByText('En cours')).toBeInTheDocument();
+    expect(within(row('Acte')).getByText('pris en charge par Awa')).toBeInTheDocument();
+    expect(within(row('Permis')).getByText('Bloqué')).toBeInTheDocument();
+    expect(within(row('Permis')).getByText('paiement échoué')).toBeInTheDocument();
+    expect(within(row('Permis')).getByText(/En retard/)).toBeInTheDocument();
     expect(screen.queryByText('Simulation')).not.toBeInTheDocument();
   });
 
@@ -117,9 +123,9 @@ describe('Complété', () => {
     );
     render(<WorkList mode="completed" />);
     expect(await screen.findByRole('heading', { level: 1, name: 'Complété' })).toBeInTheDocument();
-    expect(rowText('Acte de naissance · par l’IA')).toBeInTheDocument();
-    expect(rowText('Casier · par un agent')).toBeInTheDocument();
-    expect(screen.getAllByText(/^Complété /)).toHaveLength(2);
+    expect(within(row('Acte de naissance')).getByText('par l’IA')).toBeInTheDocument();
+    expect(within(row('Casier')).getByText('par un agent')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Complété par' })).toBeInTheDocument();
   });
 
   it('shows « Aucun dossier complété » when empty', async () => {

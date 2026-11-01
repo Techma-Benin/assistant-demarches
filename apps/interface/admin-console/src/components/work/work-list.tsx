@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/page-header';
 import { PagedFooter, usePagedList } from '@/components/paginated-table';
 import { departmentApi } from '@/lib/department-api';
 import { DepartmentGate, Skeleton } from './department-gate';
-import { WorkRow } from './work-row';
+import { WorkTable } from './work-table';
 
 const LIMIT = 20;
 
@@ -41,11 +41,7 @@ function List({ departmentId, mode }: { departmentId: string | undefined; mode: 
       <div className="flex flex-col gap-4">
         {firstLoad ? <Skeleton lines={4} /> : null}
         {items.length > 0 ? (
-          <ul aria-label={copy.title} className="m-0 flex list-none flex-col p-0">
-            {items.map((item) => (
-              <WorkRow key={item.id} item={item} mode={mode} />
-            ))}
-          </ul>
+          <WorkTable items={items} mode={mode} label={copy.title} />
         ) : null}
         {status === 'idle' && items.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-tile bg-sunken px-6 py-14 text-ink-muted">

@@ -8,7 +8,9 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/src/main.js",
+    "dev": "tsc -p tsconfig.json && node --enable-source-maps dist/src/main.js",
     "test": "tsc -p tsconfig.json && node --test --test-concurrency=1 --enable-source-maps \"dist/test/**/*.test.js\""
   },
   "dependencies": {

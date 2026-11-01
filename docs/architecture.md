@@ -1,38 +1,60 @@
-# Architecture de départ
-
-Un monorepo, trois périmètres d'équipe. Le groupe Interface produit plusieurs exécutables : adaptateur NestJS, widget Next.js et console Next.js. « Trois groupes » ne signifie donc pas exactement trois processus à déployer ; Backend et Tooling sont chacun un service NestJS modulaire.
+# Architecture
 
 ```text
-WhatsApp → adaptateur ─┐
-Widget web ───────────┼─ C1 → Backend (conversation, agent, modèles, fichiers, admin)
-Console admin ────────┘─ C3 →       │ C2 appels MCP / contrôle mandat séparé
-                                  ▼
-                           Tooling (mandats, demandes, connecteurs, audit)
-                                  │ C4 → Backend → canaux
-                                  ▼
-                      Portails officiels / XROAD BJ en phase suivante
+ Usager web ─┐                               ┌─ Agent de ministère, super admin
+ WhatsApp ───┤                               ├─ Opérateur
+             ▼                               ▼
+   ┌──────────────────────── Interface (Next.js, :3000) ───────────────────────┐
+   │  /  site usager   /embed  chat intégrable   /admin  console   /operateur   │
+   └──────────────┬───────────────────────────────┬─────────────────────────────┘
+                  │ conversation.openapi          │ admin.openapi · operator.openapi
+                  ▼                               ▼
+   ┌──────────────────────────── Backend (:4010) ───────────────────────────────┐
+   │ conversations · agent IA · pièces · consentement · console · opérateur     │
+   │ module WhatsApp (webhook Meta)                                             │
+   └──────┬───────────────────────┬──────────────────────────────┬──────────────┘
+          │ MCP (mcp.tools)       │ tooling-internal (mandats)    │ xroad.openapi (console, Mes démarches)
+          ▼                       ▼                               │
+   ┌──────────── Tooling (:4030) ───────────┐                     │
+   │ brouillons · mandats · dépôt · suivi    │ ── backend-internal (événements, pièces) ──▶ Backend
+   └──────┬──────────────────────────────────┘                     │
+          │ xroad.openapi (côté usager)                            │
+          ▼                                                        ▼
+   ┌──────────────────────── X-Road simulé (:4040) ───────────────────────────────┐
+   │ administrations · catalogue service-public.bj · dossiers · annuaire · KPI    │
+   └──────────────────────────────────────────────────────────────────────────────┘
+   Keycloak (:8080) : identités des personnes et des services · PostgreSQL (:54329) : bases backend, tooling, xroad
 ```
 
-Backend détient conversations, base de connaissances / fiches, fichiers, configuration. Tooling détient demandes, mandats et audit autoritatifs ; le Backend peut conserver une projection des statuts alimentée par C4, jamais écrire dans la base Tooling. Tooling consulte les fiches via une copie validée versionnée ou une API Backend ; aucune connexion SQL croisée. Les API privées Backend de consultation des fiches et de métadonnées de pièces sont définies dans `backend-resources.openapi.json`. Le transfert sécurisé des pièces vers un connecteur institutionnel relève de la phase suivante.
+## Processus
 
-Stack cible du cadre technique : TypeScript, Node 22, NestJS, Next.js, pnpm/Turborepo ; PostgreSQL/pgvector, Redis/BullMQ, stockage S3 compatible, OIDC Keycloak, OpenTelemetry. Les mocks utilisent Node pour rester petits et vérifiables ; ils ne dictent pas l'architecture interne des services.
+| Processus | Lancé par | Notes |
+|---|---|---|
+| PostgreSQL 18 | `pnpm dev` (paquet `embedded-postgres`, vrais binaires) | Données dans `.local/postgres` |
+| Keycloak 26.8.1 | `pnpm dev` (téléchargé avec un Java 21 portable dans `.local/`) | Realm `infra/keycloak/realm-techma.json` importé au premier démarrage |
+| Backend | `pnpm dev` | API et traitement des messages dans le même processus, sans Redis |
+| Tooling | `pnpm dev` | Un seul processus |
+| X-Road simulé | `pnpm dev` | Base `xroad` |
+| Interface | `pnpm dev` | Une seule application Next.js |
 
-## Décisions complémentaires au PDF
+Aucun Docker. La configuration locale de tous les services est dans `scripts/dev/local-config.mjs` ; seules les clés externes (Groq, Meta) vont dans `.env`.
 
-1. Flux Git `feature → dev → main`, suivant la demande du responsable.
-2. C1 crée explicitement une conversation ; identité résolue depuis le jeton.
-3. C2 utilise le vrai protocole MCP Streamable HTTP, contexte injecté en en-têtes hors arguments modèle.
-4. Cycle de consentement indépendant des outils IA ; contrôle interne authentifié séparément.
-5. Phase 1 prépare un lien officiel : pas de faux statut de dépôt.
-6. WS à ticket + rejeu des événements ; callback WhatsApp statique, même enveloppe.
-7. Demandes et mandats ont un propriétaire unique, Tooling ; pas de double écriture.
-8. Les exemples sont intégralement synthétiques ; aucun tarif/délai officiel n'est affirmé.
+## Décisions
 
-## Références techniques vérifiées
+| Décision | Raison |
+|---|---|
+| Le X-Road simulé détient administrations, agents, catalogue et dossiers | Une seule source ; c'est l'hypothèse présentée au jury (le back-end des administrations existe) |
+| Keycloak pour toutes les personnes et tous les services | Identité réelle (OIDC), comptes de démo reproductibles, aucun jeton en dur |
+| Un client de service par service (`backend`, `tooling`) | Les clients multiples d'un même processus n'apportaient aucune isolation |
+| Le Backend crée le consentement et les cartes (`consent`, `requestCard`, `caseCard`) | L'Interface n'a aucune heuristique ; le modèle ne fabrique aucun état |
+| Pas de Redis | PostgreSQL contient déjà les messages en attente |
+| Une seule application d'interface | Un design, une session, un déploiement |
+| WhatsApp dans le Backend | Plus de contrat de rappel ni de service à part |
 
-- [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0.html)
-- [SDK MCP TypeScript officiel](https://github.com/modelcontextprotocol/typescript-sdk)
-- [JSON Schema 2020-12](https://json-schema.org/draft/2020-12/schema)
-- [CloudEvents 1.0](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md)
+## Ce qui a été retiré de l'ancienne base
 
-Les quatre PDF source demeurent dans le dossier `docs` du projet parent, hors dépôt : `Cadre_technique_trois_groupes.pdf`, `Plan_travail_parallele.pdf`, `Assistant_WhatsApp_plan_architecture_defis.pdf`, `communique-prix-national-simplification.pdf.pdf`.
+- Contrats v1 (11 fichiers où chaque OpenAPI recopiait tous les schémas), C1–C4 historiques.
+- Annuaire et copie des dossiers dans le Backend, snapshots `request.snapshot`, relais des actions de console par le Tooling.
+- Serveur de mocks, faux fournisseur d'identité, jetons `mock-*`, sessions de démo codées en dur, galeries de démonstration.
+- Lanceurs multiples (`local-stack`, `slide8-demo`, `dev:stack`), Docker, Redis, worker séparé, superviseur multi-processus du Tooling.
+- Documents d'avancement et journaux d'intégration devenus faux.

@@ -3,6 +3,15 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { C1Client, C1Error, type MessageInput } from '@/lib/c1-client';
 import { ConversationStream, type StreamStatus } from '@/lib/conversation-stream';
+import {
+  MANDATE_SCOPES,
+  idleFlow,
+  resolveProcedureId,
+  toPublicChallenge,
+  type ConsentControls,
+  type ConsentFlow,
+  type PublicChallenge,
+} from '@/lib/consent';
 import { conversationReducer, initialState } from '@/lib/conversation-state';
 import { CONTRACT_MIME_TYPES, contentTypeFor, validateFile, type ContractMimeType } from '@/lib/files';
 import { newId } from '@/lib/ids';
@@ -85,9 +94,6 @@ export function useConversation(client?: C1Client) {
       try {
         const uploaded = await c1.uploadFile(entry.file, entry.mimeType, entry.uploadKey);
         dispatch({ type: 'fileUploadSucceeded', id, file: uploaded });
-        if (uploaded.scanStatus === 'rejected') return;
-        // Pending files are sent anyway: v1 has no scan-status endpoint, the Backend owns usability
-        // (open question in README).
         const input: MessageInput = {
           id,
           content: { type: contentTypeFor(uploaded.mimeType), fileId: uploaded.id },
@@ -196,5 +202,133 @@ export function useConversation(client?: C1Client) {
     [post, upload, state.timeline],
   );
 
-  return { state, connection, sendText, sendButton, sendForm, sendFile, retry };
+  // Consent (mandate) flow, driven by the Backend `tool.called` MANDATE_* trigger held in the reducer state.
+  const [flow, setFlow] = useState<ConsentFlow>(idleFlow);
+  const attempt = useRef(0); // results of an older attempt are ignored
+  const challengeKey = useRef('');
+  const revokeKey = useRef('');
+  const challenge = useRef<PublicChallenge | null>(null);
+  const mandate = useRef<{ id: string; expiresAt: string } | null>(null);
+  const handledTrigger = useRef<string | null>(null);
+  const procedureId = resolveProcedureId(state);
+  const lastProcedure = useRef<string | null>(null);
+  lastProcedure.current = procedureId;
+
+  const requestChallenge = useCallback(
+    async (procedure: string, key: string) => {
+      if (!conversationId) return;
+      const mine = ++attempt.current;
+      challengeKey.current = key;
+      setFlow({ phase: 'requesting' });
+      try {
+        const created = await c1.createMandateChallenge(conversationId, { procedureId: procedure, scopes: MANDATE_SCOPES }, key);
+        if (mine !== attempt.current) return;
+        challenge.current = toPublicChallenge(created);
+        setFlow({ phase: 'pending', challenge: challenge.current });
+      } catch {
+        if (mine !== attempt.current) return;
+        setFlow({ phase: 'error', during: 'challenge', message: 'Impossible de demander l’autorisation pour le moment.' });
+      }
+    },
+    [c1, conversationId],
+  );
+
+  const renew = useCallback(() => {
+    const procedure = lastProcedure.current;
+    if (!procedure) {
+      setFlow({ phase: 'noProcedure' });
+      return;
+    }
+    void requestChallenge(procedure, crypto.randomUUID());
+  }, [requestChallenge]);
+
+  const trigger = state.consent;
+  useEffect(() => {
+    if (!trigger || !conversationId) return;
+    if (handledTrigger.current !== trigger.eventId) {
+      handledTrigger.current = trigger.eventId;
+      if (trigger.code === 'MANDATE_REVOKED' && ['active', 'revoking', 'revoked'].includes(flow.phase)) {
+        attempt.current++;
+        setFlow({ phase: 'revoked' });
+        return;
+      }
+      renew();
+    } else if (flow.phase === 'noProcedure' && procedureId) {
+      renew();
+    }
+  }, [trigger, conversationId, procedureId, flow.phase, renew]);
+
+  const accept = useCallback(async () => {
+    const current = challenge.current;
+    if (!conversationId || !current) return;
+    const mine = ++attempt.current;
+    setFlow({ phase: 'accepting', challenge: current });
+    try {
+      const granted = await c1.createMandate(conversationId, { challengeId: current.id, accepted: true }, `consent-${current.id}`);
+      if (mine !== attempt.current) return;
+      mandate.current = { id: granted.id, expiresAt: granted.expiresAt };
+      setFlow({ phase: 'active', mandate: mandate.current });
+    } catch (error) {
+      if (mine !== attempt.current) return;
+      const status = error instanceof C1Error ? error.status : undefined;
+      setFlow(
+        status === 403 || status === 409
+          ? { phase: 'invalid' }
+          : { phase: 'error', during: 'accept', message: 'Impossible d’enregistrer votre autorisation pour le moment.' },
+      );
+    }
+  }, [c1, conversationId]);
+
+  const retract = useCallback(
+    async (reuseKey = false) => {
+      const current = mandate.current;
+      if (!conversationId || !current) return;
+      if (!reuseKey) revokeKey.current = crypto.randomUUID();
+      const mine = ++attempt.current;
+      setFlow({ phase: 'revoking', mandate: current });
+      try {
+        await c1.revokeMandate(conversationId, current.id, revokeKey.current);
+        if (mine !== attempt.current) return;
+        setFlow({ phase: 'revoked' });
+      } catch {
+        if (mine !== attempt.current) return;
+        setFlow({ phase: 'error', during: 'revoke', message: 'Impossible de retirer l’autorisation pour le moment.' });
+      }
+    },
+    [c1, conversationId],
+  );
+
+  const retryConsent = useCallback(() => {
+    if (flow.phase !== 'error') return;
+    if (flow.during === 'accept') void accept();
+    else if (flow.during === 'revoke') void retract(true);
+    else if (lastProcedure.current) void requestChallenge(lastProcedure.current, challengeKey.current);
+  }, [flow, accept, retract, requestChallenge]);
+
+  const refuse = useCallback(() => {
+    // Nothing to consume server-side: the challenge simply expires.
+    attempt.current++;
+    setFlow({ phase: 'refused' });
+  }, []);
+
+  const resume = useCallback(() => {
+    // Re-send the user's last text message so the agent retries the action now that a mandate exists.
+    const lastText = [...state.timeline].reverse().find((e) => e.kind === 'user' && e.content?.type === 'text');
+    if (lastText?.kind === 'user' && lastText.content?.type === 'text') sendText(lastText.content.text);
+  }, [state.timeline, sendText]);
+
+  const consent: ConsentControls = useMemo(
+    () => ({
+      flow,
+      accept: () => void accept(),
+      refuse,
+      renew,
+      retry: retryConsent,
+      retract: () => void retract(),
+      resume,
+    }),
+    [flow, accept, refuse, renew, retryConsent, retract, resume],
+  );
+
+  return { state, connection, sendText, sendButton, sendForm, sendFile, retry, consent };
 }

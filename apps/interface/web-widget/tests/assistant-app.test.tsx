@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssistantApp } from '@/components/app/AssistantApp';
+import { noopConsent } from '@/lib/consent';
 import type { useConversation } from '@/hooks/use-conversation';
 import { initialState, type ConversationState } from '@/lib/conversation-state';
 
@@ -19,6 +20,7 @@ function build(state: Partial<ConversationState>): Conversation {
     sendForm: vi.fn(),
     sendFile: vi.fn(),
     retry: vi.fn(),
+    consent: noopConsent,
   };
 }
 
