@@ -51,8 +51,10 @@ describe('IconButton', () => {
 });
 
 describe('Chip', () => {
-  it('exposes aria-pressed', () => {
+  it('is a plain button without aria-pressed unless selected is provided', () => {
     const { rerender } = render(<Chip>Un</Chip>);
+    expect(screen.getByRole('button', { name: 'Un' })).not.toHaveAttribute('aria-pressed');
+    rerender(<Chip selected={false}>Un</Chip>);
     expect(screen.getByRole('button', { name: 'Un' })).toHaveAttribute('aria-pressed', 'false');
     rerender(<Chip selected>Un</Chip>);
     expect(screen.getByRole('button', { name: 'Un' })).toHaveAttribute('aria-pressed', 'true');

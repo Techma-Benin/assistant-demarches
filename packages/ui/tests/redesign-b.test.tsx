@@ -63,6 +63,47 @@ describe('PromptBox', () => {
     expect(screen.getByRole('button', { name: 'Envoyer' })).toBeEnabled();
   });
 
+  it('sends with an empty text when canSubmit is set and shows the attachment slot', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <PromptBox label="Message" variant="compact" onSubmit={onSubmit} canSubmit attachment={<span>pièce</span>} />,
+    );
+    expect(screen.getByText('pièce')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Envoyer' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Envoyer' }));
+    expect(onSubmit).toHaveBeenCalledWith('');
+  });
+
+  it('renders idleAction instead of the send button only while empty', async () => {
+    const user = userEvent.setup();
+    render(
+      <PromptBox label="Message" variant="compact" onSubmit={() => {}} idleAction={<button type="button">Micro</button>} />,
+    );
+    expect(screen.getByRole('button', { name: 'Micro' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Envoyer' })).toBeNull();
+    await user.type(screen.getByLabelText('Message'), 'x');
+    expect(screen.queryByRole('button', { name: 'Micro' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Envoyer' })).toBeEnabled();
+  });
+
+  it('hero renders the attachment, the attach button and idleAction', () => {
+    render(
+      <PromptBox
+        label="Message"
+        variant="hero"
+        onSubmit={() => {}}
+        onAttach={() => {}}
+        attachment={<span>pièce</span>}
+        idleAction={<button type="button">Micro</button>}
+      />,
+    );
+    expect(screen.getByText('pièce')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Joindre un fichier' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Micro' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Envoyer' })).toBeNull();
+  });
+
   it('renders compact and optional buttons only when provided', () => {
     const { rerender } = render(<PromptBox label="Message" variant="compact" onSubmit={() => {}} />);
     expect(screen.queryByRole('button', { name: 'Joindre un fichier' })).toBeNull();

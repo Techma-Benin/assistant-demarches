@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowUp, Mic, Paperclip } from 'lucide-react';
-import { useId, useState, type KeyboardEvent } from 'react';
+import { useId, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { cn } from '../cn';
 import { IconButton } from './IconButton';
 import { VisuallyHidden } from './VisuallyHidden';
@@ -18,6 +18,12 @@ export type PromptBoxProps = {
   onAttach?: () => void;
   onMicrophone?: () => void;
   sendLabel?: string;
+  /** Content rendered above the textarea inside the box e.g. a staged file. */
+  attachment?: ReactNode;
+  /** Allows sending with an empty text (e.g. when a file is staged). */
+  canSubmit?: boolean;
+  /** Rendered in place of the send button while there is nothing to send (e.g. a voice recorder button). */
+  idleAction?: ReactNode;
   className?: string;
 };
 
@@ -33,13 +39,16 @@ export function PromptBox({
   onAttach,
   onMicrophone,
   sendLabel = 'Envoyer',
+  attachment,
+  canSubmit,
+  idleAction,
   className,
 }: PromptBoxProps) {
   const id = useId();
   const [inner, setInner] = useState('');
   const text = value ?? inner;
   const hero = variant === 'hero';
-  const empty = text.trim() === '';
+  const empty = text.trim() === '' && !canSubmit;
 
   const setText = (next: string) => {
     if (value === undefined) setInner(next);
@@ -58,7 +67,7 @@ export function PromptBox({
     submit();
   };
 
-  const send = (
+  const submitButton = (
     <IconButton
       type="submit"
       variant="primary"
@@ -69,6 +78,7 @@ export function PromptBox({
       <ArrowUp className="size-5" strokeWidth={2.5} aria-hidden="true" />
     </IconButton>
   );
+  const send = idleAction && empty ? idleAction : submitButton;
 
   const extras = (
     <>
@@ -96,9 +106,11 @@ export function PromptBox({
         hero
           ? 'flex flex-col gap-2.5 rounded-[30px] pb-3.5 pl-[26px] pr-5 pt-5 shadow-prompt'
           : 'flex items-center gap-2 rounded-[28px] py-2.5 pl-4 pr-2.5 sm:pl-6',
+        !hero && attachment && 'flex-wrap',
         className,
       )}
     >
+      {attachment && <div className={cn('w-full min-w-0', hero ? 'pr-1' : 'pt-1 pr-2')}>{attachment}</div>}
       <VisuallyHidden>
         <label htmlFor={id}>{label}</label>
       </VisuallyHidden>
