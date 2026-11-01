@@ -2,6 +2,7 @@
 
 import { ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { cn } from '@techma/ui';
 
 export type HeroPhoto = {
@@ -11,9 +12,6 @@ export type HeroPhoto = {
   author: string;
   licence: string;
   page: string;
-  /** Intrinsic size when not the default 1280×960. */
-  width?: number;
-  height?: number;
   /** `object-position` keeping the subject in frame on wide crops. */
   position?: string;
 };
@@ -26,25 +24,7 @@ export const HERO_PHOTOS: HeroPhoto[] = [
     author: 'Mister Kolson',
     licence: 'CC0',
     page: 'https://commons.wikimedia.org/wiki/File:Le_monument_de_l%27Amazone.jpg',
-    width: 1920,
-    height: 1900,
     position: '50% 0%',
-  },
-  {
-    src: '/photos/zemidjan-porto-novo.jpg',
-    alt: 'Un conducteur de zémidjan et son passager, souriants, à Porto-Novo',
-    title: 'Zemidjan Porto Novo',
-    author: 'Oloudare king',
-    licence: 'CC BY-SA 4.0',
-    page: 'https://commons.wikimedia.org/wiki/File:Zemidjan_Porto_Novo.jpg',
-  },
-  {
-    src: '/photos/boulevard-dantokpa-cotonou.jpg',
-    alt: 'Le boulevard près du marché Dantokpa, à Cotonou',
-    title: 'Marché Dantokpa 1',
-    author: 'Alacoolwiki',
-    licence: 'CC BY 4.0',
-    page: 'https://commons.wikimedia.org/wiki/File:March%C3%A9_Dantokpa_1.jpg',
   },
   {
     src: '/photos/pirogue-ganvie.jpg',
@@ -55,20 +35,28 @@ export const HERO_PHOTOS: HeroPhoto[] = [
     page: 'https://commons.wikimedia.org/wiki/File:Pirogue_%C3%A0_voile_ou_pirogue_%C3%A0_balancier_de_type_b%C3%A9ninois_sur_le_fleuve_de_Ganvi%C3%A9_05.jpg',
   },
   {
-    src: '/photos/plage-fidjrosse-cotonou.jpg',
-    alt: 'Deux femmes en pagne assises sur la plage de Fidjrossè, à Cotonou',
-    title: 'Jeunes sur la plage de Fidjrossè',
-    author: 'Saliousoft',
+    src: '/photos/esplanade-amazone-lever-soleil.jpg',
+    alt: 'L’esplanade de l’Amazone à Cotonou au lever du soleil, la statue en silhouette',
+    title: 'Lever de soleil sur l’Esplanade de l’amazone à Cotonou',
+    author: 'Fawaz.tairou',
     licence: 'CC BY-SA 4.0',
-    page: 'https://commons.wikimedia.org/wiki/File:Jeunes_sur_la_plage_de_Fidjross%C3%A8_%C3%A0_Cotonou_au_B%C3%A9nin.jpg',
+    page: 'https://commons.wikimedia.org/wiki/File:Lever_de_soleil_sur_l%27Esplanade_de_l%27amazone_%C3%A0_Cotonou.jpg',
   },
   {
-    src: '/photos/pont-porto-novo.jpg',
-    alt: 'Le pont de Porto-Novo, avec motos et voitures',
-    title: 'Le pont de Porto Novo 02',
-    author: 'Bernice gbetie',
+    src: '/photos/vieux-pont-grand-popo.jpg',
+    alt: 'Un vieux pont métallique couleur rouille, à Grand-Popo',
+    title: 'Un vieux pont à Grand-Popo au Bénin',
+    author: 'Adoscam',
     licence: 'CC BY-SA 4.0',
-    page: 'https://commons.wikimedia.org/wiki/File:Le_pont_de_Porto_Novo_02.jpg',
+    page: 'https://commons.wikimedia.org/wiki/File:Un_vieux_pont_%C3%A0_Grand-Popo_au_B%C3%A9nin.jpg',
+  },
+  {
+    src: '/photos/porte-non-retour-ouidah-nuit.jpg',
+    alt: 'La Porte du non-retour à Ouidah, illuminée la nuit',
+    title: 'Vue de nuit la porte du non retour a Ouidah 01',
+    author: 'Chiemelacebelae',
+    licence: 'CC0',
+    page: 'https://commons.wikimedia.org/wiki/File:Vue_de_nuit_la_porte_du_non_retour_a_Ouidah_01.jpg',
   },
 ];
 
@@ -112,20 +100,19 @@ export function HeroSlideshow({ photos = HERO_PHOTOS }: { photos?: HeroPhoto[] }
           {photos.map((photo, i) => {
             const active = i === index;
             return (
-              // eslint-disable-next-line @next/next/no-img-element -- static photos from public/, slideshow needs plain stacked images
-              <img
+              <Image
                 key={photo.src}
                 src={photo.src}
                 alt={photo.alt}
-                width={photo.width ?? 1280}
-                height={photo.height ?? 960}
-                style={photo.position ? { objectPosition: photo.position } : undefined}
-                decoding="async"
-                loading={i === 0 ? undefined : 'lazy'}
-                fetchPriority={i === 0 ? 'high' : undefined}
+                fill
+                // The card is at most 1152px wide (1200px minus its padding); full width below that.
+                sizes="(min-width: 1200px) 1152px, 100vw"
+                quality={85}
+                priority={i === 0}
                 aria-hidden={active ? undefined : true}
+                style={photo.position ? { objectPosition: photo.position } : undefined}
                 className={cn(
-                  'absolute inset-0 size-full object-cover transition-opacity duration-700 ease-in-out motion-reduce:transition-none',
+                  'object-cover transition-opacity duration-700 ease-in-out motion-reduce:transition-none',
                   active ? 'opacity-100 motion-safe:animate-[hero-zoom_6s_ease-out_both]' : 'opacity-0',
                 )}
               />
