@@ -198,7 +198,7 @@ export function ConversationView({
 
   const header = (
     <header className="shrink-0 border-b border-line-subtle">
-      <div className="mx-auto flex max-w-[1320px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-4 md:px-6">
+      <div className="mx-auto flex max-w-[1320px] items-center gap-x-3 px-4 py-3 md:px-6 md:py-4">
         <a
           href="/"
           aria-label="Accueil"
@@ -234,7 +234,8 @@ export function ConversationView({
             {/* Icon only on phones so the header stays on one line. */}
             <span className="max-sm:sr-only">Nouvelle question</span>
           </Button>
-          <ThemeToggle />
+          {/* Phones follow the system theme: one line of header matters more than the toggle there. */}
+          <ThemeToggle className="max-sm:hidden" />
         </div>
       </div>
     </header>
