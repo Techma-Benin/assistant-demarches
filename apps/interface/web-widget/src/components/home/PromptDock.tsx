@@ -18,14 +18,31 @@ type PromptDockProps = {
   /** Staged files shared with the hero box. */
   staged: ReturnType<typeof useStagedFiles>;
   disabled?: boolean;
+  /** Ids of elements (closing section, footer) that hide the dock while they are on screen. */
+  hideNear?: string[];
 };
 
 /**
  * Compact question box docked at the bottom of the screen while the hero box is out of view.
  * It grows from a small pill to full width when it appears, and folds back when the hero box returns.
  */
-export function PromptDock({ anchor, value, onValueChange, onSubmit, onFiles, staged, disabled }: PromptDockProps) {
-  const [shown, setShown] = useState(false);
+export function PromptDock({ anchor, value, onValueChange, onSubmit, onFiles, staged, disabled, hideNear }: PromptDockProps) {
+  const [pastHero, setShown] = useState(false);
+  const [near, setNear] = useState(false);
+  const shown = pastHero && !near;
+  const nearKey = hideNear?.join(',') ?? '';
+
+  useEffect(() => {
+    if (!nearKey || typeof IntersectionObserver === 'undefined') return;
+    const targets = nearKey.split(',').map((id) => document.getElementById(id)).filter((el): el is HTMLElement => el !== null);
+    const visible = new Set<Element>();
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) (e.isIntersecting ? visible.add(e.target) : visible.delete(e.target));
+      setNear(visible.size > 0);
+    });
+    targets.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [nearKey]);
 
   useEffect(() => {
     const target = anchor.current;

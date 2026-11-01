@@ -101,3 +101,40 @@
     transition: none;
   }
 }
+
+/* Hero slideshow: slow settle of the active photo over one slide (6s, see HeroSlideshow). */
+@keyframes hero-zoom {
+  from {
+    transform: scale(1.06);
+  }
+}
+@keyframes home-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-reveal='pending'] [data-r] {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  [data-reveal='done'] [data-r] {
+    animation: home-rise 700ms var(--ui-ease-out) both;
+    animation-delay: calc(var(--r, 0) * 70ms);
+  }
+}
+
+/* Large green fields of the home page (stamp discs, validated tile). The brand green of dark mode is
+   tuned for small marks; at disc size it glares, so fields use a deeper green there. */
+:root {
+  --home-field-green: var(--ui-trust);
+}
+[data-theme='dark'] {
+  --home-field-green: #0d6b47;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --home-field-green: #0d6b47;
+  }
+}

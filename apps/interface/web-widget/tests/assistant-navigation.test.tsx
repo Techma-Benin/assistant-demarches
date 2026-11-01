@@ -50,8 +50,8 @@ describe('home and conversation views', () => {
     saveConversation(saved());
     render(<AssistantApp initialView="home" />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Vos démarches');
-    expect(screen.getByText('Conversation en cours')).toBeInTheDocument();
-    expect(screen.getByText(/Comment obtenir un acte/)).toBeInTheDocument();
+    expect(screen.getByText(/^Conversation en cours/)).toBeInTheDocument();
+    expect(screen.getByText(/^Conversation en cours : « Comment obtenir un acte/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Reprendre' }));
     expect(screen.getByRole('log')).toHaveTextContent('Comment obtenir un acte ?');
     expect(window.location.pathname).toBe('/conversation');
@@ -104,7 +104,7 @@ describe('home and conversation views', () => {
 
   it('without a saved conversation, the first question opens the conversation', async () => {
     render(<AssistantApp initialView="home" />);
-    expect(screen.queryByText('Conversation en cours')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Conversation en cours/)).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Renouveler mon passeport' })).toBeEnabled());
     await userEvent.click(screen.getByRole('button', { name: 'Renouveler mon passeport' }));
     await waitFor(() => expect(fake.sendMessage).toHaveBeenCalledTimes(1));

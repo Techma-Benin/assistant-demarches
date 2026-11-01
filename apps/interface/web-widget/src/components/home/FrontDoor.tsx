@@ -1,28 +1,17 @@
 'use client';
 
-import {
-  ArrowUpRight,
-  Building2,
-  Check,
-  FileText,
-  Globe,
-  House,
-  IdCard,
-  Info,
-  Lock,
-  MessageCircle,
-  MessageSquare,
-  Scale,
-  User,
-} from 'lucide-react';
-import { useRef, useState, type ReactNode } from 'react';
-import { BrandMark, Button, Chip, Counter, CounterGrid, FlagGlyph, RebusGlyph, ThemeToggle, Tile, cn } from '@techma/ui';
+import { MessageSquare } from 'lucide-react';
+import { useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { BrandMark, Button, Chip, ThemeToggle, cn } from '@techma/ui';
 import { Composer } from '@/components/chat/Composer';
 import { useStagedFiles } from '@/hooks/use-staged-files';
 import { CONTRACT_MIME_TYPES } from '@/lib/files';
 import { formatRelative } from '@/lib/format-time';
 import { siteConfig, type SiteConfig } from '@/lib/site-config';
+import { DocumentArt, type DocumentKind } from './DocumentArt';
+import { HERO_PHOTOS, HeroSlideshow } from './HeroSlideshow';
 import { PromptDock } from './PromptDock';
+import { useReveal } from './use-reveal';
 
 export type FrontDoorProps = {
   onAsk: (text: string) => void;
@@ -33,43 +22,106 @@ export type FrontDoorProps = {
   resume?: { title: string | null; at: string; onResume: () => void };
 };
 
-const SUGGESTIONS = [
-  'Comment obtenir un casier judiciaire ?',
-  'Renouveler mon passeport',
-  'Déclarer une naissance',
-  'Créer mon entreprise',
+const SUGGESTIONS = ['Comment obtenir un casier judiciaire ?', 'Renouveler mon passeport', 'Déclarer une naissance', 'Créer mon entreprise'];
+
+const SHOWCASE: { name: string; kind: DocumentKind; question: string }[] = [
+  { name: 'Acte de naissance', kind: 'acte-naissance', question: 'Comment obtenir un acte de naissance ?' },
+  { name: 'Casier judiciaire', kind: 'casier', question: 'Comment obtenir un extrait de casier judiciaire ?' },
+  { name: 'Passeport', kind: 'passeport', question: 'Comment renouveler mon passeport ?' },
+  { name: 'Carte d’identité', kind: 'cni', question: 'Comment obtenir ma carte d’identité ?' },
+  { name: 'Création d’entreprise', kind: 'entreprise', question: 'Comment créer mon entreprise ?' },
+  { name: 'Permis de construire', kind: 'permis', question: 'Comment obtenir un permis de construire ?' },
 ];
 
-const THEMES: { title: string; description: string; icon: ReactNode; badge: string; question: string }[] = [
-  { title: 'Identité', description: 'Carte d’identité, nationalité', icon: <User />, badge: 'bg-action text-on-action rounded-full', question: 'Quelles démarches pour : Identité ?' },
-  { title: 'État civil', description: 'Naissance, mariage, décès', icon: <FileText />, badge: 'bg-sun text-warning rounded-[18px]', question: 'Quelles démarches pour : État civil ?' },
-  { title: 'Voyage', description: 'Passeport, visas', icon: <Globe />, badge: 'bg-trust text-on-trust rounded-full', question: 'Quelles démarches pour : Voyage ?' },
-  { title: 'Entreprise', description: 'Créer, modifier, fermer', icon: <Building2 />, badge: 'bg-flag-red text-white rounded-[18px]', question: 'Quelles démarches pour : Entreprise ?' },
-  { title: 'Justice', description: 'Casier judiciaire, attestations', icon: <Scale />, badge: 'bg-surface text-ink rounded-[18px]', question: 'Quelles démarches pour : Justice ?' },
-  { title: 'Foncier & logement', description: 'Titres, permis, actes', icon: <House />, badge: 'bg-action text-sun rounded-full', question: 'Quelles démarches pour : Foncier & logement ?' },
+const STEPS = [
+  { name: 'Vous demandez', text: 'À l’écrit ou à voix haute, avec vos pièces si vous les avez.' },
+  { name: 'L’assistant prépare', text: 'Il trouve la fiche officielle, vous dit quoi fournir et remplit le formulaire avec vous.' },
+  { name: 'Vous validez sur le portail', text: 'La validation officielle se fait toujours par vous, jamais par l’assistant.' },
 ];
 
-const navLink =
-  'inline-flex min-h-11 items-center rounded-pill px-3.5 text-[15px] font-medium text-ink no-underline hover:bg-sunken';
-const tileTitle = 'font-display font-extrabold tracking-[-0.035em]';
+const CATALOGUE: { title: string; kind: DocumentKind; items: { name: string; question: string }[] }[] = [
+  {
+    title: 'Identité',
+    kind: 'cni',
+    items: [
+      { name: 'Carte d’identité', question: 'Comment obtenir ma carte d’identité ?' },
+      { name: 'Certificat d’identification personnelle', question: 'Comment obtenir mon certificat d’identification personnelle ?' },
+      { name: 'Certificat de nationalité', question: 'Comment obtenir un certificat de nationalité ?' },
+    ],
+  },
+  {
+    title: 'État civil',
+    kind: 'acte-naissance',
+    items: [
+      { name: 'Acte de naissance', question: 'Comment obtenir un acte de naissance ?' },
+      { name: 'Acte de mariage', question: 'Comment obtenir un acte de mariage ?' },
+      { name: 'Acte de décès', question: 'Comment obtenir un acte de décès ?' },
+    ],
+  },
+  {
+    title: 'Voyage',
+    kind: 'passeport',
+    items: [
+      { name: 'Passeport', question: 'Comment renouveler mon passeport ?' },
+      { name: 'Visa', question: 'Comment demander un visa ?' },
+    ],
+  },
+  {
+    title: 'Entreprise',
+    kind: 'entreprise',
+    items: [
+      { name: 'Créer une entreprise', question: 'Comment créer mon entreprise ?' },
+      { name: 'Modifier une entreprise', question: 'Comment modifier mon entreprise ?' },
+      { name: 'Fermer une entreprise', question: 'Comment fermer mon entreprise ?' },
+    ],
+  },
+  {
+    title: 'Justice',
+    kind: 'casier',
+    items: [
+      { name: 'Casier judiciaire', question: 'Comment obtenir un extrait de casier judiciaire ?' },
+      { name: 'Légalisation de signature', question: 'Comment faire légaliser une signature ?' },
+    ],
+  },
+  {
+    title: 'Foncier et logement',
+    kind: 'permis',
+    items: [
+      { name: 'Titre foncier', question: 'Comment obtenir un titre foncier ?' },
+      { name: 'Permis de construire', question: 'Comment obtenir un permis de construire ?' },
+    ],
+  },
+];
 
-function ResumeBanner({ title, at, onResume }: NonNullable<FrontDoorProps['resume']>) {
+const NEVER = ['Vous demander votre NPI', 'Vous demander un code SMS', 'Payer à votre place', 'Valider à votre place'];
+
+const navLink = 'inline-flex min-h-11 items-center px-3 text-[16px] font-medium text-ink no-underline hover:underline';
+const cta = 'bg-action text-on-action rounded-pill';
+const sectionPad = 'py-24 md:py-40';
+const h2Class = 'm-0 font-display font-extrabold leading-[1.02] tracking-[-0.04em]';
+
+/** Staggered entrance step: pass the order of the element inside its section. */
+const rv = (i: number) => ({ 'data-r': '', style: { '--r': i } as CSSProperties });
+
+/** A saved conversation, one quiet line under the question box: the box stays the first thing seen. */
+function ResumeLine({ title, at, onResume }: NonNullable<FrontDoorProps['resume']>) {
   const when = formatRelative(at);
   return (
-    <div className="flex w-full max-w-[780px] items-center gap-3 rounded-[22px] border border-line bg-surface px-4 py-3 text-left motion-safe:animate-[ui-enter_150ms_ease-out_both]">
-      <MessageSquare aria-hidden="true" className="size-5 shrink-0 text-ink-muted" />
-      <div className="min-w-0 flex-1">
-        <p className="m-0 text-[15px] font-semibold">Conversation en cours</p>
-        <p className="m-0 truncate text-[14px] text-ink-muted">
-          {title !== null && `« ${title} »`}
-          {title !== null && when && ' · '}
-          {when}
-        </p>
-      </div>
-      <Button variant="secondary" size="sm" onClick={onResume}>
+    <p className="m-0 flex max-w-full items-center gap-2 text-[16px] text-ink-muted motion-safe:animate-[ui-enter_150ms_ease-out_both]">
+      <MessageSquare aria-hidden="true" className="size-4 shrink-0" />
+      <span className="min-w-0 truncate">
+        Conversation en cours
+        {title !== null && ` : « ${title} »`}
+        {when && ` · ${when}`}
+      </span>
+      <button
+        type="button"
+        onClick={onResume}
+        className="inline-flex min-h-11 shrink-0 items-center px-1 font-semibold text-ink underline underline-offset-4 hover:no-underline"
+      >
         Reprendre
-      </Button>
-    </div>
+      </button>
+    </p>
   );
 }
 
@@ -83,266 +135,359 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
   // Staged files are shared too, so a document attached in the hero box follows into the dock.
   const staged = useStagedFiles(CONTRACT_MIME_TYPES);
   const heroPrompt = useRef<HTMLDivElement>(null);
+  // « Poser ma question » (closing section): bring the hero question box into view and put the cursor in it.
+  const goToQuestion = () => {
+    const box = heroPrompt.current;
+    if (!box) return;
+    const reduced = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    box.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+    box.querySelector('textarea')?.focus({ preventScroll: true });
+  };
   const submitDraft = (text: string) => {
     ask(text);
     setDraft('');
   };
+  const [selected, setSelected] = useState(0);
+  const showcaseButtons = useRef<(HTMLButtonElement | null)[]>([]);
+  const current = SHOWCASE[selected]!;
+  const onShowcaseKey = (e: KeyboardEvent) => {
+    const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+    if (step === 0) return;
+    e.preventDefault();
+    const next = (selected + step + SHOWCASE.length) % SHOWCASE.length;
+    setSelected(next);
+    showcaseButtons.current[next]?.focus();
+  };
+
+  const showcaseRef = useReveal<HTMLElement>();
+  const howRef = useReveal<HTMLElement>();
+  const themesRef = useReveal<HTMLElement>();
+  const trustRef = useReveal<HTMLElement>();
+  const closingRef = useReveal<HTMLElement>();
 
   return (
-    <div className="min-h-screen bg-canvas font-sans text-ink">
-      <header className="mx-auto flex max-w-[1320px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4 md:px-6 md:py-5">
-        <a href="#top" className="inline-flex min-h-11 items-center no-underline">
-          <BrandMark showFlag={brandFlag} />
-        </a>
-        <div className="flex min-w-0 flex-wrap items-center gap-1">
-          <nav aria-label="Navigation principale" className="hidden items-center gap-1 md:flex">
-            <a href="#themes" className={navLink}>Thèmes</a>
-            <a href="#fonctionnement" className={navLink}>Comment ça marche</a>
-            <a href="#whatsapp" className={navLink}>WhatsApp</a>
-          </nav>
-          <span className="rounded-pill bg-sunken px-3 py-2 text-[12px] font-semibold text-ink-muted sm:px-3.5 sm:text-[13px] md:ml-2">
-            Aucune connexion requise
-          </span>
-          <ThemeToggle />
-        </div>
-      </header>
+    <div className="relative min-h-screen overflow-x-clip bg-canvas font-sans text-ink">
+      <header className="mx-auto flex max-w-[1320px] items-center justify-between gap-x-4 px-5 py-4 md:px-8 md:py-6">
+          <a href="#top" className="inline-flex min-h-11 items-center no-underline">
+            <BrandMark showFlag={brandFlag} />
+          </a>
+          <div className="flex min-w-0 items-center gap-1">
+            <nav aria-label="Navigation principale" className="hidden items-center gap-1 md:flex">
+              <a href="#documents" className={navLink}>Démarches</a>
+              <a href="#fonctionnement" className={navLink}>Comment ça marche</a>
+              <a href="#whatsapp" className={navLink}>WhatsApp</a>
+            </nav>
+            <ThemeToggle />
+          </div>
+        </header>
 
       <main>
         <section
           id="top"
           aria-labelledby="hero-title"
-          className="mx-auto flex max-w-[1320px] flex-col items-center gap-5 px-5 pb-12 pt-10 text-center md:gap-7 md:px-6 md:pb-[72px] md:pt-24"
+          className="flex flex-col items-stretch"
         >
-          <h1
-            id="hero-title"
-            // One line at every width: the title is ≈ 12.3em wide, so its size follows the hero width (1320px max).
-            className="m-0 max-w-full whitespace-nowrap font-display text-[calc((min(100vw,1320px)-48px)/12.5)] font-extrabold leading-[0.95] tracking-[-0.055em]"
-          >
-            Vos démarches, simplement.
-          </h1>
-          <p className="m-0 font-display text-[clamp(17px,3vw,36px)] font-semibold leading-[1.2] tracking-[-0.025em] text-ink-muted">
-            Quelle que soit votre démarche, commencez ici
-            <RebusGlyph variant="arrow-flag" flag={<FlagGlyph decorative width="1.5em" height="1.05em" />} />
-          </p>
-
-          {resume && <ResumeBanner {...resume} />}
-
-          <div ref={heroPrompt} className="mt-3 w-full max-w-[780px]">
-            <Composer
-              variant="hero"
-              label="Votre question"
-              placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
-              value={draft}
-              onValueChange={setDraft}
-              onSend={submitDraft}
-              onFiles={onFiles}
-              staged={staged}
-              hint={false}
-              disabled={disabled}
-              className="w-full text-left"
-            />
-          </div>
-
-          <div className="flex max-w-[820px] flex-wrap justify-center gap-2">
-            {SUGGESTIONS.map((s) => (
-              <Chip key={s} disabled={disabled} onClick={() => ask(s)}>
-                {s}
-              </Chip>
-            ))}
-          </div>
-          <p className="m-0 mt-1 text-[14px] text-ink-muted">
-            Réponses tirées des fiches officielles validées · Chaque réponse cite ses sources
-          </p>
-        </section>
-
-        <section className="mx-auto max-w-[1320px] px-5 pb-6 pt-8 md:px-6 md:pb-10 md:pt-14">
-          <p className="mx-auto m-0 max-w-[1100px] text-center font-display text-[clamp(30px,4.4vw,60px)] font-bold leading-[1.12] tracking-[-0.04em]">
-            Un acte{' '}
-            <span aria-hidden="true" className="inline-flex size-[1.1em] items-center justify-center rounded-[0.3em] bg-sun align-[-0.1em] text-warning">
-              <FileText className="size-[0.62em]" strokeWidth={2.4} />
-            </span>
-            , un passeport{' '}
-            <span aria-hidden="true" className="inline-flex size-[1.1em] items-center justify-center rounded-full bg-trust align-[-0.1em] text-on-trust">
-              <Globe className="size-[0.6em]" strokeWidth={2.4} />
-            </span>
-            , une entreprise{' '}
-            <RebusGlyph
-              variant="cycle"
-              className="ml-[0.05em]"
-              items={[
-                { label: 'Entreprise', className: 'bg-flag-red text-white', icon: <Building2 className="size-[0.62em]" strokeWidth={2.4} /> },
-                { label: 'Justice', className: 'bg-sun text-warning', icon: <Scale className="size-[0.62em]" strokeWidth={2.4} /> },
-                { label: 'Identité', className: 'bg-action text-on-action', icon: <IdCard className="size-[0.62em]" strokeWidth={2.4} /> },
-              ]}
-            />{' '}
-            - une seule porte d’entrée.
-          </p>
-        </section>
-
-        <section id="fonctionnement" aria-label="Comment ça marche" className="mx-auto flex max-w-[1320px] flex-wrap gap-4 px-5 py-6 md:px-6 md:py-10">
-          <Tile tone="ink" className="flex min-h-[480px] min-w-0 flex-[2_1_620px] flex-col gap-7">
-            <div className="flex flex-col gap-3">
-              <span className="text-[14px] font-semibold opacity-70">Comment ça marche</span>
-              <h2 className="m-0 max-w-[560px] font-display text-[clamp(32px,3.6vw,48px)] font-extrabold leading-[1.02] tracking-[-0.04em]">
-                Demandez comme vous le diriez au guichet.
-              </h2>
-            </div>
-            <div className="mt-auto flex flex-col gap-3">
-              <div className="max-w-[80%] self-end rounded-[22px] bg-on-action/15 px-5 py-3.5 text-[16px]">
-                Il me faut un acte de naissance pour mon fils
-              </div>
-              <div className="flex max-w-[88%] flex-col gap-3.5 rounded-[22px] bg-surface px-[22px] py-5 text-ink">
-                <p className="m-0 text-[16px] leading-normal">
-                  D’accord. Selon la fiche officielle, la demande se fait en ligne en indiquant la commune de naissance
-                  <sup className="ml-[3px] inline-flex rounded-md bg-sunken px-1.5 align-[0.3em] text-[11px] font-bold">1</sup>. Voulez-vous que je prépare la demande&nbsp;?
-                </p>
-                <div className="flex flex-wrap gap-2" aria-hidden="true">
-                  <span className="rounded-pill bg-action px-3.5 py-[9px] text-[14px] font-semibold text-on-action">Préparer la demande</span>
-                  <span className="rounded-pill bg-sunken px-3.5 py-[9px] text-[14px] font-semibold">Pièces à fournir</span>
-                </div>
-              </div>
-            </div>
-          </Tile>
-
-          <Tile tone="sun" className="flex min-h-[480px] min-w-0 flex-[1_1_320px] flex-col justify-between gap-6 p-7 md:p-10">
-            <span aria-hidden="true" className="flex size-16 items-center justify-center rounded-[20px] bg-action text-sun">
-              <Lock className="size-[30px]" strokeWidth={2.2} />
-            </span>
-            <div className="flex flex-col gap-3.5">
-              <h3 className={cn(tileTitle, 'm-0 text-[40px] leading-none tracking-[-0.04em]')}>Aucun NPI. Aucun code SMS.</h3>
-              <p className="m-0 text-[17px] leading-normal">
-                L’assistant ne vous les demandera jamais. La validation officielle se fait uniquement sur le portail.
-              </p>
-            </div>
-          </Tile>
-
-          <Tile className="flex min-h-[420px] min-w-0 flex-[1_1_320px] flex-col gap-[22px] p-7 md:p-10">
-            <h3 className={cn(tileTitle, 'm-0 text-[32px] leading-[1.05]')}>Chaque réponse cite sa source.</h3>
-            <ul className="m-0 mt-auto flex list-none flex-col gap-2.5 p-0">
-              {[
-                { n: '1', title: 'Acte de naissance', sub: 'Fiche validée · service-public.bj' },
-                { n: '2', title: 'État civil - copie intégrale', sub: 'Fiche validée' },
-              ].map((s) => (
-                <li key={s.n} className="flex items-center gap-3 rounded-[18px] bg-surface px-4 py-3.5">
-                  <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-action text-[13px] font-bold text-on-action">{s.n}</span>
-                  <span className="flex min-w-0 flex-col">
-                    <span className="text-[15px] font-semibold">{s.title}</span>
-                    <span className="text-[13px] text-ink-muted">{s.sub}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </Tile>
-
-          <Tile className="flex min-h-[420px] min-w-0 flex-[1_1_320px] flex-col gap-[22px] p-7 md:p-10">
-            <h3 className={cn(tileTitle, 'm-0 text-[32px] leading-[1.05]')}>L’assistant prépare. Vous validez.</h3>
-            <ol className="m-0 mt-auto flex list-none flex-col gap-2.5 p-0">
-              {['Formulaire prérempli', 'Pièces jointes'].map((label) => (
-                <li key={label} className="flex items-center gap-3 rounded-[18px] bg-surface px-4 py-3.5 text-[15px] font-semibold">
-                  <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-trust text-on-trust">
-                    <Check className="size-3" strokeWidth={3.6} />
-                  </span>
-                  {label}
-                </li>
-              ))}
-              <li className="flex items-center gap-3 rounded-[18px] bg-surface px-4 py-3.5 text-[15px] font-bold">
-                <span aria-hidden="true" className="box-border size-6 shrink-0 rounded-full border-[2.5px] border-ink" />
-                Vous validez sur le portail
-              </li>
-            </ol>
-          </Tile>
-
-          <Tile id="whatsapp" tone="trust" className="flex min-h-[420px] min-w-0 flex-[1_1_320px] flex-col justify-between gap-[22px] p-7 md:p-10">
-            <span aria-hidden="true" className="flex size-16 items-center justify-center rounded-full bg-white/15">
-              <MessageCircle className="size-[30px]" strokeWidth={2} />
-            </span>
-            <div className="flex flex-col gap-3.5">
-              <h3 className={cn(tileTitle, 'm-0 text-[32px] leading-[1.05]')}>Aussi sur WhatsApp.</h3>
-              <p className="m-0 text-[17px] leading-normal opacity-90">
-                Le même assistant, dans l’application que vous utilisez déjà.
-                {whatsappNumber ? ` Écrivez au ${whatsappNumber}.` : ''}
-              </p>
-            </div>
-          </Tile>
-        </section>
-
-        <section id="themes" aria-labelledby="themes-title" className="mx-auto max-w-[1320px] px-5 pb-6 pt-16 md:px-6 md:pb-10 md:pt-24">
-          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-            <h2 id="themes-title" className="m-0 font-display text-[clamp(40px,5vw,72px)] font-extrabold leading-[0.98] tracking-[-0.05em]">
-              Ou parcourez
-              <br />
-              par thème.
-            </h2>
-            <p className="m-0 max-w-[380px] text-[17px] leading-normal text-ink-muted">
-              Chaque thème ouvre une conversation déjà orientée - vous pouvez toujours préciser.
+          <div className="px-5 text-center md:px-10">
+            <h1
+              id="hero-title"
+              className="m-0 mt-6 text-balance font-display text-[clamp(44px,7vw,104px)] font-extrabold leading-[0.95] tracking-[-0.045em] md:mt-12"
+            >
+              Vos démarches, simplement.
+            </h1>
+            <p className="m-0 mt-4 font-display text-[clamp(18px,2vw,24px)] font-semibold tracking-[-0.02em] text-ink-muted md:mt-6">
+              Quelle que soit votre démarche, commencez ici.
             </p>
           </div>
-          <div className="grid grid-cols-1 gap-4 min-[640px]:grid-cols-[repeat(auto-fill,minmax(290px,1fr))]">
-            {THEMES.map((t) => (
-              <button
-                key={t.title}
-                type="button"
+
+          <div className="mt-8 px-3 md:mt-12 md:px-6">
+            <div ref={heroPrompt} className="relative z-10 mx-auto -mb-8 w-full max-w-[880px] md:-mb-9">
+              <Composer
+                variant="compact"
+                label="Votre question"
+                placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
+                value={draft}
+                onValueChange={setDraft}
+                onSend={submitDraft}
+                onFiles={onFiles}
+                staged={staged}
+                hint={false}
                 disabled={disabled}
-                onClick={() => ask(t.question)}
-                className="ui-press flex min-h-[200px] min-w-0 flex-col gap-10 rounded-card bg-sunken p-7 text-left text-ink hover:bg-line disabled:cursor-not-allowed disabled:opacity-50 md:min-h-[220px]"
-              >
-                <span className="flex items-start justify-between">
-                  <span aria-hidden="true" className={cn('flex size-14 items-center justify-center [&>svg]:size-[26px] [&>svg]:stroke-[2.2]', t.badge)}>
-                    {t.icon}
-                  </span>
-                  <span aria-hidden="true" className="flex size-10 items-center justify-center rounded-full bg-surface">
-                    <ArrowUpRight className="size-4" strokeWidth={2.6} />
-                  </span>
-                </span>
-                <span className="flex flex-col gap-1.5">
-                  <span className="font-display text-[26px] font-extrabold tracking-[-0.03em]">{t.title}</span>
-                  <span className="text-[15px] text-ink-muted">{t.description}</span>
-                </span>
-              </button>
-            ))}
+                className="w-full text-left"
+              />
+            </div>
+          </div>
+
+          <HeroSlideshow />
+
+          <div className="flex flex-col items-center gap-4 px-5 pb-10 pt-6 text-center md:px-10 md:pb-14">
+            {resume && <ResumeLine {...resume} />}
+            <div className="flex flex-wrap justify-center gap-2">
+              {SUGGESTIONS.map((s) => (
+                <Chip key={s} disabled={disabled} onClick={() => ask(s)}>
+                  {s}
+                </Chip>
+              ))}
+            </div>
+            <p className="m-0 text-[16px] text-ink-muted">Aucune connexion requise · Chaque réponse cite sa fiche officielle</p>
           </div>
         </section>
 
-        <section aria-label="En chiffres" className="mx-auto max-w-[1320px] px-5 py-16 md:px-6 md:py-24">
-          <CounterGrid>
-            <Counter value="1" label="seule porte d’entrée pour toutes les démarches" />
-            <Counter value="24/7" label="sur le web et sur WhatsApp" tone="trust" />
-            <Counter value="0" label="mot de passe ou code SMS demandé" tone="danger" />
-            <Counter value="100 %" label="des informations administratives citent leur fiche" />
-          </CounterGrid>
+        <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'lg:flex lg:min-h-[100svh] lg:items-center lg:py-24')}>
+          <div className="mx-auto grid w-full max-w-[1320px] grid-cols-1 items-center gap-10 px-5 md:px-8 lg:grid-cols-12 lg:gap-x-8">
+            <div className="order-2 flex flex-col gap-8 lg:order-1 lg:col-span-5">
+              <div {...rv(0)} role="group" aria-labelledby="documents-title" onKeyDown={onShowcaseKey} className="flex flex-col">
+                <h2
+                  id="documents-title"
+                  className="m-0 mb-3 font-display text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] text-ink-muted lg:mb-0 lg:text-[clamp(28px,2.9vw,44px)]"
+                >
+                  Une démarche, un document.
+                </h2>
+                <div className="ui-scrollbar-none -mx-5 flex gap-x-6 overflow-x-auto px-5 lg:mx-0 lg:flex-col lg:gap-0 lg:overflow-visible lg:px-0">
+                  {SHOWCASE.map((d, i) => (
+                    <button
+                      key={d.kind}
+                      ref={(el) => {
+                        showcaseButtons.current[i] = el;
+                      }}
+                      type="button"
+                      aria-pressed={i === selected}
+                      onClick={() => setSelected(i)}
+                      className={cn(
+                        'ui-press shrink-0 whitespace-nowrap text-left font-display text-[26px] leading-[1.15] tracking-[-0.03em] lg:text-[clamp(28px,2.9vw,44px)]',
+                        i === selected ? 'font-extrabold text-ink' : 'font-semibold text-ink-muted hover:text-ink',
+                      )}
+                    >
+                      {d.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div {...rv(1)} className="flex max-w-[34ch] flex-col items-start gap-4 text-[18px] leading-normal">
+                <p className="m-0 font-semibold">Demandez : « {current.question} »</p>
+                <p className="m-0">L’assistant vous indique les pièces à fournir, le coût et le délai, d’après la fiche officielle.</p>
+                <Button disabled={disabled} onClick={() => ask(current.question)}>
+                  Demander à l’assistant
+                </Button>
+              </div>
+            </div>
+
+            <div {...rv(2)} className="relative order-1 mx-auto aspect-square w-[86vw] lg:order-2 lg:col-span-7 lg:size-[min(64vh,560px)] lg:w-auto">
+              <div aria-hidden="true" className="absolute inset-0 rounded-full bg-sunken" />
+              {SHOWCASE.map((d, i) => (
+                <div
+                  key={d.kind}
+                  className={cn(
+                    'absolute left-1/2 top-[-8%] aspect-[3/4] h-[80%] -translate-x-1/2 transition-opacity duration-300 motion-reduce:transition-none',
+                    i === selected ? 'opacity-100' : 'opacity-0',
+                  )}
+                >
+                  <DocumentArt kind={d.kind} className="size-full" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="fonctionnement" ref={howRef} aria-labelledby="how-title" className={sectionPad}>
+          <div className="mx-auto grid max-w-[1320px] grid-cols-1 gap-x-[10px] gap-y-4 px-5 md:px-8 lg:grid-cols-12 lg:gap-y-0">
+            <h2
+              {...rv(0)}
+              id="how-title"
+              className={cn(h2Class, 'mb-6 text-[clamp(36px,3.6vw,52px)] lg:col-span-6 lg:col-start-1 lg:row-start-1 lg:mb-0 lg:self-start')}
+            >
+              Comment ça marche
+            </h2>
+            {STEPS.map((step, i) => {
+              const span = ['lg:col-span-3 lg:col-start-1', 'lg:col-span-4 lg:col-start-4', 'lg:col-span-5 lg:col-start-8'][i]!;
+              const height = ['h-[34vw] lg:h-[30vh]', 'h-[46vw] lg:h-[44vh]', 'h-[62vw] lg:h-[60vh]'][i]!;
+              return [
+                <div
+                  key={`tile-${i}`}
+                  {...rv(2)}
+                  className={cn(
+                    'relative overflow-hidden rounded-card lg:row-start-1 lg:self-end',
+                    span,
+                    height,
+                    i === 2 ? 'bg-(--home-field-green)' : 'bg-sunken',
+                  )}
+                >
+                  {i === 0 ? (
+                    <div className="absolute inset-x-[8%] bottom-[14%] rounded-[22px] bg-surface px-5 py-3.5 text-[16px] leading-snug">
+                      Il me faut un acte de naissance pour mon fils
+                    </div>
+                  ) : (
+                    <DocumentArt
+                      kind="acte-naissance"
+                      stamped={i === 2}
+                      className="absolute left-1/2 top-[12%] h-full w-auto -translate-x-1/2"
+                    />
+                  )}
+                </div>,
+                <div key={`text-${i}`} {...rv(1)} className={cn('mb-6 lg:row-start-2 lg:mb-0 lg:mt-5', span)}>
+                  <p className="m-0 text-[20px] font-semibold">{step.name}</p>
+                  <p className="m-0 mt-1 max-w-[34ch] text-[16px] text-ink-muted">{step.text}</p>
+                </div>,
+              ];
+            })}
+          </div>
+        </section>
+
+        <section id="themes" ref={themesRef} aria-labelledby="themes-title" className={sectionPad}>
+          <div className="mx-auto max-w-[1320px] px-5 md:px-8">
+            <h2 {...rv(0)} id="themes-title" className={cn(h2Class, 'text-[clamp(36px,4vw,52px)]')}>
+              Toutes les démarches.
+            </h2>
+            <div className="mt-16 grid grid-cols-1 gap-x-16 gap-y-16 lg:grid-cols-2 lg:gap-y-[72px]">
+              {CATALOGUE.map((cat) => (
+                <div key={cat.title} {...rv(1)}>
+                  <div className="mb-8 flex items-baseline justify-between gap-4">
+                    <h3 className="m-0 font-display text-[clamp(32px,3.4vw,52px)] font-extrabold leading-none tracking-[-0.04em]">
+                      {cat.title}
+                    </h3>
+                    <span className="text-[16px] text-ink-muted">{cat.items.length} démarches</span>
+                  </div>
+                  <ul className="m-0 grid list-none grid-cols-1 gap-y-6 p-0">
+                    {cat.items.map((item) => (
+                      <li key={item.name}>
+                        <button
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => ask(item.question)}
+                          className="ui-press group flex w-full items-center gap-4 text-left text-ink disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="relative size-14 shrink-0 overflow-hidden rounded-full bg-sunken transition-transform duration-200 motion-reduce:transition-none group-enabled:group-hover:scale-105"
+                          >
+                            <DocumentArt kind={cat.kind} className="absolute left-1/2 top-[16%] w-[70%] -translate-x-1/2" />
+                          </span>
+                          <span className="flex min-w-0 flex-col">
+                            <span className="text-[18px] font-semibold group-enabled:group-hover:underline">{item.name}</span>
+                            <span className="text-[16px] text-ink-muted">{item.question}</span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section ref={trustRef} aria-labelledby="trust-title" className={sectionPad}>
+          <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-2 px-5 md:px-8 lg:grid-cols-4">
+            <div {...rv(0)} className="col-span-2 flex rounded-card bg-action p-6 text-on-action">
+              <h2 id="trust-title" className="m-0 font-display text-[28px] font-extrabold leading-[1.1] tracking-[-0.03em] lg:text-[32px]">
+                Ce que l’assistant ne fera jamais.
+              </h2>
+            </div>
+            {NEVER.map((t, i) => (
+              <p
+                key={t}
+                {...rv(i + 1)}
+                className="m-0 min-h-[120px] rounded-card bg-sunken p-6 font-display text-[20px] font-bold leading-[1.15] tracking-[-0.02em] md:text-[32px] lg:aspect-[3/2] lg:text-[32px]"
+              >
+                {t}
+              </p>
+            ))}
+            <p
+              {...rv(5)}
+              className="m-0 col-span-2 rounded-card bg-sunken p-6 font-display text-[20px] font-bold leading-[1.15] tracking-[-0.02em] md:text-[32px] lg:text-[32px]"
+            >
+              Chaque réponse cite sa fiche officielle.
+            </p>
+          </div>
+        </section>
+
+        <section id="whatsapp" ref={closingRef} className="relative flex flex-col overflow-hidden bg-sunken">
+          <div aria-hidden="true" className="relative order-2 h-[80vw] overflow-hidden lg:absolute lg:inset-0 lg:h-auto">
+            <div className="absolute left-0 top-0 size-[130vw] rounded-full bg-(--home-field-green) lg:bottom-[-25svh] lg:left-[-10vw] lg:top-auto lg:size-[min(105svh,62vw)]" />
+            <div className="absolute left-1/2 top-[40vw] -translate-x-1/2 -translate-y-1/2 lg:left-[26vw] lg:top-1/2">
+              <DocumentArt kind="acte-naissance" stamped className="block h-[54vw] w-auto -rotate-6 lg:h-[46svh]" />
+            </div>
+          </div>
+          <div className="relative mx-auto flex w-full max-w-[1320px] items-center px-5 pt-24 md:px-8 lg:min-h-[80svh] lg:py-24 lg:pt-24">
+            <div className="flex w-full flex-col items-start gap-5 pb-10 lg:ml-auto lg:w-1/3 lg:pb-0">
+              <h2 {...rv(0)} className={cn(h2Class, 'text-[40px]')}>
+                Aussi sur WhatsApp.
+              </h2>
+              <p {...rv(1)} className="m-0 text-[18px] leading-normal">
+                Le même assistant, dans l’application que vous utilisez déjà.
+              </p>
+              {whatsappNumber ? (
+                <>
+                  <p {...rv(2)} className="m-0 text-[20px] font-semibold">Écrivez au {whatsappNumber}</p>
+                  <a
+                    {...rv(3)}
+                    href={`https://wa.me/${whatsappNumber.replace(/\D/g, '')}`}
+                    target="_blank"
+                    rel="noopener"
+                    className={cn(cta, 'ui-press inline-flex min-h-12 items-center px-6 text-[16px] font-semibold no-underline hover:bg-action-hover')}
+                  >
+                    Ouvrir WhatsApp
+                  </a>
+                </>
+              ) : (
+                <div {...rv(2)}>
+                  <Button disabled={disabled} onClick={goToQuestion}>Poser ma question</Button>
+                </div>
+              )}
+            </div>
+          </div>
         </section>
       </main>
 
-      <footer className="bg-sunken">
-        <div className="mx-auto flex max-w-[1320px] flex-wrap items-center justify-between gap-6 px-5 pb-36 pt-12 md:px-6">
-          <div className="flex max-w-[640px] flex-col gap-2">
-            <span className="flex items-center gap-2 text-[15px] font-bold">
-              <Info className="size-[18px] shrink-0" strokeWidth={2.2} aria-hidden="true" />
-              L’IA peut se tromper.
-            </span>
-            <span className="text-[15px] leading-normal text-ink-muted">
-              Vérifiez toujours les informations importantes sur le portail officiel. Assistant Démarches est une proposition de Techma Bénin.
-            </span>
+      <footer id="site-footer" className="bg-action text-on-action">
+        <div className="mx-auto max-w-[1320px] px-5 pb-16 pt-16 md:px-8">
+          <div className="flex flex-wrap items-start justify-between gap-6">
+            <p className="m-0 max-w-[640px] text-[16px] leading-normal">
+              <span className="font-bold">L’IA peut se tromper.</span>{' '}
+              <span className="text-on-action/75">
+                Vérifiez toujours les informations importantes sur le portail officiel. Assistant Démarches est une proposition de Techma Bénin.
+              </span>
+            </p>
+            {reportUrl || privacyUrl ? (
+              <div className="flex flex-wrap gap-x-6">
+                {reportUrl ? (
+                  <a href={reportUrl} className="inline-flex min-h-11 items-center text-[16px] font-semibold text-on-action underline-offset-4 hover:underline">
+                    Signaler un problème
+                  </a>
+                ) : null}
+                {privacyUrl ? (
+                  <a href={privacyUrl} className="inline-flex min-h-11 items-center text-[16px] font-semibold text-on-action underline-offset-4 hover:underline">
+                    Confidentialité
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
           </div>
-          {reportUrl || privacyUrl ? (
-            <div className="flex flex-wrap gap-2.5">
-              {reportUrl ? (
-                <a href={reportUrl} className="inline-flex min-h-11 items-center rounded-pill border border-ink px-5 text-[15px] font-semibold text-ink no-underline hover:bg-line">
-                  Signaler un problème
+          <p className="m-0 mt-8 text-[16px] text-on-action/75">© 2026 Techma Bénin</p>
+          <p className="m-0 mt-2 text-[16px] text-on-action/75">
+            Photos :{' '}
+            {HERO_PHOTOS.map((p, i) => (
+              <span key={p.page}>
+                {i > 0 && ' · '}
+                <a href={p.page} target="_blank" rel="noopener" className="underline underline-offset-4 hover:no-underline">
+                  «&nbsp;{p.title}&nbsp;»
                 </a>
-              ) : null}
-              {privacyUrl ? (
-                <a href={privacyUrl} className="inline-flex min-h-11 items-center rounded-pill bg-action px-5 text-[15px] font-semibold text-on-action no-underline hover:bg-action-hover">
-                  Confidentialité
-                </a>
-              ) : null}
-            </div>
-          ) : null}
+                , {p.author} ({p.licence})
+              </span>
+            ))}
+          </p>
+        </div>
+        {/* The flag as a thin edge-to-edge strip closing the page: present, never shouting. */}
+        <div aria-hidden="true" className="flex h-1.5">
+          <div className="flex-1 bg-(--home-field-green)" />
+          <div className="flex-1 bg-sun" />
+          <div className="flex-1 bg-flag-red" />
         </div>
       </footer>
 
       <PromptDock
         anchor={heroPrompt}
+        hideNear={['whatsapp', 'site-footer']}
         value={draft}
         onValueChange={setDraft}
         onSubmit={submitDraft}
