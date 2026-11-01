@@ -64,7 +64,7 @@ describe('ConsentCard', () => {
 
   it('active state shows the mandate expiry, resume and retract', async () => {
     const consent = card({ phase: 'active', mandate: { id: 'mdt_1', expiresAt: iso(30 * 60_000) } });
-    expect(screen.getByText(/Autorisation active jusqu’au \p{L}+ \d{1,2} \p{L}+( \d{4})? à \d{2}:\d{2}/u)).toBeInTheDocument();
+    expect(screen.getByText(/Valable jusqu’au \p{L}+ \d{1,2} \p{L}+( \d{4})? à \d{2}:\d{2}/u)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Reprendre ma demande' }));
     await userEvent.click(screen.getByRole('button', { name: 'Retirer l’autorisation' }));
     expect(consent.resume).toHaveBeenCalledOnce();

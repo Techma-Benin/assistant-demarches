@@ -65,7 +65,8 @@ export function ConsentCard({
 
   let content: ReactNode;
   let heading = 'Autorisation';
-  let accent = 'border-l-line-strong';
+  // The state reads from the icon badge: yellow while a decision is awaited, green once active.
+  let badge = 'bg-sunken text-ink';
   if (flow.phase === 'requesting') {
     content = (
       <div className="flex items-center gap-2 text-ink-muted">
@@ -90,7 +91,7 @@ export function ConsentCard({
   } else if (challenge) {
     const busy = flow.phase === 'accepting';
     heading = 'Autoriser l’assistant à agir pour vous ?';
-    accent = 'border-l-sun';
+    badge = 'bg-sun text-ink';
     content = (
       <>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -142,10 +143,10 @@ export function ConsentCard({
     );
   } else if (mandate) {
     heading = 'Autorisation active';
-    accent = 'border-l-trust';
+    badge = 'bg-trust-soft text-trust-text';
     content = (
       <>
-        <p className="m-0 text-[15px] font-semibold">Autorisation active jusqu’au {formatExpiry(mandate.expiresAt)}</p>
+        <p className="m-0 text-[15px] font-semibold">Valable jusqu’au {formatExpiry(mandate.expiresAt)}</p>
         <div className="flex flex-wrap gap-3">
           <Button className={BUTTON} disabled={flow.phase === 'revoking'} onClick={resume}>
             Reprendre ma demande
@@ -207,10 +208,12 @@ export function ConsentCard({
       tone="outline"
       role="region"
       aria-label="Autorisation demandée"
-      className={cn('ui-enter flex flex-col gap-4 rounded-[28px] border-l-4 p-7 md:p-7', accent)}
+      className="ui-enter flex flex-col gap-4 rounded-[24px] p-6 shadow-[0_1px_2px_rgb(13_13_15/0.04),0_12px_32px_-12px_rgb(13_13_15/0.16)] md:p-7"
     >
-      <div className="flex items-start gap-3">
-        <ShieldCheck aria-hidden="true" className="mt-1 size-6 shrink-0" />
+      <div className="flex items-center gap-3">
+        <span aria-hidden="true" className={cn('flex size-10 shrink-0 items-center justify-center rounded-full', badge)}>
+          <ShieldCheck className="size-5" />
+        </span>
         <h2
           ref={title}
           tabIndex={-1}
