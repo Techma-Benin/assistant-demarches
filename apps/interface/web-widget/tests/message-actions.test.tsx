@@ -70,4 +70,19 @@ describe('MessageActions', () => {
     });
     expect(screen.getByRole('status')).toHaveTextContent('Copie impossible');
   });
+
+  it('shows a tooltip that reads « Copié » after a copy', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn().mockResolvedValue(undefined) }, configurable: true });
+    const { container } = render(<MessageActions message={message} />);
+    const tip = container.querySelector('span[aria-hidden="true"].pointer-events-none');
+    expect(tip).toHaveTextContent('Copier la réponse');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Copier la réponse' }));
+    });
+    expect(tip).toHaveTextContent('Copié');
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(tip).toHaveTextContent('Copier la réponse');
+  });
 });

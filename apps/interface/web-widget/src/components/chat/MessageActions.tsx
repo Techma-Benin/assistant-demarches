@@ -93,9 +93,23 @@ export function MessageActions({ message, alwaysVisible }: { message: AgentMessa
           'opacity-0 motion-safe:transition-opacity motion-safe:duration-150 group-focus-within:opacity-100 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100',
       )}
     >
-      <IconButton label="Copier la réponse" onClick={copy} className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
-        {state === 'copied' ? <Check aria-hidden="true" className="size-5" /> : <Copy aria-hidden="true" className="size-5" />}
-      </IconButton>
+      <span className="group/tip relative inline-flex">
+        <IconButton label="Copier la réponse" onClick={copy} className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+          {state === 'copied' ? <Check aria-hidden="true" className="size-5" /> : <Copy aria-hidden="true" className="size-5" />}
+        </IconButton>
+        <span
+          aria-hidden="true"
+          className={cn(
+            'pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-[12px] font-medium text-canvas shadow-sm',
+            'transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none',
+            state === 'copied'
+              ? 'translate-y-0 opacity-100'
+              : 'translate-y-0.5 opacity-0 group-hover/tip:translate-y-0 group-hover/tip:opacity-100 group-hover/tip:delay-[400ms] group-has-[:focus-visible]/tip:translate-y-0 group-has-[:focus-visible]/tip:opacity-100',
+          )}
+        >
+          {state === 'copied' ? 'Copié' : 'Copier la réponse'}
+        </span>
+      </span>
       <span role="status" className="sr-only">
         {state === 'copied' ? 'Réponse copiée' : state === 'failed' ? 'Copie impossible' : ''}
       </span>
