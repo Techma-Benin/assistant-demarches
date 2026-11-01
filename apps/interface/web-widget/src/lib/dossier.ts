@@ -90,6 +90,26 @@ export function lastTextSources(timeline: TimelineEntry[]): Source[] {
   return last?.type === 'text' ? last.sources : [];
 }
 
+/**
+ * Quick action offered under the last agent message when it presents one procedure and nothing else
+ * is pending (no interactive block, no request created yet). Null otherwise.
+ */
+export function prepareRequestAction(
+  timeline: TimelineEntry[],
+  requestProcedureId: string | null,
+): { procedureId: string } | null {
+  if (requestProcedureId !== null) return null;
+  const last = timeline[timeline.length - 1];
+  if (last?.kind !== 'agent') return null;
+  if (agentBlocks(timeline).some((b) => b.type === 'statusCard')) return null;
+  const blocks = last.message.blocks;
+  if (blocks.some((b) => b.type === 'buttons' || b.type === 'form' || b.type === 'fileRequest' || b.type === 'statusCard')) return null;
+  const ids = new Set<string>();
+  for (const b of blocks) if (b.type === 'text') for (const s of b.sources) ids.add(s.procedureId);
+  if (ids.size !== 1) return null;
+  return { procedureId: [...ids][0] };
+}
+
 /** Contract `Source` → design-system `SourceInfo` (no title in the contract: the procedure id is used). */
 export function toSourceInfo(source: Source, index: number, withDate = false): SourceInfo {
   const url = safeHttpUrl(source.url);

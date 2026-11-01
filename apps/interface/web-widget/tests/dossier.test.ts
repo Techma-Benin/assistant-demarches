@@ -1,7 +1,7 @@
 import type { components } from '@techma/contracts-ts';
 import { describe, expect, it } from 'vitest';
 import type { TimelineEntry } from '@/lib/conversation-state';
-import { deriveDossierSteps, lastTextSources, toSourceInfo } from '@/lib/dossier';
+import { deriveDossierSteps, prepareRequestAction, lastTextSources, toSourceInfo } from '@/lib/dossier';
 
 type Block = components['schemas']['Block'];
 type RequestStatus = components['schemas']['RequestStatus'];
@@ -163,5 +163,28 @@ describe('sources helpers', () => {
       retrievedAtLabel: 'Consultée le 22/10/2026',
     });
     expect(toSourceInfo(src('javascript:alert(1)'), 1).href).toBeUndefined();
+  });
+});
+
+describe('prepareRequestAction', () => {
+  const src = (procedureId: string) => ({ procedureId, url: 'https://x.fr', retrievedAt: '2026-10-22T18:00:00Z', version: 'v1' });
+  it('returns the procedure when the last agent message cites exactly one', () => {
+    expect(prepareRequestAction([user(1), agent(1, text([src('F1'), src('F1')]))], null)).toEqual({ procedureId: 'F1' });
+  });
+  it('is null when the last entry is a user message', () => {
+    expect(prepareRequestAction([agent(1, text([src('F1')])), user(2)], null)).toBeNull();
+  });
+  it('is null with two procedures or none', () => {
+    expect(prepareRequestAction([agent(1, text([src('F1'), src('F2')]))], null)).toBeNull();
+    expect(prepareRequestAction([agent(1, text())], null)).toBeNull();
+  });
+  it('is null with an interactive block or a status card in the message', () => {
+    expect(prepareRequestAction([agent(1, text([src('F1')]), form)], null)).toBeNull();
+    expect(prepareRequestAction([agent(1, text([src('F1')]), fileRequest)], null)).toBeNull();
+    expect(prepareRequestAction([agent(1, text([src('F1')]), card('draft' as RequestStatus))], null)).toBeNull();
+  });
+  it('is null once a request exists', () => {
+    expect(prepareRequestAction([agent(1, text([src('F1')]))], 'F1')).toBeNull();
+    expect(prepareRequestAction([agent(1, card('draft' as RequestStatus)), user(2), agent(2, text([src('F1')]))], null)).toBeNull();
   });
 });

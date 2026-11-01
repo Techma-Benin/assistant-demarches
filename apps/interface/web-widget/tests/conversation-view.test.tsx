@@ -499,4 +499,32 @@ describe('userTurns and turnDelivery', () => {
       expect(screen.queryByRole('button', { name: /transcription/ })).not.toBeInTheDocument();
     });
   });
+
+  describe('prepare request action', () => {
+    const cited = (...ids: string[]): Block => ({
+      type: 'text',
+      text: 'Présentation',
+      sources: ids.map((id) => source(id, `https://service-public.fr/${id}`)),
+    });
+    const statusCard = {
+      type: 'statusCard',
+      request: { id: 'req_1', conversationId: 'cnv_1', userRef: 'u', procedureId: 'F1', status: 'draft', fields: {}, fileIds: [], officialLink: null, updatedAt: at },
+    } as unknown as Block;
+
+    it('shows the chip and sends the fixed message on click', async () => {
+      const conversation = build({ timeline: [user('u1', 'Q'), agent('a1', cited('F1'))] });
+      view(conversation);
+      await userEvent.click(screen.getByRole('button', { name: 'Préparer ma demande' }));
+      expect(conversation.sendText).toHaveBeenCalledWith('Je veux préparer ma demande pour cette démarche (F1).');
+    });
+
+    it.each([
+      ['a status card exists', [user('u1', 'Q'), agent('a0', statusCard), user('u2', 'Q2'), agent('a1', cited('F1'))]],
+      ['the last entry is a user message', [agent('a1', cited('F1')), user('u2', 'Merci')]],
+      ['sources span two procedures', [user('u1', 'Q'), agent('a1', cited('F1', 'F2'))]],
+    ])('is hidden when %s', (_name, timeline) => {
+      view(build({ timeline }));
+      expect(screen.queryByRole('button', { name: 'Préparer ma demande' })).not.toBeInTheDocument();
+    });
+  });
 });
