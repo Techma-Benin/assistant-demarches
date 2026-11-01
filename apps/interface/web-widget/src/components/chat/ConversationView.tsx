@@ -273,7 +273,9 @@ export function ConversationView({
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-color:var(--ui-border-strong)_transparent] [scrollbar-gutter:stable]"
+        // relative: absolutely positioned descendants (sr-only live regions) stay inside the scroll box
+        // instead of overflowing the overflow-hidden page, which focus could then scroll.
+        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-color:var(--ui-border-strong)_transparent] [scrollbar-gutter:stable]"
       >
         <div className={column}>
           <main ref={contentRef} className="flex min-w-0 flex-col gap-7 pb-6 pt-6 [overflow-anchor:auto] md:pt-8">
