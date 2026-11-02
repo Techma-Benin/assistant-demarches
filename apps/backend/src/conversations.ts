@@ -393,6 +393,36 @@ export class Conversations {
       },
     );
   }
+  async recordTranscript(
+    conversationId: string,
+    messageId: string,
+    transcript: string,
+    traceparent: string,
+  ) {
+    await transaction(this.pool, async (db) => {
+      const updated = await db.query(
+        `UPDATE backend_conversation_events
+         SET body=jsonb_set(body,'{data,message,transcript}',to_jsonb($3::text),true)
+         WHERE conversation_id=$1
+           AND body->'data'->>'kind'='message.received'
+           AND body->'data'->'message'->>'id'=$2
+         RETURNING body`,
+        [conversationId, messageId, transcript],
+      );
+      const message = updated.rows[0]?.body?.data?.message;
+      if (!message) return;
+      // Updated row is what GET …/events replays. A new event carries the
+      // same UserMessage so the live stream (cursor past the original) sees it.
+      await appendEvent(
+        db,
+        conversationId,
+        envelope(
+          { kind: "message.received", conversationId, message },
+          traceparent,
+        ),
+      );
+    });
+  }
   async complete(
     db: PoolClient,
     conversationId: string,

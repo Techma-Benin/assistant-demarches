@@ -213,7 +213,15 @@ export class Agent {
           await this.finish(conversation, input, [{ type: "text", text: "Le message vocal est trop long. Veuillez envoyer un audio plus court ou préciser votre demande par écrit.", sources: [] }], traceparent);
           return;
         }
-        if (text?.trim()) input = { ...input, content: { type: "text", text: text.trim() } };
+        if (text?.trim()) {
+          await this.conversations.recordTranscript(
+            conversation.id,
+            input.id,
+            text.trim(),
+            traceparent,
+          );
+          input = { ...input, content: { type: "text", text: text.trim() } };
+        }
         else {
           await this.finish(conversation, input, [{ type: "text", text: "L’audio n’a pas pu être transcrit. Veuillez préciser votre demande par écrit.", sources: [] }], traceparent);
           return;

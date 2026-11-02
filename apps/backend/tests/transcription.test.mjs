@@ -4,7 +4,9 @@ import http from 'node:http';
 import { HttpTranscription, transcriberFromEnvironment } from '../dist/apps/backend/src/transcription.js';
 import { Files } from '../dist/apps/backend/src/files.js';
 import { identifier, Problem } from '../dist/apps/backend/src/domain.js';
-import { database, migrate } from '../dist/apps/backend/src/database.js';
+import { database, migrate, provision } from '../dist/apps/backend/src/database.js';
+import { Conversations } from '../dist/apps/backend/src/conversations.js';
+import { Agent } from '../dist/apps/backend/src/agent.js';
 import { isolatedDatabase } from './helpers.mjs';
 
 const voice = Buffer.from('OggS\0synthetic-opus-header-OpusHead-private-audio');
@@ -137,16 +139,59 @@ test('Transcription times out and refuses redirects without forwarding credentia
   await assert.rejects(new HttpTranscription(files, { ...stalled.options, timeoutMs: 20 }, environment).transcribe('file', 'owner'), error => error.status === 503);
 });
 
-test('Transcription is explicitly enabled and endpoints, references and timeouts are validated', async () => {
+test('Transcription is enabled when an API key is present; TRANSCRIPTION_ENABLED is ignored', async () => {
   const files = { async readOwned() { return audioFile(); } };
   assert.equal(transcriberFromEnvironment(files, {}), undefined);
   assert.equal(transcriberFromEnvironment(files, { TRANSCRIPTION_ENABLED: 'false' }), undefined);
-  assert.ok(transcriberFromEnvironment(files, { TRANSCRIPTION_ENABLED: 'true' }));
+  assert.ok(transcriberFromEnvironment(files, { GROQ_API_KEY: secret }));
+  assert.ok(transcriberFromEnvironment(files, { MODEL_API_KEY: secret, TRANSCRIPTION_ENABLED: 'false' }));
   assert.throws(() => new HttpTranscription(files, { endpoint: 'https://unapproved.example/transcribe' }), /explicitly allowed/);
   const local = 'http://127.0.0.1:1234/transcribe';
   assert.throws(() => new HttpTranscription(files, { endpoint: local, allowedEndpoints: new Set([local]) }), /HTTPS/);
-  assert.throws(() => transcriberFromEnvironment(files, { TRANSCRIPTION_ENABLED: 'true', TRANSCRIPTION_ENDPOINT: local, TRANSCRIPTION_ALLOWED_URLS: local }), /HTTPS/);
+  assert.throws(() => transcriberFromEnvironment(files, { GROQ_API_KEY: secret, TRANSCRIPTION_ENDPOINT: local, TRANSCRIPTION_ALLOWED_URLS: local }), /HTTPS/);
   assert.throws(() => new HttpTranscription(files, { timeoutMs: 60001 }), /timeout/);
   assert.throws(() => new HttpTranscription(files, { apiKeyEnv: 'unsafe reference' }), /secret reference/);
   await assert.rejects(new HttpTranscription(files, {}, {}).transcribe('file', 'owner'), error => error.status === 503 && /non configurée/.test(error.message));
+});
+
+test('process() persists the transcript on message.received without changing the stored audio body', async t => {
+  const pg = await isolatedDatabase();
+  const pool = database(pg.connection);
+  t.after(async () => { await pool.end(); await pg.close(); });
+  await migrate(pool);
+  await provision(pool, 'global', 'models', {
+    id: 'test',
+    label: 'Test',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    protocol: 'chat-completions',
+    model: 'synthetic',
+    apiKeyRef: 'GROQ_API_KEY',
+    temperature: 0,
+    active: true,
+  });
+  const conversations = new Conversations(pool);
+  const user = { userRef: identifier('usr'), channel: 'web', authenticated: true, expiresAt: Date.now() + 60000, roles: new Set() };
+  const fileId = identifier('fil');
+  const file = { id: fileId, mimeType: 'audio/ogg', sizeBytes: voice.length, expiresAt: new Date(Date.now() + 3600000).toISOString() };
+  await pool.query('INSERT INTO backend_files(id,user_ref,body,object_key,expires_at) VALUES($1,$2,$3,$4,$5)', [fileId, user.userRef, file, 'synthetic-audio', file.expiresAt]);
+  const conversation = await conversations.create(user, { locale: 'fr' }, identifier('key'));
+  const message = { id: identifier('msg'), content: { type: 'audio', fileId }, sentAt: new Date().toISOString() };
+  const tp = '00-' + '1'.repeat(32) + '-' + '2'.repeat(16) + '-01';
+  await conversations.accept(user, conversation.id, message, identifier('key'), tp);
+  const before = (await conversations.page(user.userRef, conversation.id)).items.filter(event => event.data.kind === 'message.received');
+  assert.equal(before.length, 1);
+  assert.equal(before[0].data.message.transcript, null);
+  const model = { async generate(_config, history) {
+    assert.ok(history.some(turn => turn.role === 'user' && turn.content === 'Bonjour'));
+    return { text: JSON.stringify({ blocks: [{ type: 'text', text: 'Quelle démarche souhaitez-vous effectuer ?', sources: [] }] }), calls: [] };
+  } };
+  const tooling = { async discover() { return []; }, async call() { throw new Error('unused'); } };
+  await new Agent(pool, conversations, model, tooling, undefined, { async transcribe() { return 'Bonjour'; } }).process(conversation.id);
+  assert.deepEqual((await pool.query('SELECT body FROM backend_messages WHERE id=$1', [message.id])).rows[0].body.content, { type: 'audio', fileId });
+  const received = (await conversations.page(user.userRef, conversation.id)).items
+    .filter(event => event.data.kind === 'message.received')
+    .map(event => event.data.message);
+  assert.ok(received.length >= 1);
+  assert.ok(received.every(item => item.content.type === 'audio' && item.content.fileId === fileId));
+  assert.ok(received.every(item => item.transcript === 'Bonjour'));
 });

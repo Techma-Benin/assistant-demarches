@@ -60,6 +60,26 @@ describe('ConversationView', () => {
     expect(bubble).toHaveClass('bg-sunken');
   });
 
+  it('shows the transcribed text under an attached vocal', () => {
+    view(
+      build({
+        timeline: [
+          {
+            kind: 'user',
+            id: 'u-audio',
+            content: { type: 'audio', fileId: 'fil_1' },
+            display: 'Je souhaite mon casier judiciaire.',
+            sentAt: at,
+            delivery: 'received',
+            attachment: { name: 'vocal.ogg', sizeBytes: 2048, mimeType: 'audio/ogg' },
+          },
+        ],
+      }),
+    );
+    expect(screen.getByText('vocal.ogg')).toBeInTheDocument();
+    expect(screen.getByText('Je souhaite mon casier judiciaire.')).toBeInTheDocument();
+  });
+
   it('keeps the log region and the delivery states, with retry', async () => {
     const retry = vi.fn();
     view(build({ timeline: [user('u1', 'Question', 'failed')] }, { retry }));

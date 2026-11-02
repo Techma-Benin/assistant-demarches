@@ -34,8 +34,7 @@ Une seule valeur est obligatoire : `MODEL_API_KEY`. Sans autre réglage, le four
 | `MODEL_NAME` | Pour un autre modèle du même fournisseur. |
 | `MODEL_BASE_URL` | Pour une autre adresse compatible OpenAI. |
 | `MODEL_PROTOCOL` | `chat-completions` par défaut, `responses` si l'API l'exige. |
-| `TRANSCRIPTION_ENABLED` | `true` pour transcrire les vocaux, avec la même clé. |
-| `TRANSCRIPTION_MODEL` | Par défaut `whisper-large-v3-turbo`. |
+| `TRANSCRIPTION_MODEL` | Par défaut `whisper-large-v3-turbo`. Les vocaux sont transcrits dès qu'une clé (`MODEL_API_KEY` ou `GROQ_API_KEY`) est présente. Pas de drapeau `TRANSCRIPTION_ENABLED` : décision produit de l'utilisateur (Billux). |
 
 Les adresses, la base, Keycloak et les ports ne se mettent pas dans `.env`. `pnpm dev` les injecte depuis `scripts/dev/local-config.mjs`.
 

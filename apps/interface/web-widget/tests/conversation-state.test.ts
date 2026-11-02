@@ -11,10 +11,9 @@ const sent = (evt: number, msg: number, conversationId = CNV): EventPage['items'
   specversion: '1.0',
   id: `evt_${pad(evt)}`,
   source: 'urn:techma:backend',
-  type: 'bj.techma.message.sent.v1',
+  type: 'bj.techma.message.sent.v2',
   time: '2026-10-22T18:00:00Z',
   datacontenttype: 'application/json',
-  traceparent: '00-' + '1'.repeat(32) + '-' + '2'.repeat(16) + '-01',
   data: {
     kind: 'message.sent',
     conversationId,
@@ -26,10 +25,28 @@ const sent = (evt: number, msg: number, conversationId = CNV): EventPage['items'
     },
   },
 });
-const received = (evt: number, messageId: string): EventPage['items'][number] => ({
-  ...sent(evt, 99),
-  type: 'bj.techma.message.received.v1',
-  data: { kind: 'message.received', conversationId: CNV, messageId },
+const received = (
+  evt: number,
+  messageId: string,
+  transcript: string | null = null,
+  content: { type: 'text'; text: string } | { type: 'audio'; fileId: string } = { type: 'text', text: 'Salut' },
+): EventPage['items'][number] => ({
+  specversion: '1.0',
+  id: `evt_${pad(evt)}`,
+  source: 'urn:techma:backend',
+  type: 'bj.techma.message.received.v2',
+  time: '2026-10-22T18:00:00Z',
+  datacontenttype: 'application/json',
+  data: {
+    kind: 'message.received',
+    conversationId: CNV,
+    message: {
+      id: messageId,
+      content,
+      transcript,
+      sentAt: '2026-10-22T18:00:00Z',
+    },
+  },
 });
 const page = (items: EventPage['items'], nextCursor: string | null): EventPage => ({ items, nextCursor });
 
@@ -83,6 +100,31 @@ describe('conversationReducer', () => {
     expect(s.timeline[0]).toMatchObject({ delivery: 'received' });
     s = conversationReducer(s, { type: 'userMessageAccepted', id: MSG });
     expect(s.timeline[0]).toMatchObject({ delivery: 'received' });
+  });
+
+  it('applies the vocal transcript from message.received and upserts a missing user entry', () => {
+    const fileId = `fil_${pad(1)}`;
+    let s = conversationReducer(initialState, { type: 'conversationStarted', conversationId: CNV });
+    s = conversationReducer(s, {
+      type: 'eventsReceived',
+      page: page([received(1, MSG, null, { type: 'audio', fileId })], `evt_${pad(1)}`),
+    });
+    expect(s.timeline[0]).toMatchObject({
+      kind: 'user',
+      id: MSG,
+      delivery: 'received',
+      content: { type: 'audio', fileId },
+      display: '',
+    });
+    s = conversationReducer(s, {
+      type: 'eventsReceived',
+      page: page([received(2, MSG, 'Je souhaite mon casier judiciaire.', { type: 'audio', fileId })], `evt_${pad(2)}`),
+    });
+    expect(s.timeline).toHaveLength(1);
+    expect(s.timeline[0]).toMatchObject({
+      display: 'Je souhaite mon casier judiciaire.',
+      delivery: 'received',
+    });
   });
 
   it('updates the cursor and keeps it when nextCursor is null', () => {

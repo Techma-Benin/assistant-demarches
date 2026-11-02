@@ -203,7 +203,30 @@ export function conversationReducer(state: ConversationState, action: Conversati
         if ('conversationId' in data && data.conversationId !== state.conversationId) continue;
         seen.add(event.id);
         if (data.kind === 'message.received') {
-          timeline = setDelivery(timeline, data.messageId, 'received');
+          const message = data.message;
+          const transcript = message.transcript?.trim() ?? '';
+          const fallback =
+            message.content.type === 'text' ? message.content.text : '';
+          if (!timeline.some((entry) => entry.kind === 'user' && entry.id === message.id)) {
+            timeline = [
+              ...timeline,
+              {
+                kind: 'user',
+                id: message.id,
+                content: message.content,
+                display: transcript || fallback,
+                sentAt: message.sentAt,
+                delivery: 'received',
+              },
+            ];
+          } else {
+            timeline = updateUser(timeline, message.id, (entry) => ({
+              ...entry,
+              delivery: 'received',
+              content: entry.content ?? message.content,
+              display: transcript || entry.display,
+            }));
+          }
         } else if (data.kind === 'message.sent') {
           const message = data.message;
           if (!timeline.some((e) => e.kind === 'agent' && e.message.id === message.id)) {

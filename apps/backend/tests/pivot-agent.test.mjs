@@ -181,6 +181,13 @@ test('pivot agent retries, provenance, consent catalogue and audio work on isola
     assert.equal(transcriptions, 1);
     assert.match((await lastBlocks(c.id))[0].text, /^Bonjour/);
     assert.deepEqual((await pool.query('SELECT body FROM backend_messages WHERE id=$1', [message.id])).rows[0].body.content, { type: 'audio', fileId });
+    const received = (await pool.query(
+      "SELECT body->'data'->'message' AS message FROM backend_conversation_events WHERE conversation_id=$1 AND body->'data'->>'kind'='message.received' ORDER BY seq",
+      [c.id],
+    )).rows.map((row) => row.message);
+    assert.ok(received.length >= 1);
+    assert.ok(received.every((item) => item.content.type === 'audio' && item.content.fileId === fileId));
+    assert.ok(received.every((item) => item.transcript === 'Bonjour'));
     const unavailable = await queued({ type: 'audio', fileId });
     await new Agent(pool, conversations, { async generate() { throw new Error('no provider call'); } }, tooling).process(unavailable.c.id);
     assert.match((await lastBlocks(unavailable.c.id))[0].text, /par écrit/);
