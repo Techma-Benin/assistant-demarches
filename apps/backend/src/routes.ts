@@ -39,10 +39,26 @@ export type Runtime = {
 };
 const key = (req: Request) => idempotencyKey(req.get("Idempotency-Key"));
 const trace = (req: Request) => req.get("traceparent")!;
-function catalogue(runtime: Runtime) {
+function catalogue(runtime: Runtime, req?: Request) {
   if (!runtime.xroadUrl || !runtime.serviceTokens)
     throw new Problem(503, "UPSTREAM_UNAVAILABLE", "X-Road non configuré.");
-  return new XroadClient(runtime.xroadUrl, () => runtime.serviceTokens!.get("xroad:apply"));
+  return new XroadClient(
+    runtime.xroadUrl,
+    () => runtime.serviceTokens!.get("xroad:apply"),
+    req?.get("traceparent") ?? undefined,
+  );
+}
+function xroadQuery(req: Request, names: string[]) {
+  const params = new URLSearchParams();
+  for (const name of names) {
+    const value = req.query[name];
+    if (value === undefined || value === "") continue;
+    if (Array.isArray(value) || typeof value === "object")
+      throw new Problem(400, "INVALID_REQUEST", "Paramètre invalide.");
+    params.set(name, String(value));
+  }
+  const encoded = params.toString();
+  return encoded ? "?" + encoded : "";
 }
 function loggedIn(principal: User) {
   if (!principal.authenticated)
@@ -69,8 +85,8 @@ async function service(
 export class ConversationController {
   constructor(@Inject(RUNTIME) private runtime: Runtime) {}
   @Get("home")
-  home() {
-    return catalogue(this.runtime).home();
+  home(@Req() req: Request) {
+    return catalogue(this.runtime, req).home();
   }
   @Post("guest-sessions")
   @HttpCode(201)
@@ -222,13 +238,13 @@ export class ConversationController {
   async cases(@Req() req: Request) {
     const principal = await user(this.runtime, req);
     loggedIn(principal);
-    return catalogue(this.runtime).cases(principal.userRef);
+    return catalogue(this.runtime, req).cases(principal.userRef, xroadQuery(req, ["cursor", "limit"]));
   }
   @Get("cases/:caseId")
   async oneCase(@Param("caseId") caseId: string, @Req() req: Request) {
     const principal = await user(this.runtime, req);
     loggedIn(principal);
-    return catalogue(this.runtime).case(principal.userRef, caseId);
+    return catalogue(this.runtime, req).case(principal.userRef, caseId);
   }
   @Get("cases/:caseId/documents/:documentId")
   async caseDocument(
@@ -239,7 +255,7 @@ export class ConversationController {
   ) {
     const principal = await user(this.runtime, req);
     loggedIn(principal);
-    const file = await catalogue(this.runtime).document(
+    const file = await catalogue(this.runtime, req).document(
       principal.userRef,
       caseId,
       documentId,

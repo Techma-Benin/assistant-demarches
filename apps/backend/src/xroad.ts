@@ -3,10 +3,13 @@ import { Problem, type Schemas } from "./domain.js";
 type AdministrationList = Schemas["AdministrationList"];
 type ProcedurePage = Schemas["ProcedurePage"];
 
+const RELAYED_STATUS = new Set([400, 401, 403, 404, 409, 413, 415, 503]);
+
 export class XroadClient {
   constructor(
     private baseUrl: string,
     private token: () => Promise<string>,
+    private traceparent?: string,
   ) {}
   private async send(
     method: string,
@@ -22,6 +25,7 @@ export class XroadClient {
         redirect: "error",
         headers: {
           Authorization: "Bearer " + (await this.token()),
+          ...(this.traceparent ? { traceparent: this.traceparent } : {}),
           ...(body !== undefined && !Buffer.isBuffer(body) ? { "Content-Type": "application/json" } : {}),
           ...headers,
         },
@@ -39,16 +43,23 @@ export class XroadClient {
         bytes: Buffer.from(await response.arrayBuffer()),
       };
     const json = await response.json().catch(() => undefined);
-    if (!response.ok) {
-      const code = typeof (json as { code?: unknown })?.code === "string" ? (json as { code: string }).code : undefined;
-      if (response.status === 404) throw new Problem(404, code ?? "NOT_FOUND", "Ressource introuvable.");
-      if (response.status === 403) throw new Problem(403, code ?? "FORBIDDEN", "Droit insuffisant.");
-      if (response.status === 401) throw new Problem(401, code ?? "UNAUTHORIZED", "Identité X-Road refusée.");
-      if (response.status === 409) throw new Problem(409, code ?? "CONFLICT", "Conflit d’état.");
-      if (response.status === 400) throw new Problem(400, code ?? "INVALID_REQUEST", "Requête refusée par le X-Road.");
-      throw new Problem(503, "UPSTREAM_UNAVAILABLE", "X-Road indisponible.");
-    }
+    if (!response.ok) throw this.problem(response.status, json);
     return { status: response.status, json };
+  }
+  private problem(status: number, json: unknown): Problem {
+    const body = json as { code?: unknown; detail?: unknown } | undefined;
+    const code = typeof body?.code === "string" ? body.code : undefined;
+    const detail = typeof body?.detail === "string" ? body.detail : undefined;
+    if (status === 404) return new Problem(404, code ?? "NOT_FOUND", detail ?? "Ressource introuvable.");
+    if (status === 403) return new Problem(403, code ?? "FORBIDDEN", detail ?? "Droit insuffisant.");
+    if (status === 401) return new Problem(401, code ?? "UNAUTHORIZED", detail ?? "Identité X-Road refusée.");
+    if (status === 409) return new Problem(409, code ?? "CONFLICT", detail ?? "Conflit d’état.");
+    if (status === 400) return new Problem(400, code ?? "INVALID_REQUEST", detail ?? "Requête refusée par le X-Road.");
+    if (status === 413) return new Problem(413, code ?? "FILE_TOO_LARGE", detail ?? "Fichier trop volumineux.");
+    if (status === 415) return new Problem(415, code ?? "UNSUPPORTED_MEDIA_TYPE", detail ?? "Type de média non pris en charge.");
+    if (status === 503 || !RELAYED_STATUS.has(status))
+      return new Problem(503, code ?? "UPSTREAM_UNAVAILABLE", detail ?? "X-Road indisponible.");
+    return new Problem(status, code ?? "UPSTREAM_UNAVAILABLE", detail ?? "X-Road indisponible.");
   }
   private async get(path: string, headers: Record<string, string> = {}) {
     return (await this.send("GET", path, headers)).json;
@@ -60,8 +71,9 @@ export class XroadClient {
     return this.get("/v1/administrations");
   }
   async home(): Promise<Schemas["HomeContent"]> {
-    const [administrations, procedures] = await Promise.all([
+    const [administrations, assisted, listed] = await Promise.all([
       this.get("/v1/administrations") as Promise<AdministrationList>,
+      this.get("/v1/procedures?assisted=true&limit=20") as Promise<ProcedurePage>,
       this.get("/v1/procedures?limit=20") as Promise<ProcedurePage>,
     ]);
     const themes = administrations.items
@@ -73,17 +85,22 @@ export class XroadClient {
           administrationName: item.name,
         })),
       );
-    const suggestions = procedures.items
-      .map((item) => ({
+    const seen = new Set<string>();
+    const suggestions: Schemas["HomeContent"]["suggestions"] = [];
+    for (const item of [...(assisted.items ?? []), ...(listed.items ?? [])]) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      suggestions.push({
         procedureId: item.id,
         title: item.title,
         assisted: item.filing !== null,
-      }))
-      .sort((left, right) => Number(right.assisted) - Number(left.assisted));
-    return { themes, suggestions };
+      });
+    }
+    suggestions.sort((left, right) => Number(right.assisted) - Number(left.assisted));
+    return { themes, suggestions: suggestions.slice(0, 8) };
   }
-  cases(userRef: string) {
-    return this.get("/v1/cases", { "X-Applicant-Ref": userRef });
+  cases(userRef: string, query = "") {
+    return this.get("/v1/cases" + query, { "X-Applicant-Ref": userRef });
   }
   case(userRef: string, caseId: string) {
     return this.get("/v1/cases/" + encodeURIComponent(caseId), {
@@ -118,13 +135,10 @@ export class XroadClient {
   createOfficial(subject: string, body: Schemas["OfficialRegistration"], key: string) {
     return this.send("POST", "/v1/officials", { ...this.official(subject), "Idempotency-Key": key }, body).then((r) => r.json) as Promise<Schemas["Official"]>;
   }
-  updateOfficial(subject: string, officialId: string, body: Schemas["OfficialUpdate"], key: string) {
-    return this.send(
-      "PUT",
-      "/v1/officials/" + encodeURIComponent(officialId),
-      { ...this.official(subject), "Idempotency-Key": key },
-      body,
-    ).then((r) => r.json) as Promise<Schemas["Official"]>;
+  updateOfficial(subject: string, officialId: string, body: Schemas["OfficialUpdate"]) {
+    return this.send("PUT", "/v1/officials/" + encodeURIComponent(officialId), this.official(subject), body).then(
+      (r) => r.json,
+    ) as Promise<Schemas["Official"]>;
   }
   listCases(subject: string, query = "") {
     return this.get("/v1/cases" + query, this.official(subject));

@@ -4,6 +4,14 @@ import { approvedMcpUrl } from "./domain.js";
 
 export type CreatedOfficialAccount = { subject: string; temporaryPassword: string };
 
+function adminUsersUrl(issuer: string, subject?: string): string {
+  const url = new URL(issuer.endsWith("/") ? issuer : issuer + "/");
+  const match = /\/realms\/([^/]+)\/?$/.exec(url.pathname);
+  const realm = match?.[1] ?? "techma";
+  const origin = match ? url.origin : url.href.replace(/\/$/, "");
+  return `${origin}/admin/realms/${encodeURIComponent(realm)}/users${subject ? "/" + encodeURIComponent(subject) : ""}`;
+}
+
 export class KeycloakAdmin {
   constructor(
     private issuer: string,
@@ -11,7 +19,7 @@ export class KeycloakAdmin {
   ) {}
   async createUser(input: { email: string; displayName: string }): Promise<CreatedOfficialAccount> {
     const temporaryPassword = randomBytes(12).toString("base64url") + "Aa1!";
-    const endpoint = new URL("admin/realms/techma/users", this.issuer.endsWith("/") ? this.issuer : this.issuer + "/").href;
+    const endpoint = adminUsersUrl(this.issuer);
     if (!approvedMcpUrl(endpoint, new Set([endpoint])))
       throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Annuaire d’identité indisponible.");
     const names = input.displayName.trim().split(/\s+/);
@@ -44,10 +52,7 @@ export class KeycloakAdmin {
     return { subject, temporaryPassword };
   }
   async disableUser(subject: string): Promise<void> {
-    const endpoint = new URL(
-      "admin/realms/techma/users/" + encodeURIComponent(subject),
-      this.issuer.endsWith("/") ? this.issuer : this.issuer + "/",
-    ).href;
+    const endpoint = adminUsersUrl(this.issuer, subject);
     if (!approvedMcpUrl(endpoint, new Set([endpoint])))
       throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Annuaire d’identité indisponible.");
     const headers = {
