@@ -12,20 +12,15 @@ L'usager fait sa démarche administrative dans une conversation (web ou WhatsApp
 
 Prérequis : Node.js 22 et pnpm 10.20.0 (`corepack enable`). Pas de Docker, pas de Java, pas de PostgreSQL à installer.
 
-```sh
-git switch dev
-pnpm install
-cp .env.example .env      # renseigner MODEL_API_KEY
-pnpm dev
-```
+Le backend se lance avec [BACKEND.md](BACKEND.md) : copier `.env.example`, renseigner `MODEL_API_KEY`, puis `pnpm dev backend`.
 
-`pnpm dev` démarre PostgreSQL (binaires npm) et Keycloak (téléchargé une fois dans `.local/` avec un Java portable), importe le realm et les comptes de démo, puis lance les applications. Le premier démarrage télécharge environ 230 Mo.
+`pnpm dev` sans argument démarre aussi le tooling, le X-Road simulé et l'interface. Ces trois applications ne sont pas encore prêtes pour cette commande. Le détail est dans [BACKEND.md](BACKEND.md).
 
 | Commande | Effet |
 |---|---|
-| `pnpm dev` | Toute la pile |
-| `pnpm dev:infra` | PostgreSQL et Keycloak seulement, pour lancer soi-même une application |
-| `pnpm dev backend tooling` | L'infrastructure et les applications citées |
+| `pnpm dev backend` | PostgreSQL, Keycloak et le backend |
+| `pnpm dev:infra` | PostgreSQL et Keycloak seulement |
+| `pnpm dev` | L'infrastructure et toutes les applications citées dans le script |
 | `pnpm dev:reset` | Efface les données locales (bases, realm, fichiers) |
 | `pnpm check` | Contrats, types générés, typage et tests de toutes les applications |
 | `pnpm catalogue:import` | Réimporte le catalogue de service-public.bj |
