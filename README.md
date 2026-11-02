@@ -15,7 +15,7 @@ Prérequis : Node.js 22 et pnpm 10.20.0 (`corepack enable`). Pas de Docker, pas 
 ```sh
 git switch dev
 pnpm install
-cp .env.example .env      # renseigner GROQ_API_KEY
+cp .env.example .env      # renseigner MODEL_API_KEY
 pnpm dev
 ```
 
