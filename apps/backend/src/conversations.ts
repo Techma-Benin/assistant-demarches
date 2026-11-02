@@ -198,15 +198,24 @@ export class Conversations {
           `UPDATE ${table} SET user_ref=$1 WHERE user_ref=$2`,
           [user.userRef, guest.userRef],
         );
-      // The reply that asked for the login is still waiting: pick the conversation up where it stopped.
-      const last = (
-        await db.query(
-          "SELECT body->'data'->'message'->'blocks' AS blocks FROM backend_conversation_events WHERE conversation_id=$1 AND body->'data'->>'kind'='message.sent' ORDER BY seq DESC LIMIT 1",
-          [conversationId],
-        )
-      ).rows[0];
-      if (Array.isArray(last?.blocks) && last.blocks.some((block: { type?: string }) => block.type === "loginRequired"))
-        await this.enqueueResume(db, conversationId, RESUME_AFTER_LOGIN);
+      // Every migrated conversation whose last reply asked for the login is still waiting: pick each up where it stopped.
+      for (const row of moved.rows) {
+        const last = (
+          await db.query(
+            "SELECT body->'data'->'message'->'blocks' AS blocks FROM backend_conversation_events WHERE conversation_id=$1 AND body->'data'->>'kind'='message.sent' ORDER BY seq DESC LIMIT 1",
+            [row.id],
+          )
+        ).rows[0];
+        if (!Array.isArray(last?.blocks) || !last.blocks.some((block: { type?: string }) => block.type === "loginRequired")) continue;
+        // A resume already waiting (same attach replayed) is never queued twice.
+        const waiting = (
+          await db.query(
+            "SELECT 1 FROM backend_messages WHERE conversation_id=$1 AND processed_at IS NULL AND body->'content'->>'text'=$2 LIMIT 1",
+            [row.id, RESUME_AFTER_LOGIN],
+          )
+        ).rows[0];
+        if (!waiting) await this.enqueueResume(db, row.id, RESUME_AFTER_LOGIN);
+      }
       return moved.rows.find((row) => row.id === conversationId).body as Conversation;
     });
   }
