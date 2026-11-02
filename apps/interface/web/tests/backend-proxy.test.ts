@@ -10,14 +10,14 @@ function setup(upstream?: () => Promise<Response>) {
     status: 202,
     headers: { 'content-type': 'application/json', 'retry-after': '3', 'set-cookie': 'x=1', 'x-secret': 'y' },
   })));
-  const deps = { backendUrl: 'http://127.0.0.1:4010', getUserToken: () => 'tok', fetch: fake as unknown as typeof fetch };
+  const deps = { backendUrl: 'http://127.0.0.1:4010', getBackendToken: async () => 'tok', fetch: fake as unknown as typeof fetch };
   return { fake, deps };
 }
 
 describe('proxyToBackend', () => {
   it('forwards an allowlisted route with injected auth and only allowed headers', async () => {
     const { fake, deps } = setup();
-    const request = new Request(`http://localhost/api/backend/v1/conversations/${CNV}/messages?x=1&y=2`, {
+    const request = new Request(`http://localhost/api/backend/v1/conversations/${CNV}/messages?cursor=c1&limit=5&x=1`, {
       method: 'POST',
       headers: {
         authorization: 'Bearer browser',
@@ -37,7 +37,7 @@ describe('proxyToBackend', () => {
     expect(await response.text()).toBe('{"ok":true}');
 
     const [url, init] = fake.mock.calls[0] as unknown as [URL, RequestInit];
-    expect(url.toString()).toBe(`http://127.0.0.1:4010/v1/conversations/${CNV}/messages?x=1&y=2`);
+    expect(url.toString()).toBe(`http://127.0.0.1:4010/v1/conversations/${CNV}/messages`);
     const headers = init.headers as Headers;
     expect(headers.get('authorization')).toBe('Bearer tok');
     expect(headers.get('cookie')).toBeNull();
@@ -51,8 +51,13 @@ describe('proxyToBackend', () => {
     const { fake, deps } = setup();
     for (const [method, path] of [
       ['GET', ['v1', 'admin', 'models']],
-      ['GET', ['v1', 'conversations']],
+      ['POST', ['v1', 'guest-sessions']],
+      ['POST', ['v1', 'conversations', CNV, 'attach']],
+      ['POST', ['v1', 'conversations', CNV, 'mandate-challenges']],
+      ['GET', ['v1', 'requests', 'req_' + '0'.repeat(26)]],
       ['POST', ['v1', 'requests', 'req_' + '0'.repeat(26)]],
+      ['POST', ['v1', 'cases']],
+      ['GET', ['v1', 'cases', 'req_' + '0'.repeat(26)]],
       ['POST', ['v1', 'conversations', 'cnv_short', 'messages']],
     ] as const) {
       const response = await proxyToBackend(
@@ -101,6 +106,95 @@ describe('proxyToBackend', () => {
     expect(response.headers.get('retry-after')).toBe('1');
     expect(response.headers.get('content-type')).toBe('application/problem+json');
     expect((await response.json()).code).toBe('UPSTREAM_UNAVAILABLE');
+  });
+});
+
+const CAS = 'cas_' + '0'.repeat(25) + '1';
+const DOC = 'doc_' + '0'.repeat(25) + '1';
+const MDT = 'mdt_' + '0'.repeat(25) + '1';
+
+describe('proxyToBackend v2 routes', () => {
+  const routes: Array<[string, string[]]> = [
+    ['POST', ['v1', 'conversations']],
+    ['GET', ['v1', 'conversations']],
+    ['POST', ['v1', 'conversations', CNV, 'messages']],
+    ['GET', ['v1', 'conversations', CNV, 'events']],
+    ['POST', ['v1', 'conversations', CNV, 'socket-ticket']],
+    ['POST', ['v1', 'conversations', CNV, 'mandates']],
+    ['POST', ['v1', 'conversations', CNV, 'mandates', MDT, 'revoke']],
+    ['POST', ['v1', 'files']],
+    ['GET', ['v1', 'home']],
+    ['GET', ['v1', 'cases']],
+    ['GET', ['v1', 'cases', CAS]],
+    ['GET', ['v1', 'cases', CAS, 'documents', DOC]],
+  ];
+
+  it.each(routes)('allows %s /%s', async (method, path) => {
+    const { fake, deps } = setup(async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }));
+    const response = await proxyToBackend(
+      new Request('http://localhost/x', { method, body: method === 'POST' ? '{}' : undefined }),
+      path,
+      deps,
+    );
+    expect(response.status).toBe(200);
+    expect(fake).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends /v1/home without Authorization and does not ask for a token', async () => {
+    const { fake, deps } = setup(async () => new Response('{}', { status: 200 }));
+    const getBackendToken = vi.fn(async () => 'tok');
+    await proxyToBackend(new Request('http://localhost/x', { headers: { authorization: 'Bearer browser' } }), ['v1', 'home'], {
+      ...deps,
+      getBackendToken,
+    });
+    const [, init] = fake.mock.calls[0] as unknown as [URL, RequestInit];
+    expect((init.headers as Headers).get('authorization')).toBeNull();
+    expect(getBackendToken).not.toHaveBeenCalled();
+  });
+
+  it('forwards only cursor and limit on GET', async () => {
+    const { fake, deps } = setup(async () => new Response('{}', { status: 200 }));
+    await proxyToBackend(new Request('http://localhost/x?cursor=abc&limit=20&evil=1'), ['v1', 'cases'], deps);
+    const [url] = fake.mock.calls[0] as unknown as [URL];
+    expect(url.toString()).toBe('http://127.0.0.1:4010/v1/cases?cursor=abc&limit=20');
+  });
+
+  it('streams a document download with its type, disposition and length', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('%PDF-1.4'));
+        controller.close();
+      },
+    });
+    const upstream = new Response(body, {
+      status: 200,
+      headers: {
+        'content-type': 'application/pdf',
+        'content-disposition': 'attachment; filename="a.pdf"',
+        'content-length': '8',
+        'set-cookie': 'x=1',
+      },
+    });
+    const { deps } = setup(async () => upstream);
+    const response = await proxyToBackend(new Request('http://localhost/x'), ['v1', 'cases', CAS, 'documents', DOC], deps);
+    expect(response.body).toBe(upstream.body);
+    expect(response.headers.get('content-type')).toBe('application/pdf');
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="a.pdf"');
+    expect(response.headers.get('content-length')).toBe('8');
+    expect(response.headers.get('set-cookie')).toBeNull();
+    expect(await response.text()).toBe('%PDF-1.4');
+  });
+
+  it('returns 503 when no backend token can be obtained', async () => {
+    const { fake, deps } = setup();
+    const response = await proxyToBackend(new Request('http://localhost/x'), ['v1', 'cases'], {
+      ...deps,
+      getBackendToken: async () => {
+        throw new Error('guest-sessions: HTTP 503');
+      },
+    });
+    expect(response.status).toBe(503);
+    expect(fake).not.toHaveBeenCalled();
   });
 });
 

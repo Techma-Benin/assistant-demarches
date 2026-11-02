@@ -2,24 +2,40 @@ import { MAX_FILE_BYTES } from '@/lib/files';
 
 const ID = '[0-9A-HJKMNP-TV-Z]{26}';
 
-const ALLOWLIST: ReadonlyArray<{ method: 'GET' | 'POST'; path: RegExp }> = [
+interface Rule {
+  method: 'GET' | 'POST';
+  path: RegExp;
+  /** Public route: sent without Authorization. */
+  public?: boolean;
+  /** Binary download: streamed back with its type and disposition. */
+  download?: boolean;
+}
+
+// Browser routes of contracts/v2/conversation.openapi.json. guest-sessions and attach stay server-side.
+const ALLOWLIST: readonly Rule[] = [
   { method: 'POST', path: /^\/v1\/conversations$/ },
+  { method: 'GET', path: /^\/v1\/conversations$/ },
   { method: 'POST', path: new RegExp(`^/v1/conversations/cnv_${ID}/messages$`) },
   { method: 'GET', path: new RegExp(`^/v1/conversations/cnv_${ID}/events$`) },
   { method: 'POST', path: new RegExp(`^/v1/conversations/cnv_${ID}/socket-ticket$`) },
-  { method: 'POST', path: new RegExp(`^/v1/conversations/cnv_${ID}/mandate-challenges$`) },
   { method: 'POST', path: new RegExp(`^/v1/conversations/cnv_${ID}/mandates$`) },
   { method: 'POST', path: new RegExp(`^/v1/conversations/cnv_${ID}/mandates/mdt_${ID}/revoke$`) },
-  { method: 'GET', path: new RegExp(`^/v1/requests/req_${ID}$`) },
   { method: 'POST', path: /^\/v1\/files$/ },
+  { method: 'GET', path: /^\/v1\/home$/, public: true },
+  { method: 'GET', path: /^\/v1\/cases$/ },
+  { method: 'GET', path: new RegExp(`^/v1/cases/cas_${ID}$`) },
+  { method: 'GET', path: new RegExp(`^/v1/cases/cas_${ID}/documents/doc_${ID}$`), download: true },
 ];
 
+const FORWARDED_QUERY = ['cursor', 'limit'];
 const FORWARDED_REQUEST_HEADERS = ['content-type', 'idempotency-key', 'traceparent', 'x-file-mime-type'];
 const FORWARDED_RESPONSE_HEADERS = ['content-type', 'retry-after'];
+const DOWNLOAD_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'content-length'];
 
 export interface ProxyDeps {
   backendUrl: string;
-  getUserToken: () => string;
+  /** User token, else guest token. May throw when no token can be obtained. */
+  getBackendToken: () => Promise<string>;
   fetch: typeof fetch;
 }
 
@@ -67,9 +83,8 @@ export async function proxyToBackend(request: Request, path: string[], deps: Pro
   }
   const pathname = '/' + path.join('/');
   const method = request.method.toUpperCase();
-  if (!ALLOWLIST.some((rule) => rule.method === method && rule.path.test(pathname))) {
-    return notFound(request);
-  }
+  const rule = ALLOWLIST.find((candidate) => candidate.method === method && candidate.path.test(pathname));
+  if (!rule) return notFound(request);
 
   const isUpload = method === 'POST' && pathname === '/v1/files';
   const bodyLimit = isUpload ? MAX_FILE_BYTES : MAX_JSON_BYTES;
@@ -86,14 +101,16 @@ export async function proxyToBackend(request: Request, path: string[], deps: Pro
     if (value !== null) headers.set(name, value);
   }
 
-  try {
-    headers.set('authorization', `Bearer ${deps.getUserToken()}`);
-  } catch (error) {
-    // Configuration problem on our side: keep the cause in server logs, never in the response.
-    console.error('[backend-proxy] user token unavailable:', (error as Error).message);
-    return problem(503, 'UPSTREAM_UNAVAILABLE', 'Service momentanément indisponible', request, {
-      'retry-after': '1',
-    });
+  if (!rule.public) {
+    try {
+      headers.set('authorization', `Bearer ${await deps.getBackendToken()}`);
+    } catch (error) {
+      // Configuration or Backend problem on our side: keep the cause in server logs, never in the response.
+      console.error('[backend-proxy] backend token unavailable:', (error as Error).message);
+      return problem(503, 'UPSTREAM_UNAVAILABLE', 'Service momentanément indisponible', request, {
+        'retry-after': '1',
+      });
+    }
   }
 
   let upstream: Response;
@@ -101,12 +118,30 @@ export async function proxyToBackend(request: Request, path: string[], deps: Pro
     const body = method === 'POST' ? await readCapped(request, bodyLimit) : undefined;
     if (body === null) return tooLarge();
     const url = new URL(pathname, deps.backendUrl);
-    url.search = new URL(request.url).search;
+    if (method === 'GET') {
+      const incoming = new URL(request.url).searchParams;
+      for (const name of FORWARDED_QUERY) {
+        const value = incoming.get(name);
+        if (value !== null) url.searchParams.set(name, value);
+      }
+    }
     upstream = await deps.fetch(url, { method, headers, body });
   } catch {
     return problem(503, 'UPSTREAM_UNAVAILABLE', 'Service momentanément indisponible', request, {
       'retry-after': '1',
     });
+  }
+
+  if (rule.download && upstream.ok && upstream.body) {
+    // Streamed through, never buffered.
+    const headers = new Headers();
+    for (const name of DOWNLOAD_RESPONSE_HEADERS) {
+      const value = upstream.headers.get(name);
+      if (value !== null) headers.set(name, value);
+    }
+    headers.set('x-content-type-options', 'nosniff');
+    headers.set('cache-control', 'private, no-store');
+    return new Response(upstream.body, { status: upstream.status, headers });
   }
 
   const responseHeaders = new Headers();

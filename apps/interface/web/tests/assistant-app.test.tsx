@@ -78,9 +78,14 @@ describe('AssistantApp', () => {
     expect(screen.getByRole('log')).toBeInTheDocument();
   });
 
-  it('shows the retry panel when the conversation fails to start', () => {
-    hook.current = build({ status: 'error', error: 'Impossible de démarrer la conversation. Veuillez réessayer.' });
+  it('keeps the front door when the conversation fails to start, and retries once the visitor asks', async () => {
+    hook.current = build({ status: 'error', conversationId: null, error: 'Impossible de démarrer la conversation. Veuillez réessayer.' });
+    window.history.replaceState(null, '', '/');
     render(<AssistantApp />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Vos démarches, simplement.');
+    expect(screen.queryByRole('button', { name: 'Réessayer' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Renouveler mon passeport' }));
+    expect(window.location.pathname).toBe('/conversation');
     expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
   });
 });

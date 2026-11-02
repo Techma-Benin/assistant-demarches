@@ -128,6 +128,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex flex-col gap-3 px-4 py-4">
             <ServiceStatusTile state={backend} />
             <ThemeToggle />
+            <form method="post" action="/auth/logout">
+              <Button type="submit" variant="outline" className="w-full">
+                Se déconnecter
+              </Button>
+            </form>
           </div>
         </div>
       </aside>

@@ -73,14 +73,15 @@ function Session({
     onPendingSent();
   }, [pending, ready, dispatch, onPendingSent]);
 
-  // An error with nothing sent yet goes to the conversation view's retry panel.
-  if (view === 'conversation' || (state.timeline.length === 0 && state.status === 'error')) {
+  if (view === 'conversation') {
     return <ConversationView conversation={conversation} onRestart={onRestart} onHome={() => onView('home')} />;
   }
 
-  // From home, a saved conversation is left alone: asking something new starts a fresh one.
+  // The home page never depends on the Backend: a failed start stays silent until the visitor asks.
+  const failed = state.status === 'error';
+  // From home, a saved conversation is left alone: asking something new starts a fresh one (also the retry after a failed start).
   const start = (input: FirstInput) => {
-    if (hasTimeline) {
+    if (hasTimeline || failed) {
       onNew(input);
       return;
     }
@@ -91,7 +92,7 @@ function Session({
     <FrontDoor
       onAsk={(text) => start({ text })}
       onFiles={(files, note, voice) => start({ files, note, voice })}
-      disabled={!ready}
+      disabled={!ready && !failed}
       resume={
         hasTimeline
           ? { title: conversationTitle(state.timeline), at: lastActivity(state.timeline), onResume: () => onView('conversation') }

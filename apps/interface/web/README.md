@@ -12,17 +12,25 @@ Interface unique (Next.js 16, React 19, Tailwind v4) : site public, conversation
 
 Démarrée par le `pnpm dev` de la racine (variable `PORT`, 3000 par défaut). Seule : `cp .env.example .env.local`, puis `npx next dev` ici. Autres commandes : `pnpm test | typecheck | build` dans ce dossier.
 
-À faire : authentification réelle (le jeton `MOCK_ADMIN_TOKEN` est provisoire, plus de sessions de démonstration) et migration des appels et types vers le contrat v2. `src/components/operator` et `src/lib/operator` conservent du code de configuration (modèles, outils MCP) non monté pour l'écran opérateur futur.
+À faire : migration des appels et types vers le contrat v2. `src/components/operator` et `src/lib/operator` conservent du code de configuration (modèles, outils MCP) non monté pour l'écran opérateur futur.
 
 ## Console d'administration
 
 - Pages sous `src/app/admin`, composants sous `src/components/admin`, logique sous `src/lib/admin`.
 - Le navigateur n'a jamais de jeton : les appels passent par `/api/admin/[...path]` (`src/server/admin-proxy.ts`, liste blanche stricte) ; le ministère choisi par un super admin est posé en cookie par `/api/admin-department`.
 
+## Authentification
+
+- Serveur uniquement (Keycloak, realm `techma`, client confidentiel `interface`, PKCE S256, `openid-client`) : aucun jeton n'atteint le navigateur. Variables : voir `.env.example` (injectées par `pnpm dev`).
+- Session : cookie chiffré `ad_session` (jose, A256GCM, clé dans `SESSION_SECRET_FILE`), HttpOnly, SameSite=Lax, découpé en `ad_session.0`, `.1`… au-delà de 3800 octets. Transaction de connexion : cookie `ad_auth` (10 min).
+- Routes : `GET /auth/login?returnTo=&conversationId=`, `GET /auth/callback`, `POST /auth/logout` (même origine), `GET /api/session` (`{user}` sans jeton).
+- Visiteur : jeton invité créé côté serveur (`POST /v1/guest-sessions`) ; à la connexion, `attach` transfère ses conversations au compte.
+- `/api/admin/*` exige le rôle `official` (401 / 403) ; la console `/admin` redirige vers la connexion, ou affiche un écran d'accès refusé sans ce rôle. Un lien profond vers `/admin/...` atterrit sur `/admin` après connexion.
+
 ## Architecture
 
 - Le navigateur n'a jamais de jeton : tout appel C1 passe par `/api/backend/[...path]` (route Next) qui délègue à `src/server/backend-proxy.ts`.
-- Le proxy applique une liste blanche (méthode + chemin), ne relaie que quelques en-têtes et injecte `Authorization` (`src/server/user-token.ts`, simulation uniquement).
+- Le proxy applique une liste blanche (méthode + chemin), ne relaie que quelques en-têtes et injecte `Authorization` : jeton usager, sinon jeton invité (`src/server/auth/tokens.ts`). `GET /v1/home` part sans `Authorization`.
 - `src/lib/c1-client.ts` : client C1 typé (types générés `@techma/contracts-ts`), `traceparent` neuf à chaque appel, `Idempotency-Key` stable.
 - `src/lib/conversation-state.ts` : réducteur pur (déduplication par `Event.id`, reprise par curseur) ; `src/hooks/use-conversation.ts` le relie au flux temps réel (voir « Temps réel »).
 - `src/components/blocks/*` : un composant par type de bloc (`text`, `buttons`, `form`, `fileRequest`, `statusCard`), texte brut uniquement, liens http(s) seulement.
@@ -53,6 +61,5 @@ Le widget utilise la fondation de design « Sceau » du paquet `@techma/ui` (tok
 ## Questions de contrat ouvertes
 
 - Encodage des réponses de formulaire : non défini en v1. Provisoire : `interaction` avec `actionId = form.id` et `value` = JSON des valeurs (`src/lib/interactions.ts`), à confirmer avec le Backend.
-- Jeton usager : l'échange session portail → jeton OIDC court n'est pas branché (CONTRACTS.md §3) ; seul le jeton `mock-user` fonctionne, en local.
 - Suivi de l'analyse de sécurité : aucun endpoint ni événement ne permet de suivre un fichier `scanStatus: pending`. Les fichiers `pending` sont envoyés comme message quand même ; l'utilisabilité relève du Backend.
 - Rattachement d'une pièce à une demande : aucun moyen en v1 de lier un fichier déposé au `documentType` d'un bloc `fileRequest`.
