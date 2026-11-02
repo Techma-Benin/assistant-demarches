@@ -136,7 +136,7 @@ test('responses stream emits output text and keeps the completed response shape'
   const reply = await modelsFor(baseUrl, 'responses').generate(config(baseUrl, 'responses'), history, tools, {
     onTextDelta(delta) { deltas.push(delta); },
   });
-  assert.deepEqual(deltas, ['Bon', 'jour']);
+  assert.deepEqual(deltas, [], 'a responses turn that ends in a function_call is never streamed');
   assert.equal(reply.text, 'Bonjour');
   assert.deepEqual(reply.calls, [{ id: 'call_1', name: 'lookup.thing', arguments: '{}' }]);
   assert.deepEqual(reply.rawOutput, output);
@@ -220,5 +220,46 @@ test('onToolCall fires before the text of the same chunk (chat) and on a functio
     onTextDelta(delta) { seen.push('text:' + delta); },
     onToolCall() { seen.push('tool'); },
   });
-  assert.deepEqual(seen, ['text:Avant', 'tool']);
+  assert.deepEqual(seen, ['tool'], 'the draft text before a function_call is dropped, not streamed');
+});
+
+test('responses stream: text then function_call leaks no draft, text-only turn is streamed once the turn is known final', async (t) => {
+  const withCall = [
+    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","content":[]}}',
+    '',
+    'data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"{\\"blocks\\":[{\\"type\\":\\"text\\",\\"text\\":\\"BROUILLON"}',
+    '',
+    'data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":" SECRET"}',
+    '',
+    'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","call_id":"call_1","name":"lookup_thing","arguments":""}}',
+    '',
+    'data: {"type":"response.function_call_arguments.done","output_index":1,"call_id":"call_1","name":"lookup_thing","arguments":"{}"}',
+    '',
+    'data: ' + JSON.stringify({ type: 'response.completed', response: { output: [{ type: 'message', content: [{ type: 'output_text', text: 'BROUILLON SECRET' }] }, { type: 'function_call', call_id: 'call_1', name: 'lookup_thing', arguments: '{}' }] } }),
+    '',
+  ].join('\n');
+  const url = await listen(t, async (req, res) => { await readJson(req); res.writeHead(200, { 'Content-Type': 'text/event-stream' }).end(withCall); });
+  const tools = [{ name: 'lookup.thing', description: 'Lookup', inputSchema: { type: 'object' } }];
+  const deltas = [];
+  const reply = await modelsFor(url, 'responses').generate(config(url, 'responses'), history, tools, {
+    onTextDelta(delta) { deltas.push(delta); },
+  });
+  assert.deepEqual(deltas, []);
+  assert.equal(reply.calls.length, 1);
+
+  const finalOnly = [
+    'data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"Bon"}',
+    '',
+    'data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"jour"}',
+    '',
+    'data: ' + JSON.stringify({ type: 'response.completed', response: { output: [{ type: 'message', content: [{ type: 'output_text', text: 'Bonjour' }] }] } }),
+    '',
+  ].join('\n');
+  const finalUrl = await listen(t, async (req, res) => { await readJson(req); res.writeHead(200, { 'Content-Type': 'text/event-stream' }).end(finalOnly); });
+  const streamed = [];
+  const final = await modelsFor(finalUrl, 'responses').generate(config(finalUrl, 'responses'), history, tools, {
+    onTextDelta(delta) { streamed.push(delta); },
+  });
+  assert.deepEqual(streamed, ['Bon', 'jour']);
+  assert.equal(final.text, 'Bonjour');
 });

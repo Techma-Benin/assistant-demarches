@@ -382,6 +382,9 @@ export class HttpModels implements ModelPort {
     model: string,
   ): Promise<ModelReply> {
     let completed: any;
+    const held: string[] = [];
+    let sawToolCall = false;
+    const toolSeen = () => { sawToolCall = true; onToolCall?.(); };
     const draft = new Map<number, any>();
     const finished = new Map<number, any>();
     const sealedText = new Set<string>();
@@ -416,7 +419,8 @@ export class HttpModels implements ModelPort {
       const type = typeof value?.type === "string" ? value.type : eventName;
       if (type === "response.output_text.delta") {
         if (typeof value.delta !== "string" || !value.delta) return;
-        await onTextDelta(value.delta);
+        // Held until the turn is known to call no tool: Responses announces a function_call only after the text.
+        held.push(value.delta);
         appendText(typeof value.output_index === "number" ? value.output_index : 0, typeof value.content_index === "number" ? value.content_index : 0, value.delta);
         return;
       }
@@ -426,13 +430,13 @@ export class HttpModels implements ModelPort {
       }
       if ((type === "response.output_item.added" || type === "response.output_item.done") && value.item && typeof value.item === "object") {
         const index = typeof value.output_index === "number" ? value.output_index : draft.size + finished.size;
-        if (value.item.type === "function_call") onToolCall?.();
+        if (value.item.type === "function_call") toolSeen();
         if (type === "response.output_item.done") finished.set(index, value.item);
         else if (!draft.has(index)) draft.set(index, structuredClone(value.item));
         return;
       }
       if (type === "response.function_call_arguments.delta" && typeof value.delta === "string") {
-        onToolCall?.();
+        toolSeen();
         const index = typeof value.output_index === "number" ? value.output_index : 0;
         if (sealedArgs.has(index)) return;
         ensureCall(index).arguments += value.delta;
@@ -454,11 +458,17 @@ export class HttpModels implements ModelPort {
       }
       if (type === "error" || value?.error) throw this.invalidModelResponse(providerName, model);
     });
-    if (completed) return this.replyFromResponses(completed, toolNames, providerName, model);
-    const indexes = new Set<number>([...finished.keys(), ...draft.keys()]);
-    if (!indexes.size) throw this.invalidModelResponse(providerName, model);
-    const output = [...indexes].sort((a, b) => a - b).map((index) => finished.get(index) ?? draft.get(index));
-    return this.replyFromResponses({ output }, toolNames, providerName, model);
+    let reply: ModelReply;
+    if (completed) reply = this.replyFromResponses(completed, toolNames, providerName, model);
+    else {
+      const indexes = new Set<number>([...finished.keys(), ...draft.keys()]);
+      if (!indexes.size) throw this.invalidModelResponse(providerName, model);
+      const output = [...indexes].sort((a, b) => a - b).map((index) => finished.get(index) ?? draft.get(index));
+      reply = this.replyFromResponses({ output }, toolNames, providerName, model);
+    }
+    // Same rule as chat-completions: a turn that calls a tool is never streamed as an answer.
+    if (!reply.calls.length && !sawToolCall) for (const piece of held) await onTextDelta(piece);
+    return reply;
   }
   private async forEachServerEvent(
     res: Response,
