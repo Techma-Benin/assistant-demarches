@@ -130,3 +130,10 @@ Pile locale prête. Comptes de démo (mot de passe demo-2026) :
   opérateur     operateur
 Interface ${URLS.interface} · Backend ${URLS.backend} · Tooling ${URLS.tooling} · X-Road ${URLS.xroad} · Keycloak ${URLS.keycloak}
 Ctrl+C pour tout arrêter.`);
+if (!process.env.MODEL_API_KEY?.trim()) {
+  console.log("Aucun modèle : l'assistant ne répondra pas. Renseignez MODEL_API_KEY dans .env (voir .env.example), puis `pnpm dev:check`.");
+}
+if (!workspace("interface")) {
+  console.log("Interface non lancée : paquet absent");
+}
+console.log("Diagnostic : pnpm dev:check");
