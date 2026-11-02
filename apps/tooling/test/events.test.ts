@@ -45,14 +45,13 @@ test('publication vers le Backend simulé : événements reçus dans l’ordre e
   const res = await fetch(`${backend}/v1/conversations`, {
     method: 'POST',
     headers: { Authorization: 'Bearer mock-user', traceparent: TRACEPARENT, 'Idempotency-Key': 'conversation-events-1', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ channel: 'web', locale: 'fr' }),
+    body: JSON.stringify({ locale: 'fr' }),
   });
   const conversationId = ((await res.json()) as { id: string }).id;
   const { body } = await grantMandate(tooling.url, { conversationId });
-  await act(tooling.url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string, conversationId });
+  await act(tooling.url, 'request.create', { procedureId: 'PS00373' }, { mandateId: body.id as string, conversationId });
 
   const publisher = tooling.app.get(OutboxPublisher);
-  assert.equal(await publisher.tick(), 1);
   assert.equal(await publisher.tick(), 1);
   assert.equal(await publisher.tick(), 0);
 
@@ -60,7 +59,7 @@ test('publication vers le Backend simulé : événements reçus dans l’ordre e
   const items = ((await page.json()) as { items: { type: string; source: string }[] }).items;
   assert.deepEqual(
     items.map((event) => event.type),
-    ['bj.techma.request.created.v1', 'bj.techma.tool.called.v1'],
+    ['bj.techma.tool.called.v2'],
   );
   assert.ok(items.every((event) => event.source === 'urn:techma:tooling'));
 });

@@ -4,7 +4,7 @@ import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
 import type { ExternalCase } from '../connectors/connector.js';
 import type { Tx } from '../database/database.js';
 import { Outbox } from '../events/outbox.js';
-import type { AttachedDocument, Fields, RequestStatus } from './requests.repository.js';
+import type { AttachedDocument, Fields, RequestField, RequestStatus } from './requests.repository.js';
 
 export interface InformationRequest {
   detail: string;
@@ -27,7 +27,7 @@ export interface WorkflowRow {
   user_ref: string;
   procedure_id: string;
   status: RequestStatus;
-  fields: Fields;
+  fields: Fields | RequestField[];
   documents: AttachedDocument[];
   official_link: string | null;
   created_at: Date | string;
@@ -63,36 +63,21 @@ const COLUMNS = `id, conversation_id, user_ref, procedure_id, status, fields, do
 
 const PROGRESS: Record<RequestStatus, { step: number; label: string }> = {
   draft: { step: 1, label: 'Informations en cours de collecte' },
-  ready: { step: 2, label: 'Dossier prêt, en attente de validation' },
-  awaiting_user_validation: { step: 2, label: 'Dossier validé par l’usager' },
+  ready: { step: 2, label: 'Dossier prêt, en attente de dépôt' },
   submitted: { step: 3, label: 'Dossier déposé auprès de l’administration' },
-  processing: { step: 4, label: 'Dossier en cours de traitement' },
-  blocked: { step: 4, label: 'Intervention de l’administration requise' },
-  completed: { step: 5, label: 'Démarche terminée' },
-  rejected: { step: 5, label: 'Demande rejetée' },
-  cancelled: { step: 5, label: 'Demande annulée' },
+  cancelled: { step: 3, label: 'Demande annulée' },
 };
-const PROGRESS_TOTAL = 5;
-const FILED: ReadonlySet<RequestStatus> = new Set(['submitted', 'processing', 'blocked', 'completed', 'rejected']);
+const PROGRESS_TOTAL = 3;
+const FILED: ReadonlySet<RequestStatus> = new Set(['submitted']);
 const iso = (value: Date | string) => new Date(value).toISOString();
 
 export function deriveStatus(row: Pick<WorkflowRow, 'external_state' | 'assigned_to' | 'information_request' | 'status' | 'updated_at'>): {
   status: RequestStatus;
   blocking?: Blocking;
 } {
-  const external = row.external_state;
-  if (!external) return { status: row.status };
-  if (external.stage === 'completed') return { status: 'completed' };
-  if (external.stage === 'rejected') return { status: 'rejected' };
-  if (row.information_request) {
-    return { status: 'blocked', blocking: { code: 'INFORMATION_REQUESTED', detail: row.information_request.detail, at: row.information_request.at } };
-  }
-  if (external.stage === 'filed') return { status: 'submitted' };
-  if (external.stage === 'processing' || row.assigned_to) return { status: 'processing' };
-  return {
-    status: 'blocked',
-    blocking: { code: 'ADMINISTRATION_REVIEW', detail: external.blocker?.detail ?? 'Vérification par un agent requise', at: external.blocker?.at ?? iso(row.updated_at) },
-  };
+  if (row.status === 'cancelled') return { status: 'cancelled' };
+  if (row.external_state || row.status === 'submitted') return { status: 'submitted' };
+  return { status: row.status };
 }
 
 @Injectable()
@@ -119,14 +104,6 @@ export class RequestWorkflow {
     const { status } = deriveStatus(row);
     if (status !== row.status) await tx.query('update requests set status = $2, updated_at = now() where id = $1', [id, status]);
     if (this.snapshots) return { from: row.status, to: status, snapshot: await this.publish(tx, id, traceId, action, actorRef) };
-    if (status !== row.status) {
-      const [updated] = await tx.query<{ updated_at: Date | string }>('select updated_at from requests where id = $1', [id]);
-      await this.outbox.enqueue(
-        tx,
-        { kind: 'request.status_changed', requestId: id, conversationId: row.conversation_id, from: row.status, to: status, at: iso(updated.updated_at) },
-        traceId,
-      );
-    }
     return { from: row.status, to: status };
   }
 
@@ -138,9 +115,7 @@ export class RequestWorkflow {
       this.logger.warn(`Demande ${id} sans administration : pas de snapshot`);
       return undefined;
     }
-    const snapshot = this.snapshotOf(row);
-    await this.outbox.enqueue(tx, { kind: 'request.snapshot', action, ...(actorRef ? { actorRef } : {}), request: snapshot }, traceId);
-    return snapshot;
+    return this.snapshotOf(row);
   }
 
   snapshotOf(row: WorkflowRow): DepartmentRequest {
@@ -159,16 +134,14 @@ export class RequestWorkflow {
       status,
       revision: row.revision,
       fields: row.fields,
-      fileIds: [...new Set(row.documents.map((document) => document.fileId))],
+      fileIds: [...new Set(row.documents.map((document) => document.fileId).filter((id): id is string => Boolean(id)))],
       officialLink: row.official_link,
       createdAt: iso(row.created_at),
       updatedAt: iso(row.updated_at),
       simulation: true,
       ...(filed ? { submittedAt: iso(row.submitted_at as Date | string), receiptRef: (row.receipt as { reference: string }).reference } : {}),
       ...(filed && row.due_at ? { dueAt: iso(row.due_at) } : {}),
-      ...(status === 'completed' && external?.completedAt ? { completedAt: external.completedAt, completedBy: external.completedBy ?? 'ai' } : {}),
       assignedTo: row.assigned_to,
-      ...(status === 'blocked' && blocking ? { blocking } : {}),
       ...(external?.payment
         ? {
             payment: {
@@ -181,7 +154,7 @@ export class RequestWorkflow {
         : {}),
       documents: row.issued_documents.map(({ fileId, name, mimeType, createdAt, expiresAt }) => ({ fileId, name, mimeType, createdAt, expiresAt, simulation: true })),
       progress: { step: progress.step, total: PROGRESS_TOTAL, label: progress.label },
-      evidence: Object.keys(row.fields)
+      evidence: (Array.isArray(row.fields) ? row.fields.map((field) => field.name) : Object.keys(row.fields ?? {}))
         .filter((field) => field.length <= 100)
         .map((field) => ({ field, source: 'user', confirmed })),
     };

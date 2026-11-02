@@ -167,7 +167,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
         'tooling-events': outboundClient(env, 'TOOLING_EVENTS', 'events:publish', production),
         ...(xroadUrl
           ? {
-              'tooling-xroad': outboundClient(env, 'TOOLING_XROAD', 'xroad:read xroad:submit xroad:decide', production),
+              'tooling-xroad': outboundClient(env, 'TOOLING_XROAD', 'xroad:apply', production),
               'tooling-documents': outboundClient(env, 'TOOLING_DOCUMENTS', 'documents:transfer', production),
             }
           : {}),

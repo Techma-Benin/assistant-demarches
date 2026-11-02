@@ -59,7 +59,7 @@ MCP Streamable HTTP sans session, SDK officiel. Chaque requête porte :
 | `X-Mandate-Id` | Pour les outils d'action |
 | `Idempotency-Key` | Obligatoire pour les outils d'action ; stable pour une même tentative métier |
 
-Catalogue : `tools/list` renvoie exactement `contracts/v1/mcp.tools.json`. Erreur métier : `isError: true` et un bloc texte JSON `{code, detail, traceId}`.
+Catalogue : `tools/list` renvoie exactement `contracts/v2/mcp.tools.json`. Erreur métier : `isError: true` et un bloc texte JSON `{code, detail, traceId}`.
 
 ### Backend, consentement : `POST /internal/v1/mandates` et `POST /internal/v1/mandates/{id}/revoke`
 
@@ -67,17 +67,7 @@ Client `backend-mandates`, scope `mandates:grant`, `Idempotency-Key` obligatoire
 
 Le Tooling ne publie pas `mandate.granted` ni `mandate.revoked` : le Backend reçoit le mandat en réponse synchrone et le diffuse lui-même, comme le fait la simulation.
 
-### Backend, console des ministères : `POST /internal/v1/admin/requests/{id}/actions`
-
-Client `backend-admin`, scope `requests:admin`, `Idempotency-Key` obligatoire. Corps `InternalAdminCommand` (`tooling-admin.openapi.json`) : `action` parmi `claim`, `request_information`, `approve`, `reject`, `resume`, la `revision` lue par l'agent, `departmentId` et `actorRef` fournis par le Backend. Réponse 200 : le `DepartmentRequest` complet, révision supérieure, identique au snapshot publié ensuite.
-
-| Refus | Cas |
-|---|---|
-| 404 | dossier inconnu, ou d'un autre département |
-| 409 | révision dépassée, dossier pas encore déposé ou déjà clos, transition impossible (déjà pris en charge, aucun complément en attente, pas de décision attendue au X-Road) |
-| 400 | commande invalide, motif absent pour `request_information` |
-
-`approve` et `reject` sont relayés au X-Road (`X-Actor-Ref` = `actorRef`). `request_information` met le dossier en `blocked` avec le motif ; `resume` le remet en traitement. Une même clé rejouée renvoie la même réponse pendant 25 h.
+La console n’agit plus via le Tooling : les actions `claim`, `request_information`, `approve` et `reject` passent par le Backend vers le X-Road (`admin.openapi.json` / `xroad.openapi.json`).
 
 ### Ce que le Tooling attend du Backend
 
@@ -88,7 +78,7 @@ Client `backend-admin`, scope `requests:admin`, `Idempotency-Key` obligatoire. C
 | Événements | `POST /internal/v1/events`, `Idempotency-Key` = id d'événement | `tooling-events`, scope `events:publish` |
 | Documents délivrés | `POST /internal/v1/requests/{id}/documents`, binaire, `X-User-Ref`, `X-File-Mime-Type` | `tooling-documents`, scope `documents:transfer` |
 
-Avec les fiches du Backend (`PROCEDURES_SOURCE=backend`), événements publiés : `request.created`, `request.status_changed`, `tool.called`. Avec les fiches du X-Road, chaque modification d'une demande publie à la place un snapshot complet `request.snapshot` : révision strictement croissante, `administrationId` du ministère qui traite, `simulation: true`, accusé de dépôt, motif de blocage, paiement, documents délivrés, étape et provenance des champs. Ordre garanti par conversation, livraison au moins une fois, id stable entre les reprises. Le département et la conversation doivent exister côté Backend : tant qu'ils manquent, le snapshot est retenté et les événements suivants de la conversation attendent.
+Événements publiés (CloudEvents `bj.techma.*.v2`) : `tool.called` à chaque appel d’outil, et `case.updated` après un dépôt X-Road réussi. Les demandes restent en `draft|ready|submitted|cancelled` ; la vie post-dépôt vit sur le Case. `bj.techma/requiresLogin` refuse les principaux invités sur les outils d’écriture. Ordre garanti par conversation, livraison au moins une fois.
 
 ## Organisation du code
 
@@ -106,11 +96,11 @@ Ajouter un outil : un `ToolHandler` dans un module qui l'inscrit au `ToolRegistr
 
 ## Connecteurs vers l'administration
 
-`request.submit` prépare la demande et renvoie le lien officiel (v1). Si un connecteur est activé pour la fiche, l'envoi est en plus mis en file dans la même transaction, puis un processus de fond (`src/connectors/connector-worker.ts`) :
+`request.submit` prépare la demande et dépose le dossier. Si un connecteur est activé pour la fiche, l'envoi est en plus mis en file dans la même transaction, puis un processus de fond (`src/connectors/connector-worker.ts`) :
 
 1. revérifie le mandat : révoqué ou expiré, rien n'est transmis ;
 2. appelle `submit` du connecteur ; avec un accusé de réception, la demande passe à `submitted` ;
-3. suit ensuite le dossier avec `status` (`processing`, puis `completed` ou `rejected`), un événement `request.status_changed` à chaque étape ;
+3. suit ensuite le dossier X-Road (`awaiting_payment`, `received`, `in_review`, `completed` ou `rejected`) ; le Backend publie `case.updated` à chaque changement ;
 4. en cas d'échec, réessaie avec un délai croissant ; après 24 h sans envoi, abandonne et le lien officiel reste valable.
 
 Il fonctionne comme l'outbox : sûr sur plusieurs répliques, bail de 60 s, journal d'audit sous l'acteur `tooling-connector`. La référence externe et l'accusé restent internes : la sortie des outils garde la forme du contrat.
@@ -194,11 +184,11 @@ Le déploiement sur un serveur n'est pas automatisé : aucun environnement cible
 | `CONNECTORS` | vide | Connecteurs activés, séparés par des virgules : `xroad`, ou `simulated` seulement en local hors production |
 | `XROAD_URL` | aucun | X-Road simulé (C5) ; HTTPS hors localhost |
 | `PROCEDURES_SOURCE` | `xroad` si `XROAD_URL`, sinon `backend` | Origine des fiches de `procedures.search` et `procedures.get` |
-| `TOOLING_XROAD_CLIENT_ID`, `TOOLING_XROAD_CLIENT_SECRET` ou `TOOLING_XROAD_TOKEN` | aucun | Identité `tooling-xroad` (`xroad:read xroad:submit xroad:decide`) en mode `jwt`, requise avec `XROAD_URL` |
+| `TOOLING_XROAD_CLIENT_ID`, `TOOLING_XROAD_CLIENT_SECRET` ou `TOOLING_XROAD_TOKEN` | aucun | Identité `tooling-xroad` (`xroad:apply`) en mode `jwt`, requise avec `XROAD_URL` |
 | `TOOLING_DOCUMENTS_CLIENT_ID`, `TOOLING_DOCUMENTS_CLIENT_SECRET` ou `TOOLING_DOCUMENTS_TOKEN` | aucun | Identité `tooling-documents` (`documents:transfer`) en mode `jwt`, requise avec `XROAD_URL` |
 | `CONNECTOR_WORKER`, `CONNECTOR_INTERVAL_MS` | `on`, 2000 | Processus d'envoi et de suivi |
 | `CONNECTOR_POLL_MS` | 300000 | Intervalle de suivi d'un dossier envoyé |
 | `CONNECTOR_SIMULATED_STEP_MS` | 30000 | Durée de chaque étape fictive du connecteur simulé |
-| `CONTRACTS_DIR` | `contracts/v1` du dépôt | Contrats dans une image |
+| `CONTRACTS_DIR` | `contracts/v2` du dépôt | Contrats dans une image |
 
 Toutes les URL de service doivent être en HTTPS hors localhost. Les secrets viennent de l'environnement et ne sont jamais journalisés. Entre le proxy et les répliques, le trafic reste en HTTP sur le réseau privé du déploiement.

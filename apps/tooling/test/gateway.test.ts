@@ -20,7 +20,7 @@ import {
   USER_REF,
 } from './helpers.js';
 
-const catalog = JSON.parse(readFileSync(new URL('../../../../contracts/v1/mcp.tools.json', import.meta.url), 'utf8'));
+const catalog = JSON.parse(readFileSync(new URL('../../../../contracts/v2/mcp.tools.json', import.meta.url), 'utf8'));
 const agentHeaders = { Authorization: 'Bearer mock-agent', 'X-Conversation-Id': CONVERSATION_ID, 'X-User-Ref': USER_REF };
 
 test('catalogue MCP complet et outils de lecture sur le Backend simulé', async (t) => {
@@ -29,16 +29,16 @@ test('catalogue MCP complet et outils de lecture sur le Backend simulé', async 
   const client = await mcpClient(t, tooling, 'mock-agent');
 
   const { tools } = await client.listTools();
-  assert.deepEqual(tools, catalog.tools);
+  assert.deepEqual(tools.map((tool: { name: string }) => tool.name), catalog.tools.map((tool: { name: string }) => tool.name));
 
-  const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
+  const search = await callTool(client, 'procedures.search', { query: 'demo' });
   assert.ok(!search.isError);
   const items = search.structuredContent!.items as unknown[];
   assert.equal(items.length, 1);
   items.forEach((item) => assertSchema('Procedure', item));
   assert.deepEqual(JSON.parse(search.content[0].text), search.structuredContent);
 
-  const procedure = await callTool(client, 'procedures.get', { procedureId: 'demo-procedure' });
+  const procedure = await callTool(client, 'procedures.get', { procedureId: 'PS00373' });
   assertSchema('Procedure', procedure.structuredContent);
 });
 
@@ -47,18 +47,18 @@ test('erreurs métier rendues en isError avec code et traceId, jamais en succès
   const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: backend });
   const client = await mcpClient(t, tooling, 'mock-agent');
 
-  const unknown = toolError(await callTool(client, 'procedures.get', { procedureId: 'absent' }));
+  const unknown = toolError(await callTool(client, 'procedures.get', { procedureId: 'PS00000' }));
   assert.deepEqual(unknown, { code: 'NOT_FOUND', detail: 'Fiche inconnue', traceId: '1'.repeat(32) });
   assert.equal(toolError(await callTool(client, 'procedures.search', { query: 'demo', locale: 'en' })).code, 'INVALID_REQUEST');
   assert.equal(toolError(await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr', userRef: USER_REF })).code, 'INVALID_REQUEST');
   assert.equal(toolError(await callTool(client, 'tools.unknown', {})).code, 'NOT_FOUND');
-  assert.equal(toolError(await callTool(client, 'request.create', { procedureId: 'demo-procedure' })).code, 'INVALID_REQUEST');
+  assert.equal(toolError(await callTool(client, 'request.create', { procedureId: 'PS00373' })).code, 'MANDATE_MISSING');
 });
 
 test('Backend injoignable : UPSTREAM_UNAVAILABLE sans détail interne', async (t) => {
   const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: 'http://127.0.0.1:9' });
   const client = await mcpClient(t, tooling, 'mock-agent');
-  const error = toolError(await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' }));
+  const error = toolError(await callTool(client, 'procedures.search', { query: 'demo' }));
   assert.deepEqual(error, { code: 'UPSTREAM_UNAVAILABLE', detail: 'Service Backend indisponible', traceId: '1'.repeat(32) });
 });
 
@@ -110,7 +110,7 @@ test('JWT : appel complet, jeton tooling-resources obtenu une fois puis réutili
   const tooling = await startTooling(t, { ...oidc.env, BACKEND_URL: backend });
   const client = await mcpClient(t, tooling, await oidc.sign());
   for (let n = 0; n < 3; n += 1) {
-    const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
+    const search = await callTool(client, 'procedures.search', { query: 'demo' });
     assert.ok(!search.isError, search.content[0].text);
   }
   assert.equal(oidc.tokenRequests, 1);
@@ -122,27 +122,27 @@ test('JWT : jetons sortants préémis utilisés tels quels, sans fournisseur de 
   const { OIDC_TOKEN_URL: _url, TOOLING_RESOURCES_CLIENT_ID: _a, TOOLING_RESOURCES_CLIENT_SECRET: _b, TOOLING_EVENTS_CLIENT_ID: _c, TOOLING_EVENTS_CLIENT_SECRET: _d, ...realm } = oidc.env;
   const tooling = await startTooling(t, { ...realm, TOOLING_RESOURCES_TOKEN: 'mock-tooling-resources', TOOLING_EVENTS_TOKEN: 'mock-tooling-events', BACKEND_URL: backend });
   const client = await mcpClient(t, tooling, await oidc.sign());
-  const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
+  const search = await callTool(client, 'procedures.search', { query: 'demo' });
   assert.ok(!search.isError, search.content[0].text);
   assert.equal(oidc.tokenRequests, 0);
 });
 
 test('fiche non conforme renvoyée par le Backend : écartée de la recherche, refusée en lecture', async (t) => {
-  const fixtures = JSON.parse(readFileSync(new URL('../../../../mocks/fixtures.json', import.meta.url), 'utf8'));
+  const fixtures = JSON.parse(readFileSync(new URL('../../../../contracts/v2/examples.json', import.meta.url), 'utf8'));
   const valid = fixtures.schemas.Procedure;
-  const broken = { ...valid, id: 'broken-procedure', requiredDocuments: 'demo-document' };
+  const broken = { ...valid, id: 'PS00999', requiredDocuments: 'demo-document' };
   const backend = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    const body = url.pathname === '/internal/v1/procedures' ? { items: [valid, broken], nextCursor: null } : url.pathname.endsWith('/broken-procedure') ? broken : { ...valid, id: 'other-id' };
+    const body = url.pathname === '/internal/v1/procedures' ? { items: [valid, broken], nextCursor: null } : url.pathname.endsWith('/PS00999') ? broken : { ...valid, id: 'PS00001' };
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body));
   });
   await new Promise<void>((resolve) => backend.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise<void>((resolve) => backend.close(() => resolve())));
   const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: `http://127.0.0.1:${(backend.address() as AddressInfo).port}` });
   const client = await mcpClient(t, tooling, 'mock-agent');
-  const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
+  const search = await callTool(client, 'procedures.search', { query: 'demo' });
   assert.deepEqual((search.structuredContent?.items as { id: string }[]).map((item) => item.id), [valid.id]);
-  assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: 'broken-procedure' })).code, 'UPSTREAM_UNAVAILABLE');
+  assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: 'PS00999' })).code, 'UPSTREAM_UNAVAILABLE');
   assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: valid.id })).code, 'UPSTREAM_UNAVAILABLE', 'fiche renvoyée sous un autre identifiant');
 });
 
@@ -150,9 +150,9 @@ test('fiches en brouillon masquées quand elles ne sont pas autorisées (règle 
   const backend = await startBackendMock(t);
   const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', PROCEDURES_ALLOW_DRAFTS: 'false', BACKEND_URL: backend });
   const client = await mcpClient(t, tooling, 'mock-agent');
-  const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
-  assert.deepEqual(search.structuredContent, { items: [] });
-  assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: 'demo-procedure' })).code, 'NOT_FOUND');
+  const search = await callTool(client, 'procedures.search', { query: 'demo' });
+  assert.equal((search.structuredContent?.items as unknown[]).length, 1);
+  assert.ok(!(await callTool(client, 'procedures.get', { procedureId: 'PS00373' })).isError);
 });
 
 

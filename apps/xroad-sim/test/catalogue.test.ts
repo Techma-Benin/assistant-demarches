@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { CATALOGUE, FILINGS, officialDays, officialFee } from '../src/data.js';
 import { domainValidator } from '../src/contracts.js';
+import { presentProcedure } from '../src/present.js';
 import { XroadStore } from '../src/store.js';
 
 const imported = JSON.parse(readFileSync(new URL('../../../../content/service-public/catalogue.json', import.meta.url), 'utf8')) as {
@@ -34,7 +35,7 @@ test('chaque fiche servie est conforme au contrat et pointe vers sa fiche servic
   const valid = domainValidator('Procedure');
   assert.ok(CATALOGUE.length > 200, 'catalogue officiel complet');
   for (const { procedure } of CATALOGUE) {
-    assert.ok(valid(procedure), `${procedure.id} : ${JSON.stringify(valid.errors)}`);
+    assert.ok(valid(presentProcedure(procedure)), `${procedure.id} : ${JSON.stringify(valid.errors)}`);
     assert.equal(procedure.source.url, `https://service-public.bj/public/services/service/${procedure.id}`);
     assert.equal(procedure.official.serviceId, procedure.id);
   }

@@ -5,7 +5,9 @@ import { traceIdOf } from './trace.js';
 export type ProblemCode =
   | 'INVALID_REQUEST'
   | 'UNAUTHORIZED'
+  | 'LOGIN_REQUIRED'
   | 'FORBIDDEN'
+  | 'NOT_ASSISTED'
   | 'NOT_FOUND'
   | 'IDEMPOTENCY_CONFLICT'
   | 'MANDATE_MISSING'

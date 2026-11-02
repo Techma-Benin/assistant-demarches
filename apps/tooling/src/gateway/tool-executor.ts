@@ -47,8 +47,12 @@ export class ToolExecutor {
       if (!handler) throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', 'Outil pas encore disponible');
       const args = call.args as Record<string, unknown>;
       const meta = tool.definition._meta;
+      if (meta['bj.techma/requiresLogin'] && call.context.authenticated !== true) {
+        throw new ProblemError(401, 'LOGIN_REQUIRED', 'Connexion requise pour cette action');
+      }
       const action = meta['bj.techma/requiresMandate'];
       const scope = { userRef: call.context.userRef };
+      if (action && !call.context.mandateId) throw new ProblemError(403, 'MANDATE_MISSING', 'Mandat requis pour cette action');
 
       let key: IdempotencyKey | undefined;
       if (action) {

@@ -174,6 +174,17 @@ alter table requests
 create index requests_administration_idx on requests (administration_id);
 `,
   },
+  {
+    version: 5,
+    name: 'v2 request statuses and case id',
+    sql: `
+update requests set status = 'submitted' where status in ('awaiting_user_validation','processing','blocked','completed','rejected');
+alter table requests drop constraint requests_status_check;
+alter table requests add constraint requests_status_check
+  check (status in ('draft','ready','submitted','cancelled'));
+alter table requests add column if not exists case_id text;
+`,
+  },
 ];
 
 const MIGRATION_LOCK = 7_304_221_001;

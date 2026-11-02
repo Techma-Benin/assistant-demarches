@@ -22,7 +22,7 @@ export function overviewPage(store: XroadStore, exchanges: readonly Exchange[]):
       const metrics = superAdmin ? store.metrics(superAdmin, administration.id) : undefined;
       const connected = administration.connection.status === 'connected';
       return `<tr><td>${escape(administration.name)}</td><td class="${connected ? 'ok' : 'off'}">${connected ? 'Connectée' : 'Non connectée : connexion recommandée'}</td>
-        <td>${store.searchProcedures(undefined, administration.id).length}</td><td>${metrics?.casesTotal ?? 0}</td><td>${metrics?.casesPending ?? 0}</td><td>${metrics?.casesCompletedByAssistant ?? 0}</td></tr>`;
+        <td>${store.searchProcedures(undefined, administration.id).length}</td><td>${metrics?.received ?? 0}</td><td>${metrics?.pending ?? 0}</td><td>${metrics?.completedByAssistant ?? 0}</td></tr>`;
     })
     .join('');
   const log = exchanges.length

@@ -6,7 +6,7 @@ import { loadConfig } from '../src/config.js';
 import { domainValidator, errorsText } from '../src/contracts.js';
 import { createXroadServer } from '../src/server.js';
 
-const openapi = JSON.parse(readFileSync(new URL('../../../../contracts/v1/xroad-sim.openapi.json', import.meta.url), 'utf8')) as {
+const openapi = JSON.parse(readFileSync(new URL('../../../../contracts/v2/xroad.openapi.json', import.meta.url), 'utf8')) as {
   paths: Record<string, Record<string, { operationId: string; responses: Record<string, { content?: Record<string, { schema?: { $ref?: string } }> }> }>>;
 };
 
@@ -22,6 +22,7 @@ export const ENSEIGNEMENT_AGENT = `off_01JC${'0'.repeat(20)}13`;
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 export const requestId = () => `req_${Array.from(randomBytes(26), (byte) => CROCKFORD[byte % 32]).join('')}`;
 export const fileId = () => `fil_${Array.from(randomBytes(26), (byte) => CROCKFORD[byte % 32]).join('')}`;
+export const uploadId = () => `upl_${Array.from(randomBytes(26), (byte) => CROCKFORD[byte % 32]).join('')}`;
 export const key = () => randomBytes(12).toString('hex');
 export const traceparent = () => `00-${randomBytes(16).toString('hex')}-${randomBytes(8).toString('hex')}-01`;
 
@@ -54,7 +55,7 @@ export async function call<T = any>(base: string, method: string, path: string, 
   if (options.traceparent !== null) headers.traceparent = options.traceparent ?? traceparent();
   if (options.token) headers.authorization = `Bearer ${options.token}`;
   if (options.applicant) headers['x-applicant-ref'] = options.applicant;
-  if (options.official) headers['x-official-id'] = options.official;
+  if (options.official) headers['x-official-subject'] = options.official;
   if (options.body !== undefined) headers['content-type'] = options.contentType ?? 'application/json';
   if (options.idempotencyKey ?? (method === 'POST' || method === 'PUT')) headers['idempotency-key'] = options.idempotencyKey ?? key();
   const res = await fetch(base + path, { method, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });

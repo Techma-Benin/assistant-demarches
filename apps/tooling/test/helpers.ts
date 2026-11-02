@@ -15,7 +15,7 @@ import { loadConfig } from '../src/config.js';
 import { Database } from '../src/database/database.js';
 
 const repoRoot = new URL('../../../../', import.meta.url);
-const domain = JSON.parse(readFileSync(new URL('contracts/v1/domain.schema.json', repoRoot), 'utf8'));
+const domain = JSON.parse(readFileSync(new URL('contracts/v2/domain.schema.json', repoRoot), 'utf8'));
 const addFormats = addFormatsPlugin as unknown as (ajv: Ajv2020) => Ajv2020;
 const ajv = addFormats(new Ajv2020({ allErrors: true, strict: false }));
 ajv.addSchema(domain);
@@ -63,10 +63,67 @@ export async function startToolingApp(t: TestContext, env: NodeJS.ProcessEnv = {
 }
 
 export async function startBackendMock(t: TestContext): Promise<string> {
-  const { startMocks } = await import(new URL('mocks/server.mjs', repoRoot).href);
-  const mocks = await startMocks({ backendPort: 0, toolingPort: 0 });
-  t.after(() => mocks.close());
-  return mocks.backendUrl as string;
+  const procedure = JSON.parse(readFileSync(new URL('contracts/v2/examples.json', repoRoot), 'utf8')).schemas.Procedure;
+  const files = new Map<string, { file: { id: string; mimeType: string; sizeBytes: number; expiresAt: string }; bytes: Buffer; userRef: string }>();
+  const events: unknown[] = [];
+  return listen(t, async (req, res) => {
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    const send = (status: number, body: unknown, type = 'application/json') => {
+      res.writeHead(status, { 'content-type': type }).end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
+    };
+    if (req.method === 'POST' && url.pathname === '/v1/conversations') {
+      send(201, { id: fakeId('cnv'), locale: 'fr', channel: 'web' });
+      return;
+    }
+    if (req.method === 'GET' && /^\/v1\/conversations\/[^/]+\/events$/.test(url.pathname)) {
+      send(200, { items: events, nextCursor: null });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/v1/files') {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk as Buffer);
+      const bytes = Buffer.concat(chunks);
+      const id = fakeId('fil');
+      const file = { id, mimeType: 'application/pdf', sizeBytes: Math.max(bytes.length, 1), expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+      files.set(id, { file, bytes, userRef: USER_REF });
+      send(201, file);
+      return;
+    }
+    if (req.method === 'GET' && url.pathname.startsWith('/internal/v1/files/') && url.pathname.endsWith('/content')) {
+      const id = url.pathname.split('/')[4];
+      const found = files.get(id);
+      if (!found) { send(404, { code: 'NOT_FOUND' }); return; }
+      send(200, found.bytes, found.file.mimeType);
+      return;
+    }
+    if (req.method === 'GET' && url.pathname.startsWith('/internal/v1/files/')) {
+      const id = url.pathname.split('/')[4];
+      const found = files.get(id);
+      if (!found) { send(404, { code: 'NOT_FOUND' }); return; }
+      send(200, { file: found.file, userRef: req.headers['x-user-ref'] ?? found.userRef });
+      return;
+    }
+    if (req.method === 'GET' && url.pathname === '/internal/v1/procedures') {
+      send(200, { items: [procedure], nextCursor: null });
+      return;
+    }
+    if (req.method === 'GET' && url.pathname.startsWith('/internal/v1/procedures/')) {
+      const id = url.pathname.split('/').pop();
+      if (id !== procedure.id) { send(404, { code: 'NOT_FOUND' }); return; }
+      send(200, procedure);
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/internal/v1/events') {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk as Buffer);
+      try {
+        events.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      } catch { /* keep the mock available even if a publisher sends a malformed envelope */ }
+      send(202, { accepted: true });
+      return;
+    }
+    send(404, { code: 'NOT_FOUND' });
+  });
 }
 
 export interface XroadSim {
@@ -189,7 +246,15 @@ export async function mcpClient(t: TestContext | undefined, toolingUrl: string, 
   const client = new Client({ name: 'tooling-test', version: '1.0.0' });
   const transport = new StreamableHTTPClientTransport(new URL(`${toolingUrl}/mcp`), {
     requestInit: {
-      headers: { Authorization: `Bearer ${token}`, traceparent: TRACEPARENT, 'X-Conversation-Id': CONVERSATION_ID, 'X-User-Ref': USER_REF, ...headers },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        traceparent: TRACEPARENT,
+        'X-Conversation-Id': CONVERSATION_ID,
+        'X-User-Ref': USER_REF,
+        'X-Authenticated': 'true',
+        'X-Channel': 'web',
+        ...headers,
+      },
     },
   });
   await client.connect(transport);
@@ -203,11 +268,19 @@ export interface ActOptions {
   conversationId?: string;
   userRef?: string;
   token?: string;
+  authenticated?: boolean;
+  channel?: 'web' | 'whatsapp';
+}
+
+export function toFields(values: Record<string, unknown>) {
+  return Object.entries(values).map(([name, value]) => ({ name, value, source: 'answer' as const }));
 }
 
 export async function act(toolingUrl: string, name: string, args: Record<string, unknown>, options: ActOptions = {}): Promise<ToolResult> {
   const client = await mcpClient(undefined, toolingUrl, options.token ?? 'mock-agent', {
     'Idempotency-Key': options.key ?? randomUUID(),
+    'X-Authenticated': options.authenticated === false ? 'false' : 'true',
+    'X-Channel': options.channel ?? 'web',
     ...(options.mandateId ? { 'X-Mandate-Id': options.mandateId } : {}),
     ...(options.conversationId ? { 'X-Conversation-Id': options.conversationId } : {}),
     ...(options.userRef ? { 'X-User-Ref': options.userRef } : {}),
@@ -238,7 +311,7 @@ export function challenge(overrides: Partial<ChallengeInput> = {}): ChallengeInp
     id: fakeId('chl'),
     conversationId: CONVERSATION_ID,
     userRef: USER_REF,
-    procedureId: 'demo-procedure',
+    procedureId: 'PS00373',
     scopes: ['requests:write', 'documents:write', 'requests:submit'],
     consentText: 'Autoriser cette démarche fictive pour une heure.',
     expiresAt: new Date(Date.now() + 300_000).toISOString(),

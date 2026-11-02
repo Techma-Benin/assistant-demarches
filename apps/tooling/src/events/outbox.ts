@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { newId } from '../common/ids.js';
-import { childTraceparent } from '../common/trace.js';
 import { domainValidator } from '../contracts.js';
 import type { Tx } from '../database/database.js';
 
@@ -17,15 +16,14 @@ function conversationOf(data: EventData): string {
 
 @Injectable()
 export class Outbox {
-  async enqueue(tx: Tx, data: EventData, traceId: string): Promise<string> {
+  async enqueue(tx: Tx, data: EventData, _traceId: string): Promise<string> {
     const event = {
       specversion: '1.0',
       id: newId('evt'),
       source: 'urn:techma:tooling',
-      type: `bj.techma.${data.kind}.v1`,
+      type: `bj.techma.${data.kind}.v2`,
       time: new Date().toISOString(),
       datacontenttype: 'application/json',
-      traceparent: childTraceparent({ traceId }),
       data,
     };
     if (!validateEvent(event)) throw new Error(`Événement ${data.kind} non conforme`);

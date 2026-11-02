@@ -1,6 +1,6 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { ServiceAuth, requireScope, type Principal } from './auth.js';
+import { ServiceAuth, requireAnyScope, requireScope, type Principal, type XroadClient } from './auth.js';
 import type { SimConfig } from './config.js';
 import { domainValidator, errorsText } from './contracts.js';
 import { canonicalJson, sha256 } from './ids.js';
@@ -8,6 +8,7 @@ import { simulatedPdf } from './pdf.js';
 import { ProblemError, invalid, type ProblemCode } from './problem.js';
 import { XroadStore, type Caller, type CaseView, type Decider } from './store.js';
 import { overviewPage, type Exchange } from './overview.js';
+import { presentCase, presentMe, presentOfficial, presentProcedure } from './present.js';
 
 const TRACEPARENT = /^00-([a-f0-9]{32})-([a-f0-9]{16})-0[01]$/;
 const MAX_BODY = 64 * 1024;
@@ -35,11 +36,14 @@ const validators = {
   officialId: domainValidator('OfficialId'),
   administrationId: domainValidator('AdministrationId'),
   caseId: domainValidator('CaseId'),
-  documentId: domainValidator('IssuedDocumentId'),
+  documentId: domainValidator('DocumentId'),
   caseInput: domainValidator('CaseInput'),
   paymentInput: domainValidator('PaymentInput'),
-  decision: domainValidator('CaseDecision'),
-  assignment: domainValidator('OfficialAssignment'),
+  profileUpdate: domainValidator('ProfileUpdate'),
+  officialRegistration: domainValidator('OfficialRegistration'),
+  officialUpdate: domainValidator('OfficialUpdate'),
+  caseAction: domainValidator('CaseActionInput'),
+  avatarInput: domainValidator('AvatarInput'),
 };
 
 export interface XroadServer {
@@ -61,36 +65,38 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
     return { items: items.slice(offset, offset + limit), nextCursor: next };
   };
 
-  const applicant = (context: Context): string => {
-    requireScope(context.principal, 'xroad:submit', ['tooling-xroad']);
+  const applicant = (context: Context, clients: readonly XroadClient[] = ['tooling-xroad', 'backend-xroad']): string => {
+    requireScope(context.principal, 'xroad:apply', clients);
     const value = context.req.headers['x-applicant-ref'];
     if (typeof value !== 'string' || !validators.userRef(value)) throw invalid('X-Applicant-Ref requis');
     return value;
   };
 
   const official = (context: Context, optional = false) => {
-    requireScope(context.principal, 'xroad:administer', ['backend-xroad']);
-    const value = context.req.headers['x-official-id'];
+    const value = context.req.headers['x-official-subject'] ?? context.req.headers['x-official-id'];
     if (value === undefined && optional) return undefined;
-    if (typeof value !== 'string' || !validators.officialId(value)) throw invalid('X-Official-Id requis');
-    return store.official(value);
+    if (typeof value !== 'string' || !value || value.length > 255) {
+      throw new ProblemError(401, 'UNAUTHORIZED', 'X-Official-Subject requis');
+    }
+    requireScope(context.principal, 'xroad:administer', ['backend-xroad']);
+    return store.officialBySubject(value);
   };
 
   /** GET on a case accepts exactly one identity: the applicant (Tooling) or an official (Backend). */
   const caller = (context: Context): Caller => {
     const hasApplicant = context.req.headers['x-applicant-ref'] !== undefined;
-    const hasOfficial = context.req.headers['x-official-id'] !== undefined;
-    if (hasApplicant === hasOfficial) throw invalid('Exactement un en-tête requis : X-Applicant-Ref ou X-Official-Id');
+    const hasOfficial = context.req.headers['x-official-subject'] !== undefined || context.req.headers['x-official-id'] !== undefined;
+    if (hasApplicant === hasOfficial) throw invalid('Exactement un en-tête requis : X-Applicant-Ref ou X-Official-Subject');
     if (hasApplicant) return { kind: 'applicant', applicantRef: applicant(context) };
     return { kind: 'official', official: official(context) as NonNullable<ReturnType<typeof official>> };
   };
 
   const decider = (context: Context): Decider => {
-    const hasOfficial = context.req.headers['x-official-id'] !== undefined;
+    const hasOfficial = context.req.headers['x-official-subject'] !== undefined || context.req.headers['x-official-id'] !== undefined;
     const hasActor = context.req.headers['x-actor-ref'] !== undefined;
-    if (hasOfficial === hasActor) throw invalid('Exactement un en-tête requis : X-Official-Id ou X-Actor-Ref');
+    if (hasOfficial === hasActor) throw invalid('Exactement un en-tête requis : X-Official-Subject ou X-Actor-Ref');
     if (hasOfficial) return { kind: 'official', official: official(context)! };
-    requireScope(context.principal, 'xroad:decide', ['tooling-xroad']);
+    requireScope(context.principal, 'xroad:apply', ['tooling-xroad']);
     const value = context.req.headers['x-actor-ref'];
     if (typeof value !== 'string' || !ACTOR_REF.test(value)) throw invalid('X-Actor-Ref invalide');
     return { kind: 'console', actorRef: value };
@@ -107,16 +113,16 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
     return value;
   };
 
-  const reader = (context: Context) => requireScope(context.principal, 'xroad:read', ['tooling-xroad', 'backend-xroad']);
+  const reader = (context: Context) => requireAnyScope(context.principal, ['xroad:apply', 'xroad:administer'], ['tooling-xroad', 'backend-xroad']);
 
-  const routes: { method: string; pattern: RegExp; name: string; handler: Handler; body?: keyof typeof validators }[] = [
+  const routes: { method: string; pattern: RegExp; name: string; handler: Handler; body?: keyof typeof validators; binary?: boolean }[] = [
     {
       method: 'GET',
       pattern: /^\/v1\/administrations$/,
       name: 'listXroadAdministrations',
       handler: (context) => {
         reader(context);
-        return { status: 200, body: page(store.listAdministrations(), context.url) };
+        return { status: 200, body: { items: store.listAdministrations().map((item) => ({ ...item, shortName: item.shortName.slice(0, 50) })) } };
       },
     },
     {
@@ -127,7 +133,7 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
         reader(context);
         const query = context.url.searchParams.get('query') ?? undefined;
         if (query !== undefined && !query.trim()) throw invalid('query vide');
-        return { status: 200, body: page(store.searchProcedures(query, filter(context.url)), context.url) };
+        return { status: 200, body: page(store.searchProcedures(query, filter(context.url)).map(presentProcedure), context.url) };
       },
     },
     {
@@ -136,17 +142,46 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
       name: 'getXroadProcedure',
       handler: (context) => {
         reader(context);
-        return { status: 200, body: store.getProcedure(decodeURIComponent(context.params[0])) };
+        return { status: 200, body: presentProcedure(store.getProcedure(decodeURIComponent(context.params[0]))) };
+      },
+    },
+    {
+      method: 'POST',
+      pattern: /^\/v1\/uploads$/,
+      name: 'xroadUpload',
+      binary: true,
+      handler: async (context) => {
+        const applicantRef = applicant(context, ['tooling-xroad']);
+        const mime = context.req.headers['x-file-mime-type'];
+        if (mime !== 'application/pdf' && mime !== 'image/jpeg' && mime !== 'image/png') {
+          throw invalid('X-File-Mime-Type requis');
+        }
+        const bytes = await readBinary(context.req);
+        if (!bytes.length) throw invalid('Fichier vide');
+        return { status: 201, body: store.saveUpload(applicantRef, mime, bytes) };
       },
     },
     {
       method: 'POST',
       pattern: /^\/v1\/cases$/,
       name: 'createXroadCase',
-      body: 'caseInput',
       handler: async (context) => {
-        const applicantRef = applicant(context);
-        return { status: 201, body: store.createCase(applicantRef, (await readJson(context.req)) as never) };
+        const applicantRef = applicant(context, ['tooling-xroad']);
+        const type = (context.req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+        if (type !== 'application/json') throw new ProblemError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Corps JSON attendu');
+        const body = (await readJson(context.req)) as { requestId: string; procedureId: string; channel?: 'web' | 'whatsapp'; fields: Record<string, string | number | boolean | null>; documents: { documentType: string; fileId?: string; uploadId?: string; mimeType?: string; sizeBytes?: number }[] };
+        if (!validators.caseInput(body)) throw invalid(`Corps invalide : ${errorsText(validators.caseInput)}`);
+        const created = store.createCase(applicantRef, {
+          requestId: body.requestId,
+          procedureId: body.procedureId,
+          channel: body.channel ?? 'web',
+          fields: body.fields,
+          documents: body.documents.map((document) => {
+            const upload = store.consumeUpload(applicantRef, document.uploadId ?? document.fileId ?? '');
+            return { documentType: document.documentType, ...upload };
+          }),
+        });
+        return { status: 201, body: presentCase(created) };
       },
     },
     {
@@ -154,17 +189,21 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
       pattern: /^\/v1\/cases$/,
       name: 'listXroadCases',
       handler: (context) => {
+        const hasApplicant = context.req.headers['x-applicant-ref'] !== undefined;
+        if (hasApplicant) {
+          return { status: 200, body: page(store.listApplicantCases(applicant(context)).map(presentCase), context.url) };
+        }
         const viewer = official(context)!;
         const view = (context.url.searchParams.get('view') ?? 'all') as CaseView;
         if (!VIEWS.has(view)) throw invalid('view doit valoir pending, completed ou all');
-        return { status: 200, body: page(store.listCases(viewer, filter(context.url), view), context.url) };
+        return { status: 200, body: page(store.listCases(viewer, filter(context.url), view).map(presentCase), context.url) };
       },
     },
     {
       method: 'GET',
       pattern: /^\/v1\/cases\/([^/]+)$/,
       name: 'getXroadCase',
-      handler: (context) => ({ status: 200, body: store.getCase(caller(context), pathId(context.params[0], validators.caseId, 'Dossier')) }),
+      handler: (context) => ({ status: 200, body: presentCase(store.getCase(caller(context), pathId(context.params[0], validators.caseId, 'Dossier'))) }),
     },
     {
       method: 'POST',
@@ -172,20 +211,20 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
       name: 'payXroadCase',
       body: 'paymentInput',
       handler: async (context) => {
-        const applicantRef = applicant(context);
+        const applicantRef = applicant(context, ['tooling-xroad']);
         await readJson(context.req);
-        return { status: 200, body: store.pay(applicantRef, pathId(context.params[0], validators.caseId, 'Dossier')) };
+        return { status: 200, body: presentCase(store.pay(applicantRef, pathId(context.params[0], validators.caseId, 'Dossier'))) };
       },
     },
     {
       method: 'POST',
       pattern: /^\/v1\/cases\/([^/]+)\/decisions$/,
       name: 'decideXroadCase',
-      body: 'decision',
+      body: 'caseAction',
       handler: async (context) => {
         const by = decider(context);
         const input = (await readJson(context.req)) as { decision: 'approve' | 'reject'; note: string | null };
-        return { status: 200, body: store.decide(by, pathId(context.params[0], validators.caseId, 'Dossier'), input.decision, input.note) };
+        return { status: 200, body: presentCase(store.decide(by, pathId(context.params[0], validators.caseId, 'Dossier'), input.decision, input.note)) };
       },
     },
     {
@@ -209,26 +248,86 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
       },
     },
     {
+      method: 'POST',
+      pattern: /^\/v1\/cases\/([^/]+)\/actions$/,
+      name: 'xroadActOnCase',
+      body: 'caseAction',
+      handler: async (context) => {
+        const viewer = official(context)!;
+        const input = (await readJson(context.req)) as { action: 'claim' | 'request_information' | 'approve' | 'reject'; note: string | null };
+        return { status: 200, body: presentCase(store.actOnCase(viewer, pathId(context.params[0], validators.caseId, 'Dossier'), input.action, input.note)) };
+      },
+    },
+    {
+      method: 'PUT',
+      pattern: /^\/v1\/officials\/me$/,
+      name: 'xroadUpdateMe',
+      body: 'profileUpdate',
+      handler: async (context) => {
+        const viewer = official(context)!;
+        const input = (await readJson(context.req)) as { displayName: string; jobTitle: string };
+        return { status: 200, body: presentOfficial(store.updateMe(viewer, input)) };
+      },
+    },
+    {
+      method: 'PUT',
+      pattern: /^\/v1\/officials\/me\/avatar$/,
+      name: 'xroadSetAvatar',
+      body: 'avatarInput',
+      handler: async (context) => {
+        const viewer = official(context)!;
+        const input = (await readJson(context.req)) as { avatarUrl: string };
+        return { status: 200, body: presentOfficial(store.setAvatar(viewer, input.avatarUrl)) };
+      },
+    },
+    {
       method: 'GET',
       pattern: /^\/v1\/officials\/me$/,
       name: 'getXroadCurrentOfficial',
-      handler: (context) => ({ status: 200, body: official(context) }),
+      handler: (context) => {
+        const viewer = official(context)!;
+        const administration = viewer.administrationId
+          ? store.listAdministrations().find((item) => item.id === viewer.administrationId) ?? null
+          : null;
+        return { status: 200, body: presentMe(viewer, administration ?? null) };
+      },
     },
     {
       method: 'GET',
       pattern: /^\/v1\/officials$/,
       name: 'listXroadOfficials',
-      handler: (context) => ({ status: 200, body: page(store.listOfficials(official(context, true), filter(context.url)), context.url) }),
+      handler: (context) => ({ status: 200, body: page(store.listOfficials(official(context, true), filter(context.url)).map(presentOfficial), context.url) }),
+    },
+    {
+      method: 'POST',
+      pattern: /^\/v1\/officials$/,
+      name: 'xroadCreateOfficial',
+      body: 'officialRegistration',
+      handler: async (context) => {
+        const viewer = official(context)!;
+        const input = (await readJson(context.req)) as Parameters<XroadStore['createOfficial']>[1];
+        return { status: 201, body: presentOfficial(store.createOfficial(viewer, input)) };
+      },
+    },
+    {
+      method: 'PUT',
+      pattern: /^\/v1\/officials\/([^/]+)$/,
+      name: 'xroadUpdateOfficial',
+      body: 'officialUpdate',
+      handler: async (context) => {
+        const viewer = official(context)!;
+        const input = (await readJson(context.req)) as { administrationId: string | null; role: 'agent' | 'admin' | 'super_admin'; active: boolean };
+        return { status: 200, body: presentOfficial(store.updateOfficial(viewer, pathId(context.params[0], validators.officialId, 'Agent'), input)) };
+      },
     },
     {
       method: 'PUT',
       pattern: /^\/v1\/officials\/([^/]+)\/assignment$/,
       name: 'assignXroadOfficial',
-      body: 'assignment',
       handler: async (context) => {
         const viewer = official(context)!;
         const input = (await readJson(context.req)) as { administrationId: string | null; role: 'agent' | 'admin' | 'super_admin' };
-        return { status: 200, body: store.assign(viewer, pathId(context.params[0], validators.officialId, 'Agent'), input.administrationId, input.role) };
+        return { status: 200, body: presentOfficial(store.assign(viewer, pathId(context.params[0], validators.officialId, 'Agent'), input.administrationId, input.role)) };
       },
     },
     {
@@ -237,15 +336,30 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
       name: 'getXroadMetrics',
       handler: (context) => ({ status: 200, body: store.metrics(official(context)!, filter(context.url)) }),
     },
+    {
+      method: 'GET',
+      pattern: /^\/v1\/activity$/,
+      name: 'xroadListActivity',
+      handler: (context) => ({ status: 200, body: page(store.activity(official(context)!, filter(context.url)), context.url) }),
+    },
   ];
 
   // Bodies are read once and kept, so idempotency and handlers see the same payload.
   const bodies = new WeakMap<http.IncomingMessage, Promise<unknown>>();
+  const binaries = new WeakMap<http.IncomingMessage, Promise<Buffer>>();
   const readJson = (req: http.IncomingMessage): Promise<unknown> => {
     let pending = bodies.get(req);
     if (!pending) {
       pending = readBody(req);
       bodies.set(req, pending);
+    }
+    return pending;
+  };
+  const readBinary = (req: http.IncomingMessage): Promise<Buffer> => {
+    let pending = binaries.get(req);
+    if (!pending) {
+      pending = readRaw(req, 10 * 1024 * 1024);
+      binaries.set(req, pending);
     }
     return pending;
   };
@@ -259,7 +373,10 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
     const principal = await auth.authenticate(req.headers.authorization);
     const context: Context = { req, url, traceId, principal, params: route.pattern.exec(url.pathname)!.slice(1) };
 
-    if (route.body) {
+    if (route.binary) {
+      const type = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+      if (type !== 'application/octet-stream') throw new ProblemError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Corps binaire attendu');
+    } else if (route.body) {
       const type = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
       if (type !== 'application/json') throw new ProblemError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Corps JSON attendu');
       const body = await readJson(req);
@@ -272,14 +389,16 @@ export function createXroadServer(config: SimConfig, store = new XroadStore({ se
     const key = req.headers['idempotency-key'];
     if (typeof key !== 'string' || key.length < 8 || key.length > 128) throw invalid('Idempotency-Key de 8 à 128 caractères requise');
     const scope = `${principal.client}|${req.method}|${url.pathname}|${key}`;
-    const fingerprint = sha256(
-      canonicalJson({
-        body: await readJson(req),
-        applicant: req.headers['x-applicant-ref'] ?? null,
-        official: req.headers['x-official-id'] ?? null,
-        actor: req.headers['x-actor-ref'] ?? null,
-      }),
-    );
+    const fingerprint = route.binary
+      ? sha256(`${(await readBinary(req)).toString('hex')}|${req.headers['x-file-mime-type'] ?? ''}|${req.headers['x-applicant-ref'] ?? ''}`)
+      : sha256(
+          canonicalJson({
+            body: await readJson(req),
+            applicant: req.headers['x-applicant-ref'] ?? null,
+            official: req.headers['x-official-subject'] ?? req.headers['x-official-id'] ?? null,
+            actor: req.headers['x-actor-ref'] ?? null,
+          }),
+        );
     const previous = store.recall(scope);
     if (previous) {
       if (previous.fingerprint !== fingerprint) throw new ProblemError(409, 'IDEMPOTENCY_CONFLICT', 'Clé déjà utilisée pour une autre requête');
@@ -343,17 +462,22 @@ function integerParam(url: URL, name: string, fallback: number, min: number, max
   return value;
 }
 
-async function readBody(req: http.IncomingMessage): Promise<unknown> {
+async function readRaw(req: http.IncomingMessage, max = MAX_BODY): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY) throw new ProblemError(413, 'FILE_TOO_LARGE', 'Corps trop volumineux');
+    if (size > max) throw new ProblemError(413, 'FILE_TOO_LARGE', 'Corps trop volumineux');
     chunks.push(chunk as Buffer);
   }
+  return Buffer.concat(chunks);
+}
+
+async function readBody(req: http.IncomingMessage): Promise<unknown> {
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
+    return JSON.parse((await readRaw(req)).toString('utf8'));
+  } catch (error) {
+    if (error instanceof ProblemError) throw error;
     throw invalid('JSON invalide');
   }
 }

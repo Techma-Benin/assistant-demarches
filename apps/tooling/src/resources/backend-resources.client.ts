@@ -68,6 +68,34 @@ export class BackendResourcesClient {
     return access.file;
   }
 
+  async getFileContent(fileId: string, userRef: string, trace: TraceContext): Promise<Buffer> {
+    const url = new URL(`internal/v1/files/${encodeURIComponent(fileId)}/content`, this.config.backendUrl.href.replace(/\/?$/, '/'));
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${await this.tokens.get('tooling-resources')}`,
+          traceparent: childTraceparent(trace),
+          Accept: 'application/pdf, image/png, image/jpeg, application/octet-stream',
+          'X-User-Ref': userRef,
+        },
+        redirect: 'error',
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error) {
+      if (error instanceof ProblemError) throw error;
+      this.logger.error(`Backend injoignable pour le contenu d'une pièce : ${error instanceof Error ? error.message : String(error)}`);
+      throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', 'Service Backend indisponible');
+    }
+    if (res.status === 404) throw new ProblemError(404, 'NOT_FOUND', 'Pièce inconnue');
+    if (res.status === 401 || res.status === 403) {
+      this.tokens.invalidate('tooling-resources');
+      throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', 'Service Backend indisponible');
+    }
+    if (!res.ok) throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', 'Service Backend indisponible');
+    return Buffer.from(await res.arrayBuffer());
+  }
+
   async storeIssuedDocument(
     requestId: string,
     userRef: string,

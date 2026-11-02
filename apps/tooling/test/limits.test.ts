@@ -7,11 +7,11 @@ const agentHeaders = { Authorization: 'Bearer mock-agent', 'X-Conversation-Id': 
 test('débit par usager : l’agent reçoit RATE_LIMITED, les autres usagers continuent', async (t) => {
   const backend = await startBackendMock(t);
   const { url, db } = await startToolingApp(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: backend, RATE_LIMIT_USER_PER_MIN: '3' });
-  for (let n = 0; n < 3; n += 1) assert.ok(!(await act(url, 'procedures.get', { procedureId: 'demo-procedure' })).isError);
-  const limited = JSON.parse((await act(url, 'procedures.get', { procedureId: 'demo-procedure' })).content[0].text);
+  for (let n = 0; n < 3; n += 1) assert.ok(!(await act(url, 'procedures.get', { procedureId: 'PS00373' })).isError);
+  const limited = JSON.parse((await act(url, 'procedures.get', { procedureId: 'PS00373' })).content[0].text);
   assert.equal(limited.code, 'RATE_LIMITED');
   assert.deepEqual(Object.keys(limited).sort(), ['code', 'detail', 'traceId']);
-  assert.ok(!(await act(url, 'procedures.get', { procedureId: 'demo-procedure' }, { userRef: `usr_${'0'.repeat(25)}2` })).isError);
+  assert.ok(!(await act(url, 'procedures.get', { procedureId: 'PS00373' }, { userRef: `usr_${'0'.repeat(25)}2` })).isError);
 
   const audit = await db.transaction('system', (tx) => tx.query<{ code: string }>("select code from audit_log where code = 'RATE_LIMITED'"));
   assert.equal(audit.length, 1);

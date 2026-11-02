@@ -11,8 +11,8 @@ export interface Principal {
 
 // Static tokens, accepted only on a local, non-production listener (see config).
 const MOCK_PRINCIPALS: Record<string, Principal> = {
-  'mock-tooling-xroad': { client: 'tooling-xroad', scopes: new Set(['xroad:read', 'xroad:submit', 'xroad:decide']) },
-  'mock-backend-xroad': { client: 'backend-xroad', scopes: new Set(['xroad:read', 'xroad:administer']) },
+  'mock-tooling-xroad': { client: 'tooling-xroad', scopes: new Set(['xroad:apply']) },
+  'mock-backend-xroad': { client: 'backend-xroad', scopes: new Set(['xroad:apply', 'xroad:administer']) },
 };
 
 export class ServiceAuth {
@@ -55,6 +55,10 @@ export class ServiceAuth {
 }
 
 export function requireScope(principal: Principal, scope: string, clients: readonly XroadClient[]): void {
-  if (!clients.includes(principal.client as XroadClient)) throw new ProblemError(401, 'UNAUTHORIZED', 'Identité de service non acceptée sur cette route');
-  if (!principal.scopes.has(scope)) throw new ProblemError(403, 'FORBIDDEN', 'Scope requis absent');
+  requireAnyScope(principal, [scope], clients);
+}
+
+export function requireAnyScope(principal: Principal, scopes: readonly string[], clients: readonly XroadClient[]): void {
+  if (!clients.includes(principal.client as XroadClient)) throw new ProblemError(403, 'FORBIDDEN', 'Identité de service non acceptée sur cette route');
+  if (!scopes.some((scope) => principal.scopes.has(scope))) throw new ProblemError(403, 'FORBIDDEN', 'Scope requis absent');
 }

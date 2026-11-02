@@ -93,7 +93,7 @@ test('mode jwt : realm complet exigé, HTTPS obligatoire hors localhost', () => 
 });
 
 test('CONTRACTS_DIR accepte un chemin natif du système (dont C:\\… sous Windows)', async () => {
-  const dir = resolve(fileURLToPath(new URL('../../../../contracts/v1', import.meta.url)));
+  const dir = resolve(fileURLToPath(new URL('../../../../contracts/v2', import.meta.url)));
   const module = pathToFileURL(fileURLToPath(new URL('../src/contracts.js', import.meta.url))).href;
   const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `const c = await import(${JSON.stringify(module)}); console.log(c.catalog.tools.length)`], {
     env: { ...process.env, CONTRACTS_DIR: dir },

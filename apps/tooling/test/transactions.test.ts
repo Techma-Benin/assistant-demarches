@@ -4,7 +4,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test, type TestContext } from 'node:test';
 import { loadConfig } from '../src/config.js';
-import { act, grantMandate, startBackendMock, startToolingApp } from './helpers.js';
+import { act, grantMandate, startBackendMock, startToolingApp, toFields, toolError } from './helpers.js';
 
 interface SlowBackend {
   url: string;
@@ -38,19 +38,20 @@ test('un appel au Backend lent ne bloque pas la base : les autres outils continu
   const backend = await slowBackend(t, await startBackendMock(t));
   const { url } = await startToolingApp(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: backend.url, DATABASE_POOL_MAX: '1' });
   const { body } = await grantMandate(url);
-  const created = await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string });
+  const created = await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: body.id as string });
   const requestId = created.structuredContent!.id as string;
 
   backend.delayMs = 1500;
-  const slow = act(url, 'request.update', { requestId, fields: { displayName: 'Lent' } }, { mandateId: body.id as string });
+  const slow = act(url, 'request.update', { requestId, fields: toFields({ adresseDomicile: 'Lent' }) }, { mandateId: body.id as string });
   await new Promise((resolve) => setTimeout(resolve, 300));
   const started = Date.now();
-  const status = await act(url, 'request.status', { requestId });
+  const status = await act(url, 'case.status', { requestId });
   const elapsed = Date.now() - started;
-  assert.ok(!status.isError);
-  assert.ok(elapsed < 900, `request.status a attendu ${elapsed} ms derrière l'appel lent`);
+  assert.equal(toolError(status).code, 'INVALID_TRANSITION');
+  assert.ok(elapsed < 900, `case.status a attendu ${elapsed} ms derrière l'appel lent`);
   const updated = await slow;
-  assert.equal(updated.structuredContent?.fields && (updated.structuredContent.fields as Record<string, unknown>).displayName, 'Lent');
+  const fields = updated.structuredContent?.fields as { name: string; value: unknown }[];
+  assert.equal(fields?.find((field) => field.name === 'adresseDomicile')?.value, 'Lent');
 });
 
 test('rejeu d’une action déjà faite : réponse enregistrée, sans appel au Backend', async (t) => {
@@ -58,15 +59,15 @@ test('rejeu d’une action déjà faite : réponse enregistrée, sans appel au B
   const { url } = await startToolingApp(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: backend.url });
   const { body } = await grantMandate(url);
   const key = randomUUID();
-  const first = await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string, key });
+  const first = await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: body.id as string, key });
   assert.ok(!first.isError);
   const calls = backend.procedureCalls;
 
   backend.down = true;
-  const replay = await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string, key });
+  const replay = await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: body.id as string, key });
   assert.deepEqual(replay.structuredContent, first.structuredContent);
   assert.equal(backend.procedureCalls, calls);
-  const fresh = await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string });
+  const fresh = await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: body.id as string });
   assert.equal(JSON.parse(fresh.content[0].text).code, 'UPSTREAM_UNAVAILABLE');
 });
 

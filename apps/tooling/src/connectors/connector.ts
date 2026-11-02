@@ -124,6 +124,7 @@ const XROAD_STAGE: Record<CaseStatus, ExternalStage> = {
   awaiting_payment: 'filed',
   received: 'filed',
   in_review: 'in_review',
+  information_requested: 'in_review',
   completed: 'completed',
   rejected: 'rejected',
 };
@@ -137,7 +138,14 @@ export function externalCaseOf(found: XroadCase): ExternalCase {
     ...(stage === 'in_review' && blocked ? { blocker: { detail: blocked.note ?? blocked.label, at: blocked.at ?? found.updatedAt } } : {}),
     payment: { status: found.payment.status, amountFcfa: found.payment.amountFcfa, reference: found.payment.reference },
     ...(stage === 'completed' ? { completedBy: found.completedBy === 'administration' ? ('human' as const) : ('ai' as const), completedAt: found.updatedAt } : {}),
-    documents: found.issuedDocuments.map((document) => ({ id: document.id, name: document.title, mimeType: document.mimeType, issuedAt: document.issuedAt })),
+    documents: (found.documents as { id: string; kind?: string; name?: string; mimeType?: string; createdAt?: string }[])
+      .filter((document) => document.kind === 'issued')
+      .map((document) => ({
+        id: document.id,
+        name: document.name ?? document.id,
+        mimeType: XROAD_MIME_TYPES.has(document.mimeType ?? '') ? document.mimeType as 'application/pdf' | 'image/jpeg' | 'image/png' : 'application/pdf',
+        issuedAt: document.createdAt ?? found.updatedAt,
+      })),
   };
 }
 
@@ -160,13 +168,14 @@ export class XroadConnector implements AdministrationConnector, OnModuleInit {
   }
 
   async submit(input: SubmissionInput): Promise<SubmissionResult> {
-    const documents = input.documents.map(({ documentType, file }) => {
+    const documents: { documentType: string; uploadId: string }[] = [];
+    for (const { documentType, file } of input.documents) {
       if (!XROAD_MIME_TYPES.has(file.mimeType)) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Pièce ${documentType} dans un format refusé par l'administration`);
-      return { documentType, fileId: file.id, mimeType: file.mimeType, sizeBytes: file.sizeBytes };
-    });
+      documents.push({ documentType, uploadId: file.id.startsWith('upl_') ? file.id : file.id.replace(/^fil_/, 'upl_') });
+    }
     const created = await this.xroad.createCase(
       input.userRef,
-      { requestId: input.requestId, procedureId: input.procedure.id, fields: input.fields, documents },
+      { requestId: input.requestId, procedureId: input.procedure.id, channel: 'web', fields: input.fields, documents },
       { traceId: input.traceId },
     );
     return { kind: 'submitted', externalRef: created.id, receipt: { reference: created.reference, receivedAt: created.createdAt }, state: externalCaseOf(created) };

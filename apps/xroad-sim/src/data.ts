@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 
 export type OfficialRole = 'agent' | 'admin' | 'super_admin';
-export type CaseStatus = 'awaiting_payment' | 'received' | 'in_review' | 'completed' | 'rejected';
+export type CaseStatus = 'awaiting_payment' | 'received' | 'in_review' | 'information_requested' | 'completed' | 'rejected';
 export type Actor = 'assistant' | 'applicant' | 'administration';
 export type FieldValue = string | number | boolean | null;
 
@@ -51,11 +51,14 @@ export interface OfficialDetails {
 
 export interface Official {
   id: string;
+  subject: string;
+  email: string;
   displayName: string;
   jobTitle: string;
   administrationId: string | null;
   role: OfficialRole;
   avatarUrl: string | null;
+  active: boolean;
 }
 
 export interface CaseStep {
@@ -86,16 +89,21 @@ export interface Case {
   reference: string;
   simulated: true;
   procedureId: string;
+  title: string;
   administrationId: string;
   requestId: string;
   applicantRef: string;
+  channel: 'web' | 'whatsapp';
   status: CaseStatus;
   fields: Record<string, FieldValue>;
   documents: CaseDocument[];
-  payment: { amountFcfa: number; status: 'not_required' | 'pending' | 'paid'; method: 'mobile_money' | null; reference: string | null; paidAt: string | null };
+  payment: { amountFcfa: number; status: 'not_required' | 'pending' | 'paid'; method?: 'mobile_money' | null; reference: string | null; paidAt: string | null };
   steps: CaseStep[];
   issuedDocuments: IssuedDocument[];
+  informationRequest: { note: string; requestedAt: string; requestedBy: string } | null;
+  claimedBy: string | null;
   completedBy: 'assistant' | 'administration' | null;
+  decisionNote: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -160,7 +168,7 @@ const KNOWN_ADMINISTRATIONS: Record<string, { id: string; shortName: string; con
 
 const slug = (value: string) =>
   value.toLocaleLowerCase('fr').normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^a-z0-9]+/g, '-').slice(0, 63).replace(/^-+|-+$/g, '');
-const shortNameOf = (name: string) => name.replace(/^Ministère\s+(de la |de l['’]|des |du |de )?/i, '').trim() || name;
+const shortNameOf = (name: string) => (name.replace(/^Ministère\s+(de la |de l['’]|des |du |de )?/i, '').trim() || name).slice(0, 50);
 const ministryOf = (service: ImportedService) =>
   service.supervisingMinistry?.name ?? service.competentAuthority?.name ?? service.ownedBy?.name ?? 'Administration non précisée';
 const administrationIdOf = (name: string) => KNOWN_ADMINISTRATIONS[name]?.id ?? slug(name);
@@ -172,7 +180,7 @@ export const ADMINISTRATIONS: Administration[] = [...new Set(SERVICES.map(minist
     return {
       id: administrationIdOf(name),
       name,
-      shortName: known?.shortName ?? shortNameOf(name),
+      shortName: (known?.shortName ?? shortNameOf(name)).slice(0, 50),
       themes,
       connection: known?.connected ? { status: 'connected' as const, since: SEEDED_AT } : { status: 'not_connected' as const, since: null },
     };
@@ -328,24 +336,22 @@ export const CATALOGUE: { procedure: Procedure; rule: InstructionRule | null }[]
 
 const officialId = (n: number) => `off_01JC${String(n).padStart(22, '0')}`;
 
+const seedOfficial = (id: string, displayName: string, jobTitle: string, administrationId: string | null, role: OfficialRole): Official => ({
+  id,
+  subject: id,
+  email: `${id.replace(/_/g, '.')}@simulation.gouv.bj`,
+  displayName,
+  jobTitle,
+  administrationId,
+  role,
+  avatarUrl: null,
+  active: true,
+});
+
 export const OFFICIALS: Official[] = [
-  { id: officialId(1), displayName: 'Super administrateur (simulation)', jobTitle: 'Présidence', administrationId: null, role: 'super_admin', avatarUrl: null },
+  seedOfficial(officialId(1), 'Super administrateur (simulation)', 'Présidence', null, 'super_admin'),
   ...ADMINISTRATIONS.filter((administration) => administration.connection.status === 'connected').flatMap((administration, index) => [
-    {
-      id: officialId(10 + index * 2),
-      displayName: `Responsable ${administration.shortName} (simulation)`,
-      jobTitle: 'Administrateur',
-      administrationId: administration.id,
-      role: 'admin' as const,
-      avatarUrl: null,
-    },
-    {
-      id: officialId(11 + index * 2),
-      displayName: `Agent ${administration.shortName} (simulation)`,
-      jobTitle: 'Agent instructeur',
-      administrationId: administration.id,
-      role: 'agent' as const,
-      avatarUrl: null,
-    },
+    seedOfficial(officialId(10 + index * 2), `Responsable ${administration.shortName} (simulation)`, 'Administrateur', administration.id, 'admin'),
+    seedOfficial(officialId(11 + index * 2), `Agent ${administration.shortName} (simulation)`, 'Agent instructeur', administration.id, 'agent'),
   ]),
 ];

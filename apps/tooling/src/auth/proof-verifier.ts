@@ -23,7 +23,10 @@ export class ProofVerifier {
   }
 
   async verify(challenge: Challenge): Promise<void> {
-    if (!this.config.jwt || !this.jwks) return;
+    if (this.config.authMode === 'mock-tokens') return;
+    if (!this.config.jwt || !this.jwks) {
+      throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', 'Vérification de preuve non configurée');
+    }
     let payload: Record<string, unknown>;
     try {
       ({ payload } = await jwtVerify(challenge.proofToken, this.jwks, {

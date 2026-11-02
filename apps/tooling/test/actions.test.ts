@@ -12,6 +12,8 @@ import {
   startBackendMock,
   startFakeOidc,
   startToolingApp,
+  startXroadSim,
+  toFields,
   toolError,
   uploadFile,
   USER_REF,
@@ -27,7 +29,7 @@ async function setup(t: Parameters<typeof startToolingApp>[0], env: NodeJS.Proce
 
 test('parcours complet : mandat → demande → pièce → lien officiel, puis révocation', async (t) => {
   const { backend, url } = await setup(t);
-  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'demo-procedure' })).code, 'MANDATE_MISSING');
+  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'PS00373' })).code, 'MANDATE_MISSING');
 
   const granted = await grantMandate(url);
   assert.equal(granted.status, 201);
@@ -36,60 +38,56 @@ test('parcours complet : mandat → demande → pièce → lien officiel, puis r
   const options = { mandateId };
 
   const key = randomUUID();
-  const created = await act(url, 'request.create', { procedureId: 'demo-procedure' }, { ...options, key });
+  const created = await act(url, 'request.create', { procedureId: 'PS00373' }, { ...options, key });
   assert.ok(!created.isError, created.content[0].text);
   const request = created.structuredContent!;
   assertSchema('Request', request);
   assert.equal(request.status, 'draft');
-  assert.deepEqual((await act(url, 'request.create', { procedureId: 'demo-procedure' }, { ...options, key })).structuredContent, request);
-  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'other' }, { ...options, key })).code, 'IDEMPOTENCY_CONFLICT');
+  assert.deepEqual((await act(url, 'request.create', { procedureId: 'PS00373' }, { ...options, key })).structuredContent, request);
+  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'PS00000' }, { ...options, key })).code, 'IDEMPOTENCY_CONFLICT');
 
   const requestId = request.id as string;
   assert.equal(toolError(await act(url, 'request.submit', { requestId }, options)).code, 'REQUEST_INCOMPLETE');
-  assert.equal(toolError(await act(url, 'request.update', { requestId, fields: { npi: 'must-not-pass' } }, options)).code, 'INVALID_REQUEST');
-  assert.equal(toolError(await act(url, 'request.update', { requestId, fields: { unknown: 'x' } }, options)).code, 'INVALID_REQUEST');
-  const updated = await act(url, 'request.update', { requestId, fields: { displayName: 'Usager fictif' } }, options);
+  assert.equal(toolError(await act(url, 'request.update', { requestId, fields: toFields({ npi: 'must-not-pass' }) }, options)).code, 'INVALID_REQUEST');
+  assert.equal(toolError(await act(url, 'request.update', { requestId, fields: toFields({ unknown: 'x' }) }, options)).code, 'INVALID_REQUEST');
+  const updated = await act(url, 'request.update', { requestId, fields: toFields({ adresseDomicile: 'Cotonou' }) }, options);
   assert.equal(updated.structuredContent!.status, 'draft');
 
   const fileId = await uploadFile(backend);
   assert.equal(toolError(await act(url, 'documents.attach', { requestId, fileId, documentType: 'unknown-type' }, options)).code, 'INVALID_REQUEST');
-  const attached = await act(url, 'documents.attach', { requestId, fileId, documentType: 'demo-document' }, options);
-  assert.equal(attached.structuredContent!.status, 'ready');
-  assert.deepEqual(attached.structuredContent!.fileIds, [fileId]);
-  const verified = await act(url, 'documents.verify', { requestId, fileId });
-  assert.deepEqual(verified.structuredContent, { fileId, status: 'valid', reasons: [] });
+  const attached = await act(url, 'documents.attach', { requestId, fileId, documentType: 'extrait-acte-naissance' }, options);
+  assert.equal(attached.structuredContent!.status, 'draft');
+  assert.equal((attached.structuredContent!.documents as { fileId: string | null; documentType: string }[]).find((document) => document.fileId === fileId)?.documentType, 'extrait-acte-naissance');
 
-  const submitted = await act(url, 'request.submit', { requestId }, options);
-  assert.equal(submitted.structuredContent!.status, 'awaiting_user_validation');
-  assert.equal(submitted.structuredContent!.officialLink, 'https://example.org/demonstration');
-  assert.equal(toolError(await act(url, 'request.update', { requestId, fields: { displayName: 'Autre' } }, options)).code, 'INVALID_TRANSITION');
+  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'PS00373' }, { ...options, authenticated: false })).code, 'LOGIN_REQUIRED');
+  assert.equal(toolError(await act(url, 'request.submit', { requestId }, options)).code, 'REQUEST_INCOMPLETE');
 
   const revoked = await postInternal(url, `/internal/v1/mandates/${mandateId}/revoke`, undefined);
   assert.equal(revoked.status, 200);
   assert.equal(revoked.body.status, 'revoked');
-  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'demo-procedure' }, options)).code, 'MANDATE_REVOKED');
+  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'PS00373' }, options)).code, 'MANDATE_REVOKED');
 
-  assert.ok(!(await act(url, 'request.status', { requestId })).isError);
-  assert.equal(toolError(await act(url, 'request.status', { requestId }, { conversationId: fakeId('cnv') })).code, 'NOT_FOUND');
-  assert.equal(toolError(await act(url, 'request.status', { requestId }, { userRef: OTHER_USER })).code, 'NOT_FOUND');
+  assert.equal(toolError(await act(url, 'case.status', { requestId })).code, 'INVALID_TRANSITION');
+  assert.equal(toolError(await act(url, 'case.status', { requestId }, { conversationId: fakeId('cnv') })).code, 'NOT_FOUND');
+  assert.equal(toolError(await act(url, 'case.status', { requestId }, { userRef: OTHER_USER })).code, 'NOT_FOUND');
 });
 
 test('mandat : portée, propriétaire, démarche et expiration contrôlés à chaque action', async (t) => {
   const { url, db } = await setup(t);
   const limited = await grantMandate(url, { scopes: ['requests:write'] });
-  const created = await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: limited.body.id as string });
+  const created = await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: limited.body.id as string });
   assert.ok(!created.isError);
   const requestId = created.structuredContent!.id as string;
   assert.equal(toolError(await act(url, 'request.submit', { requestId }, { mandateId: limited.body.id as string })).code, 'MANDATE_SCOPE_DENIED');
 
   const elsewhere = await grantMandate(url, { conversationId: fakeId('cnv') });
-  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: elsewhere.body.id as string })).code, 'MANDATE_SCOPE_DENIED');
+  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: elsewhere.body.id as string })).code, 'MANDATE_SCOPE_DENIED');
   const foreign = await grantMandate(url, { userRef: OTHER_USER });
-  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: foreign.body.id as string })).code, 'MANDATE_MISSING');
+  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: foreign.body.id as string })).code, 'MANDATE_MISSING');
 
   const full = await grantMandate(url);
   await db.transaction('system', (tx) => tx.query("update mandates set expires_at = now() - interval '1 second' where id = $1", [full.body.id]));
-  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: full.body.id as string })).code, 'MANDATE_EXPIRED');
+  assert.equal(toolError(await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: full.body.id as string })).code, 'MANDATE_EXPIRED');
 });
 
 test('contrôle des mandats : identité dédiée, challenge à usage unique, idempotence', async (t) => {
@@ -135,7 +133,7 @@ test('idempotence concurrente : une seule demande créée pour la même clé', a
   const { url, db } = await setup(t);
   const { body } = await grantMandate(url);
   const key = randomUUID();
-  const results = await Promise.all(Array.from({ length: 5 }, () => act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string, key })));
+  const results = await Promise.all(Array.from({ length: 5 }, () => act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: body.id as string, key })));
   const ids = new Set(results.map((result) => result.structuredContent?.id));
   assert.equal(ids.size, 1);
   const rows = await db.transaction('system', (tx) => tx.query('select count(*)::int as n from requests'));
@@ -146,9 +144,9 @@ test('rejeu idempotent : inscrit au journal sans nouvel événement', async (t) 
   const { url, db } = await setup(t);
   const { body } = await grantMandate(url);
   const key = randomUUID();
-  const first = await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string, key });
+  const first = await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: body.id as string, key });
   const outboxBefore = await db.transaction('system', (tx) => tx.query('select seq from outbox'));
-  const again = await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string, key });
+  const again = await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: body.id as string, key });
   assert.equal(again.structuredContent?.id, first.structuredContent?.id);
   const audit = await db.transaction('system', (tx) => tx.query<{ code: string; request_id: string }>("select code, request_id from audit_log where action = 'request.create' order by id"));
   assert.deepEqual(audit.map((row) => row.code), ['OK', 'REPLAY']);
@@ -159,7 +157,7 @@ test('rejeu idempotent : inscrit au journal sans nouvel événement', async (t) 
 test('sécurité au niveau des lignes : une transaction ne voit que les données de son usager', async (t) => {
   const { url, db } = await setup(t);
   const { body } = await grantMandate(url);
-  await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string });
+  await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: body.id as string });
   const own = await db.transaction({ userRef: USER_REF }, (tx) => tx.query('select id from requests'));
   const other = await db.transaction({ userRef: OTHER_USER }, (tx) => tx.query('select id from requests union all select id from mandates'));
   assert.equal(own.length, 1);
@@ -175,8 +173,8 @@ test('sécurité au niveau des lignes : une transaction ne voit que les données
 test('journal en ajout seul et événements C4 conformes écrits avec chaque effet', async (t) => {
   const { url, db } = await setup(t);
   const { body } = await grantMandate(url);
-  const created = await act(url, 'request.create', { procedureId: 'demo-procedure' }, { mandateId: body.id as string });
-  await act(url, 'request.update', { requestId: created.structuredContent!.id, fields: { npi: '123' } }, { mandateId: body.id as string });
+  const created = await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId: body.id as string });
+  await act(url, 'request.update', { requestId: created.structuredContent!.id, fields: toFields({ npi: '123' }) }, { mandateId: body.id as string });
 
   const audit = await db.transaction('system', (tx) => tx.query<Record<string, unknown>>('select actor, action, outcome, code, request_id from audit_log order by id'));
   assert.deepEqual(
@@ -196,7 +194,36 @@ test('journal en ajout seul et événements C4 conformes écrits avec chaque eff
   events.forEach(({ event }) => assertSchema('Event', event));
   assert.deepEqual(
     events.map(({ event }) => event.type),
-    ['bj.techma.request.created.v1', 'bj.techma.tool.called.v1', 'bj.techma.tool.called.v1'],
+    ['bj.techma.tool.called.v2', 'bj.techma.tool.called.v2'],
   );
-  assert.equal(events[2].event.data.outcome, 'error');
+  assert.equal(events[1].event.data.outcome, 'error');
+});
+
+test('dépôt X-Road : request.submit publie case.updated et passe en submitted', async (t) => {
+  const backend = await startBackendMock(t);
+  const sim = await startXroadSim(t);
+  const { url, db } = await startToolingApp(t, {
+    AUTH_MODE: 'mock-tokens',
+    BACKEND_URL: backend,
+    XROAD_URL: sim.url,
+    CONNECTORS: 'xroad',
+    CONNECTOR_WORKER: 'off',
+  });
+  const { body } = await grantMandate(url, { procedureId: 'PS00373' });
+  const mandateId = body.id as string;
+  const created = await act(url, 'request.create', { procedureId: 'PS00373' }, { mandateId });
+  assert.ok(!created.isError, created.content[0].text);
+  const requestId = created.structuredContent!.id as string;
+  await act(url, 'request.update', { requestId, fields: toFields({ adresseDomicile: 'Cotonou', profession: 'Comptable', nombreEnfantsACharge: 2, situationMatrimoniale: 'Marié' }) }, { mandateId });
+  await act(url, 'documents.attach', { requestId, fileId: await uploadFile(backend), documentType: 'extrait-acte-naissance' }, { mandateId });
+  const submitted = await act(url, 'request.submit', { requestId }, { mandateId });
+  assert.ok(!submitted.isError, submitted.content[0].text);
+  const payload = submitted.structuredContent as { request?: { status: string; caseId: string | null }; case?: { id: string } };
+  assert.equal(payload.request?.status, 'submitted');
+  assert.ok(payload.case?.id);
+  const events = await db.transaction('system', (tx) =>
+    tx.query<{ type: string }>('select event->>\'type\' as type from outbox order by seq'),
+  );
+  assert.ok(events.some((row) => row.type === 'bj.techma.case.updated.v2'));
+  assert.equal(events.filter((row) => row.type.includes('request.created') || row.type.includes('request.status_changed')).length, 0);
 });

@@ -6,20 +6,28 @@ import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
 import { domainValidator, errorsText } from '../contracts.js';
 import type { Procedure } from '../resources/backend-resources.client.js';
 
-export type CaseStatus = 'awaiting_payment' | 'received' | 'in_review' | 'completed' | 'rejected';
+export type CaseStatus = 'awaiting_payment' | 'received' | 'in_review' | 'information_requested' | 'completed' | 'rejected';
 
 /** The fields of a C5 case the Tooling relies on; the full shape is checked against the contract. */
 export interface XroadCase {
   id: string;
   reference: string;
   simulated: true;
+  procedureId: string;
+  title: string;
   administrationId: string;
+  applicantRef: string;
   requestId: string;
+  channel: 'web' | 'whatsapp';
   status: CaseStatus;
-  payment: { amountFcfa: number; status: 'not_required' | 'pending' | 'paid'; method: 'mobile_money' | null; reference: string | null; paidAt: string | null };
+  fields: Record<string, string | number | boolean | null>;
+  documents: unknown[];
+  payment: { amountFcfa: number; status: 'not_required' | 'pending' | 'paid'; reference: string | null; paidAt: string | null; simulated: true };
   steps: { id: string; label: string; state: 'done' | 'blocked' | 'pending'; actor: 'assistant' | 'applicant' | 'administration'; note: string | null; at: string | null }[];
-  issuedDocuments: { id: string; title: string; mimeType: 'application/pdf' | 'image/png' | 'image/jpeg'; issuedAt: string }[];
+  informationRequest: unknown;
+  claimedBy: string | null;
   completedBy: 'assistant' | 'administration' | null;
+  decisionNote: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -36,8 +44,9 @@ const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 export interface CaseInput {
   requestId: string;
   procedureId: string;
+  channel: 'web' | 'whatsapp';
   fields: Record<string, string | number | boolean | null>;
-  documents: { documentType: string; fileId: string; mimeType: string; sizeBytes: number }[];
+  documents: { documentType: string; uploadId: string }[];
 }
 
 interface Call {
@@ -47,6 +56,8 @@ interface Call {
   applicantRef?: string;
   actorRef?: string;
   body?: unknown;
+  bytes?: Buffer;
+  mimeType?: string;
   idempotencyKey?: string;
   notFound?: string;
   binary?: boolean;
@@ -55,6 +66,7 @@ interface Call {
 const procedurePage = domainValidator('ProcedurePage');
 const procedure = domainValidator('Procedure');
 const caseSchema = domainValidator('Case');
+const uploadSchema = domainValidator('Upload');
 
 /** Client of the simulated X-Road (contract C5), under the `tooling-xroad` identity, always for one applicant. */
 @Injectable()
@@ -77,6 +89,20 @@ export class XroadClient {
     if (!procedure(found)) throw this.nonConforming(`fiche (${errorsText(procedure)})`);
     if ((found as Procedure).id !== procedureId) throw this.nonConforming('fiche demandée');
     return found as Procedure;
+  }
+
+  async upload(applicantRef: string, bytes: Buffer, mimeType: string, trace: Pick<TraceContext, 'traceId'>, idempotencyKey: string): Promise<string> {
+    const uploaded = await this.call({
+      method: 'POST',
+      path: 'v1/uploads',
+      trace,
+      applicantRef,
+      bytes,
+      mimeType,
+      idempotencyKey,
+    });
+    if (!uploadSchema(uploaded) || typeof (uploaded as { id?: unknown }).id !== 'string') throw this.nonConforming(`téléversement (${errorsText(uploadSchema)})`);
+    return (uploaded as { id: string }).id;
   }
 
   async createCase(applicantRef: string, input: CaseInput, trace: Pick<TraceContext, 'traceId'>): Promise<XroadCase> {
@@ -116,6 +142,25 @@ export class XroadClient {
     return this.checkCase(decided, requestId);
   }
 
+  async respond(
+    applicantRef: string,
+    caseId: string,
+    requestId: string,
+    input: { message: string; fields: Record<string, string | number | boolean | null>; documents: { documentType: string; fileId: string }[] },
+    trace: Pick<TraceContext, 'traceId'>,
+  ): Promise<XroadCase> {
+    const updated = await this.call({
+      method: 'POST',
+      path: `v1/cases/${encodeURIComponent(caseId)}/responses`,
+      trace,
+      applicantRef,
+      body: input,
+      idempotencyKey: `respond-${requestId}`,
+      notFound: 'Dossier inconnu',
+    });
+    return this.checkCase(updated, requestId);
+  }
+
   async issuedDocument(applicantRef: string, caseId: string, documentId: string, trace: Pick<TraceContext, 'traceId'>): Promise<Buffer> {
     const bytes = await this.call({
       method: 'GET',
@@ -134,7 +179,7 @@ export class XroadClient {
     return value as XroadCase;
   }
 
-  private async call({ method, path, trace, applicantRef, actorRef, body, idempotencyKey, notFound = 'Ressource inconnue', binary = false }: Call): Promise<unknown> {
+  private async call({ method, path, trace, applicantRef, actorRef, body, bytes, mimeType, idempotencyKey, notFound = 'Ressource inconnue', binary = false }: Call): Promise<unknown> {
     if (!this.config.xroadUrl) throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', 'X-Road non configuré');
     const url = new URL(path, this.config.xroadUrl.href.replace(/\/?$/, '/'));
     let res: Response;
@@ -147,12 +192,12 @@ export class XroadClient {
           Accept: binary ? 'application/pdf, image/png, image/jpeg' : 'application/json',
           ...(applicantRef ? { 'X-Applicant-Ref': applicantRef } : {}),
           ...(actorRef ? { 'X-Actor-Ref': actorRef } : {}),
-          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          ...(bytes ? { 'Content-Type': 'application/octet-stream', 'X-File-Mime-Type': mimeType ?? 'application/pdf' } : body === undefined ? {} : { 'Content-Type': 'application/json' }),
           ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: bytes ? new Uint8Array(bytes) : body === undefined ? undefined : JSON.stringify(body),
         redirect: 'error',
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(15000),
       });
     } catch (error) {
       if (error instanceof ProblemError) throw error;

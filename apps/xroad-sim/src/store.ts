@@ -38,18 +38,22 @@ export type CaseView = 'pending' | 'completed' | 'all';
 export interface CaseInput {
   requestId: string;
   procedureId: string;
+  channel?: 'web' | 'whatsapp';
   fields: Record<string, FieldValue>;
   documents: CaseDocument[];
 }
 
 export interface Metrics {
   administrationId: string | null;
-  casesTotal: number;
-  casesPending: number;
-  casesCompleted: number;
-  casesCompletedByAssistant: number;
-  casesRejected: number;
+  period: { from: string; to: string };
+  received: number;
+  pending: number;
+  informationRequested: number;
+  completed: number;
+  completedByAssistant: number;
+  rejected: number;
   medianProcessingHours: number | null;
+  byChannel: { channel: 'web' | 'whatsapp'; count: number }[];
   topProcedures: { procedureId: string; title: string; count: number }[];
 }
 
@@ -68,6 +72,7 @@ export class XroadStore {
   private readonly sequences = new Map<string, number>();
   private readonly forms = new Map<string, ValidateFunction>();
   private readonly replies = new Map<string, StoredReply>();
+  private readonly uploads = new Map<string, { id: string; applicantRef: string; mimeType: CaseDocument['mimeType']; sizeBytes: number; expiresAt: string }>();
   private readonly now: () => number;
   private readonly stateFile?: string;
 
@@ -90,6 +95,29 @@ export class XroadStore {
     this.replies.set(scope, stored);
     if (this.replies.size > MAX_REPLIES) this.replies.delete(this.replies.keys().next().value as string);
     this.save();
+  }
+
+  saveUpload(applicantRef: string, mimeType: CaseDocument['mimeType'], bytes: Buffer) {
+    const id = newId('upl', this.now());
+    const upload = {
+      id,
+      applicantRef,
+      mimeType,
+      sizeBytes: bytes.length,
+      expiresAt: new Date(this.now() + HOUR).toISOString(),
+    };
+    this.uploads.set(id, upload);
+    return { id, mimeType, sizeBytes: upload.sizeBytes, expiresAt: upload.expiresAt };
+  }
+
+  consumeUpload(applicantRef: string, uploadId: string): Pick<CaseDocument, 'fileId' | 'mimeType' | 'sizeBytes'> {
+    const found = this.uploads.get(uploadId);
+    if (found) {
+      if (found.applicantRef !== applicantRef) throw invalid('Pièce inconnue');
+      if (Date.parse(found.expiresAt) <= this.now()) throw invalid('Pièce expirée');
+      return { fileId: found.id, mimeType: found.mimeType, sizeBytes: found.sizeBytes };
+    }
+    return { fileId: uploadId || newId('doc'), mimeType: 'application/pdf', sizeBytes: 1024 };
   }
 
   listAdministrations(): Administration[] {
@@ -135,6 +163,12 @@ export class XroadStore {
     return official;
   }
 
+  officialBySubject(subject: string): Official {
+    const found = [...this.officials.values()].find((official) => official.subject === subject || official.id === subject);
+    if (!found || !found.active) throw forbidden('Agent inconnu de la simulation');
+    return found;
+  }
+
   createCase(applicantRef: string, input: CaseInput): Case {
     const entry = this.catalogue.get(input.procedureId);
     if (!entry) throw notFound('Démarche inconnue');
@@ -147,7 +181,13 @@ export class XroadStore {
 
     const form = this.formValidator(procedure);
     if (!form(input.fields)) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Formulaire incomplet : ${ajv.errorsText(form.errors, { dataVar: 'champs' })}`);
-    const provided = new Set(input.documents.map((document) => document.documentType));
+    const documents = input.documents.map((document) => ({
+      documentType: document.documentType,
+      fileId: document.fileId || newId('doc'),
+      mimeType: document.mimeType ?? 'application/pdf',
+      sizeBytes: document.sizeBytes ?? 1024,
+    }));
+    const provided = new Set(documents.map((document) => document.documentType));
     const missing = procedure.requiredDocuments.filter((type) => !provided.has(type));
     if (missing.length) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Pièces manquantes : ${missing.join(', ')}`);
 
@@ -158,12 +198,14 @@ export class XroadStore {
       reference: this.nextReference(rule.code),
       simulated: true,
       procedureId: procedure.id,
+      title: procedure.title,
       administrationId: procedure.administrationId,
       requestId: input.requestId,
       applicantRef,
+      channel: input.channel ?? 'web',
       status: fee ? 'awaiting_payment' : 'received',
       fields: { ...input.fields },
-      documents: input.documents.map((document) => ({ ...document })),
+      documents,
       payment: { amountFcfa: procedure.feeFcfa ?? 0, status: fee ? 'pending' : 'not_required', method: null, reference: null, paidAt: null },
       steps: [
         step('form', "Formulaire complété avec l'assistant", 'done', 'assistant', at),
@@ -171,7 +213,10 @@ export class XroadStore {
         ...(fee ? [step('payment', `Frais de ${procedure.feeFcfa} FCFA à régler`, 'pending', 'applicant', null)] : []),
       ],
       issuedDocuments: [],
+      informationRequest: null,
+      claimedBy: null,
       completedBy: null,
+      decisionNote: null,
       createdAt: at,
       updatedAt: at,
     };
@@ -204,7 +249,16 @@ export class XroadStore {
   decide(decider: Decider, caseId: string, decision: 'approve' | 'reject', note: string | null): Case {
     const record = decider.kind === 'official' ? this.getCase(decider, caseId) : this.cases.get(caseId);
     if (!record) throw notFound('Dossier inconnu');
-    if (record.status !== 'in_review') throw new ProblemError(409, 'INVALID_TRANSITION', "Ce dossier n'attend pas de décision");
+    if (decision === 'approve' && record.status !== 'in_review') {
+      throw new ProblemError(409, 'INVALID_TRANSITION', "Ce dossier n'attend pas de décision");
+    }
+    if (
+      decision === 'reject' &&
+      record.status !== 'in_review' &&
+      record.status !== 'information_requested'
+    ) {
+      throw new ProblemError(409, 'INVALID_TRANSITION', "Ce dossier n'attend pas de décision");
+    }
     const at = this.iso();
     const verifier = decider.kind === 'official' ? decider.official.displayName : "un agent du ministère, depuis la console d'administration";
     if (decision === 'approve') {
@@ -267,6 +321,101 @@ export class XroadStore {
     return target;
   }
 
+  createOfficial(viewer: Official, input: { subject: string; email: string; displayName: string; jobTitle: string; administrationId: string | null; role: OfficialRole }): Official {
+    if (viewer.role === 'agent') throw forbidden('Création d’agent refusée');
+    if (viewer.role === 'admin' && input.administrationId !== viewer.administrationId) throw forbidden('Administration hors de votre périmètre');
+    if ((input.role === 'super_admin') !== (input.administrationId === null)) throw invalid('Un super administrateur n’a pas d’administration');
+    if ([...this.officials.values()].some((official) => official.subject === input.subject || official.email === input.email)) {
+      throw new ProblemError(409, 'CONFLICT', 'Compte déjà existant');
+    }
+    const official: Official = {
+      id: newId('off'),
+      subject: input.subject,
+      email: input.email,
+      displayName: input.displayName,
+      jobTitle: input.jobTitle,
+      administrationId: input.administrationId,
+      role: input.role,
+      avatarUrl: null,
+      active: true,
+    };
+    this.officials.set(official.id, official);
+    this.save();
+    return official;
+  }
+
+  updateOfficial(viewer: Official, officialId: string, input: { administrationId: string | null; role: OfficialRole; active: boolean }): Official {
+    if (viewer.role === 'agent') throw forbidden('Modification d’agent refusée');
+    const target = this.officials.get(officialId);
+    if (!target) throw notFound('Agent inconnu');
+    if (viewer.role === 'admin' && target.administrationId !== viewer.administrationId) throw forbidden('Administration hors de votre périmètre');
+    this.assign(viewer.role === 'super_admin' ? viewer : { ...viewer, role: 'super_admin' }, officialId, input.administrationId, input.role);
+    Object.assign(target, { active: input.active });
+    this.save();
+    return target;
+  }
+
+  updateMe(official: Official, input: { displayName: string; jobTitle: string }): Official {
+    Object.assign(official, input);
+    this.save();
+    return official;
+  }
+
+  setAvatar(official: Official, avatarUrl: string): Official {
+    Object.assign(official, { avatarUrl });
+    this.save();
+    return official;
+  }
+
+  actOnCase(official: Official, caseId: string, action: 'claim' | 'request_information' | 'approve' | 'reject', note: string | null): Case {
+    const record = this.getCase({ kind: 'official', official }, caseId);
+    const at = this.iso();
+    if (action === 'claim') {
+      if (record.status !== 'received' && record.status !== 'in_review') {
+        throw new ProblemError(409, 'INVALID_TRANSITION', 'Ce dossier ne peut pas être pris en charge');
+      }
+      if (record.claimedBy && record.claimedBy !== official.id) throw new ProblemError(409, 'CONFLICT', 'Dossier déjà pris en charge');
+      record.claimedBy = official.id;
+      record.status = 'in_review';
+    } else if (action === 'request_information') {
+      if (record.status !== 'in_review') throw new ProblemError(409, 'INVALID_TRANSITION', "Ce dossier n'est pas en instruction");
+      if (!note) throw invalid('Note obligatoire');
+      record.informationRequest = { note, requestedAt: at, requestedBy: official.id };
+      record.status = 'information_requested';
+    } else if (action === 'approve' || action === 'reject') {
+      return this.decide({ kind: 'official', official }, caseId, action, note);
+    }
+    record.updatedAt = at;
+    this.save();
+    return record;
+  }
+
+  listApplicantCases(applicantRef: string): Case[] {
+    return [...this.cases.values()].filter((record) => record.applicantRef === applicantRef).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  activity(official: Official, administrationId: string | undefined): { id: string; caseId: string; caseReference: string; administrationId: string; actor: 'assistant' | 'applicant' | 'administration'; officialId: string | null; action: string; note: string | null; at: string }[] {
+    const cases = this.listCases(official, administrationId, 'all');
+    const entries = [];
+    for (const record of cases) {
+      for (const [index, step] of record.steps.entries()) {
+        if (!step.at) continue;
+        entries.push({
+          id: newId('act', Date.parse(step.at) + index),
+          caseId: record.id,
+          caseReference: record.reference,
+          administrationId: record.administrationId,
+          actor: step.actor,
+          officialId: step.actor === 'administration' ? record.claimedBy : null,
+          action: step.id === 'payment' ? 'case.paid' : step.id === 'issue' ? 'document.issued' : step.id === 'decision' ? (record.status === 'rejected' ? 'case.rejected' : 'case.approved') : 'step.completed',
+          note: step.note,
+          at: step.at,
+        });
+      }
+    }
+    return entries.sort((a, b) => b.at.localeCompare(a.at));
+  }
+
   metrics(official: Official, administrationId: string | undefined): Metrics {
     const scope = this.scopeOf(official, administrationId);
     const cases = [...this.cases.values()].filter((record) => scope === null || record.administrationId === scope);
@@ -274,14 +423,21 @@ export class XroadStore {
     const durations = closed.map((record) => (Date.parse(record.updatedAt) - Date.parse(record.createdAt)) / HOUR).sort((a, b) => a - b);
     const counts = new Map<string, number>();
     for (const record of cases) counts.set(record.procedureId, (counts.get(record.procedureId) ?? 0) + 1);
+    const now = new Date(this.now()).toISOString();
     return {
       administrationId: scope,
-      casesTotal: cases.length,
-      casesPending: cases.filter((record) => record.status === 'in_review').length,
-      casesCompleted: cases.filter((record) => record.status === 'completed').length,
-      casesCompletedByAssistant: cases.filter((record) => record.completedBy === 'assistant').length,
-      casesRejected: cases.filter((record) => record.status === 'rejected').length,
+      period: { from: cases.at(0)?.createdAt ?? now, to: now },
+      received: cases.length,
+      pending: cases.filter((record) => record.status === 'in_review').length,
+      informationRequested: cases.filter((record) => record.status === 'information_requested').length,
+      completed: cases.filter((record) => record.status === 'completed').length,
+      completedByAssistant: cases.filter((record) => record.completedBy === 'assistant').length,
+      rejected: cases.filter((record) => record.status === 'rejected').length,
       medianProcessingHours: durations.length ? Math.round(median(durations) * 10) / 10 : null,
+      byChannel: [
+        { channel: 'web' as const, count: cases.filter((record) => record.channel === 'web').length },
+        { channel: 'whatsapp' as const, count: cases.filter((record) => record.channel === 'whatsapp').length },
+      ].filter((entry) => entry.count > 0),
       topProcedures: [...counts.entries()]
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .slice(0, 5)
@@ -429,9 +585,11 @@ export class XroadStore {
       reference,
       simulated: true,
       procedureId: procedure.id,
+      title: procedure.title,
       administrationId: procedure.administrationId,
       requestId: newId('cas', createdAtMs).replace('cas_', 'req_'),
       applicantRef: newId('cas', createdAtMs).replace('cas_', 'usr_'),
+      channel: 'web',
       status: outcome === 'pending' ? 'in_review' : outcome === 'rejected' ? 'rejected' : 'completed',
       fields: sampleFields(procedure.formSchema),
       documents: procedure.requiredDocuments.map((documentType) => ({
@@ -445,7 +603,10 @@ export class XroadStore {
         : { amountFcfa: 0, status: 'not_required', method: null, reference: null, paidAt: null },
       steps,
       issuedDocuments,
+      informationRequest: null,
+      claimedBy: null,
       completedBy: outcome === 'assistant' ? 'assistant' : outcome === 'administration' ? 'administration' : null,
+      decisionNote: outcome === 'rejected' ? 'Dossier rejeté' : outcome === 'administration' ? 'Dossier approuvé' : null,
       createdAt,
       updatedAt: outcome === 'pending' ? createdAt : closedAt,
     };

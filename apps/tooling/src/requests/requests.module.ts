@@ -11,13 +11,41 @@ import { ResourcesModule } from '../resources/resources.module.js';
 import { FormSchemas } from './form-schemas.js';
 import { RequestWorkflow } from './request-workflow.js';
 import { XroadClient, type XroadCase } from '../xroad/xroad.client.js';
-import { RequestsRepository, toContract, type Fields, type RequestRecord, type RequestStatus } from './requests.repository.js';
+import { RequestsRepository, toContract, type RequestField, type RequestRecord, type RequestStatus } from './requests.repository.js';
 
 const EDITABLE: ReadonlySet<RequestStatus> = new Set(['draft', 'ready']);
 
 interface Loaded {
   request: RequestRecord;
   procedure: Procedure;
+}
+
+interface Filing {
+  formSchema: Record<string, unknown>;
+  requiredDocuments: { documentType: string; label: string; acceptedMimeTypes?: string[] }[];
+}
+
+function filingOf(procedure: Procedure): Filing {
+  const filing = procedure.filing as Filing | null | undefined;
+  if (filing?.formSchema && Array.isArray(filing.requiredDocuments)) return filing;
+  const types = Array.isArray(procedure.requiredDocuments) ? (procedure.requiredDocuments as string[]) : [];
+  return {
+    formSchema: (procedure.formSchema as Record<string, unknown>) ?? { type: 'object', properties: {}, required: [] },
+    requiredDocuments: types.map((documentType) => ({ documentType, label: documentType })),
+  };
+}
+
+function fieldLabel(procedure: Procedure, name: string): string {
+  const properties = (filingOf(procedure).formSchema as { properties?: Record<string, { title?: string }> }).properties ?? {};
+  return properties[name]?.title ?? name;
+}
+
+function emptyDocuments(procedure: Procedure) {
+  return filingOf(procedure).requiredDocuments.map((document) => ({
+    documentType: document.documentType,
+    label: document.label,
+    fileId: null as string | null,
+  }));
 }
 
 @Injectable()
@@ -43,7 +71,7 @@ class RequestTools implements OnModuleInit {
     const update: ToolHandler<Loaded> = {
       name: 'request.update',
       prepare: (args, call) => this.load(args.requestId as string, call),
-      run: (args, call) => this.update(args.requestId as string, args.fields as Fields, call),
+      run: (args, call) => this.update(args.requestId as string, args.fields as { name: string; value: string | number | boolean | null; source: 'answer' | 'document' }[], call),
     };
     const attach: ToolHandler<Loaded & { file: FileMetadata }> = {
       name: 'documents.attach',
@@ -58,7 +86,9 @@ class RequestTools implements OnModuleInit {
       prepare: async (args, call) => {
         const loaded = await this.load(args.requestId as string, call);
         const files = new Map<string, FileMetadata>();
-        for (const { fileId } of loaded.request.documents) files.set(fileId, await this.resources.getFile(fileId, call.context.userRef, call.trace));
+        for (const { fileId } of loaded.request.documents) {
+          if (fileId) files.set(fileId, await this.resources.getFile(fileId, call.context.userRef, call.trace));
+        }
         return { ...loaded, files };
       },
       run: (args, call) => this.submit(args.requestId as string, call),
@@ -73,33 +103,34 @@ class RequestTools implements OnModuleInit {
         const before = await this.workflow.load(call.tx, request.id, true);
         if (canonicalJson(before.external_state) !== canonicalJson(state)) {
           await this.requests.recordExternal(call.tx, request.id, state);
-          await this.workflow.restate(call.tx, request.id, call.trace.traceId, 'request.paid');
         }
-        return {
-          requestId: request.id,
-          caseReference: paid.reference,
-          simulated: true,
-          amountFcfa: paid.payment.amountFcfa,
-          status: paid.payment.status === 'paid' ? 'paid' : 'not_required',
-          paymentReference: paid.payment.reference,
-          paidAt: paid.payment.paidAt,
-        };
+        call.emit({ kind: 'case.updated', conversationId: request.conversationId, case: paid });
+        return paid;
       },
     };
-    const verify: ToolHandler<{ fileId: string; file: FileMetadata }> = {
-      name: 'documents.verify',
-      prepare: async (args, call) => {
-        const request = await call.read((tx) => this.requests.findOwned(tx, args.requestId as string, call.context));
-        if (!request.documents.some((document) => document.fileId === args.fileId)) throw new ProblemError(404, 'NOT_FOUND', 'Pièce non attachée à cette demande');
-        return { fileId: args.fileId as string, file: await this.resources.getFile(args.fileId as string, call.context.userRef, call.trace) };
+    const caseStatus: ToolHandler = {
+      name: 'case.status',
+      run: async (args, call) => {
+        const request = await this.requests.findOwned(call.tx, args.requestId as string, call.context);
+        if (!request.caseId) throw new ProblemError(409, 'INVALID_TRANSITION', 'Demande non déposée');
+        return this.xroad.getCase(call.context.userRef, request.caseId, request.id, call.trace);
       },
-      run: async (_args, call) => this.verify(call.prepared.fileId, call.prepared.file),
     };
-    const status: ToolHandler = {
-      name: 'request.status',
-      run: async (args, call) => toContract(await this.requests.findOwned(call.tx, args.requestId as string, call.context)),
+    const respond: ToolHandler<Loaded> = {
+      name: 'case.respond',
+      prepare: (args, call) => this.load(args.requestId as string, call),
+      run: async (args, call) => {
+        await call.requireMandate(call.prepared.request.procedureId);
+        const request = call.prepared.request;
+        if (!request.caseId) throw new ProblemError(409, 'INVALID_TRANSITION', 'Demande non déposée');
+        return this.xroad.respond(call.context.userRef, request.caseId, request.id, {
+          message: args.message as string,
+          fields: (args.fields ?? {}) as Record<string, string | number | boolean | null>,
+          documents: ((args.fileIds as { documentType: string; fileId: string }[]) ?? []).map((item) => ({ documentType: item.documentType, fileId: item.fileId })),
+        }, call.trace);
+      },
     };
-    this.registry.register(create, update, attach, submit, pay, verify, status);
+    this.registry.register(create, update, attach, submit, pay, caseStatus, respond);
   }
 
   private async load(requestId: string, call: PreparationContext): Promise<Loaded> {
@@ -110,75 +141,99 @@ class RequestTools implements OnModuleInit {
   private async create(call: ToolInvocation<Procedure>) {
     const procedure = call.prepared;
     await call.requireMandate(procedure.id);
+    const filing = filingOf(procedure);
     const request = await this.requests.insert(call.tx, {
       id: newId('req'),
       conversationId: call.context.conversationId,
       userRef: call.context.userRef,
       procedureId: procedure.id,
       status: 'draft',
-      fields: {},
-      documents: [],
-      officialLink: null,
-    }, { administrationId: procedure.administrationId as string, title: String(procedure.title).slice(0, 200), processingDays: (procedure.processingDays as number | null) ?? null });
-    const output = toContract(request);
-    if (this.workflow.snapshots) await this.workflow.publish(call.tx, request.id, call.trace.traceId, 'request.created');
-    else call.emit({ kind: 'request.created', request: output });
-    return output;
+      fields: [],
+      documents: emptyDocuments(procedure),
+      missing: this.missingOf(procedure, [], emptyDocuments(procedure)),
+    }, { administrationId: String(procedure.administrationId), title: String(procedure.title).slice(0, 200), processingDays: (filing as { processingDays?: number | null }).processingDays ?? (procedure.processingDays as number | null) ?? null });
+    return toContract(this.withMissing(request, procedure));
   }
 
-  private async update(requestId: string, fields: Fields, call: ToolInvocation<Loaded>) {
+  private async update(requestId: string, fields: { name: string; value: string | number | boolean | null; source: 'answer' | 'document' }[], call: ToolInvocation<Loaded>) {
     const { procedure } = call.prepared;
     const request = await this.editable(requestId, call);
-    const forbidden = this.forms.forbiddenField(fields);
+    const incoming = Object.fromEntries(fields.map((field) => [field.name, field.value]));
+    const forbidden = this.forms.forbiddenField(incoming);
     if (forbidden) throw new ProblemError(400, 'INVALID_REQUEST', `Champ interdit : ${forbidden}`);
-    const merged = { ...request.fields, ...fields };
-    const form = this.forms.for(procedure);
-    if (!form.partial(merged)) throw new ProblemError(400, 'INVALID_REQUEST', 'Champ inconnu ou invalide pour cette démarche');
-    return this.save(request, { ...request, fields: merged, status: this.statusOf(procedure, merged, request) }, call);
+    const mergedMap = new Map(request.fields.map((field) => [field.name, field]));
+    for (const field of fields) {
+      mergedMap.set(field.name, { name: field.name, label: fieldLabel(procedure, field.name), value: field.value, source: field.source });
+    }
+    const merged = [...mergedMap.values()];
+    const values = Object.fromEntries(merged.map((field) => [field.name, field.value]));
+    if (!this.forms.for(procedure).partial(values)) throw new ProblemError(400, 'INVALID_REQUEST', 'Champ inconnu ou invalide pour cette démarche');
+    return this.save(request, { ...request, fields: merged, status: this.statusOf(procedure, merged, request.documents) }, call, procedure);
   }
 
   private async attach(requestId: string, fileId: string, documentType: string, call: ToolInvocation<Loaded & { file: FileMetadata }>) {
     const { procedure, file } = call.prepared;
     const request = await this.editable(requestId, call);
-    if (!procedure.requiredDocuments.includes(documentType)) throw new ProblemError(400, 'INVALID_REQUEST', 'Type de pièce inconnu pour cette démarche');
+    const spec = filingOf(procedure).requiredDocuments.find((document) => document.documentType === documentType);
+    if (!spec) throw new ProblemError(400, 'INVALID_REQUEST', 'Type de pièce inconnu pour cette démarche');
     const problem = this.fileProblems(file)[0];
     if (problem) throw new ProblemError(400, 'INVALID_REQUEST', problem);
-    const documents = [...request.documents.filter((document) => document.documentType !== documentType), { documentType, fileId }];
+    const documents = [...request.documents.filter((document) => document.documentType !== documentType), { documentType, label: spec.label, fileId }];
     const next = { ...request, documents };
-    return this.save(request, { ...next, status: this.statusOf(procedure, request.fields, next) }, call);
+    return this.save(request, { ...next, status: this.statusOf(procedure, request.fields, next.documents) }, call, procedure);
   }
 
   private async submit(requestId: string, call: ToolInvocation<Loaded & { files: Map<string, FileMetadata> }>) {
     const { procedure, files } = call.prepared;
     const request = await this.editable(requestId, call);
-    if (this.statusOf(procedure, request.fields, request) !== 'ready') throw new ProblemError(409, 'REQUEST_INCOMPLETE', 'Champs ou pièces manquants');
+    const missing = this.missingOf(procedure, request.fields, request.documents);
+    if (missing.length) throw new ProblemError(409, 'REQUEST_INCOMPLETE', 'Champs ou pièces manquants');
+    const channel = call.context.channel;
+    if (channel !== 'web' && channel !== 'whatsapp') throw new ProblemError(400, 'INVALID_REQUEST', 'X-Channel web ou whatsapp requis pour le dépôt');
     for (const document of request.documents) {
+      if (!document.fileId) continue;
       const file = files.get(document.fileId);
       if (!file) throw new ProblemError(409, 'INVALID_TRANSITION', 'Demande modifiée pendant la préparation ; réessayer');
       if (this.fileProblems(file).length) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Pièce ${document.documentType} à remplacer`);
     }
-    const output = await this.save(request, { ...request, status: 'awaiting_user_validation', officialLink: procedure.source.url }, call);
-    const connector = this.connectors.forProcedure(procedure);
-    if (connector) await this.requests.queueSubmission(call.tx, request.id, connector.id, call.context.mandateId as string);
-    return output;
+    const documents: { documentType: string; uploadId: string }[] = [];
+    for (const document of request.documents) {
+      if (!document.fileId) continue;
+      const file = files.get(document.fileId);
+      if (!file) throw new ProblemError(409, 'INVALID_TRANSITION', 'Demande modifiée pendant la préparation ; réessayer');
+      const bytes = await this.resources.getFileContent(document.fileId, call.context.userRef, call.trace);
+      documents.push({
+        documentType: document.documentType,
+        uploadId: await this.xroad.upload(call.context.userRef, bytes, file.mimeType, call.trace, `upload-${request.id}-${document.documentType}`),
+      });
+    }
+    const created = await this.xroad.createCase(
+      call.context.userRef,
+      {
+        requestId: request.id,
+        procedureId: request.procedureId,
+        channel,
+        fields: Object.fromEntries(request.fields.map((field) => [field.name, field.value])),
+        documents,
+      },
+      call.trace,
+    );
+    const saved = await this.requests.update(call.tx, { ...request, status: 'submitted', caseId: created.id, missing: [] });
+    await this.requests.recordExternal(call.tx, saved.id, created);
+    call.emit({ kind: 'case.updated', conversationId: saved.conversationId, case: created });
+    return { request: toContract(saved), case: created };
   }
 
-  /**
-   * Pays the fees of a case already filed with the simulated X-Road. Money moves here, outside the
-   * database transaction, so the mandate is checked first; it is checked again when the call is recorded.
-   * The X-Road payment is idempotent per request: a retried call never pays twice.
-   */
   private async pay(requestId: string, call: PreparationContext): Promise<{ request: RequestRecord; paid: XroadCase }> {
     const { request, submission } = await call.read(async (tx) => {
       const request = await this.requests.findOwned(tx, requestId, call.context);
       await this.mandates.requireForTool(tx, call.context, tools.get('request.pay')!.definition._meta['bj.techma/scopes'], request.procedureId);
       return { request, submission: await this.requests.submission(tx, requestId) };
     });
-    if (submission.connector !== 'xroad') throw new ProblemError(409, 'INVALID_TRANSITION', 'Paiement en ligne indisponible pour cette démarche');
-    if (submission.state === 'queued') throw new ProblemError(409, 'INVALID_TRANSITION', "Dossier en cours de transmission à l'administration ; réessayer dans quelques secondes");
-    if (!submission.externalRef) throw new ProblemError(409, 'INVALID_TRANSITION', "Dossier non transmis à l'administration");
-    const found = await this.xroad.getCase(call.context.userRef, submission.externalRef, requestId, call.trace);
-    const paid = found.payment.status === 'pending' ? await this.xroad.pay(call.context.userRef, submission.externalRef, requestId, call.trace) : found;
+    const caseId = request.caseId ?? submission.externalRef;
+    if (!caseId) throw new ProblemError(409, 'INVALID_TRANSITION', "Dossier non transmis à l'administration");
+    const found = await this.xroad.getCase(call.context.userRef, caseId, requestId, call.trace);
+    const paid = found.payment.status === 'pending' ? await this.xroad.pay(call.context.userRef, caseId, requestId, call.trace) : found;
     return { request, paid };
   }
 
@@ -195,9 +250,25 @@ class RequestTools implements OnModuleInit {
     return request;
   }
 
-  private statusOf(procedure: Procedure, fields: Fields, request: Pick<RequestRecord, 'documents'>): RequestStatus {
-    const documentsPresent = procedure.requiredDocuments.every((type) => request.documents.some((document) => document.documentType === type));
-    return documentsPresent && this.forms.for(procedure).complete(fields) ? 'ready' : 'draft';
+  private statusOf(procedure: Procedure, fields: RequestField[], documents: RequestRecord['documents']): RequestStatus {
+    return this.missingOf(procedure, fields, documents).length ? 'draft' : 'ready';
+  }
+
+  private missingOf(procedure: Procedure, fields: RequestField[], documents: RequestRecord['documents']): string[] {
+    const values = Object.fromEntries(fields.map((field) => [field.name, field.value]));
+    const missing: string[] = [];
+    if (!this.forms.for(procedure).complete(values)) {
+      const required = ((filingOf(procedure).formSchema as { required?: string[] }).required ?? []).filter((name) => values[name] === undefined || values[name] === null || values[name] === '');
+      missing.push(...(required.length ? required : ['formulaire']));
+    }
+    for (const document of filingOf(procedure).requiredDocuments) {
+      if (!documents.some((item) => item.documentType === document.documentType && item.fileId)) missing.push(document.label);
+    }
+    return missing;
+  }
+
+  private withMissing(request: RequestRecord, procedure: Procedure): RequestRecord {
+    return { ...request, missing: this.missingOf(procedure, request.fields, request.documents) };
   }
 
   private fileProblems(file: FileMetadata): string[] {
@@ -206,13 +277,9 @@ class RequestTools implements OnModuleInit {
     return problems;
   }
 
-  private async save(before: RequestRecord, next: RequestRecord, call: ToolInvocation<unknown>) {
-    const saved = await this.requests.update(call.tx, next);
-    if (this.workflow.snapshots) {
-      await this.workflow.publish(call.tx, saved.id, call.trace.traceId, saved.status === 'awaiting_user_validation' && before.status !== saved.status ? 'request.validated' : 'request.updated');
-    } else if (saved.status !== before.status) {
-      call.emit({ kind: 'request.status_changed', requestId: saved.id, conversationId: saved.conversationId, from: before.status, to: saved.status, at: saved.updatedAt });
-    }
+  private async save(before: RequestRecord, next: RequestRecord, call: ToolInvocation<unknown>, procedure: Procedure) {
+    const prepared = this.withMissing(next, procedure);
+    const saved = await this.requests.update(call.tx, prepared);
     return toContract(saved);
   }
 }

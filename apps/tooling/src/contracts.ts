@@ -6,7 +6,7 @@ import addFormatsPlugin from 'ajv-formats';
 
 const contractsDir = process.env.CONTRACTS_DIR
   ? pathToFileURL(join(resolve(process.env.CONTRACTS_DIR), sep))
-  : new URL('../../../../contracts/v1/', import.meta.url);
+  : new URL('../../../../contracts/v2/', import.meta.url);
 
 const load = (file: string) => JSON.parse(readFileSync(new URL(file, contractsDir), 'utf8'));
 
@@ -17,6 +17,7 @@ export interface ToolDefinition {
   _meta: {
     'bj.techma/kind': 'read' | 'action';
     'bj.techma/requiresMandate': boolean;
+    'bj.techma/requiresLogin'?: boolean;
     'bj.techma/scopes': string[];
   };
   inputSchema: Record<string, unknown>;
@@ -28,6 +29,8 @@ export interface ToolContext {
   userRef: string;
   mandateId?: string;
   traceId: string;
+  channel?: 'web' | 'whatsapp';
+  authenticated?: boolean;
 }
 
 export const domain = load('domain.schema.json') as { $id: string; $defs: Record<string, unknown> };
@@ -37,6 +40,10 @@ const addFormats = addFormatsPlugin as unknown as (ajv: Ajv2020) => Ajv2020;
 const ajv = addFormats(new Ajv2020({ allErrors: true, strict: false }));
 ajv.addSchema(domain);
 const sanitizer = addFormats(new Ajv2020({ allErrors: true, strict: false, removeAdditional: true }));
+sanitizer.addSchema(domain);
+function bindRefs(schema: Record<string, unknown>) {
+  return JSON.parse(JSON.stringify(schema).replaceAll('"#/$defs/', `"${domain.$id}#/$defs/`)) as Record<string, unknown>;
+}
 
 export function domainValidator(name: string): ValidateFunction {
   const validate = ajv.getSchema(`${domain.$id}#/$defs/${name}`);
@@ -53,7 +60,7 @@ export interface CompiledTool {
 export const tools = new Map<string, CompiledTool>(
   catalog.tools.map((definition) => [
     definition.name,
-    { definition, input: ajv.compile(definition.inputSchema), output: sanitizer.compile(definition.outputSchema) },
+    { definition, input: ajv.compile(bindRefs(definition.inputSchema)), output: sanitizer.compile(bindRefs(definition.outputSchema)) },
   ]),
 );
 

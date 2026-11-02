@@ -22,7 +22,9 @@ export class FormSchemas {
     const key = `${procedure.id}@${procedure.source.version}`;
     let check = this.cache.get(key);
     if (!check) {
-      const schema = { ...procedure.formSchema, additionalProperties: false };
+      const filing = procedure.filing as { formSchema?: Record<string, unknown> } | null | undefined;
+      const formSchema = filing?.formSchema ?? procedure.formSchema ?? { type: 'object', properties: {}, required: [] };
+      const schema = { ...formSchema, additionalProperties: false };
       check = { partial: this.ajv.compile({ ...schema, required: [] }), complete: this.ajv.compile(schema) };
       if (this.cache.size >= MAX_CACHE) this.cache.delete(this.cache.keys().next().value as string);
       this.cache.set(key, check);

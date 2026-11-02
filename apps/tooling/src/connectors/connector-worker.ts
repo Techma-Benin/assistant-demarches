@@ -143,6 +143,7 @@ export class ConnectorWorker implements OnApplicationBootstrap, OnApplicationShu
     const procedure = await this.catalog.get(row.procedure_id, trace);
     const documents = [];
     for (const document of row.documents) {
+      if (!document.fileId) continue;
       documents.push({ documentType: document.documentType, file: await this.resources.getFile(document.fileId, row.user_ref, trace) });
     }
     const result = await connector.submit({ requestId: row.id, userRef: row.user_ref, procedure, fields: row.fields, documents, traceId: trace.traceId });
