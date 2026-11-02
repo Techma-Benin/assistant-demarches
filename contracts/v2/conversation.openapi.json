@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Conversation — Backend → Interface usager",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "description": "Jeton Bearer : jeton invité (POST /v1/guest-sessions) ou jeton usager Keycloak (rôle citizen, audience techma-backend). Les routes marquées « connexion requise » renvoient 401 LOGIN_REQUIRED avec un jeton invité."
   },
   "servers": [
@@ -379,7 +379,7 @@
       "post": {
         "operationId": "sendMessage",
         "summary": "Envoyer un message",
-        "description": "Dédupliqué par message.id. La réponse de l’assistant arrive par le flux d’événements.",
+        "description": "Dédupliqué par message.id. La réponse arrive par le flux : éventuellement des message.delta (texte live), puis message.sent (AgentMessage complet).",
         "tags": [
           "Conversation"
         ],
@@ -481,7 +481,7 @@
       "get": {
         "operationId": "listEvents",
         "summary": "Historique et reprise (repli du WebSocket)",
-        "description": "Sans curseur : tout l’historique de la conversation (messages usager et assistant). Avec curseur : les événements suivants. Au plus 100 par page.",
+        "description": "Sans curseur : historique des messages complets (message.received et message.sent) ; pas de message.delta (évite un déluge de jetons au rechargement). Avec curseur, après abonnement : les événements suivants, y compris les message.delta live. Au plus 100 par page.",
         "tags": [
           "Conversation"
         ],
@@ -573,7 +573,7 @@
       "post": {
         "operationId": "createSocketTicket",
         "summary": "Ticket WebSocket à usage unique (60 s)",
-        "description": "Connexion ensuite sur ticket.url (?ticket=…&cursor=evt_…). Le serveur pousse un Event JSON par trame.",
+        "description": "Connexion ensuite sur ticket.url (?ticket=…&cursor=evt_…). Le serveur pousse un Event JSON par trame. message.delta n’est livré qu’en direct (trames WebSocket et GET …/events avec curseur après abonnement), jamais dans l’historique sans curseur. message.sent clôture la réponse.",
         "tags": [
           "Conversation"
         ],
@@ -2049,6 +2049,7 @@
             "type": "string",
             "enum": [
               "bj.techma.message.received.v2",
+              "bj.techma.message.delta.v2",
               "bj.techma.message.sent.v2",
               "bj.techma.case.updated.v2",
               "bj.techma.tool.called.v2",
@@ -2098,6 +2099,39 @@
               "kind",
               "conversationId",
               "message"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Morceau live du futur bloc text. Pas dans GET …/events sans curseur. message.sent clôture ; pas de delta terminal obligatoire.",
+            "properties": {
+              "kind": {
+                "const": "message.delta"
+              },
+              "conversationId": {
+                "$ref": "#/components/schemas/ConversationId"
+              },
+              "messageId": {
+                "$ref": "#/components/schemas/MessageId",
+                "description": "Même identifiant que le message.sent à venir."
+              },
+              "delta": {
+                "type": "string",
+                "maxLength": 8000,
+                "description": "Morceau du texte du futur bloc text uniquement. Chaîne vide seulement si un signal terminal est indispensable ; le contrat n’exige pas ce delta terminal."
+              },
+              "index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Ordre 0-based des morceaux pour un même messageId. Facultatif."
+              }
+            },
+            "required": [
+              "kind",
+              "conversationId",
+              "messageId",
+              "delta"
             ]
           },
           {

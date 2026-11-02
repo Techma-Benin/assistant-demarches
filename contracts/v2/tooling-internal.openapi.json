@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Interne — Backend → Tooling (mandats)",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "description": "Jeton de service Keycloak du client backend (azp = backend, audience techma-tooling, scope mandates:grant). Le serveur MCP n’accepte pas ce scope comme appel d’outil."
   },
   "servers": [
