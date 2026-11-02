@@ -9,6 +9,7 @@ import { storageFromEnvironment } from "./storage.js";
 import { Consent, McpProcedureCatalog } from "./consent.js";
 import { HttpMandateControl, McpGateway } from "./tooling.js";
 import { HttpModels } from "./model.js";
+import { syncEnvModel } from "./model-env.js";
 import { Agent } from "./agent.js";
 import { Problem, approvedMcpUrl } from "./domain.js";
 import type { Runtime } from "./routes.js";
@@ -119,6 +120,7 @@ export async function loadRuntime(
     new McpProcedureCatalog(pool, tooling),
   );
   runtime.tooling = tooling;
+  await syncEnvModel(pool);
   const models = new HttpModels({});
   const agent = new Agent(
     pool,
