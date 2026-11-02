@@ -138,6 +138,8 @@ export class McpGateway implements ToolingPort {
       return await work(client);
     }
     catch (error) {
+      // Business and validation Problems raised by work() (e.g. non-conformant tool output) keep their own code.
+      if (error instanceof Problem) throw error;
       console.error(error instanceof Error ? error.message : error);
       throw new Problem(503, "MCP_CONNECTION_FAILED", "Connexion ou réponse MCP indisponible ; vérifier les paramètres et l’authentification.");
     }
