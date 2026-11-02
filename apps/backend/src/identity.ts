@@ -16,6 +16,12 @@ export function serviceClient(payload: JWTPayload): string {
 }
 
 const guestHits = new Map<string, { count: number; reset: number }>();
+// The Interface creates guest sessions from its own server, so every visitor shares one source address:
+// the cap is a flood guard for that address, not a per-visitor quota. Tune with GUEST_SESSIONS_PER_HOUR.
+function guestLimit(): number {
+  const value = Number(process.env.GUEST_SESSIONS_PER_HOUR);
+  return Number.isInteger(value) && value >= 1 ? value : 300;
+}
 
 export class Identities {
   constructor(private pool: Pool) {}
@@ -26,7 +32,7 @@ export class Identities {
     const now = Date.now();
     const slot = guestHits.get(ip);
     if (!slot || slot.reset < now) guestHits.set(ip, { count: 1, reset: now + 3_600_000 });
-    else if (slot.count >= 30)
+    else if (slot.count >= guestLimit())
       throw new Problem(429, "RATE_LIMITED", "Trop de sessions invitées depuis cette adresse.");
     else slot.count += 1;
     const userRef = identifier("usr");

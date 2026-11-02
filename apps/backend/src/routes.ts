@@ -22,6 +22,7 @@ import { idempotencyKey } from "./transactions.js";
 import type { CryptoKey } from "jose";
 import type { ServiceTokens } from "./runtime.js";
 import { XroadClient } from "./xroad.js";
+import { documentDisposition } from "./download.js";
 
 export const RUNTIME = Symbol("CONVERSATION_RUNTIME");
 export type Runtime = {
@@ -255,12 +256,16 @@ export class ConversationController {
   ) {
     const principal = await user(this.runtime, req);
     loggedIn(principal);
-    const file = await catalogue(this.runtime, req).document(
-      principal.userRef,
-      caseId,
-      documentId,
-    );
+    const xroad = catalogue(this.runtime, req);
+    const [file, item] = await Promise.all([
+      xroad.document(principal.userRef, caseId, documentId),
+      xroad.case(principal.userRef, caseId) as Promise<Schemas["Case"]>,
+    ]);
     res.setHeader("Content-Type", file.mimeType);
+    res.setHeader(
+      "Content-Disposition",
+      documentDisposition(item?.documents, documentId, file.mimeType),
+    );
     res.setHeader("Cache-Control", "no-store");
     res.send(file.bytes);
   }

@@ -42,12 +42,20 @@ import {
 } from "../dist/apps/backend/src/tooling.js";
 import { HttpModels } from "../dist/apps/backend/src/model.js";
 import { Agent } from "../dist/apps/backend/src/agent.js";
+import { RESUME_AFTER_CONSENT, RESUME_AFTER_LOGIN } from "../dist/apps/backend/src/conversations.js";
 import { identifier, validate } from "../dist/apps/backend/src/domain.js";
 
 const tp = "00-" + "1".repeat(32) + "-" + "2".repeat(16) + "-01";
 const fixture = JSON.parse(
   readFileSync(new URL("../../../contracts/v2/examples.json", import.meta.url)),
 );
+// POST …/mandates queues a Backend turn that replays the waiting action (covered by v2-journey and
+// interface-wiring): the older checks below drive the agent turn by turn and do not want it.
+const skipResumes = (pool) =>
+  pool.query(
+    "UPDATE backend_messages SET processed_at=now() WHERE processed_at IS NULL AND body->'content'->>'text' IN ($1,$2)",
+    [RESUME_AFTER_CONSENT, RESUME_AFTER_LOGIN],
+  );
 test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and files", async (t) => {
   const pg = await isolatedDatabase(),
     pool = database(pg.connection);
@@ -795,6 +803,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
         ).status,
         202,
       );
+      await skipResumes(pool);
       await agent.process(c.id);
       // Existing uploads and idempotency replays must survive the contract migration.
       await pool.query("UPDATE backend_files SET body=body || '{\"scanStatus\":\"rejected\"}'::jsonb WHERE id=$1", [file.value.id]);
@@ -1050,6 +1059,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
         ).rows[0].actions_paused,
         true,
       );
+      await skipResumes(pool);
       await agent.process(c.id);
       assert.equal(remoteMandates.get(grant.id).status, "revoked");
       assert.equal(modelCalls.length, calls);
@@ -1106,6 +1116,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
         },
       };
       const reader = new Agent(pool, conversations, model, port, consent);
+      await skipResumes(pool);
       for (let repeat = 0; repeat < 2; repeat++) {
         await request("/v1/conversations/" + c.id + "/messages", {
           method: "POST",

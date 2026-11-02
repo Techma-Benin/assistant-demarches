@@ -2,7 +2,7 @@ import type { Pool } from "pg";
 import { createHash, randomBytes } from "node:crypto";
 import { SignJWT, type CryptoKey } from "jose";
 import { canonical, fingerprint, identifier, validate, Problem, type Schemas } from "./domain.js";
-import { Conversations, appendEvent, envelope } from "./conversations.js";
+import { Conversations, appendEvent, envelope, RESUME_AFTER_CONSENT } from "./conversations.js";
 import { idempotent, transaction } from "./transactions.js";
 import type { User } from "./identity.js";
 import { catalog, type MandateControl, type ToolingPort } from "./tooling.js";
@@ -226,6 +226,8 @@ export class Consent {
           cid,
           envelope({ kind: "mandate.granted", mandate: value }, traceparent),
         );
+        // The Interface sends nothing after the click: the agent replays the action that waited for the mandate.
+        await this.conversations.enqueueResume(db, cid, RESUME_AFTER_CONSENT);
         return value;
       },
     );

@@ -288,8 +288,10 @@ test("durable history, live deltas and socket push", async (t) => {
   const pollsBefore = polls;
   const liveId = identifier("msg");
   await conversations.appendDelta(pushed.id, liveId, "Live ", 0, tp);
+  // A live notification wakes the reader at once (well under the 250 ms idle poll) and the frame is read from the
+  // stored events, so the cursor can never jump past an older event.
   await waitFor(() => frames.some((event) => event.data.kind === "message.delta"), 150);
-  assert.equal(polls, pollsBefore);
+  assert.ok(polls - pollsBefore <= 2, "live wake-ups are coalesced");
   assert.equal(frames.at(-1).data.delta, "Live ");
   assert.equal(frames.some((event) => event.data.kind === "message.sent"), false);
   const liveSent = await transaction(pool, (db) => conversations.complete(
@@ -303,7 +305,7 @@ test("durable history, live deltas and socket push", async (t) => {
   ));
   conversations.emitLive(pushed.id, liveSent);
   await waitFor(() => frames.some((event) => event.data.kind === "message.sent"), 150);
-  assert.equal(polls, pollsBefore);
+  assert.ok(polls - pollsBefore <= 4, "live wake-ups are coalesced");
   const ids = frames.map((event) => event.id);
   assert.equal(new Set(ids).size, ids.length);
   const sentAt = frames.findIndex((event) => event.data.kind === "message.sent");

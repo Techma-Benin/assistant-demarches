@@ -6,7 +6,7 @@ import { generateKeyPair, exportJWK, createLocalJWKSet, SignJWT } from "jose";
 import { isolatedDatabase } from "./helpers.mjs";
 import { database, migrate, provision } from "../dist/apps/backend/src/database.js";
 import { createBackend } from "../dist/apps/backend/src/app.js";
-import { Conversations, envelope } from "../dist/apps/backend/src/conversations.js";
+import { Conversations, envelope, RESUME_AFTER_CONSENT, RESUME_AFTER_LOGIN } from "../dist/apps/backend/src/conversations.js";
 import { Identities } from "../dist/apps/backend/src/identity.js";
 import { Consent, LocalProcedureCatalog } from "../dist/apps/backend/src/consent.js";
 import { Agent } from "../dist/apps/backend/src/agent.js";
@@ -193,18 +193,23 @@ test("v2 journey: guest catalogue, loginRequired, attach, consent, caseCard, cas
       "SELECT body->'data'->'message'->'blocks' AS blocks FROM backend_conversation_events WHERE conversation_id=$1 AND body->'data'->>'kind'='message.sent' ORDER BY seq DESC LIMIT 1",
       [cid],
     )).rows[0]?.blocks ?? [];
-  const ask = async (user, cid, text, toolName) => {
-    const message = { id: identifier("msg"), content: { type: "text", text }, sentAt: new Date().toISOString() };
-    await conversations.accept(user, cid, message, identifier("key"), tp);
+  const run = async (cid, toolName) => {
     let turn = 0;
     const model = {
-      async generate() {
+      async generate(_config, history) {
         turn += 1;
+        resumeTexts.push(history.at(-1).content);
         if (turn === 1) return toolCall(toolName, { procedureId: procedure.id });
         return toolName === "procedures.get" ? final("L'extrait B3 coûte 1 900 FCFA.", [procedure.source]) : final("Suite.");
       },
     };
     await new Agent(pool, conversations, model, tooling, consent).process(cid);
+  };
+  const resumeTexts = [];
+  const ask = async (user, cid, text, toolName) => {
+    const message = { id: identifier("msg"), content: { type: "text", text }, sentAt: new Date().toISOString() };
+    await conversations.accept(user, cid, message, identifier("key"), tp);
+    await run(cid, toolName);
   };
 
   const guestSession = await request("/v1/guest-sessions", { method: "POST" });
@@ -231,9 +236,12 @@ test("v2 journey: guest catalogue, loginRequired, attach, consent, caseCard, cas
   ownerRef = (await pool.query("SELECT user_ref FROM backend_conversations WHERE id=$1", [cid])).rows[0].user_ref;
   const owner = { userRef: ownerRef, channel: "web", authenticated: true, expiresAt: Date.now() + 60000, roles: new Set(["citizen"]) };
 
+  // The Interface sends nothing after the login: the agent resumes the action that asked for it.
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM backend_messages WHERE conversation_id=$1 AND processed_at IS NULL", [cid])).rows[0].n, 1);
   writeCalls.length = 0;
-  await ask(owner, cid, "Créer la demande", "request.create");
+  await run(cid, "request.create");
   assert.equal(writeCalls.length, 0);
+  assert.equal(resumeTexts.at(-2), RESUME_AFTER_LOGIN);
   const consentBlock = (await lastBlocks(cid)).find((block) => block.type === "consent");
   assert.equal(consentBlock?.type, "consent");
   validate("Challenge", consentBlock.challenge);
@@ -252,8 +260,11 @@ test("v2 journey: guest catalogue, loginRequired, attach, consent, caseCard, cas
   });
   assert.equal(granted.status, 201, granted.text);
 
+  // POST …/mandates is the last thing the Interface does: the action that waited for the mandate is replayed.
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM backend_messages WHERE conversation_id=$1 AND processed_at IS NULL", [cid])).rows[0].n, 1);
   writeCalls.length = 0;
-  await ask(owner, cid, "Relancer la demande", "request.create");
+  await run(cid, "request.create");
+  assert.equal(resumeTexts.at(-2), RESUME_AFTER_CONSENT);
   assert.equal(writeCalls.length, 1);
   assert.ok(writeCalls[0].mandateId);
   assert.equal((await lastBlocks(cid)).some((block) => block.type === "requestCard"), true);
@@ -275,6 +286,9 @@ test("v2 journey: guest catalogue, loginRequired, attach, consent, caseCard, cas
     headers: { Authorization: "Bearer " + citizen, traceparent: tp },
   });
   assert.equal(doc.status, 200);
+  assert.equal(doc.headers.get("content-type"), "application/pdf");
+  assert.equal(doc.headers.get("content-disposition"), `attachment; filename="Extrait B3.pdf"; filename*=UTF-8''Extrait%20B3.pdf`);
+  assert.equal(doc.headers.get("content-length"), String("%PDF-1.4 journey".length));
   const otherList = await request("/v1/cases/" + caseBody.id, { bearer: other });
   assert.equal(otherList.status, 404);
   const otherDoc = await fetch(base + "/v1/cases/" + caseBody.id + "/documents/" + documentId, {
