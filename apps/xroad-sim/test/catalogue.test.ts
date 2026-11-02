@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { CATALOGUE, FILINGS, officialDays, officialFee } from '../src/data.js';
+import { DEMO_OFFICIALS, FILINGS, loadCatalogue, officialDays, officialFee } from '../src/data.js';
 import { domainValidator } from '../src/contracts.js';
 import { XroadStore } from '../src/store.js';
+import { CATALOGUE_FILE } from './helpers.js';
 
-const imported = JSON.parse(readFileSync(new URL('../../../../content/service-public/catalogue.json', import.meta.url), 'utf8')) as {
+const catalogue = loadCatalogue(CATALOGUE_FILE);
+const imported = JSON.parse(readFileSync(CATALOGUE_FILE, 'utf8')) as {
   services: { id: string; online: Record<string, any> | null; inPerson: Record<string, any> | null }[];
 };
 const official = (id: string) => {
@@ -32,13 +34,12 @@ const OFFICIAL_WORDING: Record<string, RegExp> = {
 
 test('chaque fiche servie est conforme au contrat et pointe vers sa fiche service-public.bj', () => {
   const valid = domainValidator('Procedure');
-  assert.ok(CATALOGUE.length > 200, 'catalogue officiel complet');
-  for (const { procedure } of CATALOGUE) {
+  assert.ok(catalogue.entries.length > 200, 'catalogue officiel complet');
+  for (const { procedure } of catalogue.entries) {
     assert.ok(valid(procedure), `${procedure.id} : ${JSON.stringify(valid.errors)}`);
     assert.equal(procedure.source.url, `https://service-public.bj/public/services/service/${procedure.id}`);
-    assert.equal(procedure.official.serviceId, procedure.id);
   }
-  assert.doesNotMatch(JSON.stringify(CATALOGUE), /example\.(org|com|net)/, 'aucun domaine d’exemple');
+  assert.doesNotMatch(JSON.stringify(catalogue.entries), /example\.(org|com|net)/, 'aucun domaine d’exemple');
 });
 
 test('seuls les liens de canal vérifiés à l’import sont montrés', () => {
@@ -46,38 +47,67 @@ test('seuls les liens de canal vérifiés à l’import sont montrés', () => {
   for (const service of imported.services) {
     for (const channel of [service.online, service.inPerson]) if (channel?.url) checked.set(channel.url, channel.urlStatus);
   }
-  for (const { procedure } of CATALOGUE) {
-    for (const channel of [procedure.official.online, procedure.official.inPerson]) {
+  for (const { procedure } of catalogue.entries) {
+    for (const channel of [procedure.online, procedure.inPerson]) {
       if (channel?.url) assert.equal(checked.get(channel.url), 'ok', `${procedure.id} : ${channel.url}`);
     }
   }
 });
 
 test('démarches déposables : montant, délai, pièces et champs repris de la fiche officielle', () => {
-  const fileable = CATALOGUE.filter((entry) => entry.rule).map((entry) => entry.procedure.id);
-  assert.deepEqual(fileable.sort(), Object.keys(FILINGS).sort());
+  const fileable = catalogue.entries.filter((entry) => entry.rule).map((entry) => entry.procedure.id);
+  assert.deepEqual(fileable.sort(), ['PS00254', 'PS00373', 'PS00392', 'PS00393']);
+  assert.deepEqual(Object.keys(FILINGS).sort(), fileable);
   for (const [id, filing] of Object.entries(FILINGS)) {
     const amount = String(filing.feeFcfa);
     assert.match(said(id, 'fee').replace(/[ .]/g, ''), new RegExp(`\\b${amount}\\s*F`), `${id} : coût ${amount}`);
     if (filing.processingDays === null) assert.equal(said(id, 'delay').trim(), '', `${id} : délai non publié`);
     else assert.match(said(id, 'delay'), new RegExp(`\\b${filing.processingDays * 24}\\s*h`), `${id} : délai`);
-    for (const name of [...filing.requiredDocuments, ...Object.keys(filing.fields)]) {
+    for (const name of [...filing.requiredDocuments.map((document) => document.documentType), ...Object.keys(filing.fields)]) {
       assert.ok(OFFICIAL_WORDING[name], `${id} : ${name} sans correspondance officielle`);
       assert.match(said(id, 'documents'), OFFICIAL_WORDING[name], `${id} : ${name}`);
     }
   }
 });
 
+test('démarches déposables : administration destinataire et règle d’instruction du contrat', () => {
+  const entry = (id: string) => catalogue.entries.find((candidate) => candidate.procedure.id === id)!;
+  assert.equal(entry('PS00373').procedure.administrationId, 'justice');
+  assert.notEqual(entry('PS00373').rule?.blocker, null, 'casier judiciaire : vérifié par un agent');
+  for (const [id, administrationId] of [['PS00393', 'anip'], ['PS00392', 'anip'], ['PS00254', 'enseignement']]) {
+    assert.equal(entry(id).procedure.administrationId, administrationId);
+    assert.equal(entry(id).rule?.blocker, null, `${id} : complété par l’assistant`);
+  }
+  assert.equal(entry('PS00328').procedure.filing, null, 'passeport : information seulement');
+});
+
+test('annuaire de démo : mêmes identifiants, courriels et noms que le realm Keycloak', () => {
+  const realm = JSON.parse(readFileSync(new URL('../../../../infra/keycloak/realm-techma.json', import.meta.url), 'utf8')) as {
+    users: { id?: string; email?: string; firstName?: string; lastName?: string; realmRoles?: string[] }[];
+  };
+  const officials = realm.users.filter((user) => user.realmRoles?.includes('official'));
+  assert.equal(officials.length, DEMO_OFFICIALS.length);
+  const valid = domainValidator('Official');
+  for (const user of officials) {
+    const found = DEMO_OFFICIALS.find((candidate) => candidate.subject === user.id);
+    assert.ok(found, `${user.email} absent de l'annuaire`);
+    assert.equal(found.email, user.email);
+    assert.equal(found.displayName, `${user.firstName} ${user.lastName}`);
+    assert.ok(valid(found), JSON.stringify(valid.errors));
+  }
+  assert.deepEqual(DEMO_OFFICIALS.filter((candidate) => candidate.role === 'super_admin').map((candidate) => candidate.administrationId), [null]);
+});
+
 test('recherche : la question d’un usager trouve la bonne fiche officielle en premier', () => {
-  const store = new XroadStore({ seedHistory: false });
-  const first = (question: string) => store.searchProcedures(question, undefined)[0]?.id;
+  const store = new XroadStore(catalogue);
+  const first = (question: string) => store.searchProcedures(question)[0]?.id;
   assert.equal(first('comment renouveler mon passeport ?'), 'PS00328');
   assert.equal(first('obtenir mon casier judiciaire'), 'PS00373');
-  assert.equal(first("acte de naissance"), 'PS00393');
+  assert.equal(first('acte de naissance'), 'PS00393');
   assert.equal(first("carte d'identité"), 'PS00406');
   assert.equal(first('créer une entreprise'), 'PS00062');
   assert.equal(first('authentifier mon diplôme'), 'PS00254');
-  assert.deepEqual(store.searchProcedures('comment obtenir', undefined), [], 'aucun mot utile : aucune fiche au hasard');
+  assert.deepEqual(store.searchProcedures('comment obtenir'), [], 'aucun mot utile : aucune fiche au hasard');
 });
 
 test('coût et délai : une seule valeur sans condition, sinon null', () => {

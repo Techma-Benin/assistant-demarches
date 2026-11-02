@@ -1,6 +1,6 @@
 /** One-page PDF, Helvetica, WinAnsi: enough for a document that says it is a simulation. */
 export function simulatedPdf(title: string, lines: string[]): Buffer {
-  const escape = (text: string) => text.replace(/[\\()]/g, (char) => `\\${char}`).replace(/[^\x20-\xff]/g, '?');
+  const escape = (text: string) => text.replace(/[’‘]/g, "'").replace(/[\\()]/g, (char) => `\\${char}`).replace(/[^\x20-\xff]/g, '?');
   const text = [
     'BT /F1 9 Tf 72 790 Td (SIMULATION - SANS VALEUR ADMINISTRATIVE) Tj ET',
     `BT /F1 18 Tf 72 740 Td (${escape(title)}) Tj ET`,

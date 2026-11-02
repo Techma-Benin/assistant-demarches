@@ -1,95 +1,105 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
+import type { Schemas } from '@techma/contracts-ts';
 import { ajv } from './contracts.js';
 import {
-  ADMINISTRATIONS,
-  CATALOGUE,
-  OFFICIALS,
+  DEMO_OFFICIALS,
+  type ActivityEntry,
   type Administration,
   type Case,
   type CaseDocument,
   type CaseStep,
+  type Catalogue,
+  type CatalogueEntry,
   type FieldValue,
   type InstructionRule,
   type Official,
-  type OfficialRole,
   type Procedure,
 } from './data.js';
+import type { Tx } from './database.js';
 import { newId } from './ids.js';
-import { ProblemError, forbidden, invalid, notFound } from './problem.js';
+import { simulatedPdf } from './pdf.js';
+import { ProblemError, forbidden, invalid, invalidTransition, notFound } from './problem.js';
 
 export type Caller = { kind: 'applicant'; applicantRef: string } | { kind: 'official'; official: Official };
-export type Decider = { kind: 'official'; official: Official } | { kind: 'console'; actorRef: string };
+export type CaseView = Schemas['CaseView'];
+export type CaseInput = Schemas['CaseInput'];
+export type CaseResponseInput = Schemas['CaseResponseInput'];
+export type CaseAction = Schemas['CaseActionInput']['action'];
+type DocumentRef = Schemas['DocumentRef'];
+type UploadMime = CaseDocument['mimeType'];
 
 export interface StoredReply {
   fingerprint: string;
-  reply: { status: number; body: unknown; type?: string };
+  reply: { status: number; body: unknown };
 }
 
-interface PersistedState {
-  version: 1;
-  cases: Case[];
-  sequences: [string, number][];
-  officials: Official[];
-  replies: [string, StoredReply][];
-}
-export type CaseView = 'pending' | 'completed' | 'all';
-
-export interface CaseInput {
-  requestId: string;
-  procedureId: string;
-  fields: Record<string, FieldValue>;
-  documents: CaseDocument[];
-}
-
-export interface Metrics {
-  administrationId: string | null;
-  casesTotal: number;
-  casesPending: number;
-  casesCompleted: number;
-  casesCompletedByAssistant: number;
-  casesRejected: number;
-  medianProcessingHours: number | null;
-  topProcedures: { procedureId: string; title: string; count: number }[];
+export interface Page {
+  limit: number;
+  offset: number;
 }
 
 const HOUR = 3600 * 1000;
-type HistoricOutcome = 'assistant' | 'pending' | 'administration' | 'rejected';
-// Outcomes cycled through for procedures that need an official, so every dashboard state shows up.
-const REVIEW_OUTCOMES: HistoricOutcome[] = ['pending', 'administration', 'pending', 'rejected', 'administration'];
-const MAX_REPLIES = 10_000;
+const DAY = 24 * HOUR;
+const UPLOAD_TTL = HOUR;
+const REPLY_TTL = DAY;
+const DEFAULT_PERIOD = 30 * DAY;
+const PENDING_STATUSES = ['received', 'in_review', 'information_requested'];
+const CHANNELS: Case['channel'][] = ['web', 'whatsapp'];
+const ISSUED_DOCUMENT_TYPE = 'document-delivre';
+
+const VIEW_STATUSES: Record<CaseView, string[] | null> = {
+  pending: PENDING_STATUSES,
+  completed: ['completed'],
+  rejected: ['rejected'],
+  all: null,
+};
+
+const PERMISSIONS: Record<Official['role'], Schemas['Permission'][]> = {
+  agent: ['cases:read', 'cases:act'],
+  admin: ['cases:read', 'cases:act', 'officials:read', 'officials:manage'],
+  super_admin: ['cases:read', 'cases:act', 'officials:read', 'officials:manage', 'administrations:all'],
+};
 
 export class XroadStore {
-  private readonly administrations = new Map(ADMINISTRATIONS.map((administration) => [administration.id, administration]));
-  private readonly catalogue = new Map(CATALOGUE.map((entry) => [entry.procedure.id, entry]));
-  private readonly officials = new Map(OFFICIALS.map((official) => [official.id, { ...official }]));
-  private readonly cases = new Map<string, Case>();
-  private readonly casesByRequest = new Map<string, string>();
-  private readonly sequences = new Map<string, number>();
+  private readonly administrations: Map<string, Administration>;
+  private readonly catalogue: Map<string, CatalogueEntry>;
   private readonly forms = new Map<string, ValidateFunction>();
-  private readonly replies = new Map<string, StoredReply>();
   private readonly now: () => number;
-  private readonly stateFile?: string;
 
-  constructor(options: { seedHistory: boolean; now?: () => number; stateFile?: string }) {
-    this.now = options.now ?? Date.now;
-    this.stateFile = options.stateFile;
-    if (this.stateFile && existsSync(this.stateFile)) {
-      this.load(this.stateFile);
-      return;
+  constructor(catalogue: Catalogue, now: () => number = Date.now) {
+    this.administrations = new Map(catalogue.administrations.map((administration) => [administration.id, administration]));
+    this.catalogue = new Map(catalogue.entries.map((entry) => [entry.procedure.id, entry]));
+    this.now = now;
+  }
+
+  /** Registers the demo officials once: a change made later in the console survives a restart. */
+  async seedDirectory(tx: Tx): Promise<void> {
+    for (const official of DEMO_OFFICIALS) {
+      await tx.query(
+        `insert into xroad_officials (id, subject, email, administration_id, role, body) values ($1, $2, $3, $4, $5, $6::jsonb)
+         on conflict (subject) do nothing`,
+        [official.id, official.subject, official.email, official.administrationId, official.role, JSON.stringify(official)],
+      );
     }
-    if (options.seedHistory) this.seedHistory();
-    this.save();
   }
 
-  recall(scope: string): StoredReply | undefined {
-    return this.replies.get(scope);
+  async recall(tx: Tx, scope: string): Promise<StoredReply | undefined> {
+    const [row] = await tx.query<{ fingerprint: string; status: number; body: unknown }>(
+      'select fingerprint, status, body from xroad_replies where scope = $1 and created_at > $2',
+      [scope, new Date(this.now() - REPLY_TTL)],
+    );
+    return row ? { fingerprint: row.fingerprint, reply: { status: row.status, body: row.body } } : undefined;
   }
 
-  remember(scope: string, stored: StoredReply): void {
-    this.replies.set(scope, stored);
-    if (this.replies.size > MAX_REPLIES) this.replies.delete(this.replies.keys().next().value as string);
-    this.save();
+  async remember(tx: Tx, scope: string, stored: StoredReply): Promise<void> {
+    await tx.query('delete from xroad_replies where created_at <= $1', [new Date(this.now() - REPLY_TTL)]);
+    await tx.query('insert into xroad_replies (scope, fingerprint, status, body, created_at) values ($1, $2, $3, $4::jsonb, $5)', [
+      scope,
+      stored.fingerprint,
+      stored.reply.status,
+      JSON.stringify(stored.reply.body),
+      new Date(this.now()),
+    ]);
   }
 
   listAdministrations(): Administration[] {
@@ -101,16 +111,17 @@ export class XroadStore {
    * even when its words differ ("renouvellement"). Title matches weigh more; sheets covering fewer than half of the best
    * sheet's terms are dropped. No query: the whole catalogue in its order.
    */
-  searchProcedures(query: string | undefined, administrationId: string | undefined): Procedure[] {
+  searchProcedures(query: string | undefined, administrationId?: string, assisted?: boolean): Procedure[] {
     const procedures = [...this.catalogue.values()]
       .map((entry) => entry.procedure)
-      .filter((procedure) => !administrationId || procedure.administrationId === administrationId);
+      .filter((procedure) => !administrationId || procedure.administrationId === administrationId)
+      .filter((procedure) => assisted === undefined || (procedure.filing !== null) === assisted);
     const terms = [...new Set(searchTerms(query ?? ''))];
     if (terms.length === 0) return query?.trim() ? [] : procedures;
     const scored = procedures
       .map((procedure) => {
         const title = new Set(searchTerms(procedure.title));
-        const body = new Set(searchTerms(`${procedure.summary} ${procedure.official.authority ?? ''}`));
+        const body = new Set(searchTerms(`${procedure.summary} ${procedure.authority ?? ''}`));
         const matched = terms.filter((term) => title.has(term) || body.has(term));
         const score = matched.reduce((sum, term) => sum + (title.has(term) ? 3 : 1), 0);
         return { procedure, matched: matched.length, score };
@@ -129,159 +140,301 @@ export class XroadStore {
     return entry.procedure;
   }
 
-  official(officialId: string): Official {
-    const official = this.officials.get(officialId);
-    if (!official) throw forbidden('Agent inconnu de la simulation');
-    return official;
+  async upload(tx: Tx, applicantRef: string, mimeType: UploadMime, content: Buffer): Promise<Schemas['Upload']> {
+    await tx.query('delete from xroad_uploads where expires_at <= $1', [new Date(this.now())]);
+    const upload: Schemas['Upload'] = {
+      id: newId('upl', this.now()),
+      mimeType,
+      sizeBytes: content.length,
+      expiresAt: new Date(this.now() + UPLOAD_TTL).toISOString(),
+    };
+    await tx.query('insert into xroad_uploads (id, applicant_ref, mime_type, size_bytes, content, expires_at) values ($1, $2, $3, $4, $5, $6)', [
+      upload.id,
+      applicantRef,
+      mimeType,
+      content.length,
+      content,
+      new Date(upload.expiresAt),
+    ]);
+    return upload;
   }
 
-  createCase(applicantRef: string, input: CaseInput): Case {
+  async createCase(tx: Tx, applicantRef: string, input: CaseInput): Promise<Case> {
     const entry = this.catalogue.get(input.procedureId);
     if (!entry) throw notFound('Démarche inconnue');
     const { procedure, rule } = entry;
-    if (!rule) throw new ProblemError(409, 'INVALID_TRANSITION', `Dépôt par l'assistant non disponible pour cette démarche : voir la fiche officielle ${procedure.source.url}`);
-    if (this.administrations.get(procedure.administrationId)?.connection.status !== 'connected') {
-      throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', "Administration non connectée à X-Road : dépôt impossible, connexion recommandée");
+    if (!procedure.filing || !rule) {
+      throw new ProblemError(409, 'NOT_ASSISTED', `Dépôt par l'assistant non disponible pour cette démarche : voir la fiche officielle ${procedure.source.url}`);
     }
-    if (this.casesByRequest.has(input.requestId)) throw new ProblemError(409, 'INVALID_TRANSITION', 'Demande déjà déposée');
+    if (this.administrations.get(procedure.administrationId)?.connection.status !== 'connected') {
+      throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', 'Administration non connectée à X-Road : dépôt impossible, connexion recommandée');
+    }
+    const [existing] = await tx.query('select id from xroad_cases where request_id = $1', [input.requestId]);
+    if (existing) throw new ProblemError(409, 'CONFLICT', 'Demande déjà déposée');
 
     const form = this.formValidator(procedure);
     if (!form(input.fields)) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Formulaire incomplet : ${ajv.errorsText(form.errors, { dataVar: 'champs' })}`);
     const provided = new Set(input.documents.map((document) => document.documentType));
-    const missing = procedure.requiredDocuments.filter((type) => !provided.has(type));
-    if (missing.length) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Pièces manquantes : ${missing.join(', ')}`);
+    const missing = procedure.filing.requiredDocuments.filter((required) => !provided.has(required.documentType));
+    if (missing.length) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Pièces manquantes : ${missing.map((required) => required.label).join(', ')}`);
 
     const at = this.iso();
-    const fee = (procedure.feeFcfa ?? 0) > 0;
+    const fee = procedure.filing.feeFcfa;
     const record: Case = {
       id: newId('cas', this.now()),
-      reference: this.nextReference(rule.code),
+      reference: await this.nextReference(tx, rule.code),
       simulated: true,
       procedureId: procedure.id,
+      title: procedure.title,
       administrationId: procedure.administrationId,
-      requestId: input.requestId,
       applicantRef,
-      status: fee ? 'awaiting_payment' : 'received',
+      requestId: input.requestId,
+      channel: input.channel,
+      status: fee > 0 ? 'awaiting_payment' : 'received',
       fields: { ...input.fields },
-      documents: input.documents.map((document) => ({ ...document })),
-      payment: { amountFcfa: procedure.feeFcfa ?? 0, status: fee ? 'pending' : 'not_required', method: null, reference: null, paidAt: null },
+      documents: [],
+      payment: { amountFcfa: fee, status: fee > 0 ? 'pending' : 'not_required', reference: null, paidAt: null, simulated: true },
       steps: [
-        step('form', "Formulaire complété avec l'assistant", 'done', 'assistant', at),
+        step('form', "Demande préparée avec l'assistant", 'done', 'assistant', at),
         step('documents', 'Pièces transmises', 'done', 'assistant', at),
-        ...(fee ? [step('payment', `Frais de ${procedure.feeFcfa} FCFA à régler`, 'pending', 'applicant', null)] : []),
+        ...(fee > 0 ? [step('payment', `Frais de ${fee} FCFA à régler`, 'pending', 'applicant', null)] : []),
       ],
-      issuedDocuments: [],
+      informationRequest: null,
+      claimedBy: null,
       completedBy: null,
+      decisionNote: null,
       createdAt: at,
       updatedAt: at,
     };
-    this.cases.set(record.id, record);
-    this.casesByRequest.set(record.requestId, record.id);
-    if (record.status === 'received') this.instruct(record, rule);
-    this.save();
+    await tx.query(
+      `insert into xroad_cases (id, request_id, administration_id, applicant_ref, status, created_at, updated_at, body)
+       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+      [record.id, record.requestId, record.administrationId, record.applicantRef, record.status, new Date(at), new Date(at), JSON.stringify(record)],
+    );
+    record.documents = await this.takeUploads(tx, record.id, applicantRef, input.documents, procedure, at);
+    await this.log(tx, record, 'assistant', null, 'case.created', null, at);
+    if (record.status === 'received') await this.instruct(tx, record, rule);
+    await this.saveCase(tx, record);
     return record;
   }
 
-  getCase(caller: Caller, caseId: string): Case {
-    const record = this.cases.get(caseId);
-    if (!record || !this.canSee(caller, record)) throw notFound('Dossier inconnu');
-    return record;
+  async getCase(tx: Tx, caller: Caller, caseId: string): Promise<Case> {
+    const [row] = await tx.query<{ body: Case }>('select body from xroad_cases where id = $1', [caseId]);
+    if (!row || !this.canSee(caller, row.body)) throw notFound('Dossier inconnu');
+    return row.body;
   }
 
-  pay(applicantRef: string, caseId: string): Case {
-    const record = this.getCase({ kind: 'applicant', applicantRef }, caseId);
-    if (record.status !== 'awaiting_payment') throw new ProblemError(409, 'INVALID_TRANSITION', 'Aucun paiement attendu pour ce dossier');
+  async listCases(tx: Tx, caller: Caller, administrationId: string | undefined, view: CaseView, page: Page): Promise<{ items: Case[]; hasMore: boolean }> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    const where = (clause: string, value: unknown) => {
+      params.push(value);
+      clauses.push(clause.replace('?', `$${params.length}`));
+    };
+    if (caller.kind === 'applicant') {
+      where('applicant_ref = ?', caller.applicantRef);
+      if (administrationId) where('administration_id = ?', administrationId);
+    } else {
+      const scope = this.scopeOf(caller.official, administrationId);
+      if (scope !== null) where('administration_id = ?', scope);
+    }
+    const statuses = VIEW_STATUSES[view];
+    if (statuses) where('status = any(?)', statuses);
+    // Pending work: oldest first, so nothing waits for weeks at the bottom of the list.
+    const order = view === 'pending' ? 'created_at asc, id asc' : 'updated_at desc, id desc';
+    const rows = await tx.query<{ body: Case }>(
+      `select body from xroad_cases ${clauses.length ? `where ${clauses.join(' and ')}` : ''} order by ${order} limit ${page.limit + 1} offset ${page.offset}`,
+      params,
+    );
+    return { items: rows.slice(0, page.limit).map((row) => row.body), hasMore: rows.length > page.limit };
+  }
+
+  async pay(tx: Tx, applicantRef: string, caseId: string): Promise<Case> {
+    const record = await this.lockCase(tx, { kind: 'applicant', applicantRef }, caseId);
+    if (record.status !== 'awaiting_payment') throw invalidTransition('Aucun paiement attendu pour ce dossier');
     const at = this.iso();
-    record.payment = { ...record.payment, status: 'paid', method: 'mobile_money', reference: `SIM-PAY-${record.reference.slice(-6)}`, paidAt: at };
+    const reference = `SIM-PAY-${record.reference.slice(-6)}`;
+    record.payment = { ...record.payment, status: 'paid', reference, paidAt: at };
     this.updateStep(record, 'payment', { label: `Frais de ${record.payment.amountFcfa} FCFA réglés par Mobile Money (simulation)`, state: 'done', at });
     record.status = 'received';
     record.updatedAt = at;
-    this.instruct(record, this.ruleOf(record));
-    this.save();
+    await this.log(tx, record, 'applicant', null, 'case.paid', reference, at);
+    await this.instruct(tx, record, this.ruleOf(record));
+    await this.saveCase(tx, record);
     return record;
   }
 
-  decide(decider: Decider, caseId: string, decision: 'approve' | 'reject', note: string | null): Case {
-    const record = decider.kind === 'official' ? this.getCase(decider, caseId) : this.cases.get(caseId);
-    if (!record) throw notFound('Dossier inconnu');
-    if (record.status !== 'in_review') throw new ProblemError(409, 'INVALID_TRANSITION', "Ce dossier n'attend pas de décision");
+  async respond(tx: Tx, applicantRef: string, caseId: string, input: CaseResponseInput): Promise<Case> {
+    const record = await this.lockCase(tx, { kind: 'applicant', applicantRef }, caseId);
+    if (record.status !== 'information_requested') throw invalidTransition("Aucun complément n'est attendu pour ce dossier");
+    const fields = { ...record.fields, ...input.fields };
+    const procedure = this.getProcedure(record.procedureId);
+    const form = this.formValidator(procedure);
+    if (!form(fields)) throw invalid(`Champs invalides : ${ajv.errorsText(form.errors, { dataVar: 'champs' })}`);
     const at = this.iso();
-    const verifier = decider.kind === 'official' ? decider.official.displayName : "un agent du ministère, depuis la console d'administration";
-    if (decision === 'approve') {
-      for (const blocked of record.steps.filter((candidate) => candidate.state === 'blocked')) {
-        Object.assign(blocked, { state: 'done', actor: 'administration', note: `Vérifié par ${verifier}`, at });
-      }
-      this.updateStep(record, 'decision', { state: 'done', note: note ?? 'Dossier approuvé', at });
-      this.issue(record, this.ruleOf(record), at);
-      record.status = 'completed';
-      record.completedBy = 'administration';
-    } else {
-      this.updateStep(record, 'decision', { state: 'done', note: note ?? 'Dossier rejeté', at });
-      record.status = 'rejected';
+    record.fields = fields;
+    record.documents.push(...(await this.takeUploads(tx, record.id, applicantRef, input.documents, procedure, at)));
+    this.updateStep(record, this.currentInformationStep(record), { state: 'done', actor: 'applicant', at });
+    record.steps.push(step(`response-${this.responseCount(record) + 1}`, "Complément fourni par l'usager", 'done', 'applicant', at, input.message));
+    record.informationRequest = null;
+    record.status = 'in_review';
+    record.updatedAt = at;
+    await this.log(tx, record, 'applicant', null, 'information.provided', null, at);
+    await this.saveCase(tx, record);
+    return record;
+  }
+
+  async act(tx: Tx, official: Official, caseId: string, action: CaseAction, note: string | null): Promise<Case> {
+    const record = await this.lockCase(tx, { kind: 'official', official }, caseId);
+    const at = this.iso();
+    const reason = note?.trim() || null;
+    switch (action) {
+      case 'claim':
+        if ((record.status !== 'received' && record.status !== 'in_review') || record.claimedBy) throw invalidTransition('Ce dossier ne peut pas être pris en charge');
+        record.status = 'in_review';
+        record.claimedBy = official.id;
+        record.steps.push(step('claim', `Pris en charge par ${official.displayName}`, 'done', 'administration', at));
+        await this.log(tx, record, 'administration', official.id, 'case.claimed', null, at);
+        break;
+      case 'request_information':
+        if (!reason) throw invalid('Motif obligatoire pour demander un complément');
+        if (record.status !== 'in_review') throw invalidTransition("Ce dossier n'est pas en cours d'instruction");
+        record.status = 'information_requested';
+        record.claimedBy ??= official.id;
+        record.informationRequest = { note: reason, requestedAt: at, requestedBy: official.id };
+        record.steps.push(step(`information-${this.informationCount(record) + 1}`, "Complément demandé à l'usager", 'pending', 'applicant', at, reason));
+        await this.log(tx, record, 'administration', official.id, 'information.requested', reason, at);
+        break;
+      case 'approve':
+        if (record.status !== 'in_review') throw invalidTransition("Ce dossier n'attend pas de décision");
+        for (const blocked of record.steps.filter((candidate) => candidate.state === 'blocked')) {
+          Object.assign(blocked, { state: 'done', actor: 'administration', note: `Vérifié par ${official.displayName}`, at });
+        }
+        this.updateStep(record, 'decision', { state: 'done', note: reason ?? 'Dossier approuvé', at });
+        record.status = 'completed';
+        record.completedBy = 'administration';
+        record.claimedBy ??= official.id;
+        record.decisionNote = reason;
+        await this.log(tx, record, 'administration', official.id, 'case.approved', reason, at);
+        await this.issue(tx, record, this.ruleOf(record), at, 'administration', official.id);
+        break;
+      case 'reject':
+        if (!reason) throw invalid('Motif obligatoire pour rejeter un dossier');
+        if (record.status !== 'in_review' && record.status !== 'information_requested') throw invalidTransition("Ce dossier n'attend pas de décision");
+        for (const open of record.steps.filter((candidate) => candidate.id !== 'decision' && candidate.state !== 'done')) {
+          Object.assign(open, { state: 'done', actor: 'administration', note: `Dossier rejeté par ${official.displayName}`, at });
+        }
+        this.updateStep(record, 'decision', { state: 'done', note: reason, at });
+        record.status = 'rejected';
+        record.informationRequest = null;
+        record.claimedBy ??= official.id;
+        record.decisionNote = reason;
+        await this.log(tx, record, 'administration', official.id, 'case.rejected', reason, at);
+        break;
     }
     record.updatedAt = at;
-    this.save();
+    await this.saveCase(tx, record);
     return record;
   }
 
-  listCases(official: Official, administrationId: string | undefined, view: CaseView): Case[] {
-    const scope = this.scopeOf(official, administrationId);
-    const selected = [...this.cases.values()].filter(
-      (record) =>
-        (scope === null || record.administrationId === scope) &&
-        (view === 'all' || (view === 'pending' ? record.status === 'in_review' : record.status === 'completed')),
-    );
-    // Pending work: oldest first, so nothing waits for weeks at the bottom of the list.
-    return selected.sort((a, b) => (view === 'pending' ? a.createdAt.localeCompare(b.createdAt) : b.updatedAt.localeCompare(a.updatedAt)));
-  }
-
-  issuedDocument(caller: Caller, caseId: string, documentId: string): { record: Case; title: string; issuedAt: string } {
-    const record = this.getCase(caller, caseId);
-    const document = record.issuedDocuments.find((candidate) => candidate.id === documentId);
+  async document(tx: Tx, caller: Caller, caseId: string, documentId: string): Promise<{ mimeType: UploadMime; content: Buffer }> {
+    const record = await this.getCase(tx, caller, caseId);
+    const document = record.documents.find((candidate) => candidate.id === documentId);
     if (!document) throw notFound('Document inconnu');
-    return { record, title: document.title, issuedAt: document.issuedAt };
+    const [row] = await tx.query<{ content: Uint8Array }>('select content from xroad_documents where id = $1 and case_id = $2', [documentId, caseId]);
+    if (!row) throw notFound('Document inconnu');
+    return { mimeType: document.mimeType, content: Buffer.from(row.content) };
   }
 
-  listOfficials(viewer: Official | undefined, administrationId: string | undefined): Official[] {
-    const all = [...this.officials.values()];
-    if (!viewer) return all.filter((official) => !administrationId || official.administrationId === administrationId);
-    if (viewer.role === 'agent') return [viewer];
+  async officialBySubject(tx: Tx, subject: string): Promise<Official | undefined> {
+    const [row] = await tx.query<{ body: Official }>('select body from xroad_officials where subject = $1', [subject]);
+    return row?.body;
+  }
+
+  me(official: Official): Schemas['Me'] {
+    return {
+      official,
+      administration: official.administrationId ? (this.administrations.get(official.administrationId) ?? null) : null,
+      permissions: PERMISSIONS[official.role],
+    };
+  }
+
+  async updateProfile(tx: Tx, official: Official, input: Schemas['ProfileUpdate']): Promise<Official> {
+    return this.saveOfficial(tx, { ...official, displayName: input.displayName, jobTitle: input.jobTitle });
+  }
+
+  async setAvatar(tx: Tx, official: Official, avatarUrl: string): Promise<Official> {
+    return this.saveOfficial(tx, { ...official, avatarUrl });
+  }
+
+  async listOfficials(tx: Tx, viewer: Official, administrationId: string | undefined, page: Page): Promise<{ items: Official[]; hasMore: boolean }> {
+    if (viewer.role === 'agent') return { items: page.offset === 0 ? [viewer] : [], hasMore: false };
     const scope = this.scopeOf(viewer, administrationId);
-    return all.filter((official) => scope === null || official.administrationId === scope);
+    const rows = await tx.query<{ body: Official }>(
+      `select body from xroad_officials ${scope === null ? '' : 'where administration_id = $1'} order by id limit ${page.limit + 1} offset ${page.offset}`,
+      scope === null ? [] : [scope],
+    );
+    return { items: rows.slice(0, page.limit).map((row) => row.body), hasMore: rows.length > page.limit };
   }
 
-  assign(viewer: Official, officialId: string, administrationId: string | null, role: OfficialRole): Official {
-    if (viewer.role !== 'super_admin') throw forbidden('Affectation réservée au super administrateur');
-    const target = this.officials.get(officialId);
-    if (!target) throw notFound('Agent inconnu');
-    if ((role === 'super_admin') !== (administrationId === null)) {
-      throw invalid('Un super administrateur n’a pas d’administration ; les autres rôles en exigent une');
-    }
-    if (administrationId !== null && !this.administrations.has(administrationId)) throw invalid('Administration inconnue');
-    const superAdmins = [...this.officials.values()].filter((official) => official.role === 'super_admin');
-    if (target.role === 'super_admin' && role !== 'super_admin' && superAdmins.length === 1) {
-      throw new ProblemError(409, 'INVALID_TRANSITION', 'Impossible de retirer le dernier super administrateur');
-    }
-    Object.assign(target, { administrationId, role });
-    this.save();
-    return target;
+  async createOfficial(tx: Tx, viewer: Official, input: Schemas['OfficialRegistration']): Promise<Official> {
+    if (viewer.role !== 'super_admin') throw forbidden('Création réservée au super administrateur');
+    this.assertAssignment(input.administrationId, input.role);
+    const [taken] = await tx.query('select id from xroad_officials where subject = $1 or email = $2', [input.subject, input.email]);
+    if (taken) throw new ProblemError(409, 'CONFLICT', 'Cette personne est déjà inscrite');
+    const official: Official = { id: newId('off', this.now()), ...input, avatarUrl: null, active: true };
+    await tx.query(
+      'insert into xroad_officials (id, subject, email, administration_id, role, body) values ($1, $2, $3, $4, $5, $6::jsonb)',
+      [official.id, official.subject, official.email, official.administrationId, official.role, JSON.stringify(official)],
+    );
+    return official;
   }
 
-  metrics(official: Official, administrationId: string | undefined): Metrics {
+  async updateOfficial(tx: Tx, viewer: Official, officialId: string, input: Schemas['OfficialUpdate']): Promise<Official> {
+    if (viewer.role === 'agent') throw forbidden('Gestion des agents non autorisée');
+    const [row] = await tx.query<{ body: Official }>('select body from xroad_officials where id = $1 for update', [officialId]);
+    if (!row) throw notFound('Agent inconnu');
+    const target = row.body;
+    if (viewer.role === 'admin') {
+      if (target.administrationId !== viewer.administrationId) throw notFound('Agent inconnu');
+      if (input.administrationId !== viewer.administrationId || input.role === 'super_admin') throw forbidden("Un administrateur n'agit que dans son administration");
+    }
+    this.assertAssignment(input.administrationId, input.role);
+    if (target.role === 'super_admin' && (input.role !== 'super_admin' || !input.active)) {
+      const [count] = await tx.query<{ total: string }>("select count(*) as total from xroad_officials where role = 'super_admin' and (body->>'active')::boolean");
+      if (Number(count.total) <= 1) throw new ProblemError(409, 'CONFLICT', 'Impossible de retirer le dernier super administrateur');
+    }
+    return this.saveOfficial(tx, { ...target, administrationId: input.administrationId, role: input.role, active: input.active });
+  }
+
+  async metrics(tx: Tx, official: Official, administrationId: string | undefined, from: string | undefined, to: string | undefined): Promise<Schemas['Metrics']> {
     const scope = this.scopeOf(official, administrationId);
-    const cases = [...this.cases.values()].filter((record) => scope === null || record.administrationId === scope);
+    const end = to ?? this.iso();
+    const start = from ?? new Date(Date.parse(end) - DEFAULT_PERIOD).toISOString();
+    if (Date.parse(start) > Date.parse(end)) throw invalid('from doit précéder to');
+    const params: unknown[] = [new Date(start), new Date(end)];
+    if (scope !== null) params.push(scope);
+    const rows = await tx.query<{ body: Case }>(
+      `select body from xroad_cases where created_at between $1 and $2 ${scope === null ? '' : 'and administration_id = $3'}`,
+      params,
+    );
+    // A case awaiting payment has not reached the administration yet.
+    const cases = rows.map((row) => row.body).filter((record) => record.status !== 'awaiting_payment');
     const closed = cases.filter((record) => record.status === 'completed' || record.status === 'rejected');
     const durations = closed.map((record) => (Date.parse(record.updatedAt) - Date.parse(record.createdAt)) / HOUR).sort((a, b) => a - b);
     const counts = new Map<string, number>();
     for (const record of cases) counts.set(record.procedureId, (counts.get(record.procedureId) ?? 0) + 1);
     return {
       administrationId: scope,
-      casesTotal: cases.length,
-      casesPending: cases.filter((record) => record.status === 'in_review').length,
-      casesCompleted: cases.filter((record) => record.status === 'completed').length,
-      casesCompletedByAssistant: cases.filter((record) => record.completedBy === 'assistant').length,
-      casesRejected: cases.filter((record) => record.status === 'rejected').length,
+      period: { from: start, to: end },
+      received: cases.length,
+      pending: cases.filter((record) => PENDING_STATUSES.includes(record.status)).length,
+      informationRequested: cases.filter((record) => record.status === 'information_requested').length,
+      completed: cases.filter((record) => record.status === 'completed').length,
+      completedByAssistant: cases.filter((record) => record.completedBy === 'assistant').length,
+      rejected: cases.filter((record) => record.status === 'rejected').length,
       medianProcessingHours: durations.length ? Math.round(median(durations) * 10) / 10 : null,
+      byChannel: CHANNELS.map((channel) => ({ channel, count: cases.filter((record) => record.channel === channel).length })),
       topProcedures: [...counts.entries()]
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .slice(0, 5)
@@ -289,30 +442,92 @@ export class XroadStore {
     };
   }
 
-  private save(): void {
-    if (!this.stateFile) return;
-    const state: PersistedState = {
-      version: 1,
-      cases: [...this.cases.values()],
-      sequences: [...this.sequences.entries()],
-      officials: [...this.officials.values()],
-      replies: [...this.replies.entries()],
-    };
-    const temporary = `${this.stateFile}.${process.pid}.tmp`;
-    writeFileSync(temporary, JSON.stringify(state));
-    renameSync(temporary, this.stateFile);
+  async activity(tx: Tx, official: Official, administrationId: string | undefined, caseId: string | undefined, page: Page): Promise<{ items: ActivityEntry[]; hasMore: boolean }> {
+    const scope = this.scopeOf(official, administrationId);
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (scope !== null) {
+      params.push(scope);
+      clauses.push(`administration_id = $${params.length}`);
+    }
+    if (caseId) {
+      params.push(caseId);
+      clauses.push(`case_id = $${params.length}`);
+    }
+    const rows = await tx.query<{ body: ActivityEntry }>(
+      `select body from xroad_activity ${clauses.length ? `where ${clauses.join(' and ')}` : ''} order by seq desc limit ${page.limit + 1} offset ${page.offset}`,
+      params,
+    );
+    return { items: rows.slice(0, page.limit).map((row) => row.body), hasMore: rows.length > page.limit };
   }
 
-  private load(file: string): void {
-    const state = JSON.parse(readFileSync(file, 'utf8')) as PersistedState;
-    if (state.version !== 1 || !Array.isArray(state.cases) || !Array.isArray(state.officials)) throw new Error(`État du X-Road illisible : ${file}`);
-    for (const record of state.cases) {
-      this.cases.set(record.id, record);
-      this.casesByRequest.set(record.requestId, record.id);
+  /** Counts per administration, for the overview page: no personal data. */
+  async overview(tx: Tx): Promise<Map<string, { total: number; pending: number; byAssistant: number }>> {
+    const rows = await tx.query<{ administration_id: string; total: string; pending: string; by_assistant: string }>(
+      `select administration_id, count(*) as total,
+         count(*) filter (where status = any($1)) as pending,
+         count(*) filter (where body->>'completedBy' = 'assistant') as by_assistant
+       from xroad_cases group by administration_id`,
+      [PENDING_STATUSES],
+    );
+    return new Map(rows.map((row) => [row.administration_id, { total: Number(row.total), pending: Number(row.pending), byAssistant: Number(row.by_assistant) }]));
+  }
+
+  private assertAssignment(administrationId: string | null, role: Official['role']): void {
+    if ((role === 'super_admin') !== (administrationId === null)) {
+      throw invalid('Un super administrateur n’a pas d’administration ; les autres rôles en exigent une');
     }
-    for (const [key, value] of state.sequences) this.sequences.set(key, value);
-    for (const official of state.officials) if (this.officials.has(official.id)) this.officials.set(official.id, official);
-    for (const [scope, stored] of state.replies) this.replies.set(scope, stored);
+    if (administrationId !== null && !this.administrations.has(administrationId)) throw invalid('Administration inconnue');
+  }
+
+  private async saveOfficial(tx: Tx, official: Official): Promise<Official> {
+    await tx.query('update xroad_officials set administration_id = $2, role = $3, body = $4::jsonb where id = $1', [
+      official.id,
+      official.administrationId,
+      official.role,
+      JSON.stringify(official),
+    ]);
+    return official;
+  }
+
+  private async lockCase(tx: Tx, caller: Caller, caseId: string): Promise<Case> {
+    const [row] = await tx.query<{ body: Case }>('select body from xroad_cases where id = $1 for update', [caseId]);
+    if (!row || !this.canSee(caller, row.body)) throw notFound('Dossier inconnu');
+    return row.body;
+  }
+
+  private async saveCase(tx: Tx, record: Case): Promise<void> {
+    await tx.query('update xroad_cases set status = $2, updated_at = $3, body = $4::jsonb where id = $1', [
+      record.id,
+      record.status,
+      new Date(record.updatedAt),
+      JSON.stringify(record),
+    ]);
+  }
+
+  /** Moves uploaded pieces into the case. An upload of another applicant, expired or already used, does not exist. */
+  private async takeUploads(tx: Tx, caseId: string, applicantRef: string, references: DocumentRef[], procedure: Procedure, at: string): Promise<CaseDocument[]> {
+    const documents: CaseDocument[] = [];
+    for (const reference of references) {
+      const [upload] = await tx.query<{ mime_type: UploadMime; size_bytes: number; content: Uint8Array }>(
+        'delete from xroad_uploads where id = $1 and applicant_ref = $2 and expires_at > $3 returning mime_type, size_bytes, content',
+        [reference.uploadId, applicantRef, new Date(this.now())],
+      );
+      if (!upload) throw notFound('Pièce inconnue ou expirée');
+      const label = procedure.filing?.requiredDocuments.find((required) => required.documentType === reference.documentType)?.label;
+      const document: CaseDocument = {
+        id: newId('doc', this.now()),
+        kind: 'submitted',
+        documentType: reference.documentType,
+        name: label ?? 'Pièce complémentaire',
+        mimeType: upload.mime_type,
+        sizeBytes: upload.size_bytes,
+        createdAt: at,
+      };
+      await tx.query('insert into xroad_documents (id, case_id, content) values ($1, $2, $3)', [document.id, caseId, Buffer.from(upload.content)]);
+      documents.push(document);
+    }
+    return documents;
   }
 
   /** Administration an official may look at: their own, or any (null = all) for the super admin. */
@@ -328,25 +543,54 @@ export class XroadStore {
   }
 
   /** Automatic instruction: the assistant either completes the case, or stops on a blocked check. */
-  private instruct(record: Case, rule: InstructionRule): void {
+  private async instruct(tx: Tx, record: Case, rule: InstructionRule): Promise<void> {
     const at = this.iso();
     if (rule.blocker === null) {
       record.steps.push(step('check', rule.check, 'done', 'assistant', at));
-      this.issue(record, rule, at);
+      await this.log(tx, record, 'assistant', null, 'step.completed', rule.check, at);
       record.status = 'completed';
       record.completedBy = 'assistant';
+      await this.issue(tx, record, rule, at, 'assistant', null);
     } else {
       record.steps.push(step('check', rule.check, 'blocked', 'assistant', at, rule.blocker));
       record.steps.push(step('decision', "Décision de l'administration", 'pending', 'administration', null));
+      await this.log(tx, record, 'assistant', null, 'step.completed', rule.blocker, at);
       record.status = 'in_review';
     }
     record.updatedAt = at;
   }
 
-  private issue(record: Case, rule: InstructionRule, at: string): void {
+  private async issue(tx: Tx, record: Case, rule: InstructionRule, at: string, actor: CaseStep['actor'], officialId: string | null): Promise<void> {
     if (!rule.issues) return;
-    record.issuedDocuments.push({ id: newId('doc', Date.parse(at)), title: `${rule.issues} (simulation)`, mimeType: 'application/pdf', issuedAt: at });
-    record.steps.push(step('issue', `${rule.issues} délivré`, 'done', record.status === 'in_review' ? 'administration' : 'assistant', at));
+    const name = `${rule.issues} (simulation)`;
+    const administration = this.administrations.get(record.administrationId)?.name ?? record.administrationId;
+    const content = simulatedPdf(name, [
+      `Référence du dossier : ${record.reference}`,
+      `Démarche : ${record.title}`,
+      `Administration : ${administration}`,
+      `Délivré le : ${at.slice(0, 10)}`,
+      'Document produit par le X-Road simulé du projet Assistant-démarches.',
+    ]);
+    const id = newId('doc', Date.parse(at));
+    await tx.query('insert into xroad_documents (id, case_id, content) values ($1, $2, $3)', [id, record.id, content]);
+    record.documents.push({ id, kind: 'issued', documentType: ISSUED_DOCUMENT_TYPE, name, mimeType: 'application/pdf', sizeBytes: content.length, createdAt: at });
+    record.steps.push(step('issue', `${rule.issues} délivré`, 'done', actor, at));
+    await this.log(tx, record, actor, officialId, 'document.issued', name, at);
+  }
+
+  private async log(tx: Tx, record: Case, actor: ActivityEntry['actor'], officialId: string | null, action: ActivityEntry['action'], note: string | null, at: string): Promise<void> {
+    const entry: ActivityEntry = {
+      id: newId('act', Date.parse(at)),
+      caseId: record.id,
+      caseReference: record.reference,
+      administrationId: record.administrationId,
+      actor,
+      officialId,
+      action,
+      note,
+      at,
+    };
+    await tx.query('insert into xroad_activity (case_id, administration_id, body) values ($1, $2, $3::jsonb)', [record.id, record.administrationId, JSON.stringify(entry)]);
   }
 
   private ruleOf(record: Case): InstructionRule {
@@ -360,95 +604,39 @@ export class XroadStore {
     if (found) Object.assign(found, patch);
   }
 
+  private informationCount(record: Case): number {
+    return record.steps.filter((candidate) => candidate.id.startsWith('information-')).length;
+  }
+
+  private responseCount(record: Case): number {
+    return record.steps.filter((candidate) => candidate.id.startsWith('response-')).length;
+  }
+
+  private currentInformationStep(record: Case): string {
+    return `information-${this.informationCount(record)}`;
+  }
+
   private formValidator(procedure: Procedure): ValidateFunction {
     let validate = this.forms.get(procedure.id);
     if (!validate) {
-      validate = ajv.compile(procedure.formSchema);
+      validate = ajv.compile(procedure.filing?.formSchema ?? {});
       this.forms.set(procedure.id, validate);
     }
     return validate;
   }
 
-  private nextReference(code: string, at = this.now()): string {
-    const year = new Date(at).getUTCFullYear();
-    const key = `${code}-${year}`;
-    const next = (this.sequences.get(key) ?? 0) + 1;
-    this.sequences.set(key, next);
-    return `SIM-${key}-${String(next).padStart(6, '0')}`;
+  private async nextReference(tx: Tx, code: string): Promise<string> {
+    const key = `${code}-${new Date(this.now()).getUTCFullYear()}`;
+    const [row] = await tx.query<{ value: number }>(
+      `insert into xroad_sequences (key, value) values ($1, 1)
+       on conflict (key) do update set value = xroad_sequences.value + 1 returning value`,
+      [key],
+    );
+    return `SIM-${key}-${String(row.value).padStart(6, '0')}`;
   }
 
   private iso(): string {
     return new Date(this.now()).toISOString();
-  }
-
-  /** A few weeks of fictitious activity so dashboards are not empty at the start of a demo. */
-  private seedHistory(): void {
-    let state = 20261029;
-    const random = () => {
-      state = (state * 1103515245 + 12345) % 2147483648;
-      return state / 2147483648;
-    };
-    const end = this.now();
-    for (const { procedure, rule } of this.catalogue.values()) {
-      if (!rule) continue;
-      const total = 4 + Math.floor(random() * 6);
-      for (let n = 0; n < total; n += 1) {
-        const createdAt = end - Math.floor((1 + random() * 20) * 24) * HOUR;
-        const outcome = rule.blocker === null ? 'assistant' : REVIEW_OUTCOMES[n % REVIEW_OUTCOMES.length];
-        const record = this.historicCase(procedure, rule, createdAt, outcome, random);
-        this.cases.set(record.id, record);
-        this.casesByRequest.set(record.requestId, record.id);
-      }
-    }
-  }
-
-  private historicCase(procedure: Procedure, rule: InstructionRule, createdAtMs: number, outcome: HistoricOutcome, random: () => number): Case {
-    const createdAt = new Date(createdAtMs).toISOString();
-    const closedAt = new Date(createdAtMs + Math.floor(1 + random() * 72) * HOUR).toISOString();
-    const reference = this.nextReference(rule.code, createdAtMs);
-    const paid = (procedure.feeFcfa ?? 0) > 0;
-    const steps: CaseStep[] = [
-      step('form', "Formulaire complété avec l'assistant", 'done', 'assistant', createdAt),
-      step('documents', 'Pièces transmises', 'done', 'assistant', createdAt),
-      ...(paid ? [step('payment', `Frais de ${procedure.feeFcfa} FCFA réglés par Mobile Money (simulation)`, 'done', 'applicant', createdAt)] : []),
-    ];
-    const issuedDocuments: Case['issuedDocuments'] = [];
-    if (outcome === 'pending') {
-      steps.push(step('check', rule.check, 'blocked', 'assistant', createdAt, rule.blocker), step('decision', "Décision de l'administration", 'pending', 'administration', null));
-    } else {
-      const checker = outcome === 'assistant' ? 'assistant' : 'administration';
-      steps.push(step('check', rule.check, 'done', checker, createdAt, outcome === 'assistant' ? null : 'Vérifié par un agent (simulation)'));
-      if (outcome !== 'assistant') steps.push(step('decision', "Décision de l'administration", 'done', 'administration', closedAt, outcome === 'rejected' ? 'Dossier rejeté' : 'Dossier approuvé'));
-      if (outcome !== 'rejected' && rule.issues) {
-        issuedDocuments.push({ id: newId('doc', Date.parse(closedAt)), title: `${rule.issues} (simulation)`, mimeType: 'application/pdf', issuedAt: closedAt });
-        steps.push(step('issue', `${rule.issues} délivré`, 'done', checker, closedAt));
-      }
-    }
-    return {
-      id: newId('cas', createdAtMs),
-      reference,
-      simulated: true,
-      procedureId: procedure.id,
-      administrationId: procedure.administrationId,
-      requestId: newId('cas', createdAtMs).replace('cas_', 'req_'),
-      applicantRef: newId('cas', createdAtMs).replace('cas_', 'usr_'),
-      status: outcome === 'pending' ? 'in_review' : outcome === 'rejected' ? 'rejected' : 'completed',
-      fields: sampleFields(procedure.formSchema),
-      documents: procedure.requiredDocuments.map((documentType) => ({
-        documentType,
-        fileId: newId('cas', createdAtMs).replace('cas_', 'fil_'),
-        mimeType: 'application/pdf',
-        sizeBytes: 1024,
-      })),
-      payment: paid
-        ? { amountFcfa: procedure.feeFcfa ?? 0, status: 'paid', method: 'mobile_money', reference: `SIM-PAY-${reference.slice(-6)}`, paidAt: createdAt }
-        : { amountFcfa: 0, status: 'not_required', method: null, reference: null, paidAt: null },
-      steps,
-      issuedDocuments,
-      completedBy: outcome === 'assistant' ? 'assistant' : outcome === 'administration' ? 'administration' : null,
-      createdAt,
-      updatedAt: outcome === 'pending' ? createdAt : closedAt,
-    };
   }
 }
 
@@ -480,9 +668,4 @@ function median(sorted: number[]): number {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-function sampleFields(formSchema: Record<string, unknown>): Record<string, FieldValue> {
-  const properties = (formSchema.properties ?? {}) as Record<string, { enum?: string[]; type?: string; minimum?: number }>;
-  return Object.fromEntries(
-    Object.entries(properties).map(([name, schema]) => [name, schema.enum?.[0] ?? (schema.type === 'integer' ? (schema.minimum ?? 1) : 'Simulation')]),
-  );
-}
+export type { FieldValue };
