@@ -158,7 +158,8 @@ test("deltas reach the browser while the model is still generating (WebSocket an
     const deltas = list.filter((item) => item.event.data.kind === "message.delta");
     const sent = list.find((item) => item.event.data.kind === "message.sent");
     assert.ok(sent, label + ": message.sent received");
-    assert.ok(deltas.length >= WORDS - 1, `${label}: ${deltas.length} deltas`);
+    // The last word waits for the end of the stream and "mot " waits for the next word (it may start "mot de passe").
+    assert.ok(deltas.length >= WORDS - 3, `${label}: ${deltas.length} deltas`);
     const first = deltas[0].at - started;
     const firstBeforeEnd = generationEnd - deltas[0].at;
     t.diagnostic(`${label}: first delta +${Math.round(first)} ms, model finished +${Math.round(generationEnd - started)} ms, message.sent +${Math.round(sent.at - started)} ms, last delta +${Math.round(deltas.at(-1).at - started)} ms`);
@@ -327,17 +328,17 @@ test("deltas are grouped within the flush window and settle() waits for every wr
   const live = new LiveReply(fake, "cnv", "msg", tp);
   const listener = await live.attempt();
   const start = performance.now();
-  // 120 tiny provider pieces over about 240 ms: well over the number of writes allowed.
+  // 120 tiny provider pieces (one word each) over about 240 ms: well over the number of writes allowed.
   for (let index = 0; index < 120; index++) {
-    listener.onTextDelta(index === 0 ? '{"blocks":[{"type":"text","text":"' : "x");
+    listener.onTextDelta(index === 0 ? '{"blocks":[{"type":"text","text":"' : "x ");
     await sleep(2);
   }
   await live.settle();
   const elapsed = performance.now() - start;
-  assert.equal(written.map((item) => item.delta).join(""), "x".repeat(119));
+  assert.equal(written.map((item) => item.delta).join(""), "x ".repeat(119));
   assert.deepEqual(written.map((item) => item.index), written.map((_, index) => index));
   assert.ok(written.length <= Math.ceil(elapsed / DELTA_FLUSH_MS) + 2, `${written.length} writes for ${Math.round(elapsed)} ms`);
-  assert.ok(written[0].at - start < 30, "the first piece is not held back");
+  assert.ok(written[0].at - start < 30, "the first word is not held back");
   await live.close();
   const count = written.length;
   listener.onTextDelta("late");
