@@ -98,7 +98,7 @@ export function storageFromEnvironment(): ObjectStorage {
   const driver = process.env.STORAGE_DRIVER ?? "local";
   if (driver === "local")
     return new LocalStorage(
-      process.env.STORAGE_LOCAL_DIRECTORY ?? "./.backend-files",
+      process.env.FILE_STORAGE_DIR ?? process.env.STORAGE_LOCAL_DIRECTORY ?? "./.backend-files",
     );
   const bucket = process.env.STORAGE_BUCKET;
   if (!bucket) throw new Error("STORAGE_BUCKET required.");
