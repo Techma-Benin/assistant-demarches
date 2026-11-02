@@ -3,7 +3,7 @@ import { Problem, type Schemas } from "./domain.js";
 type AdministrationList = Schemas["AdministrationList"];
 type ProcedurePage = Schemas["ProcedurePage"];
 
-const RELAYED_STATUS = new Set([400, 401, 403, 404, 409, 413, 415, 503]);
+const RELAYED_STATUS = new Set([400, 401, 403, 404, 409, 413, 415, 429, 503]);
 
 export class XroadClient {
   constructor(
@@ -43,10 +43,14 @@ export class XroadClient {
         bytes: Buffer.from(await response.arrayBuffer()),
       };
     const json = await response.json().catch(() => undefined);
-    if (!response.ok) throw this.problem(response.status, json);
+    if (!response.ok) throw this.problem(response.status, json, response.headers.get("retry-after"));
     return { status: response.status, json };
   }
-  private problem(status: number, json: unknown): Problem {
+  private problem(status: number, json: unknown, retryAfter?: string | null): Problem {
+    if (status === 429) {
+      const seconds = /^\d{1,5}$/.test(retryAfter?.trim() ?? "") ? Number(retryAfter!.trim()) : undefined;
+      return new Problem(429, "RATE_LIMITED", "Trop de requêtes vers le X-Road ; réessayez dans un instant.", seconds === undefined ? undefined : Math.min(seconds, 3600));
+    }
     const body = json as { code?: unknown; detail?: unknown } | undefined;
     const code = typeof body?.code === "string" ? body.code : undefined;
     const detail = typeof body?.detail === "string" ? body.detail : undefined;
