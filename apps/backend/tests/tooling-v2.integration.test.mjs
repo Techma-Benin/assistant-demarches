@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import net from "node:net";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -20,6 +21,13 @@ import { identifier } from "../dist/apps/backend/src/domain.js";
 const CASIER = "PS00373";
 const JUSTICE_AGENT = "7f3c2a10-0002-4000-8000-000000000002";
 const tp = "00-" + "a".repeat(32) + "-" + "b".repeat(16) + "-01";
+// Needs the Tooling team's v2 service (branch tooling/v2-migration). Skipped, with its reason, until it is merged.
+const toolingV2 = existsSync(fileURLToPath(new URL("../../tooling/src/tracking/case-tracker.ts", import.meta.url)));
+const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+if (toolingV2)
+  for (const [pkg, built] of [["@techma/tooling", "../../tooling/dist/src/app.js"], ["@techma/xroad-sim", "../../xroad-sim/dist/src/server.js"]])
+    if (!existsSync(fileURLToPath(new URL(built, import.meta.url))))
+      execFileSync("pnpm", ["--filter", pkg, "build"], { cwd: repoRoot, stdio: "inherit" });
 const toolingRequire = createRequire(new URL("../../tooling/package.json", import.meta.url));
 const catalogueFile = fileURLToPath(new URL("../../../content/service-public/catalogue.json", import.meta.url));
 
@@ -50,7 +58,7 @@ function sse(res, message) {
   res.end(events.map((event) => "data: " + JSON.stringify(event)).join("\n\n") + "\n\ndata: [DONE]\n");
 }
 
-test("real Tooling v2 + X-Road sim: guest create → loginRequired → attach → consent → mandate → requestCard → submit → case.updated → document", { timeout: 180000 }, async (t) => {
+test("real Tooling v2 + X-Road sim: guest create → loginRequired → attach → consent → mandate → requestCard → submit → case.updated → document", { timeout: 180000, skip: toolingV2 ? false : "Tooling v2 absent (tooling/v2-migration not merged)" }, async (t) => {
   const pg = await isolatedDatabase();
   const pool = database(pg.connection);
   const filesDir = mkdtempSync(join(tmpdir(), "techma-tooling-v2-files-"));
