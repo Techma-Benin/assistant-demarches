@@ -80,3 +80,44 @@ test("X-Road 429 is relayed as RATE_LIMITED with its Retry-After; other unrelaye
   }
   for (const probe of [limited, bare]) validate("Problem", probe.body);
 });
+
+test("upstream detail is relayed only when sanitised; codes outside the contract enum never reach the user", async (t) => {
+  const h = await harness(t);
+  const generic = {
+    400: "Requête refusée par le X-Road.", 401: "Identité X-Road refusée.", 403: "Droit insuffisant.", 404: "Ressource introuvable.",
+    409: "Conflit d’état.", 413: "Fichier trop volumineux.", 415: "Type de média non pris en charge.",
+  };
+  const defaultCode = { 400: "INVALID_REQUEST", 401: "UNAUTHORIZED", 403: "FORBIDDEN", 404: "NOT_FOUND", 409: "CONFLICT", 413: "FILE_TOO_LARGE", 415: "UNSUPPORTED_MEDIA_TYPE" };
+  const unsafe = [
+    "Voir http://xroad.internal:8443/v1/cases/42 pour le détail",
+    "Échec sur https://db.example.test/secret",
+    "Ligne 1\r\nLigne 2 : fuite",
+    "x".repeat(201),
+    "Dossier cas_01JABCDEFGHJKMNPQRSTVWXYZ0 introuvable pour usr_01JABCDEFGHJKMNPQRSTVWXYZ0",
+    "Utilisateur 3f2b8c1e-9d4a-4e6b-8f10-1234567890ab inconnu",
+    "Connexion refusée par 10.0.3.14",
+    "ERROR: relation \"cases\" does not exist at /srv/xroad/dist/db.js",
+    "token 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  ];
+  for (const status of Object.keys(generic).map(Number)) {
+    for (const detail of unsafe) {
+      h.upstream.reply = problem(status, { code: "NOT_A_CONTRACT_CODE", detail });
+      const result = await h.home();
+      assert.equal(result.status, status);
+      assert.equal(result.body.code, defaultCode[status], `${status}: unknown code replaced`);
+      assert.equal(result.body.detail, generic[status], `${status}: ${detail.slice(0, 30)}`);
+      validate("Problem", result.body);
+    }
+    h.upstream.reply = problem(status, { code: "CONFLICT", detail: "  Dossier déjà clos pour cette démarche.  " });
+    const clean = await h.home();
+    assert.equal(clean.status, status);
+    assert.equal(clean.body.code, "CONFLICT", "a code of the contract is relayed");
+    assert.equal(clean.body.detail, "Dossier déjà clos pour cette démarche.");
+    h.upstream.reply = problem(status, { code: 42, detail: { nested: true } });
+    assert.equal((await h.home()).body.detail, generic[status], "non-string values");
+  }
+  h.upstream.reply = problem(503, { code: "UPSTREAM_UNAVAILABLE", detail: "Voir http://10.0.0.1/status" });
+  const down = await h.home();
+  assert.equal(down.status, 503);
+  assert.equal(down.body.detail, "X-Road indisponible.");
+});

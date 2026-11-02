@@ -1,9 +1,35 @@
-import { Problem, type Schemas } from "./domain.js";
+import { PROBLEM_CODES, Problem, type Schemas } from "./domain.js";
 
 type AdministrationList = Schemas["AdministrationList"];
 type ProcedurePage = Schemas["ProcedurePage"];
 
-const RELAYED_STATUS = new Set([400, 401, 403, 404, 409, 413, 415, 429, 503]);
+const MAX_RELAYED_DETAIL = 200;
+const UNSAFE_DETAIL = [
+  /[\u0000-\u001f\u007f\u2028\u2029]/, // carriage returns, line breaks, control characters
+  /[a-z][a-z0-9+.-]*:\/\//i, // URLs
+  /\bwww\./i,
+  /(?:^|[\s(])(?:localhost|(?:\d{1,3}\.){3}\d{1,3})\b/i, // internal hosts
+  /\b[a-z][a-z0-9-]*\.(?:local|internal|svc|lan|corp|cluster)\b/i,
+  /[\w.+-]+@[\w-]+\.[\w.-]+/, // e-mail addresses
+  /\b[a-z]{2,6}_[0-9A-Z]{20,}\b/, // internal identifiers (usr_…, cas_…, fil_…)
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i, // UUIDs
+  /\b[0-9a-f]{16,}\b/i, // hashes and long hexadecimal identifiers
+  /(?:^|\s)\/[\w.-]+\/[\w./-]+/, // file paths
+  /\b(?:SELECT|INSERT|UPDATE|DELETE)\b.+\b(?:FROM|INTO|SET)\b/i,
+  /\bat\s+\S+\s*\(/, // stack frames
+];
+
+/** Upstream codes outside the published Problem enum never reach the user. */
+function relayedCode(code: unknown, fallback: string): string {
+  return typeof code === "string" && PROBLEM_CODES.has(code) ? code : fallback;
+}
+/** The upstream detail is relayed only when it is short, single-line and free of URLs or internal identifiers. */
+function relayedDetail(detail: unknown, fallback: string): string {
+  if (typeof detail !== "string") return fallback;
+  const text = detail.trim();
+  if (!text || text.length > MAX_RELAYED_DETAIL || UNSAFE_DETAIL.some((pattern) => pattern.test(text))) return fallback;
+  return text;
+}
 
 export class XroadClient {
   constructor(
@@ -52,18 +78,18 @@ export class XroadClient {
       return new Problem(429, "RATE_LIMITED", "Trop de requêtes vers le X-Road ; réessayez dans un instant.", seconds === undefined ? undefined : Math.min(seconds, 3600));
     }
     const body = json as { code?: unknown; detail?: unknown } | undefined;
-    const code = typeof body?.code === "string" ? body.code : undefined;
-    const detail = typeof body?.detail === "string" ? body.detail : undefined;
-    if (status === 404) return new Problem(404, code ?? "NOT_FOUND", detail ?? "Ressource introuvable.");
-    if (status === 403) return new Problem(403, code ?? "FORBIDDEN", detail ?? "Droit insuffisant.");
-    if (status === 401) return new Problem(401, code ?? "UNAUTHORIZED", detail ?? "Identité X-Road refusée.");
-    if (status === 409) return new Problem(409, code ?? "CONFLICT", detail ?? "Conflit d’état.");
-    if (status === 400) return new Problem(400, code ?? "INVALID_REQUEST", detail ?? "Requête refusée par le X-Road.");
-    if (status === 413) return new Problem(413, code ?? "FILE_TOO_LARGE", detail ?? "Fichier trop volumineux.");
-    if (status === 415) return new Problem(415, code ?? "UNSUPPORTED_MEDIA_TYPE", detail ?? "Type de média non pris en charge.");
-    if (status === 503 || !RELAYED_STATUS.has(status))
-      return new Problem(503, code ?? "UPSTREAM_UNAVAILABLE", detail ?? "X-Road indisponible.");
-    return new Problem(status, code ?? "UPSTREAM_UNAVAILABLE", detail ?? "X-Road indisponible.");
+    const relay = (fallbackCode: string, fallbackDetail: string) =>
+      new Problem(status, relayedCode(body?.code, fallbackCode), relayedDetail(body?.detail, fallbackDetail));
+    if (status === 404) return relay("NOT_FOUND", "Ressource introuvable.");
+    if (status === 403) return relay("FORBIDDEN", "Droit insuffisant.");
+    if (status === 401) return relay("UNAUTHORIZED", "Identité X-Road refusée.");
+    if (status === 409) return relay("CONFLICT", "Conflit d’état.");
+    if (status === 400) return relay("INVALID_REQUEST", "Requête refusée par le X-Road.");
+    if (status === 413) return relay("FILE_TOO_LARGE", "Fichier trop volumineux.");
+    if (status === 415) return relay("UNSUPPORTED_MEDIA_TYPE", "Type de média non pris en charge.");
+    if (status === 503)
+      return new Problem(503, relayedCode(body?.code, "UPSTREAM_UNAVAILABLE"), relayedDetail(body?.detail, "X-Road indisponible."));
+    return new Problem(503, "UPSTREAM_UNAVAILABLE", "X-Road indisponible.");
   }
   private async get(path: string, headers: Record<string, string> = {}) {
     return (await this.send("GET", path, headers)).json;
