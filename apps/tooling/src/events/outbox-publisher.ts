@@ -6,7 +6,8 @@ import { Database } from '../database/database.js';
 interface Claimed {
   seq: string;
   id: string;
-  event: { traceparent: string };
+  event: unknown;
+  traceparent: string;
   attempts: number;
   created_at: Date | string;
 }
@@ -69,7 +70,7 @@ export class OutboxPublisher implements OnApplicationBootstrap, OnApplicationShu
            where published_at is null and dead_at is null
            order by conversation_id, seq
          )
-         select o.seq, o.id, o.event, o.attempts, o.created_at
+         select o.seq, o.id, o.event, o.traceparent, o.attempts, o.created_at
          from outbox o join heads h on h.seq = o.seq
          where o.available_at <= now()
          order by o.seq
@@ -93,9 +94,9 @@ export class OutboxPublisher implements OnApplicationBootstrap, OnApplicationShu
       res = await fetch(new URL('internal/v1/events', this.config.backendUrl.href.replace(/\/?$/, '/')), {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${await this.tokens.get('tooling-events')}`,
+          Authorization: `Bearer ${await this.tokens.get()}`,
           'Content-Type': 'application/json',
-          traceparent: row.event.traceparent,
+          traceparent: row.traceparent,
           'Idempotency-Key': row.id,
         },
         body: JSON.stringify(row.event),
@@ -107,8 +108,8 @@ export class OutboxPublisher implements OnApplicationBootstrap, OnApplicationShu
     }
     if (res.status === 202) return { kind: 'published' };
     if (res.status === 401 || res.status === 403) {
-      this.tokens.invalidate('tooling-events');
-      this.logger.error(`Backend refuse l'identité tooling-events (HTTP ${res.status}) : configuration à corriger`);
+      this.tokens.invalidate();
+      this.logger.error(`Backend refuse l'identité tooling (HTTP ${res.status}) : configuration à corriger`);
     }
     if (PERMANENT.has(res.status)) return { kind: 'dead', reason: `HTTP ${res.status}` };
     const retryAfter = Number(res.headers.get('retry-after'));

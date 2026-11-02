@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { Injectable, type NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
-import { ProblemError } from './problem.js';
 
 export interface TraceContext {
   traceparent: string;
@@ -20,10 +19,18 @@ export function parseTraceparent(value: unknown): TraceContext | undefined {
   return { traceparent: value, traceId: match[1], parentId: match[2] };
 }
 
+export function newTrace(): TraceContext {
+  const traceId = randomBytes(16).toString('hex');
+  const parentId = randomBytes(8).toString('hex');
+  return { traceparent: `00-${traceId}-${parentId}-01`, traceId, parentId };
+}
+
 export function traceOf(req: Request): TraceContext {
   const trace = parseTraceparent(req.headers.traceparent);
-  if (!trace) throw new ProblemError(400, 'INVALID_REQUEST', 'traceparent W3C v00 requis');
-  return trace;
+  if (trace) return trace;
+  const created = newTrace();
+  req.headers.traceparent = created.traceparent;
+  return created;
 }
 
 export function childTraceparent(trace: Pick<TraceContext, 'traceId'>): string {

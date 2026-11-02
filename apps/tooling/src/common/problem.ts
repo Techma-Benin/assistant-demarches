@@ -18,7 +18,10 @@ export type ProblemCode =
   | 'RATE_LIMITED'
   | 'UNSUPPORTED_MEDIA_TYPE'
   | 'FILE_TOO_LARGE'
-  | 'REPLAY_EXPIRED';
+  | 'REPLAY_EXPIRED'
+  | 'LOGIN_REQUIRED'
+  | 'CONFLICT'
+  | 'NOT_ASSISTED';
 
 export class ProblemError extends Error {
   constructor(

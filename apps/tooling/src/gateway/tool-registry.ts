@@ -12,6 +12,7 @@ export interface MandateGrantView {
 export interface PreparationContext {
   context: ToolContext;
   trace: TraceContext;
+  idempotencyKey?: string;
   read<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
 }
 

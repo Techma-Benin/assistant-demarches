@@ -3,12 +3,12 @@ import { Global, Module, RequestMethod, type DynamicModule, type INestApplicatio
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AuditModule } from './audit/audit-log.js';
+import { BackendModule } from './backend/backend.client.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ProblemFilter } from './common/problem.js';
 import { securityHeaders } from './common/security-headers.js';
 import { TraceMiddleware } from './common/trace.js';
 import { TOOLING_CONFIG, type ToolingConfig } from './config.js';
-import { ConnectorsModule } from './connectors/connectors.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { EventsModule } from './events/events.module.js';
 import { GatewayModule } from './gateway/mcp.controller.js';
@@ -17,8 +17,8 @@ import { HealthController } from './health.controller.js';
 import { IdempotencyModule } from './idempotency/idempotency.js';
 import { MandatesModule } from './mandates/mandates.module.js';
 import { ProceduresModule } from './procedures/procedures.module.js';
-import { RequestWorkflowModule } from './requests/request-workflow.js';
 import { RequestsModule } from './requests/requests.module.js';
+import { TrackingModule } from './tracking/case-tracker.js';
 import { XroadModule } from './xroad/xroad.client.js';
 
 @Global()
@@ -41,12 +41,12 @@ class AppModule implements NestModule {
         AuditModule,
         IdempotencyModule,
         EventsModule,
-        RequestWorkflowModule,
         ToolRegistryModule,
+        BackendModule,
         XroadModule,
+        TrackingModule,
         MandatesModule,
         ProceduresModule,
-        ConnectorsModule,
         RequestsModule,
         GatewayModule,
       ],

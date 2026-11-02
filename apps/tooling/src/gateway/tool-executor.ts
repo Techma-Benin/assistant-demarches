@@ -63,7 +63,7 @@ export class ToolExecutor {
       }
 
       const prepared = handler.prepare
-        ? await handler.prepare(args, { context: call.context, trace: call.trace, read: (fn) => this.db.transaction(scope, fn) })
+        ? await handler.prepare(args, { context: call.context, trace: call.trace, idempotencyKey: call.idempotencyKey, read: (fn) => this.db.transaction(scope, fn) })
         : undefined;
 
       return await this.db.transaction(scope, async (tx) => {

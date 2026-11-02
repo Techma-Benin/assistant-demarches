@@ -75,10 +75,10 @@ export class MandatesRepository {
     return row ? toMandate(row) : undefined;
   }
 
-  async revoke(tx: Tx, id: string): Promise<Mandate | undefined> {
+  async revoke(tx: Tx, id: string, userRef: string): Promise<Mandate | undefined> {
     const [row] = await tx.query<MandateRow>(
-      `update mandates set status = 'revoked', revoked_at = coalesce(revoked_at, now()) where id = $1 returning ${COLUMNS}`,
-      [id],
+      `update mandates set status = 'revoked', revoked_at = coalesce(revoked_at, now()) where id = $1 and user_ref = $2 returning ${COLUMNS}`,
+      [id, userRef],
     );
     return row ? toMandate(row) : undefined;
   }

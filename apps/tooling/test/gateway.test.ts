@@ -1,170 +1,80 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { generateKeyPair } from 'jose';
-import {
-  assertSchema,
-  callTool,
-  type ToolResult,
-  CONVERSATION_ID,
-  mcpClient,
-  rawInitialize,
-  startBackendMock,
-  startFakeOidc,
-  startTooling,
-  toolError,
-  USER_REF,
-} from './helpers.js';
+import { act, CONVERSATION_ID, mcpClient, startStack, toolError, TRACEPARENT, USER_REF } from './helpers.js';
 
-const catalog = JSON.parse(readFileSync(new URL('../../../../contracts/v1/mcp.tools.json', import.meta.url), 'utf8'));
-const agentHeaders = { Authorization: 'Bearer mock-agent', 'X-Conversation-Id': CONVERSATION_ID, 'X-User-Ref': USER_REF };
+const contract = JSON.parse(readFileSync(new URL('../../../../contracts/v2/mcp.tools.json', import.meta.url), 'utf8')) as { tools: { name: string }[] };
 
-test('catalogue MCP complet et outils de lecture sur le Backend simulé', async (t) => {
-  const backend = await startBackendMock(t);
-  const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: backend });
-  const client = await mcpClient(t, tooling, 'mock-agent');
-
-  const { tools } = await client.listTools();
-  assert.deepEqual(tools, catalog.tools);
-
-  const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
-  assert.ok(!search.isError);
-  const items = search.structuredContent!.items as unknown[];
-  assert.equal(items.length, 1);
-  items.forEach((item) => assertSchema('Procedure', item));
-  assert.deepEqual(JSON.parse(search.content[0].text), search.structuredContent);
-
-  const procedure = await callTool(client, 'procedures.get', { procedureId: 'demo-procedure' });
-  assertSchema('Procedure', procedure.structuredContent);
-});
-
-test('erreurs métier rendues en isError avec code et traceId, jamais en succès', async (t) => {
-  const backend = await startBackendMock(t);
-  const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: backend });
-  const client = await mcpClient(t, tooling, 'mock-agent');
-
-  const unknown = toolError(await callTool(client, 'procedures.get', { procedureId: 'absent' }));
-  assert.deepEqual(unknown, { code: 'NOT_FOUND', detail: 'Fiche inconnue', traceId: '1'.repeat(32) });
-  assert.equal(toolError(await callTool(client, 'procedures.search', { query: 'demo', locale: 'en' })).code, 'INVALID_REQUEST');
-  assert.equal(toolError(await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr', userRef: USER_REF })).code, 'INVALID_REQUEST');
-  assert.equal(toolError(await callTool(client, 'tools.unknown', {})).code, 'NOT_FOUND');
-  assert.equal(toolError(await callTool(client, 'request.create', { procedureId: 'demo-procedure' })).code, 'INVALID_REQUEST');
-});
-
-test('Backend injoignable : UPSTREAM_UNAVAILABLE sans détail interne', async (t) => {
-  const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: 'http://127.0.0.1:9' });
-  const client = await mcpClient(t, tooling, 'mock-agent');
-  const error = toolError(await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' }));
-  assert.deepEqual(error, { code: 'UPSTREAM_UNAVAILABLE', detail: 'Service Backend indisponible', traceId: '1'.repeat(32) });
-});
-
-test('transport : identité, client, contexte et méthode contrôlés avant MCP', async (t) => {
-  const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens' });
-  const cases: [Record<string, string>, number, string][] = [
-    [{ ...agentHeaders, Authorization: '' }, 401, 'UNAUTHORIZED'],
-    [{ ...agentHeaders, Authorization: 'Bearer unknown' }, 401, 'UNAUTHORIZED'],
-    [{ ...agentHeaders, Authorization: 'Bearer mock-backend-control' }, 401, 'UNAUTHORIZED'],
-    [{ Authorization: 'Bearer mock-agent', 'X-Conversation-Id': CONVERSATION_ID }, 400, 'INVALID_REQUEST'],
-    [{ ...agentHeaders, 'X-User-Ref': 'usr_invalid' }, 400, 'INVALID_REQUEST'],
-    [{ ...agentHeaders, 'X-Mandate-Id': 'mdt_invalid' }, 400, 'INVALID_REQUEST'],
-  ];
-  for (const [headers, status, code] of cases) {
-    const res = await rawInitialize(tooling, headers);
-    assert.equal(res.status, status, JSON.stringify(headers));
-    const problem = await res.json();
-    assertSchema('Problem', problem);
-    assert.equal((problem as { code: string }).code, code);
-  }
-  const get = await fetch(`${tooling}/mcp`, { headers: { ...agentHeaders, traceparent: `00-${'1'.repeat(32)}-${'2'.repeat(16)}-01` } });
-  assert.equal(get.status, 405);
-  assert.equal(get.headers.get('allow'), 'POST');
-});
-
-test('JWT : signature, émetteur, audience, expiration, algorithme et scope vérifiés', async (t) => {
-  const oidc = await startFakeOidc(t);
-  const tooling = await startTooling(t, oidc.env);
-  const other = await generateKeyPair('RS256');
-  const rejected: [string, string, number][] = [
-    ['expiré', await oidc.sign({}, { expiresIn: '-2m' }), 401],
-    ['autre audience', await oidc.sign({ aud: 'techma-backend' }), 401],
-    ['autre émetteur', await oidc.sign({ iss: 'http://127.0.0.1/realms/other' }), 401],
-    ['clé inconnue', await oidc.sign({}, { key: other.privateKey }), 401],
-    ['sans scope', await oidc.sign({ scope: 'profile' }), 403],
-    ['client contrôle mandat', await oidc.sign({ azp: 'backend-mandates', scope: 'mandates:grant' }), 401],
-  ];
-  for (const [label, token, status] of rejected) {
-    const res = await rawInitialize(tooling, { ...agentHeaders, Authorization: `Bearer ${token}` });
-    assert.equal(res.status, status, label);
-  }
-  const unsigned = `${Buffer.from('{"alg":"none"}').toString('base64url')}.${Buffer.from('{"azp":"backend-agent","scope":"tools:call"}').toString('base64url')}.`;
-  assert.equal((await rawInitialize(tooling, { ...agentHeaders, Authorization: `Bearer ${unsigned}` })).status, 401);
-});
-
-test('JWT : appel complet, jeton tooling-resources obtenu une fois puis réutilisé', async (t) => {
-  const oidc = await startFakeOidc(t);
-  const backend = await startBackendMock(t);
-  const tooling = await startTooling(t, { ...oidc.env, BACKEND_URL: backend });
-  const client = await mcpClient(t, tooling, await oidc.sign());
-  for (let n = 0; n < 3; n += 1) {
-    const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
-    assert.ok(!search.isError, search.content[0].text);
-  }
-  assert.equal(oidc.tokenRequests, 1);
-});
-
-test('JWT : jetons sortants préémis utilisés tels quels, sans fournisseur de jetons', async (t) => {
-  const oidc = await startFakeOidc(t);
-  const backend = await startBackendMock(t);
-  const { OIDC_TOKEN_URL: _url, TOOLING_RESOURCES_CLIENT_ID: _a, TOOLING_RESOURCES_CLIENT_SECRET: _b, TOOLING_EVENTS_CLIENT_ID: _c, TOOLING_EVENTS_CLIENT_SECRET: _d, ...realm } = oidc.env;
-  const tooling = await startTooling(t, { ...realm, TOOLING_RESOURCES_TOKEN: 'mock-tooling-resources', TOOLING_EVENTS_TOKEN: 'mock-tooling-events', BACKEND_URL: backend });
-  const client = await mcpClient(t, tooling, await oidc.sign());
-  const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
-  assert.ok(!search.isError, search.content[0].text);
-  assert.equal(oidc.tokenRequests, 0);
-});
-
-test('fiche non conforme renvoyée par le Backend : écartée de la recherche, refusée en lecture', async (t) => {
-  const fixtures = JSON.parse(readFileSync(new URL('../../../../mocks/fixtures.json', import.meta.url), 'utf8'));
-  const valid = fixtures.schemas.Procedure;
-  const broken = { ...valid, id: 'broken-procedure', requiredDocuments: 'demo-document' };
-  const backend = http.createServer((req, res) => {
-    const url = new URL(req.url ?? '/', 'http://localhost');
-    const body = url.pathname === '/internal/v1/procedures' ? { items: [valid, broken], nextCursor: null } : url.pathname.endsWith('/broken-procedure') ? broken : { ...valid, id: 'other-id' };
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+async function rawInitialize(url: string, headers: Record<string, string>) {
+  return fetch(`${url}/mcp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...headers },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'raw', version: '1' } } }),
   });
-  await new Promise<void>((resolve) => backend.listen(0, '127.0.0.1', resolve));
-  t.after(() => new Promise<void>((resolve) => backend.close(() => resolve())));
-  const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', BACKEND_URL: `http://127.0.0.1:${(backend.address() as AddressInfo).port}` });
-  const client = await mcpClient(t, tooling, 'mock-agent');
-  const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
-  assert.deepEqual((search.structuredContent?.items as { id: string }[]).map((item) => item.id), [valid.id]);
-  assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: 'broken-procedure' })).code, 'UPSTREAM_UNAVAILABLE');
-  assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: valid.id })).code, 'UPSTREAM_UNAVAILABLE', 'fiche renvoyée sous un autre identifiant');
-});
+}
 
-test('fiches en brouillon masquées quand elles ne sont pas autorisées (règle de production)', async (t) => {
-  const backend = await startBackendMock(t);
-  const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens', PROCEDURES_ALLOW_DRAFTS: 'false', BACKEND_URL: backend });
-  const client = await mcpClient(t, tooling, 'mock-agent');
-  const search = await callTool(client, 'procedures.search', { query: 'demo', locale: 'fr' });
-  assert.deepEqual(search.structuredContent, { items: [] });
-  assert.equal(toolError(await callTool(client, 'procedures.get', { procedureId: 'demo-procedure' })).code, 'NOT_FOUND');
-});
-
-
-test('découverte administrative authentifiée sans contexte usager ; exécution sans contexte refusée', async (t) => {
-  const tooling = await startTooling(t, { AUTH_MODE: 'mock-tokens' });
-  const client = new Client({ name: 'admin-discovery', version: '1.0.0' });
-  const transport = new StreamableHTTPClientTransport(new URL(tooling + '/mcp'), {
-    requestInit: { headers: { Authorization: 'Bearer mock-agent', traceparent: `00-${'1'.repeat(32)}-${'2'.repeat(16)}-01` } },
-  });
+test('découverte : les 9 outils du contrat v2, sans contexte, pour le seul client backend', async (t) => {
+  const s = await startStack(t);
+  const client = await mcpClient(s, {});
   t.after(() => client.close());
-  await client.connect(transport);
-  assert.equal((await client.listTools()).tools.length, 9);
-  const refused = await client.callTool({ name: 'procedures.search', arguments: { query: 'demo', locale: 'fr' } });
-  assert.equal(toolError(refused as ToolResult).code, 'INVALID_REQUEST');
+  const listed = await client.listTools();
+  assert.deepEqual(
+    listed.tools.map((tool) => tool.name).sort(),
+    contract.tools.map((tool) => tool.name).sort(),
+  );
+  assert.equal(listed.tools.length, 9);
+  assert.ok(!listed.tools.some((tool) => tool.name === 'documents.verify'), 'documents.verify a disparu');
+  const refused = (await client.callTool({ name: 'procedures.search', arguments: { query: 'casier' } })) as never;
+  assert.equal(toolError(refused).code, 'INVALID_REQUEST', 'tools/call sans contexte refusé');
+});
+
+test('identité : jeton Keycloak du client backend, audience techma-tooling, scope tools:call', async (t) => {
+  const s = await startStack(t);
+  const k = s.keycloak;
+  const { privateKey: stranger } = await generateKeyPair('RS256');
+  const cases: Array<[string, Record<string, string>, number]> = [
+    ['aucun jeton', {}, 401],
+    ['jeton opaque', { Authorization: 'Bearer mock-agent' }, 401],
+    ['autre client', { Authorization: `Bearer ${await k.sign({ azp: 'tooling', scope: 'tools:call' })}` }, 401],
+    ['autre audience', { Authorization: `Bearer ${await k.backend('tools:call', 'techma-backend')}` }, 401],
+    ['autre émetteur', { Authorization: `Bearer ${await k.sign({ azp: 'backend', scope: 'tools:call' }, { issuer: 'http://127.0.0.1:1/realms/other' })}` }, 401],
+    ['clé inconnue', { Authorization: `Bearer ${await k.sign({ azp: 'backend', scope: 'tools:call' }, { key: stranger })}` }, 401],
+    ['expiré', { Authorization: `Bearer ${await k.sign({ azp: 'backend', scope: 'tools:call' }, { expiresIn: '-2m' })}` }, 401],
+    ['scope des mandats seulement', { Authorization: `Bearer ${await k.backend('mandates:grant')}` }, 403],
+  ];
+  for (const [label, headers, status] of cases) {
+    const res = await rawInitialize(s.url, { traceparent: TRACEPARENT, ...headers });
+    assert.equal(res.status, status, label);
+    assert.match(res.headers.get('content-type') ?? '', /^application\/problem\+json/, label);
+  }
+  assert.equal((await rawInitialize(s.url, { Authorization: `Bearer ${await k.backend('tools:call')}` })).status, 200);
+});
+
+test('contexte : en-têtes validés, X-Channel limité à web et whatsapp, méthodes autres que POST refusées', async (t) => {
+  const s = await startStack(t);
+  const token = await s.keycloak.backend('tools:call');
+  const base = { Authorization: `Bearer ${token}`, 'X-Conversation-Id': CONVERSATION_ID, 'X-User-Ref': USER_REF };
+  assert.equal((await rawInitialize(s.url, base)).status, 200);
+  assert.equal((await rawInitialize(s.url, { ...base, 'X-User-Ref': 'usr_bad' })).status, 400);
+  assert.equal((await rawInitialize(s.url, { ...base, 'X-Channel': 'sms' })).status, 400);
+  assert.equal((await rawInitialize(s.url, { ...base, 'X-Mandate-Id': 'mdt_bad' })).status, 400);
+  assert.equal((await rawInitialize(s.url, { ...base, 'X-Channel': 'whatsapp' })).status, 200);
+  const get = await fetch(`${s.url}/mcp`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(get.status, 405);
+});
+
+test('catalogue : les fiches viennent du X-Road, avec filing pour les démarches déposables', async (t) => {
+  const s = await startStack(t);
+  const search = await act(s, 'procedures.search', { query: 'casier judiciaire' });
+  const items = search.structuredContent!.items as Array<{ id: string; filing: unknown; source: { url: string } }>;
+  const casier = items.find((item) => item.id === 'PS00373');
+  assert.ok(casier, 'PS00373 trouvée');
+  assert.match(casier.source.url, /service-public\.bj/);
+  const fiche = await act(s, 'procedures.get', { procedureId: 'PS00373' });
+  const filing = fiche.structuredContent!.filing as { feeFcfa: number; requiredDocuments: unknown[] };
+  assert.equal(filing.feeFcfa, 1900);
+  assert.equal(filing.requiredDocuments.length, 1);
+  assert.equal(toolError(await act(s, 'procedures.get', { procedureId: 'PS99999' })).code, 'NOT_FOUND');
+  assert.equal(toolError(await act(s, 'procedures.search', { query: '' })).code, 'INVALID_REQUEST');
 });

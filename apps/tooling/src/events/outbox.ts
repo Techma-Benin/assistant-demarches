@@ -22,14 +22,18 @@ export class Outbox {
       specversion: '1.0',
       id: newId('evt'),
       source: 'urn:techma:tooling',
-      type: `bj.techma.${data.kind}.v1`,
+      type: `bj.techma.${data.kind}.v2`,
       time: new Date().toISOString(),
       datacontenttype: 'application/json',
-      traceparent: childTraceparent({ traceId }),
       data,
     };
     if (!validateEvent(event)) throw new Error(`Événement ${data.kind} non conforme`);
-    await tx.query('insert into outbox (id, conversation_id, event) values ($1, $2, $3::jsonb)', [event.id, conversationOf(data), JSON.stringify(event)]);
+    await tx.query('insert into outbox (id, conversation_id, event, traceparent) values ($1, $2, $3::jsonb, $4)', [
+      event.id,
+      conversationOf(data),
+      JSON.stringify(event),
+      childTraceparent({ traceId }),
+    ]);
     return event.id;
   }
 }
