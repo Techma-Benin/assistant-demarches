@@ -3,6 +3,8 @@ import { TextDeltaExtractor } from "./text-deltas.js";
 
 /** Visible text is written at most this often; the first piece goes out at once. */
 export const DELTA_FLUSH_MS = 40;
+/** Size of one stored message.delta (conversations.appendDelta splits above this). */
+const DELTA_PART_CHARS = 8000;
 
 export type LiveAttempt = {
   onTextDelta(delta: string): void;
@@ -19,7 +21,7 @@ export type LiveAttempt = {
  *   earlier turn, a replay after a crash) the next attempts stay silent, so the bubble is never fed two drafts;
  * - indexes are 0-based and strictly increasing; pieces are grouped within DELTA_FLUSH_MS;
  * - `settle()` waits for every write: callers settle before `message.sent` so no delta follows it.
- * Write failures never fail the reply: the final message carries the whole text anyway.
+ * Write failures never fail the reply (the final message carries the whole text anyway); unwritten text stays buffered.
  */
 export class LiveReply {
   private index = 0;
@@ -41,15 +43,21 @@ export class LiveReply {
 
   /** Listener for one model generation. Silent when this reply already streamed (or was streamed before a restart). */
   async attempt(): Promise<LiveAttempt> {
+    let unknown = false;
     if (!this.checked) {
-      this.checked = true;
-      const existing = await this.conversations.pool.query(
-        "SELECT 1 FROM backend_conversation_events WHERE conversation_id=$1 AND body->'data'->>'kind'='message.delta' AND body->'data'->>'messageId'=$2 LIMIT 1",
-        [this.conversationId, this.messageId],
-      );
-      if (existing.rows.length) this.started = true;
+      try {
+        const existing = await this.conversations.pool.query(
+          "SELECT 1 FROM backend_conversation_events WHERE conversation_id=$1 AND body->'data'->>'kind'='message.delta' AND body->'data'->>'messageId'=$2 LIMIT 1",
+          [this.conversationId, this.messageId],
+        );
+        this.checked = true;
+        if (existing.rows.length) this.started = true;
+      } catch {
+        // Database down: stay silent for this generation (a second draft is worse than none); asked again next time.
+        unknown = true;
+      }
     }
-    const mine = !this.started;
+    const mine = !this.started && !unknown;
     const extractor = new TextDeltaExtractor();
     let muted = !mine;
     return {
@@ -76,16 +84,28 @@ export class LiveReply {
 
   private flush() {
     if (!this.pending) return;
-    const delta = this.pending;
-    this.pending = "";
     this.lastFlush = Date.now();
-    this.tail = this.tail.then(async () => {
+    this.tail = this.tail.then(() => this.write());
+  }
+
+  /**
+   * Writes the buffer one stored event at a time. A part leaves the buffer only once it is committed, so a failed
+   * write keeps the text (retried at the next flush, same index: nothing doubled, nothing skipped) and never throws.
+   */
+  private async write(): Promise<void> {
+    // Only what is buffered now: text arriving during the writes waits for the next flush window.
+    let remaining = this.pending.length;
+    while (remaining > 0) {
+      const part = this.pending.slice(0, Math.min(remaining, DELTA_PART_CHARS));
       try {
-        this.index += await this.conversations.appendDelta(this.conversationId, this.messageId, delta, this.index, this.traceparent);
+        this.index += await this.conversations.appendDelta(this.conversationId, this.messageId, part, this.index, this.traceparent);
+        this.pending = this.pending.slice(part.length);
+        remaining -= part.length;
       } catch (error) {
-        console.error("message.delta non écrit :", error instanceof Error ? error.message : "erreur inconnue");
+        console.error("message.delta non écrit (réessai au prochain envoi) :", error instanceof Error ? error.message : "erreur inconnue");
+        return;
       }
-    });
+    }
   }
 
   /** Writes what is buffered and waits until every delta is committed. */
