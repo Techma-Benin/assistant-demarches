@@ -177,7 +177,11 @@ class AdminController {
     let administrations: unknown[] = [];
     if (this.runtime?.xroadUrl && this.runtime.serviceTokens) {
       try {
-        const page = await new XroadClient(this.runtime.xroadUrl, () => this.runtime!.serviceTokens!.get("xroad:apply")).listAdministrations();
+        const page = await new XroadClient(
+          this.runtime.xroadUrl,
+          () => this.runtime!.serviceTokens!.get("xroad:apply"),
+          req.get("traceparent") ?? undefined,
+        ).listAdministrations();
         administrations = (page as { items?: unknown[] }).items ?? [];
       } catch { /* Operator status stays available when X-Road is down. */ }
     }

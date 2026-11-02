@@ -22,25 +22,32 @@ const administration = {
   connection: { status: "connected", since: "2026-01-01T00:00:00.000Z" },
 };
 const officialRecord = (subject, role) => ({
-  id: role === "admin" ? "off_01JC0000000000000000000002" : "off_01JC0000000000000000000001",
+  id:
+    role === "super_admin"
+      ? "off_01JC0000000000000000000003"
+      : role === "admin"
+        ? "off_01JC0000000000000000000002"
+        : "off_01JC0000000000000000000001",
   subject,
-  email: subject === "official-admin" ? "admin@b.bj" : "a@b.bj",
-  displayName: role === "admin" ? "Administrateur" : "Agent",
-  jobTitle: role === "admin" ? "Chef de service" : "Agent",
-  administrationId: "justice",
+  email: subject === "official-super" ? "super@b.bj" : subject === "official-admin" ? "admin@b.bj" : "a@b.bj",
+  displayName: role === "super_admin" ? "Super" : role === "admin" ? "Administrateur" : "Agent",
+  jobTitle: role === "super_admin" ? "Super administrateur" : role === "admin" ? "Chef de service" : "Agent",
+  administrationId: role === "super_admin" ? null : "justice",
   role,
   avatarUrl: null,
   active: true,
 });
 const meOf = (subject) => {
-  const role = subject === "official-admin" ? "admin" : "agent";
+  const role = subject === "official-super" ? "super_admin" : subject === "official-admin" ? "admin" : "agent";
   return {
     official: officialRecord(subject, role),
-    administration,
+    administration: role === "super_admin" ? null : administration,
     permissions:
-      role === "admin"
-        ? ["cases:read", "cases:act", "officials:read", "officials:manage"]
-        : ["cases:read", "cases:act"],
+      role === "super_admin"
+        ? ["cases:read", "cases:act", "officials:read", "officials:manage", "administrations:all"]
+        : role === "admin"
+          ? ["cases:read", "cases:act", "officials:read", "officials:manage"]
+          : ["cases:read", "cases:act"],
   };
 };
 const metrics = {
@@ -100,6 +107,7 @@ test("v2 admin API: auth order, Keycloak compensation, 401/403/nominal/404", asy
     new SignJWT(claims).setProtectedHeader({ alg: "RS256", kid }).setIssuer(issuer).setAudience(auth.audience).setSubject(subject).setIssuedAt().setExpirationTime("5m").sign(privateKey);
   const official = await token("official-1", { realm_access: { roles: ["official"] } });
   const adminOfficial = await token("official-admin", { realm_access: { roles: ["official"] } });
+  const superOfficial = await token("official-super", { realm_access: { roles: ["official"] } });
   const citizen = await token("citizen-1", { scope: "citizen" });
   const operator = await token("operator-1", { realm_access: { roles: ["operator"] }, scope: "admin:read" });
   let failOfficialCreate = false;
@@ -303,8 +311,15 @@ test("v2 admin API: auth order, Keycloak compensation, 401/403/nominal/404", asy
   assert.equal((await call("/v1/admin/cases/" + foreignCaseId, official)).status, 404);
   assert.equal((await call("/v1/admin/cases/" + caseId + "/documents/" + foreignDocumentId, official)).status, 404);
 
+  const adminCreate = await call("/v1/admin/officials", adminOfficial, {
+    method: "POST",
+    ...jsonBody({ email: "admin.create@demo.techma.bj", displayName: "Admin", jobTitle: "Chef", administrationId: "justice", role: "agent" }),
+  });
+  assert.equal(adminCreate.status, 403, "admin d'administration : création réservée au super_admin");
+  assert.equal(keycloakCreates, createdBefore, "aucun compte Keycloak pour un admin sans rôle super_admin");
+
   failOfficialCreate = true;
-  const compensated = await call("/v1/admin/officials", adminOfficial, {
+  const compensated = await call("/v1/admin/officials", superOfficial, {
     method: "POST",
     key: "create-official-fail-key",
     ...jsonBody({ email: "fail@demo.techma.bj", displayName: "Echec X-Road", jobTitle: "Agent", administrationId: "justice", role: "agent" }),
@@ -312,7 +327,7 @@ test("v2 admin API: auth order, Keycloak compensation, 401/403/nominal/404", asy
   assert.equal(compensated.status, 409);
   assert.equal(keycloakDisabled.length > 0, true, "compte Keycloak désactivé si le X-Road refuse");
   failOfficialCreate = false;
-  const created = await call("/v1/admin/officials", adminOfficial, {
+  const created = await call("/v1/admin/officials", superOfficial, {
     method: "POST",
     key: "create-official-ok-key1",
     ...jsonBody({ email: "ok@demo.techma.bj", displayName: "Agent Ok", jobTitle: "Instructeur", administrationId: "justice", role: "agent" }),
@@ -322,7 +337,7 @@ test("v2 admin API: auth order, Keycloak compensation, 401/403/nominal/404", asy
   assert.equal(typeof createdBody.temporaryPassword, "string");
   assert.equal(keycloakScope, "keycloak-admin");
 
-  const createdWithoutKey = await call("/v1/admin/officials", adminOfficial, {
+  const createdWithoutKey = await call("/v1/admin/officials", superOfficial, {
     method: "POST",
     key: false,
     ...jsonBody({ email: "nockey@demo.techma.bj", displayName: "Sans Clé", jobTitle: "Instructeur", administrationId: "justice", role: "agent" }),
@@ -337,7 +352,7 @@ test("v2 admin API: auth order, Keycloak compensation, 401/403/nominal/404", asy
     200,
   );
   assert.equal(
-    (await call("/v1/admin/officials", adminOfficial, {
+    (await call("/v1/admin/officials", superOfficial, {
       method: "POST",
       key: "short",
       ...jsonBody({ email: "badkey@demo.techma.bj", displayName: "Bad", jobTitle: "Agent", administrationId: "justice", role: "agent" }),

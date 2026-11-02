@@ -22,10 +22,14 @@ import { idempotencyKey } from "./transactions.js";
 const AUTH = Symbol("ADMIN_CONSOLE_AUTH");
 export const ADMIN_AUTH = AUTH;
 
-function xroad(runtime: Runtime) {
+function xroad(runtime: Runtime, req?: Request) {
   if (!runtime.xroadUrl || !runtime.serviceTokens)
     throw new Problem(503, "UPSTREAM_UNAVAILABLE", "X-Road non configuré.");
-  return new XroadClient(runtime.xroadUrl, () => runtime.serviceTokens!.get("xroad:administer"));
+  return new XroadClient(
+    runtime.xroadUrl,
+    () => runtime.serviceTokens!.get("xroad:administer"),
+    req?.get("traceparent") ?? undefined,
+  );
 }
 
 function query(req: Request, extra: Record<string, string | undefined> = {}) {
@@ -50,7 +54,7 @@ export class AdminConsoleController {
     return authenticate(req.get("authorization"), this.auth, "official");
   }
   private client(req: Request) {
-    return xroad(this.runtime);
+    return xroad(this.runtime, req);
   }
   @Get("me")
   me(@Req() req: Request) {
@@ -103,8 +107,8 @@ export class AdminConsoleController {
   async createOfficial(@Req() req: Request, @Body() body: Schemas["OfficialInput"]) {
     const principal = await this.official(req);
     const me = await this.client(req).me(principal.subject);
-    if (!me.permissions.includes("officials:manage"))
-      throw new Problem(403, "FORBIDDEN", "Création d’agent réservée aux administrateurs.");
+    if (me.official.role !== "super_admin")
+      throw new Problem(403, "FORBIDDEN", "Création d’agent réservée au super administrateur.");
     validate("OfficialInput", body);
     const issuer = this.runtime.auth.issuer;
     if (!this.runtime.serviceTokens)
@@ -131,12 +135,7 @@ export class AdminConsoleController {
   ) {
     const principal = await this.official(req);
     validate("OfficialUpdate", body);
-    return this.client(req).updateOfficial(
-      principal.subject,
-      officialId,
-      body,
-      idempotencyKey(req.get("Idempotency-Key"), { required: false }),
-    );
+    return this.client(req).updateOfficial(principal.subject, officialId, body);
   }
   @Get("cases")
   cases(@Req() req: Request) {
