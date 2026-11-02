@@ -40,12 +40,13 @@ const stopAgent = new AbortController();
 let agentLoop: Promise<void> | undefined;
 let app: Awaited<ReturnType<typeof createBackend>> | undefined;
 try {
-  const { runtime, agent } = await loadRuntime(pool, auth, allowedMcpUrls, signing);
+  const { runtime, agent, tokens } = await loadRuntime(pool, auth, allowedMcpUrls, signing);
   agentLoop = agent.watch(stopAgent.signal);
   const readiness = {
     pool,
     toolingUrl: process.env.TOOLING_URL,
     mcpUrl: process.env.TOOLING_MCP_URL ?? [...allowedMcpUrls][0],
+    mcpToken: () => tokens.get("tools:call"),
     xroadUrl: process.env.XROAD_URL,
     oidcJwksUrl: jwksUrl,
   };

@@ -16,6 +16,8 @@ export type ReadinessOptions = {
   pool: Pool;
   toolingUrl?: string;
   mcpUrl?: string;
+  /** Service token for the MCP endpoint: Tooling v2 refuses `tools/list` without one. */
+  mcpToken?: () => Promise<string>;
   xroadUrl?: string;
   oidcJwksUrl?: string;
 };
@@ -79,10 +81,18 @@ export async function probeReadiness(options: ReadinessOptions): Promise<ReadyRe
   const mcpTools: ComponentStatus = { ok: false, detail: "MCP non configuré" };
   if (options.mcpUrl) {
     try {
+      let authorization: Record<string, string> = {};
+      if (options.mcpToken) {
+        try {
+          authorization = { Authorization: "Bearer " + (await options.mcpToken()) };
+        } catch {
+          /* Keycloak unreachable: the oidc line says so, the probe then reports the HTTP refusal. */
+        }
+      }
       const response = await fetch(options.mcpUrl, {
         method: "POST",
         redirect: "error",
-        headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+        headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...authorization },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
         signal: timeout(),
       });
