@@ -266,4 +266,30 @@ test('pivot agent retries, provenance, consent catalogue and audio work on isola
     assert.equal(consentBlock?.type, 'consent');
     assert.equal(consentBlock.challenge.procedureId, procedure.id);
   });
+  await t.test('MANDATE_EXPIRED builds a consent block like MANDATE_MISSING', async () => {
+    response = procedure;
+    const { privateKey } = await generateKeyPair('RS256');
+    const { c } = await queued();
+    const mandate = { id: identifier('mdt'), conversationId: c.id, userRef: user.userRef, procedureId: procedure.id, scopes: ['requests:write'], status: 'active', expiresAt: new Date(Date.now() + 3600000).toISOString() };
+    await pool.query('INSERT INTO backend_mandates(id,conversation_id,user_ref,body) VALUES($1,$2,$3,$4)', [mandate.id, c.id, user.userRef, mandate]);
+    const expiredCalls = [];
+    const expiredTooling = {
+      async discover() { return catalog; },
+      async call(_url, _auth, name, args, context, key) {
+        expiredCalls.push({ name, args, context, key });
+        if (name === 'request.create') {
+          return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'MANDATE_EXPIRED', detail: 'Mandat expiré' }) }] };
+        }
+        return { structuredContent: procedure, content: [{ type: 'text', text: JSON.stringify(procedure) }] };
+      },
+    };
+    const consent = new Consent(pool, conversations, { async grant() { throw new Error('not used'); }, async revoke() { throw new Error('not used'); } }, { key: privateKey, kid: 'test', issuer: 'https://example.test' }, new McpProcedureCatalog(pool, expiredTooling));
+    let count = 0;
+    const model = { async generate() { return count++ ? final('Autorisation requise.') : toolCall('request.create', { procedureId: procedure.id }); } };
+    await new Agent(pool, conversations, model, expiredTooling, consent).process(c.id);
+    assert.equal(expiredCalls.some(call => call.name === 'request.create'), true);
+    const consentBlock = (await lastBlocks(c.id)).find(block => block.type === 'consent');
+    assert.equal(consentBlock?.type, 'consent');
+    assert.equal(consentBlock.challenge.procedureId, procedure.id);
+  });
 });

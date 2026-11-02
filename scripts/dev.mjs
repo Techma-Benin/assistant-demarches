@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { KEYCLOAK_VERSION, LOCAL, PORTS, ROOT, SERVICES, URLS } from './dev/local-config.mjs';
 import { startKeycloak } from './dev/keycloak.mjs';
 import { startPostgres } from './dev/postgres.mjs';
+import { serviceEnv } from './dev/service-env.mjs';
 
 const args = process.argv.slice(2);
 const colors = { postgres: 34, keycloak: 35, backend: 32, tooling: 33, xroad: 36, interface: 31 };
@@ -104,10 +105,9 @@ for (const name of names) {
     log(`pas encore de script dev dans le paquet ${SERVICES[name].package} : non lancé`);
     continue;
   }
-  const defaults = Object.fromEntries(Object.entries(SERVICES[name].env).filter(([key]) => !process.env[key]));
   const child = spawn(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['run', 'dev'], {
     cwd: join(ROOT, directory),
-    env: { ...process.env, ...defaults, ...(process.env.NODE_ENV ? {} : { NODE_ENV: 'development' }) },
+    env: serviceEnv(name, process.env, SERVICES),
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: process.platform === 'win32',
   });
