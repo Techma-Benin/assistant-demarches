@@ -11,6 +11,7 @@ import { WAITING_LABEL, type TimelineEntry } from '@/lib/conversation-state';
 import { latestRequest, lastTextSources, prepareRequestAction, toSourceInfo, type DraftRequest } from '@/lib/dossier';
 import { dayKey, formatDayLabel, formatTime } from '@/lib/format-time';
 import { revealDelays } from '@/lib/reveal';
+import { TextBlock } from '@/components/blocks/TextBlock';
 import { AgentActivity } from './AgentActivity';
 import { Composer } from './Composer';
 import { ConnectionNotice } from './ConnectionNotice';
@@ -156,9 +157,11 @@ export function ConversationView({
   );
   // Waiting for an answer: after a user message, or once the visitor accepted the consent the agent was waiting for.
   const lastBlock = last?.kind === 'agent' ? last.message.blocks.at(-1) : undefined;
+  const drafts = state.drafts ?? [];
   const waitingForAgent =
-    (last?.kind === 'user' && (last.delivery === 'accepted' || last.delivery === 'received')) ||
-    (lastBlock?.type === 'consent' && consent.states[lastBlock.challenge.id]?.phase === 'accepted');
+    drafts.length === 0 &&
+    ((last?.kind === 'user' && (last.delivery === 'accepted' || last.delivery === 'received')) ||
+    (lastBlock?.type === 'consent' && consent.states[lastBlock.challenge.id]?.phase === 'accepted'));
   const label = WAITING_LABEL;
 
   let lastAgentIndex = -1;
@@ -343,7 +346,13 @@ export function ConversationView({
                             ) : (
                               <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-[24px] bg-sunken px-[22px] py-3.5 text-[17px] font-medium">
                                 {first.attachment ? (
-                                  <AttachmentRow attachment={first.attachment} uploading={first.delivery === 'uploading'} />
+                                  <>
+                                    <AttachmentRow attachment={first.attachment} uploading={first.delivery === 'uploading'} />
+                                    {/* Text of the message under its attachment (e.g. a transcript), unless it is just the file name. */}
+                                    {first.display !== '' && first.display !== first.attachment.name && (
+                                      <p className="m-0 mt-2">{first.display}</p>
+                                    )}
+                                  </>
                                 ) : (
                                   first.display
                                 )}
@@ -462,6 +471,24 @@ export function ConversationView({
                   </Button>
                 </div>
               )}
+              {drafts.map((draft, position) => (
+                <div
+                  key={draft.messageId}
+                  data-entry-id={draft.messageId}
+                  data-live-draft
+                  aria-busy="true"
+                  aria-live="off"
+                  className={cn('flex flex-col gap-2', position === 0 && last?.kind === 'agent' && 'mt-1')}
+                >
+                  {!(position === 0 && last?.kind === 'agent') && (
+                    <div className="flex items-center gap-2">
+                      <FlagGlyph decorative width={22} height={16} className="shrink-0" />
+                      <span className="text-[14px] font-semibold text-ink">Assistant Démarches</span>
+                    </div>
+                  )}
+                  <TextBlock block={{ type: 'text', text: draft.text, sources: [] }} revealDelay={0} live />
+                </div>
+              ))}
               {waitingForAgent && <AgentActivity label={label} />}
             </div>
           </main>

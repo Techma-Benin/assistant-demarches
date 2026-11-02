@@ -112,3 +112,22 @@ export function issuedCase(overrides: Partial<Case> = {}): Case {
     ...overrides,
   };
 }
+
+/** `message.delta` event in the shape of contracts/v2/examples.json (`index` omitted when undefined). */
+export function deltaEvent(
+  n: number,
+  messageId: string,
+  delta: string,
+  index?: number,
+  conversationId = CONVERSATION_ID,
+): ContractEvent {
+  return {
+    specversion: '1.0',
+    id: evtId(n),
+    source: 'urn:techma:backend',
+    type: 'bj.techma.message.delta.v2',
+    time: `2026-11-02T08:59:${String(10 + (n % 50)).padStart(2, '0')}Z`,
+    datacontenttype: 'application/json',
+    data: { kind: 'message.delta', conversationId, messageId, delta, ...(index === undefined ? {} : { index }) },
+  } as ContractEvent;
+}

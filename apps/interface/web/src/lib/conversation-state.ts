@@ -46,6 +46,22 @@ export type TimelineEntry =
     }
   | { kind: 'agent'; message: AgentMessage };
 
+/**
+ * Live text of a reply still being written (`message.delta`, CONTRACTS.md §7.1). Never in the history: it only
+ * exists between the first delta and the `message.sent` of the same `messageId`, which replaces it.
+ */
+export interface LiveDraft {
+  messageId: string;
+  /** Text accumulated so far (ordered by `index` when the deltas carry one). */
+  text: string;
+  /** Deltas that carry an `index`, by index (a repeated index is ignored). */
+  indexed: Record<number, string>;
+  /** Deltas without `index`, in arrival order. */
+  plain: string;
+  /** Timeline length when the first delta arrived: where the final message is inserted. */
+  at: number;
+}
+
 /** Neutral line shown while the assistant answers (the v2 stream carries no tool activity). */
 export const WAITING_LABEL = 'L’assistant prépare sa réponse';
 
@@ -56,6 +72,8 @@ export interface ConversationState {
   cursor: string | null;
   seenEventIds: string[];
   timeline: TimelineEntry[];
+  /** Replies being written live; a draft is dropped when its `message.sent` arrives. */
+  drafts: LiveDraft[];
   error?: string;
   /** The conversation can't be resumed (session expired, access denied, gone): only a new one helps. */
   lost?: boolean;
@@ -67,6 +85,7 @@ export const initialState: ConversationState = {
   cursor: null,
   seenEventIds: [],
   timeline: [],
+  drafts: [],
 };
 
 export type ConversationAction =
@@ -198,6 +217,7 @@ export function conversationReducer(state: ConversationState, action: Conversati
     case 'eventsReceived': {
       const seen = new Set(state.seenEventIds);
       let timeline = state.timeline;
+      let drafts = state.drafts ?? [];
       for (const event of action.page.items) {
         if (seen.has(event.id)) continue;
         const data = event.data;
@@ -208,20 +228,50 @@ export function conversationReducer(state: ConversationState, action: Conversati
           timeline = applyUserMessage(timeline, data.message);
         } else if (data.kind === 'message.sent') {
           const message = data.message;
+          const draft = drafts.find((d) => d.messageId === message.id);
+          if (draft) drafts = drafts.filter((d) => d !== draft);
           if (!timeline.some((e) => e.kind === 'agent' && e.message.id === message.id)) {
-            timeline = [...timeline, { kind: 'agent', message }];
+            // The final message takes the place of the live bubble.
+            const at = draft ? Math.min(draft.at, timeline.length) : timeline.length;
+            timeline = [...timeline.slice(0, at), { kind: 'agent', message }, ...timeline.slice(at)];
+          }
+        } else if (data.kind === 'message.delta') {
+          // Late delta (its message.sent is already there): ignored.
+          if (!timeline.some((e) => e.kind === 'agent' && e.message.id === data.messageId)) {
+            drafts = applyDelta(drafts, data, timeline.length);
           }
         }
-        // The v2 stream carries only these two kinds (CONTRACTS.md §12); anything else is ignored.
+        // Other kinds are ignored (CONTRACTS.md §12).
       }
       return {
         ...state,
         seenEventIds: [...seen],
         timeline,
+        drafts,
         cursor: action.page.nextCursor ?? state.cursor,
       };
     }
   }
+}
+
+function applyDelta(
+  drafts: LiveDraft[],
+  data: { messageId: string; delta: string; index?: number },
+  at: number,
+): LiveDraft[] {
+  const current = drafts.find((d) => d.messageId === data.messageId);
+  const base: LiveDraft = current ?? { messageId: data.messageId, text: '', indexed: {}, plain: '', at };
+  let { indexed, plain } = base;
+  if (data.index === undefined) plain += data.delta;
+  else if (data.index in indexed) return drafts;
+  else indexed = { ...indexed, [data.index]: data.delta };
+  const ordered = Object.keys(indexed)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map((i) => indexed[i])
+    .join('');
+  const next: LiveDraft = { ...base, indexed, plain, text: ordered + plain };
+  return current ? drafts.map((d) => (d === current ? next : d)) : [...drafts, next];
 }
 
 /** What the visitor sees for a message rebuilt from the history (nothing local remembers it). */

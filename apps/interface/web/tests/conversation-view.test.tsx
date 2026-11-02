@@ -4,7 +4,7 @@ import type { Schemas } from '@techma/contracts-ts';
 import { describe, expect, it, vi } from 'vitest';
 import { ConversationView } from '@/components/chat/ConversationView';
 import { turnDelivery, userTurns, type UserEntry as UserEntryT } from '@/components/chat/UserEntryParts';
-import { initialState, type ConversationState, type TimelineEntry } from '@/lib/conversation-state';
+import { WAITING_LABEL, initialState, type ConversationState, type LiveDraft, type TimelineEntry } from '@/lib/conversation-state';
 
 import { fakeConversation, type Conversation } from './conversation-helper';
 import { caseCardBlock, consentBlock, exampleRequest, requestCardBlock } from './fixtures-v2';
@@ -510,6 +510,55 @@ describe('userTurns and turnDelivery', () => {
       view(build({ timeline: [voiceWith()] }));
       expect(screen.queryByText('Transcription indisponible')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /transcription/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('attachment text', () => {
+    const fileWith = (display: string): TimelineEntry => ({
+      kind: 'user',
+      id: 'f1',
+      content: { type: 'file', fileId: 'fil_1', documentType: null },
+      display,
+      sentAt: at,
+      delivery: 'received',
+      attachment: { name: 'releve.pdf', sizeBytes: 10, mimeType: 'application/pdf' },
+    });
+    it('shows the text under the attachment when it differs from the name', () => {
+      view(build({ timeline: [fileWith('Voici mon relevé')] }));
+      expect(screen.getByText('Voici mon relevé')).toBeInTheDocument();
+    });
+    it('shows nothing more when the text is the file name', () => {
+      view(build({ timeline: [fileWith('releve.pdf')] }));
+      expect(screen.getAllByText('releve.pdf')).toHaveLength(1);
+    });
+  });
+
+  describe('live draft', () => {
+    const draft = (text: string): LiveDraft => ({ messageId: 'a1', text, indexed: {}, plain: text, at: 1 });
+    it('shows the draft as a busy bubble in place of the waiting line, then the final message', () => {
+      const { rerender } = view(build({ timeline: [user('u1', 'Q')], drafts: [draft('Bonjour tout')] }));
+      expect(screen.getByText('Bonjour')).toBeInTheDocument();
+      const bubble = document.querySelector('[data-live-draft]')!;
+      expect(bubble).toHaveAttribute('aria-busy', 'true');
+      expect(bubble).toHaveTextContent('Bonjour tout');
+      expect(screen.queryByText(WAITING_LABEL)).not.toBeInTheDocument();
+      expect(within(bubble as HTMLElement).queryByRole('list')).not.toBeInTheDocument();
+      expect(screen.queryByText('Sources de la réponse')).not.toBeInTheDocument();
+
+      const final = agent(
+        'a1',
+        { type: 'text', text: 'Bonjour tout le monde', sources: [source('PS00373', 'https://example.bj/a')] },
+        { type: 'buttons', items: [{ id: 'btn_1', label: 'Continuer' }] } as Block,
+      );
+      rerender(<ConversationView conversation={build({ timeline: [user('u1', 'Q'), final], drafts: [] })} onRestart={() => {}} />);
+      expect(document.querySelector('[data-live-draft]')).toBeNull();
+      expect(screen.getByText('Continuer')).toBeInTheDocument();
+      expect(screen.getByRole('list', { name: 'Sources de la réponse' })).toBeInTheDocument();
+      expect(screen.getAllByText(/Bonjour/).length).toBeGreaterThan(0);
+    });
+    it('shows the waiting line without a draft', () => {
+      view(build({ timeline: [user('u1', 'Q')], drafts: [] }));
+      expect(screen.getByText(WAITING_LABEL, { selector: 'span' })).toBeInTheDocument();
     });
   });
 

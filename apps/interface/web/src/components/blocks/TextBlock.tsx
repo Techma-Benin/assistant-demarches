@@ -8,6 +8,8 @@ type Props = {
   block: Extract<Block, { type: 'text' }>;
   /** Start delay (ms) of the progressive reveal; undefined renders the text at once (history, reduced motion is CSS). */
   revealDelay?: number;
+  /** Text still growing (live draft): words already shown stay, each new word fades in at once. */
+  live?: boolean;
 };
 
 export type Segment =
@@ -117,7 +119,7 @@ export function parseInline(text: string): Inline[] {
 const LINK_CLASS =
   'rounded-sm text-ink underline decoration-line underline-offset-2 transition-colors hover:decoration-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink';
 
-export function TextBlock({ block, revealDelay }: Props) {
+export function TextBlock({ block, revealDelay, live }: Props) {
   const segments = parseBlocks(block.text);
   const reveal = revealDelay !== undefined;
   const totalWords = segments.reduce(
@@ -126,7 +128,7 @@ export function TextBlock({ block, revealDelay }: Props) {
   );
   // The full text is always in the DOM; words only fade in. Very long texts reveal per paragraph instead.
   const byWord = reveal && totalWords <= MAX_WORD_REVEAL;
-  const step = wordDelay(totalWords);
+  const step = live ? 0 : wordDelay(totalWords);
   const textEnd = (revealDelay ?? 0) + textRevealDuration(block.text);
   let wordIndex = 0;
   const words = (text: string) =>

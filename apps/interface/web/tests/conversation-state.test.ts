@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { conversationReducer, initialState, type ConversationState } from '@/lib/conversation-state';
 import type { EventPage } from '@/lib/c1-client';
-import { CONVERSATION_ID as CNV, agentEvent, evtId, msgId, textBlock, userEvent } from './fixtures-v2';
+import { CONVERSATION_ID as CNV, agentEvent, deltaEvent, evtId, msgId, textBlock, userEvent } from './fixtures-v2';
 
 const OTHER = 'cnv_' + '0'.repeat(25) + '2';
 const MSG = msgId(1);
@@ -173,5 +173,60 @@ describe('history rebuild (message.received)', () => {
   it('rebuilds a file as an attachment without size', () => {
     const s = rebuild(userEvent(1, { type: 'file', fileId: 'fil_' + '0'.repeat(26), documentType: 'extrait-acte-naissance' }));
     expect(s.timeline[0]).toMatchObject({ display: 'Pièce jointe', attachment: { sizeBytes: 0 } });
+  });
+});
+
+describe('conversationReducer: live drafts (message.delta)', () => {
+  const AG = msgId(9);
+  const deltas = (s: ConversationState, ...items: EventPage['items']) =>
+    conversationReducer(s, { type: 'eventsReceived', page: page(items, items[items.length - 1].id) });
+  const finalAt = (evt: number) =>
+    ({
+      ...agentEvent(evt, [textBlock('Réponse finale', [])]),
+      data: {
+        kind: 'message.sent' as const,
+        conversationId: CNV,
+        message: { id: AG, conversationId: CNV, blocks: [textBlock('Réponse finale')], createdAt: '2026-11-02T09:00:00Z' },
+      },
+    }) as EventPage['items'][number];
+
+  it('accumulates deltas without index in arrival order and advances the cursor', () => {
+    const s = deltas(ready(), deltaEvent(2, AG, 'Bon'), deltaEvent(3, AG, 'jour'));
+    expect(s.drafts).toHaveLength(1);
+    expect(s.drafts[0]).toMatchObject({ messageId: AG, text: 'Bonjour' });
+    expect(s.cursor).toBe(evtId(3));
+    expect(s.timeline).toHaveLength(1);
+  });
+  it('orders by index and ignores a repeated index', () => {
+    const s = deltas(ready(), deltaEvent(2, AG, 'B', 1), deltaEvent(3, AG, 'A', 0), deltaEvent(4, AG, 'X', 1), deltaEvent(5, AG, 'C', 2));
+    expect(s.drafts[0].text).toBe('ABC');
+  });
+  it('dedupes an event seen twice', () => {
+    const s = deltas(deltas(ready(), deltaEvent(2, AG, 'Bon')), deltaEvent(2, AG, 'Bon'));
+    expect(s.drafts[0].text).toBe('Bon');
+  });
+  it('ignores a delta of another conversation', () => {
+    const s = deltas(ready(), deltaEvent(2, AG, 'Bon', 0, OTHER));
+    expect(s.drafts).toEqual([]);
+  });
+  it('ignores a delta after the message.sent of the same id', () => {
+    let s = deltas(ready(), finalAt(2));
+    s = deltas(s, deltaEvent(3, AG, 'tard'));
+    expect(s.drafts).toEqual([]);
+    expect(s.timeline).toHaveLength(2);
+  });
+  it('replaces the draft by the final message at its position', () => {
+    let s = deltas(ready(), deltaEvent(2, AG, 'Bon'));
+    s = deltas(s, received(3, msgId(4)));
+    s = deltas(s, finalAt(4));
+    expect(s.drafts).toEqual([]);
+    expect(s.timeline.map((e) => (e.kind === 'agent' ? e.message.id : e.id))).toEqual([MSG, AG, msgId(4)]);
+  });
+  it('leaves a history without deltas unaffected, and a pending draft survives a history reload', () => {
+    let s = deltas(ready(), deltaEvent(2, AG, 'Bon'));
+    s = conversationReducer(s, { type: 'replayExpired' });
+    s = deltas(s, received(3, MSG));
+    expect(s.drafts).toHaveLength(1);
+    expect(deltas(ready(), finalAt(2)).drafts).toEqual([]);
   });
 });
