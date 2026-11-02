@@ -19,6 +19,8 @@ export class Problem extends Error {
     public status: number,
     public code: string,
     message: string,
+    /** Seconds, sent as the Retry-After header. */
+    public retryAfter?: number,
   ) {
     super(message);
   }

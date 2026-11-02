@@ -96,7 +96,8 @@ class ProblemFilter implements ExceptionFilter {
           ? "Service temporairement indisponible."
           : "Requête refusée.";
     const trace = /^00-([a-f0-9]{32})-/.exec(req.get("traceparent") ?? "")?.[1];
-    if (status === 503) res.setHeader("Retry-After", "1");
+    if (error instanceof Problem && error.retryAfter !== undefined) res.setHeader("Retry-After", String(error.retryAfter));
+    else if (status === 503) res.setHeader("Retry-After", "1");
     res
       .status(status)
       .type("application/problem+json")
