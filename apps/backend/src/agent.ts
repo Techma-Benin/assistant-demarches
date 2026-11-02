@@ -253,8 +253,13 @@ export class Agent {
     administrationId: string,
   ) {
     if (input.content.type === "audio") {
+      if (!this.transcriber) {
+        // No MODEL_API_KEY / TRANSCRIPTION_API_KEY_ENV: say so instead of a generic failure.
+        await this.finish(conversation, input, [{ type: "text", text: "La transcription des messages vocaux n’est pas disponible pour le moment. Veuillez décrire votre demande par écrit.", sources: [] }], traceparent);
+        return;
+      }
       try {
-        const text = await this.transcriber?.transcribe(input.content.fileId, conversation.userRef);
+        const text = await this.transcriber.transcribe(input.content.fileId, conversation.userRef);
         if (text && text.trim().length > 4000) {
           await this.finish(conversation, input, [{ type: "text", text: "Le message vocal est trop long. Veuillez envoyer un audio plus court ou préciser votre demande par écrit.", sources: [] }], traceparent);
           return;
@@ -368,6 +373,27 @@ export class Agent {
         ...input,
         content: { type: "text", text: interactionPrompt(input.content) },
       };
+    }
+    if (input.content.type === "file" && input.content.documentType) {
+      // Answer to a `fileRequest` block: the model only sees opaque references, never the document itself.
+      const pending = (
+        await this.pool.query(
+          `SELECT b->>'requestId' AS request_id
+             FROM backend_conversation_events e, jsonb_array_elements(e.body->'data'->'message'->'blocks') b
+            WHERE e.conversation_id=$1 AND e.body->'data'->>'kind'='message.sent'
+              AND b->>'type'='fileRequest' AND b->>'documentType'=$2
+            ORDER BY e.seq DESC LIMIT 1`,
+          [conversation.id, input.content.documentType],
+        )
+      ).rows[0];
+      if (pending?.request_id)
+        input = {
+          ...input,
+          content: {
+            type: "text",
+            text: `Pièce reçue pour la demande ${pending.request_id} : type de pièce « ${input.content.documentType} », fichier ${input.content.fileId}. Rattache-la au brouillon avec l’outil de rattachement de pièces (requestId, documentType, fileId ci-dessus).`,
+          },
+        };
     }
     if (input.content.type !== "text") {
       await this.finish(

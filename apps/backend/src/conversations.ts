@@ -59,10 +59,14 @@ export async function appendEvent(
       [event.id, conversationId, event],
     );
 }
+export const RESUME_AFTER_CONSENT =
+  "L’usager vient d’accorder l’autorisation demandée dans l’interface. Reprends l’action qui attendait cette autorisation, sans redemander ce qui a déjà été fourni.";
+export const RESUME_AFTER_LOGIN =
+  "L’usager vient de se connecter. Reprends l’action qui demandait une connexion, sans redemander ce qui a déjà été fourni.";
 export class Conversations {
   private readonly liveListeners = new Map<string, Set<(event: Event) => void>>();
   constructor(readonly pool: Pool) {}
-  /** Fired after a message.delta or message.sent transaction has committed. */
+  /** Fired after a message.delta, message.sent or transcript message.received transaction has committed: wakes the sockets. */
   onLive(conversationId: string, listener: (event: Event) => void): () => void {
     let listeners = this.liveListeners.get(conversationId);
     if (!listeners) {
@@ -77,13 +81,25 @@ export class Conversations {
   }
   emitLive(conversationId: string, event: Event): void {
     const kind = event.data.kind;
-    if (kind !== "message.delta" && kind !== "message.sent") return;
+    if (kind !== "message.delta" && kind !== "message.sent" && kind !== "message.received") return;
     const listeners = this.liveListeners.get(conversationId);
     if (!listeners) return;
     for (const listener of [...listeners]) {
       try { listener(event); }
       catch { /* A closed socket must not undo a committed event. */ }
     }
+  }
+  /**
+   * Queues a Backend-written turn for the agent (nothing is shown as a user message): used when the Interface
+   * cannot send anything itself, after the consent click (POST …/mandates) or after the login attach.
+   */
+  async enqueueResume(db: Db, conversationId: string, text: string): Promise<void> {
+    const body = { id: identifier("msg"), content: { type: "text", text }, sentAt: new Date().toISOString() };
+    const traceparent = `00-${randomBytes(16).toString("hex")}-${randomBytes(8).toString("hex")}-01`;
+    await db.query(
+      "INSERT INTO backend_messages(conversation_id,id,fingerprint,body,traceparent) VALUES($1,$2,$3,$4,$5)",
+      [conversationId, body.id, fingerprint(body), body, traceparent],
+    );
   }
   async owner(db: Db, id: string, userRef: string): Promise<OwnedConversation> {
     const row = (
@@ -182,6 +198,15 @@ export class Conversations {
           `UPDATE ${table} SET user_ref=$1 WHERE user_ref=$2`,
           [user.userRef, guest.userRef],
         );
+      // The reply that asked for the login is still waiting: pick the conversation up where it stopped.
+      const last = (
+        await db.query(
+          "SELECT body->'data'->'message'->'blocks' AS blocks FROM backend_conversation_events WHERE conversation_id=$1 AND body->'data'->>'kind'='message.sent' ORDER BY seq DESC LIMIT 1",
+          [conversationId],
+        )
+      ).rows[0];
+      if (Array.isArray(last?.blocks) && last.blocks.some((block: { type?: string }) => block.type === "loginRequired"))
+        await this.enqueueResume(db, conversationId, RESUME_AFTER_LOGIN);
       return moved.rows.find((row) => row.id === conversationId).body as Conversation;
     });
   }
@@ -484,7 +509,7 @@ export class Conversations {
     transcript: string,
     traceparent: string,
   ) {
-    await transaction(this.pool, async (db) => {
+    const event = await transaction(this.pool, async (db) => {
       const updated = await db.query(
         `UPDATE backend_conversation_events
          SET body=jsonb_set(body,'{data,message,transcript}',to_jsonb($3::text),true)
@@ -495,18 +520,17 @@ export class Conversations {
         [conversationId, messageId, transcript],
       );
       const message = updated.rows[0]?.body?.data?.message;
-      if (!message) return;
+      if (!message) return undefined;
       // Updated row is what GET …/events replays. A new event carries the
       // same UserMessage so the live stream (cursor past the original) sees it.
-      await appendEvent(
-        db,
-        conversationId,
-        envelope(
-          { kind: "message.received", conversationId, message },
-          traceparent,
-        ),
+      const value = envelope(
+        { kind: "message.received", conversationId, message },
+        traceparent,
       );
+      await appendEvent(db, conversationId, value);
+      return value;
     });
+    if (event) this.emitLive(conversationId, event);
   }
   async complete(
     db: PoolClient,

@@ -17,6 +17,7 @@ import { Problem, validate, type Schemas } from "./domain.js";
 import { KeycloakAdmin } from "./keycloak-admin.js";
 import { RUNTIME, type Runtime } from "./routes.js";
 import { XroadClient } from "./xroad.js";
+import { documentDisposition } from "./download.js";
 import { idempotencyKey } from "./transactions.js";
 
 const AUTH = Symbol("ADMIN_CONSOLE_AUTH");
@@ -160,8 +161,13 @@ export class AdminConsoleController {
     @Res() res: Response,
   ) {
     const principal = await this.official(req);
-    const file = await this.client(req).officialDocument(principal.subject, caseId, documentId);
+    const xroad = this.client(req);
+    const [file, item] = await Promise.all([
+      xroad.officialDocument(principal.subject, caseId, documentId),
+      xroad.getCase(principal.subject, caseId) as Promise<Schemas["Case"]>,
+    ]);
     res.setHeader("Content-Type", file.mimeType);
+    res.setHeader("Content-Disposition", documentDisposition(item?.documents, documentId, file.mimeType));
     res.setHeader("Cache-Control", "no-store");
     res.send(file.bytes);
   }
