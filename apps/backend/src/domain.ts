@@ -29,6 +29,8 @@ export class Problem extends Error {
 const domain = JSON.parse(
   readFileSync(new URL("./assets/domain.schema.json", import.meta.url), "utf8"),
 );
+/** Problem codes the contract allows (domain.schema.json#/$defs/Problem). */
+export const PROBLEM_CODES: ReadonlySet<string> = new Set(domain.$defs?.Problem?.properties?.code?.enum ?? []);
 export const ajv = new Ajv2020({ strict: false, allErrors: true });
 // ESM/CJS interop differs across the Ajv declaration files.
 (addFormats as unknown as (validator: Ajv2020) => void)(ajv);
