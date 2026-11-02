@@ -44,6 +44,7 @@ PostgreSQL et Keycloak doivent déjà exister. Décommenter le bloc « poste loc
 | `HOST` | Interface d'écoute. Défaut `127.0.0.1`. Mettre `0.0.0.0` pour être joignable hors de la machine. |
 | `CORS_ORIGINS` | Origine de l'interface, par exemple `http://127.0.0.1:3000`. |
 | `MCP_ALLOWED_URLS` | URL MCP du tooling autorisée. |
+| `GUEST_SESSIONS_PER_HOUR` | Sessions invitées créables par heure depuis une même adresse (le BFF de l'Interface les crée toutes). Défaut `300`. |
 | `MCP_SECRET_REFERENCES` | JSON des secrets MCP. Défaut `{}`. |
 | `FILE_STORAGE_DIR` | Dossier des pièces quand `STORAGE_DRIVER=local`. |
 | `STORAGE_DRIVER` | `local` par défaut. `s3` ou `gcs` demandent `STORAGE_BUCKET`. |
@@ -80,7 +81,7 @@ La transcription est active dès que `MODEL_API_KEY` est présente.
 | `pnpm dev:reset` | Efface les données locales du script |
 | `pnpm --filter @techma/backend typecheck` | Vérifie le typage |
 | `pnpm --filter @techma/backend test` | Lance les tests du backend |
-| `pnpm dev:check` | Diagnostique la pile déjà lancée (santé, `/health/ready`, parcours invité → message.sent) |
+| `pnpm dev:check` | Diagnostique la pile déjà lancée (santé, `/health/ready`, parcours invité → message.sent) ; avec `--interface-url`, rejoue aussi le parcours du navigateur par l'Interface (WebSocket, deltas) ; `--voice` ajoute un message vocal |
 
 `pnpm dev` sans argument tente aussi le tooling, le X-Road simulé et l'interface si le paquet est présent.
 
@@ -93,6 +94,18 @@ La transcription est active dès que `MODEL_API_KEY` est présente.
 5. Lire les ✘ : 404/405 = endpoint absent côté backend ; 401/403 = auth ; 503 = modèle/Tooling/X-Road ; timeout `message.sent` = agent bloqué (souvent pas de `MODEL_API_KEY`). Un échec sur `POST /v1/guest-sessions` est un problème backend, pas front.
 
 `GET /health` = processus + migrations. `GET /health/ready` = modèle, Tooling, MCP, X-Road, Keycloak/JWKS, base (aucun secret).
+
+## Interface web (`apps/interface/web`)
+
+Ce que l'Interface attend du Backend, vérifié par `apps/backend/tests/interface-wiring.test.mjs` (mêmes requêtes que `c1-client.ts`, `conversation-stream.ts`, `auth/callback`) et par `pnpm dev:check --interface-url http://127.0.0.1:3000 [--voice]` (parcours navigateur par le BFF, WebSocket avec l'origine de l'Interface).
+
+- **WebSocket.** `POST …/socket-ticket` renvoie `ws://{PUBLIC_URL}/v1/stream?ticket=…`. L'origine du navigateur doit figurer dans `CORS_ORIGINS` ; pour une origine en boucle locale (`127.0.0.1`, `localhost`, `[::1]`), les autres écritures de la même adresse (même schéma et même port) sont acceptées. Les trames sont des `Event` JSON (`message.received`, `message.delta`, `message.sent`) lus dans l'ordre depuis le curseur : une notification en direct réveille seulement la lecture, jamais un événement n'est poussé hors ordre. Un curseur inconnu ferme la socket en `1008 REPLAY_EXPIRED` (l'Interface repart sans curseur).
+- **Vocal.** L'Interface téléverse le blob tel quel (`POST /v1/files`, `X-File-Mime-Type: audio/webm`, `audio/ogg` ou `audio/mp4`), puis envoie `{type: audio, fileId}`. La transcription est un second `message.received` du même `message.id` (avec `transcript`) ; l'historique rejoué contient déjà la transcription. Sans clé (`MODEL_API_KEY`), l'assistant répond que la transcription n'est pas disponible.
+- **Pièce d'un `fileRequest`.** Le message `{type: file, fileId, documentType}` est transmis au modèle comme une instruction opaque (demande, type de pièce, identifiant de fichier) pour rattacher la pièce au brouillon ; le contenu du fichier n'est jamais envoyé au modèle. Un fichier sans `documentType` reçoit un simple accusé.
+- **Reprise après connexion et après consentement.** L'Interface n'envoie rien après `POST …/attach` ni après `POST …/mandates` : le Backend met lui-même en file un tour de reprise (jamais affiché comme message de l'usager) quand la dernière réponse demandait la connexion, et à chaque mandat accordé.
+- **Téléchargement.** `GET /v1/cases/{caseId}/documents/{documentId}` (et la même route de la console) renvoie `Content-Disposition: attachment; filename=…` avec le nom du document du dossier.
+- **Sessions invitées.** Le BFF de l'Interface crée les sessions invitées depuis son serveur : toutes partagent une adresse source. `GUEST_SESSIONS_PER_HOUR` (défaut `300`) borne ces créations pour cette adresse.
+- **Streaming.** Les `message.delta` sont émis une fois la réponse du modèle complète et validée (sources observées, texte masqué), jamais avant : l'Interface les reçoit par morceaux de mots, immédiatement avant `message.sent`, mais pas pendant la génération. Choix assumé tant qu'aucun texte non validé ne doit apparaître.
 
 ## Brancher une autre équipe
 
