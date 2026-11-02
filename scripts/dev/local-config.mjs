@@ -22,7 +22,7 @@ export const URLS = {
 };
 const database = (name) => `postgres://${POSTGRES.user}:${POSTGRES.password}@127.0.0.1:${PORTS.postgres}/${name}`;
 
-/** Environment of each application. Secrets that are not local (the AI provider key) come from the root .env. */
+/** Defaults for `pnpm dev`. A variable already set in the environment is kept. */
 export const SERVICES = {
   backend: {
     package: '@techma/backend',

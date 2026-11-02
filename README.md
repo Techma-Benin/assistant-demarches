@@ -18,7 +18,7 @@ Le backend se lance avec [BACKEND.md](BACKEND.md) : copier `.env.example`, rense
 
 | Commande | Effet |
 |---|---|
-| `pnpm dev backend` | PostgreSQL, Keycloak et le backend |
+| `pnpm dev backend` | Backend, avec PostgreSQL et Keycloak locaux si `.env` ne les définit pas |
 | `pnpm dev:infra` | PostgreSQL et Keycloak seulement |
 | `pnpm dev` | L'infrastructure et toutes les applications citées dans le script |
 | `pnpm dev:reset` | Efface les données locales (bases, realm, fichiers) |
