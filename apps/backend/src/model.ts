@@ -17,12 +17,18 @@ export type ModelReply = {
   calls: ModelCall[];
   rawOutput?: unknown[];
 };
+export type GenerateOptions = {
+  /** Called with each piece of assistant text as the provider streams it (turns the request into a stream). */
+  onTextDelta?: (delta: string) => void | Promise<void>;
+  /** Called once, as soon as the provider starts a tool call in this turn: the turn is a tool turn, not a final answer. */
+  onToolCall?: () => void;
+};
 export interface ModelPort {
   generate(
     config: ModelConfig,
     history: Turn[],
     tools: ToolDefinition[],
-    options?: { onTextDelta?: (delta: string) => void | Promise<void> },
+    options?: GenerateOptions,
   ): Promise<ModelReply>;
 }
 export type Provider = {
@@ -50,10 +56,15 @@ export class HttpModels implements ModelPort {
     config: ModelConfig,
     history: Turn[],
     tools: ToolDefinition[],
-    options?: { onTextDelta?: (delta: string) => void | Promise<void> },
+    options?: GenerateOptions,
   ): Promise<ModelReply> {
+    let emitted = false;
     for (let attempt = 0; ; attempt++) {
-      try { return await this.generateOnce(config, history, tools, options); }
+      // A retry after a broken stream must not replay text the listener already got: it is requested without streaming.
+      const forwarded: GenerateOptions | undefined = !options?.onTextDelta ? options
+        : emitted ? { ...options, onTextDelta: undefined }
+        : { ...options, onTextDelta: (delta) => { emitted = true; return options.onTextDelta!(delta); } };
+      try { return await this.generateOnce(config, history, tools, forwarded); }
       catch (error) {
         const diagnostic = error instanceof DiagnosticProblem ? error.diagnostic : undefined;
         const status = diagnostic?.upstreamStatus;
@@ -68,7 +79,7 @@ export class HttpModels implements ModelPort {
     config: ModelConfig,
     history: Turn[],
     tools: ToolDefinition[],
-    options?: { onTextDelta?: (delta: string) => void | Promise<void> },
+    options?: GenerateOptions,
   ): Promise<ModelReply> {
     const wireName = (name: string) => name.replaceAll(".", "_");
     const toolNames = new Map(
@@ -236,8 +247,8 @@ export class HttpModels implements ModelPort {
     }
     if (onTextDelta) {
       return responses
-        ? await this.replyFromResponsesStream(res, toolNames, onTextDelta, providerName, config.model)
-        : await this.replyFromChatStream(res, toolNames, onTextDelta, providerName, config.model);
+        ? await this.replyFromResponsesStream(res, toolNames, onTextDelta, options?.onToolCall, providerName, config.model)
+        : await this.replyFromChatStream(res, toolNames, onTextDelta, options?.onToolCall, providerName, config.model);
     }
     let text: string;
     try { text = await res.text(); }
@@ -311,6 +322,7 @@ export class HttpModels implements ModelPort {
     res: Response,
     toolNames: Map<string, string>,
     onTextDelta: (delta: string) => void | Promise<void>,
+    onToolCall: (() => void) | undefined,
     providerName: string,
     model: string,
   ): Promise<ModelReply> {
@@ -326,6 +338,9 @@ export class HttpModels implements ModelPort {
       sawChoice = true;
       const delta = choice.delta;
       if (!delta || typeof delta !== "object") return;
+      if (delta.tool_calls != null && !Array.isArray(delta.tool_calls)) throw this.invalidModelResponse(providerName, model);
+      // Before the text of this same chunk: a tool turn is never streamed as an answer.
+      if (delta.tool_calls?.length) onToolCall?.();
       const pieces: string[] = [];
       if (typeof delta.content === "string") pieces.push(delta.content);
       else if (Array.isArray(delta.content)) {
@@ -339,7 +354,6 @@ export class HttpModels implements ModelPort {
         text += piece;
         await onTextDelta(piece);
       }
-      if (delta.tool_calls != null && !Array.isArray(delta.tool_calls)) throw this.invalidModelResponse(providerName, model);
       for (const call of delta.tool_calls ?? []) {
         const index = typeof call?.index === "number" ? call.index : 0;
         const current = calls.get(index) ?? { id: "", name: "", arguments: "" };
@@ -363,6 +377,7 @@ export class HttpModels implements ModelPort {
     res: Response,
     toolNames: Map<string, string>,
     onTextDelta: (delta: string) => void | Promise<void>,
+    onToolCall: (() => void) | undefined,
     providerName: string,
     model: string,
   ): Promise<ModelReply> {
@@ -411,11 +426,13 @@ export class HttpModels implements ModelPort {
       }
       if ((type === "response.output_item.added" || type === "response.output_item.done") && value.item && typeof value.item === "object") {
         const index = typeof value.output_index === "number" ? value.output_index : draft.size + finished.size;
+        if (value.item.type === "function_call") onToolCall?.();
         if (type === "response.output_item.done") finished.set(index, value.item);
         else if (!draft.has(index)) draft.set(index, structuredClone(value.item));
         return;
       }
       if (type === "response.function_call_arguments.delta" && typeof value.delta === "string") {
+        onToolCall?.();
         const index = typeof value.output_index === "number" ? value.output_index : 0;
         if (sealedArgs.has(index)) return;
         ensureCall(index).arguments += value.delta;
