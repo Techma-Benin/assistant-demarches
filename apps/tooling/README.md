@@ -1,204 +1,80 @@
 # tooling
 
-Service NestJS du groupe Tooling : passerelle MCP, mandats, demandes, journal d'audit, événements C4. Plan : [docs/tooling-plan.md](../../docs/tooling-plan.md). Contrats : [CONTRACTS.md](../../CONTRACTS.md).
+Serveur MCP Techma du contrat v2 : brouillons de demande, mandats, dépôt des dossiers au X-Road simulé et suivi. Référence : [CONTRACTS.md](../../CONTRACTS.md) §7, §11 et §12, [spécification](../../docs/spec.md).
 
 ## Démarrer
 
 ```sh
-pnpm --filter @techma/tooling test     # compile puis lance node --test (PGlite)
-TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres \
-  pnpm --filter @techma/tooling test   # même suite sur un PostgreSQL réel, plus les tests à deux répliques
-pnpm --filter @techma/tooling build
-pnpm mocks                             # Backend simulé sur 4010 (autre terminal)
-AUTH_MODE=mock-tokens pnpm --filter @techma/tooling start
+pnpm dev                        # toute la pile (PostgreSQL, Keycloak, Backend, Tooling, X-Road, Interface)
+pnpm dev tooling xroad          # PostgreSQL + Keycloak + Tooling + X-Road seuls
+pnpm --filter @techma/tooling test
 ```
 
-Le service écoute sur `http://127.0.0.1:4030`. Sans `DATABASE_URL`, il utilise PostgreSQL embarqué en mémoire (PGlite) : rien à installer, données perdues à l'arrêt. La simulation Tooling du dépôt reste sur 4020 ; pointer le Backend vers 4030 pour utiliser le vrai service.
+Le service écoute sur `http://127.0.0.1:4030`, un seul processus, base `tooling`. Les variables viennent de `scripts/dev/local-config.mjs`.
 
-Systèmes pris en charge : Linux, macOS et Windows, avec Node.js 22. La CI exécute `pnpm check` sur les trois. Le superviseur demande l'arrêt à ses processus par IPC, ce qui fonctionne partout ; il s'arrête proprement sur `SIGTERM` ou `SIGINT` (Linux, macOS, Docker), sur `Ctrl+C` ou `SIGBREAK` (Windows), ou sur un message `{ "type": "shutdown" }` de son processus parent. Un processus de service dont le superviseur disparaît s'arrête de lui-même.
+## Ce que fait le service
 
-## Tester avec un agent
-
-Le pont `dev/agent-bridge.ts` est un serveur MCP en stdio, réservé au développement et absent de l'image. Il joue le rôle du Backend : à son démarrage il ouvre une conversation, simule le clic de consentement (mandat), dépose une pièce synthétique sur le Backend simulé, puis relaie chaque appel d'outil avec un `traceparent` et une `Idempotency-Key` neufs. Il refuse toute cible hors localhost.
-
-```sh
-pnpm --filter @techma/tooling demo        # parcours complet scripté, échoue si une étape casse
-pnpm --filter @techma/tooling dev:stack   # Backend simulé (4010) + Tooling (4030) + X-Road simulé (4040) : PROCEDURES_SOURCE=xroad, CONNECTORS=xroad
-CONNECTORS=simulated pnpm --filter @techma/tooling dev:stack   # sans X-Road, envoi et suivi simulés locaux
-XROAD=off pnpm --filter @techma/tooling dev:stack              # Backend simulé + Tooling seuls
-XROAD=on pnpm --filter @techma/tooling dev:stack               # même pile que le défaut (BRIDGE_PROCEDURE_ID=casier-judiciaire pour le pont)
-node apps/tooling/dist/dev/agent-bridge.js                              # commande stdio à déclarer dans le client MCP
-npx @modelcontextprotocol/inspector node apps/tooling/dist/dev/agent-bridge.js   # exploration manuelle
-```
-
-Variables du pont : `TOOLING_URL` (défaut `http://127.0.0.1:4030`), `BACKEND_URL` (défaut `http://127.0.0.1:4010`, vide pour ne pas déposer de pièce), `BRIDGE_PROCEDURE_ID`, `BRIDGE_SCOPES`, `BRIDGE_USER_REF`.
-
-## Console de démonstration
-
-`dev/console.ts` démarre le Backend simulé et le vrai service (PGlite en mémoire, publication des événements active), puis sert une page sur `http://127.0.0.1:4321` (variable `CONSOLE_PORT`). La page déroule un scénario en 16 étapes, de la recherche de fiche jusqu'à la révocation du mandat et à l'accès refusé d'un autre usager. Pour chaque appel, elle affiche la requête et la réponse réelles, le journal d'audit, les demandes, les mandats et l'outbox lus dans la base, et les événements reçus par le Backend. `→` ou Espace : étape suivante.
-
-```sh
-pnpm --filter @techma/tooling console
-```
-
-La même commande sert aussi `http://127.0.0.1:4321/vitrine`, une vue destinée à un public non technique : conversation de l'usager sur un téléphone, dossier qui se remplit, bouclier de sécurité et compteurs lus dans la base, sans aucun JSON. Les deux vues pilotent la même session : en ouvrir une seule à la fois.
-
-La base est en mémoire et le journal d'audit est en ajout seul : « Recommencer » relance le scénario sans effacer les lignes déjà écrites. Pour repartir d'une base vide, relancer la commande.
-
-## Intégration pour les autres groupes
-
-### Backend, agent : `POST /mcp`
-
-MCP Streamable HTTP sans session, SDK officiel. Chaque requête porte :
-
-| En-tête | Valeur |
+| Outil | Rôle |
 |---|---|
-| `Authorization` | `Bearer` du client `backend-agent`, audience `techma-tooling`, scope `tools:call` |
-| `traceparent` | W3C v00 |
-| `X-Conversation-Id`, `X-User-Ref` | Contexte construit par le code du Backend, jamais par le modèle |
-| `X-Mandate-Id` | Pour les outils d'action |
-| `Idempotency-Key` | Obligatoire pour les outils d'action ; stable pour une même tentative métier |
+| `procedures.search`, `procedures.get` | Catalogue lu au X-Road (fiches de service-public.bj). `filing` indique si l'assistant peut déposer. |
+| `request.create` | Ouvre un brouillon pour une démarche déposable ; `NOT_ASSISTED` sinon. |
+| `request.update` | Remplit les champs du formulaire officiel, avec leur provenance (`answer` ou `document`). |
+| `documents.attach` | Rattache une pièce de l'usager à la ligne attendue (format et validité vérifiés, contenu jamais lu). |
+| `request.submit` | Lit les pièces au Backend, les transmet au X-Road (`/v1/uploads`), dépose le dossier avec `X-Channel`, renvoie `{request, case}`. |
+| `request.pay` | Paiement simulé, une seule fois par dossier. |
+| `case.status` | État du dossier dans le X-Road. |
+| `case.respond` | Réponse de l'usager à une demande de complément (message, champs, pièces). |
 
-Catalogue : `tools/list` renvoie exactement `contracts/v1/mcp.tools.json`. Erreur métier : `isError: true` et un bloc texte JSON `{code, detail, traceId}`.
+Un brouillon passe de `draft` à `ready` quand `missing` est vide, puis à `submitted` avec `caseId`. Après le dépôt, l'état fait foi dans le dossier X-Road.
 
-### Backend, consentement : `POST /internal/v1/mandates` et `POST /internal/v1/mandates/{id}/revoke`
+Le suivi interroge les dossiers déposés toutes les 3 s (`TRACKING_POLL_MS`) et publie `case.updated` au Backend à chaque changement que la réponse d'un outil n'a pas déjà rapporté. Il s'arrête quand le dossier est `completed` ou `rejected`.
 
-Client `backend-mandates`, scope `mandates:grant`, `Idempotency-Key` obligatoire. Corps `MandateGrant`. Hors mode local, `challenge.proofToken` doit être un JWT RS256 signé par le Backend (audience `techma-mandate`, `jti` = id du challenge, `sub` = `userRef`, `conversationId`, `procedureId`, `scopes`, `exp` = `expiresAt`), publié sur le JWKS indiqué par `PROOF_JWKS_URL`. Un challenge ne sert qu'une fois.
+## Intégration
 
-Le Tooling ne publie pas `mandate.granted` ni `mandate.revoked` : le Backend reçoit le mandat en réponse synchrone et le diffuse lui-même, comme le fait la simulation.
+### Backend vers Tooling
 
-### Backend, console des ministères : `POST /internal/v1/admin/requests/{id}/actions`
-
-Client `backend-admin`, scope `requests:admin`, `Idempotency-Key` obligatoire. Corps `InternalAdminCommand` (`tooling-admin.openapi.json`) : `action` parmi `claim`, `request_information`, `approve`, `reject`, `resume`, la `revision` lue par l'agent, `departmentId` et `actorRef` fournis par le Backend. Réponse 200 : le `DepartmentRequest` complet, révision supérieure, identique au snapshot publié ensuite.
-
-| Refus | Cas |
-|---|---|
-| 404 | dossier inconnu, ou d'un autre département |
-| 409 | révision dépassée, dossier pas encore déposé ou déjà clos, transition impossible (déjà pris en charge, aucun complément en attente, pas de décision attendue au X-Road) |
-| 400 | commande invalide, motif absent pour `request_information` |
-
-`approve` et `reject` sont relayés au X-Road (`X-Actor-Ref` = `actorRef`). `request_information` met le dossier en `blocked` avec le motif ; `resume` le remet en traitement. Une même clé rejouée renvoie la même réponse pendant 25 h.
-
-### Ce que le Tooling attend du Backend
-
-| Besoin | Route Backend | Identité Tooling |
+| Route | Identité Keycloak | Règles |
 |---|---|---|
-| Fiches | `GET /internal/v1/procedures`, `GET /internal/v1/procedures/{id}` | `tooling-resources`, scope `resources:read` |
-| Métadonnées de pièces | `GET /internal/v1/files/{id}` avec `X-User-Ref` | `tooling-resources` |
-| Événements | `POST /internal/v1/events`, `Idempotency-Key` = id d'événement | `tooling-events`, scope `events:publish` |
-| Documents délivrés | `POST /internal/v1/requests/{id}/documents`, binaire, `X-User-Ref`, `X-File-Mime-Type` | `tooling-documents`, scope `documents:transfer` |
+| `POST /mcp` | client `backend`, audience `techma-tooling`, scope `tools:call` | `initialize` et `tools/list` sans contexte. `tools/call` exige `X-Conversation-Id` et `X-User-Ref` ; les actions exigent `X-Mandate-Id` et `Idempotency-Key` ; `request.submit` exige `X-Channel`. |
+| `POST /internal/v1/mandates` | client `backend`, scope `mandates:grant` | Corps `MandateGrant`. `proofToken` signé par le Backend (JWKS `BACKEND_JWKS_URL`, audience `techma-mandate`, `jti` = id du challenge, `sub` = `userRef`, `conversationId`, `procedureId`, `scopes`, `exp`). Un challenge ne sert qu'une fois. Mandat d'une heure. |
+| `POST /internal/v1/mandates/{id}/revoke` | client `backend`, scope `mandates:grant` | `X-User-Ref` du propriétaire, sinon 404. |
 
-Avec les fiches du Backend (`PROCEDURES_SOURCE=backend`), événements publiés : `request.created`, `request.status_changed`, `tool.called`. Avec les fiches du X-Road, chaque modification d'une demande publie à la place un snapshot complet `request.snapshot` : révision strictement croissante, `administrationId` du ministère qui traite, `simulation: true`, accusé de dépôt, motif de blocage, paiement, documents délivrés, étape et provenance des champs. Ordre garanti par conversation, livraison au moins une fois, id stable entre les reprises. Le département et la conversation doivent exister côté Backend : tant qu'ils manquent, le snapshot est retenté et les événements suivants de la conversation attendent.
+Les outils exigeant une connexion exigent aussi un mandat ou la propriété d'un dossier déposé : le Backend n'accorde un mandat qu'à un usager connecté.
 
-## Organisation du code
+Erreur métier d'un outil : `isError: true` et un bloc texte JSON `{code, detail, traceId}`. `tools/list` renvoie le catalogue de `contracts/v2/mcp.tools.json`, chaque schéma complété des définitions qu'il utilise et de `type: "object"` à la racine, comme l'exige le protocole MCP.
 
-| Dossier | Rôle |
+### Tooling vers Backend et X-Road
+
+Un seul client sortant, `tooling` (client_credentials), audiences `techma-backend` et `techma-xroad`.
+
+| Appel | Usage |
 |---|---|
-| `src/gateway` | Passerelle MCP, registre des outils, chemin d'exécution commun (idempotence, mandat, sortie, journal, événements) |
-| `src/procedures`, `src/requests` | Outils, inscrits au registre par leur module ; aucun ne connaît la passerelle |
-| `src/mandates` | Contrôle des mandats et vérification à chaque action |
-| `src/auth` | JWT entrants, jetons client credentials sortants, preuves de consentement |
-| `src/database` | Port `Database` (PostgreSQL ou PGlite), migrations, sécurité au niveau des lignes |
-| `src/events` | Outbox, publication, entretien |
-| `src/runtime` | Superviseur et garde-fous des processus |
-
-Ajouter un outil : un `ToolHandler` dans un module qui l'inscrit au `ToolRegistry` en `onModuleInit`. La passerelle se charge du reste. Un outil d'action qui n'appelle pas `requireMandate` est refusé.
-
-## Connecteurs vers l'administration
-
-`request.submit` prépare la demande et renvoie le lien officiel (v1). Si un connecteur est activé pour la fiche, l'envoi est en plus mis en file dans la même transaction, puis un processus de fond (`src/connectors/connector-worker.ts`) :
-
-1. revérifie le mandat : révoqué ou expiré, rien n'est transmis ;
-2. appelle `submit` du connecteur ; avec un accusé de réception, la demande passe à `submitted` ;
-3. suit ensuite le dossier avec `status` (`processing`, puis `completed` ou `rejected`), un événement `request.status_changed` à chaque étape ;
-4. en cas d'échec, réessaie avec un délai croissant ; après 24 h sans envoi, abandonne et le lien officiel reste valable.
-
-Il fonctionne comme l'outbox : sûr sur plusieurs répliques, bail de 60 s, journal d'audit sous l'acteur `tooling-connector`. La référence externe et l'accusé restent internes : la sortie des outils garde la forme du contrat.
-
-Brancher un vrai connecteur : implémenter `AdministrationConnector` (`id`, `supports(procedure)`, `submit`, `status`), l'inscrire au `ConnectorRegistry` dans `onModuleInit`, puis l'activer par `CONNECTORS`. Aucun outil ni l'agent n'est à modifier.
-
-Deux connecteurs existent :
-
-- `xroad` dépose le dossier au X-Road simulé (`apps/xroad-sim`, contrat C5) et en suit l'état : `awaiting_payment` et `received` donnent `submitted` ; `in_review` donne `blocked` (« à vérifier » par le ministère) jusqu'à ce qu'un agent le prenne en charge (`processing`) ; puis `completed` ou `rejected`. Les documents délivrés sont déposés au Backend et ajoutés au snapshot ; un dépôt en échec est retenté toutes les 30 s sans bloquer le suivi. Il exige `XROAD_URL` et des fiches lues au X-Road (`PROCEDURES_SOURCE=xroad`, valeur par défaut dès que `XROAD_URL` est fourni). Il est admis hors poste local : le service distant se déclare simulation dans chaque dossier (CONTRACTS.md §7).
-- `simulated` produit des statuts fictifs à partir du temps écoulé (références `SIMULATION-…`), sans service distant : refusé en production et hors poste local.
-
-Un refus de l'administration (409) ou un dossier qu'elle ne connaît plus (404) arrête les essais aussitôt : la demande garde son lien officiel. Le transfert des pièces elles-mêmes relève de la phase suivante : le connecteur ne transmet que leurs métadonnées.
-
-`request.pay` règle les frais d'un dossier déjà transmis au X-Road. Le mandat est vérifié avant l'appel au X-Road, puis de nouveau à l'enregistrement ; la clé d'idempotence côté X-Road est propre à la demande, un nouvel appel ne paie jamais deux fois. Le paiement demande au processus de fond de relire le dossier aussitôt.
-
-Sans aucun en-tête de contexte, `/mcp` accepte `initialize` et `tools/list` : un écran « ajouter un MCP par URL » peut lister les outils. Les appels d'outils exigent toujours le contexte.
+| `POST /internal/v1/events` (Backend) | `case.updated`, `tool.called`, `mandate.granted`, `mandate.revoked`, en `bj.techma.{kind}.v2`. Ordre garanti par conversation, livraison au moins une fois. |
+| `GET /internal/v1/files/{id}` et `/content` (Backend) | Métadonnées et contenu d'une pièce, pour l'usager `X-User-Ref`. |
+| X-Road (`X-Applicant-Ref`) | Catalogue, `uploads`, dépôt, paiement, lecture et réponses d'un dossier. |
 
 ## Tenue en cas de panne
 
-| Panne | Comportement |
-|---|---|
-| Exception non rattrapée | Le processus ferme ce qu'il peut, sort en échec, le superviseur le relance |
-| Processus bloqué | Plus de battement de cœur : tué et remplacé au bout de 30 s |
-| Arrêts répétés | Relance après 1, 2, 4… jusqu'à 30 s ; jamais d'abandon |
-| Superviseur arrêté | Docker relance le conteneur (`restart: unless-stopped`) |
-| Réplique indisponible | Le proxy la retire via `/ready` ; l'autre réplique sert |
-| Base indisponible | Réponses 503, `/ready` en échec, reconnexion automatique ; au démarrage, sortie et relance jusqu'au retour de la base |
-| Backend indisponible | Outils en `UPSTREAM_UNAVAILABLE`, événements gardés et repris pendant 24 h |
-| Processus arrêté en pleine publication | Bail de 60 s : un autre processus reprend les événements |
-| Agent qui boucle | 60 appels d'outils par minute et par usager, puis `RATE_LIMITED` avec délai |
-| Essais de jetons | 20 échecs d'authentification par minute et par adresse, puis 429 pour cette adresse |
-
-Aucun état métier n'est gardé en mémoire : idempotence, mandats et événements sont en base, donc n'importe quel processus ou réplique peut servir n'importe quel appel. Avec PGlite, un seul processus est permis ; la redondance demande PostgreSQL.
-
-`/health` : le processus répond. `/ready` : la base répond et le schéma est à jour. Le Backend n'entre pas dans `/ready`, pour que sa panne ne retire pas le Tooling.
-
-Les compteurs de débit sont en base, partagés par tous les processus et répliques ; leurs clés sont hachées. Les réponses 429 et 503 portent `Retry-After`.
-
-## Déploiement de test
-
-`deploy/compose.yaml` : PostgreSQL 16, deux répliques, proxy Caddy en HTTPS sur `127.0.0.1:4443` (HTTP refusé). Voir l'en-tête du fichier. Le rôle de connexion doit pouvoir créer le rôle `tooling_app` à la première migration.
-
-Ce qui a été vérifié sans Docker, avec les binaires officiels : la suite complète sur PostgreSQL 16.14 ; le `Caddyfile` validé par Caddy 2.10 ; deux instances derrière Caddy en TLS 1.3, l'une tuée, 30 requêtes sur 30 servies par l'autre, puis retour automatique de la première. Pas encore exécutés : l'image Docker et le fichier compose eux-mêmes.
-
-## CI/CD
-
-`.github/workflows/tooling.yml` s'exécute à chaque push sur une branche `tooling/…` :
-
-| Étape | Contenu |
-|---|---|
-| `test` | `pnpm check` complet sur Linux, macOS et Windows |
-| `test-postgres` | Suite Tooling sur PostgreSQL 16 réel, tests à deux répliques compris |
-| `image` | Construction de l'image, démarrage en production contre PostgreSQL : `/ready`, `/health`, refus sans jeton, utilisateur non root, aucun source ni test dans l'image |
-| `compose` | Pile complète (base, deux répliques, proxy HTTPS) : entrée HTTPS, HTTP refusé, une réplique arrêtée sans interruption du service |
-| `publish` | Si tout passe : image publiée sur `ghcr.io/techma-benin/assistant-demarches-tooling`, étiquetée `sha-<commit>` et nom de branche |
-
-Le déploiement sur un serveur n'est pas automatisé : aucun environnement cible n'existe encore. L'image publiée se lance avec `deploy/compose.yaml` et `TOOLING_IMAGE`, sans construction locale.
+- Les appels au Backend et au X-Road se font hors transaction ; une panne amont renvoie `UPSTREAM_UNAVAILABLE` sans rien écrire.
+- Dépôt, paiement et réponse portent une clé d'idempotence vers le X-Road : un nouvel essai ne crée jamais un second dossier ni un second paiement.
+- Outbox et suivi sont sûrs sur plusieurs instances (`FOR UPDATE SKIP LOCKED`, bail de 60 s) et réessaient avec un délai croissant.
+- Sécurité au niveau des lignes sur toutes les tables ; journal d'audit en ajout seul.
 
 ## Configuration
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `TOOLING_HOST` / `TOOLING_PORT` | `127.0.0.1` / `4030` | Écoute |
-| `TOOLING_WORKERS` | 2 avec PostgreSQL, 1 avec PGlite | Processus de service sous le superviseur |
-| `NODE_ENV` | | `production` exige PostgreSQL et `BACKEND_URL`, interdit `mock-tokens` et les fiches en brouillon |
-| `DATABASE_URL` | `pglite:memory` hors production | `postgres://…`, `pglite:memory` ou `pglite:/chemin` |
-| `DATABASE_POOL_MAX` | 10 | Connexions par processus |
-| `BACKEND_URL` | `http://127.0.0.1:4010` hors production | API privée du Backend |
-| `AUTH_MODE` | `jwt` | `mock-tokens` : jetons statiques de la suite partagée, écoute locale hors production seulement |
-| `JWT_ISSUER`, `JWKS_URL`, `OIDC_TOKEN_URL` | | Realm Keycloak ; mode `jwt` |
-| `TOOLING_RESOURCES_CLIENT_ID` / `_SECRET` | | Identité sortante vers les ressources ; mode `jwt` |
-| `TOOLING_EVENTS_CLIENT_ID` / `_SECRET` | | Identité sortante vers les événements ; mode `jwt` |
-| `TOOLING_RESOURCES_TOKEN`, `TOOLING_EVENTS_TOKEN` | | Jeton préémis à la place du flux client credentials, comme `TOOLING_AGENT_TOKEN` côté Backend ; jamais renouvelé, interdit en production |
-| `PROOF_JWKS_URL`, `PROOF_ISSUER` | | Clés des preuves de consentement ; mode `jwt` |
-| `PROCEDURES_ALLOW_DRAFTS` | `true` seulement en écoute locale hors production | Fiches en brouillon visibles ; un serveur déployé les refuse sauf réglage explicite |
-| `EVENTS_PUBLISHER`, `EVENTS_INTERVAL_MS` | `on`, 1000 | Publication de l'outbox |
-| `RATE_LIMIT_USER_PER_MIN` | 60 | Appels d'outils par usager |
-| `RATE_LIMIT_CLIENT_PER_MIN` | 1200 | Requêtes par client de service |
-| `RATE_LIMIT_AUTH_FAILURES_PER_MIN` | 20 | Échecs d'authentification par adresse avant blocage |
-| `TRUST_PROXY` | `false` | Réseaux autorisés à fournir `X-Forwarded-For` (`loopback`, `uniquelocal`…) |
-| `CONNECTORS` | vide | Connecteurs activés, séparés par des virgules : `xroad`, ou `simulated` seulement en local hors production |
-| `XROAD_URL` | aucun | X-Road simulé (C5) ; HTTPS hors localhost |
-| `PROCEDURES_SOURCE` | `xroad` si `XROAD_URL`, sinon `backend` | Origine des fiches de `procedures.search` et `procedures.get` |
-| `TOOLING_XROAD_CLIENT_ID`, `TOOLING_XROAD_CLIENT_SECRET` ou `TOOLING_XROAD_TOKEN` | aucun | Identité `tooling-xroad` (`xroad:read xroad:submit xroad:decide`) en mode `jwt`, requise avec `XROAD_URL` |
-| `TOOLING_DOCUMENTS_CLIENT_ID`, `TOOLING_DOCUMENTS_CLIENT_SECRET` ou `TOOLING_DOCUMENTS_TOKEN` | aucun | Identité `tooling-documents` (`documents:transfer`) en mode `jwt`, requise avec `XROAD_URL` |
-| `CONNECTOR_WORKER`, `CONNECTOR_INTERVAL_MS` | `on`, 2000 | Processus d'envoi et de suivi |
-| `CONNECTOR_POLL_MS` | 300000 | Intervalle de suivi d'un dossier envoyé |
-| `CONNECTOR_SIMULATED_STEP_MS` | 30000 | Durée de chaque étape fictive du connecteur simulé |
-| `CONTRACTS_DIR` | `contracts/v1` du dépôt | Contrats dans une image |
+| `TOOLING_HOST`, `TOOLING_PORT` | `127.0.0.1`, `4030` | Écoute |
+| `DATABASE_URL` | requis | PostgreSQL ; `pglite:memory` seulement avec `NODE_ENV=test` |
+| `OIDC_ISSUER` | requis | Realm Keycloak ; JWKS et jeton dérivés (`OIDC_JWKS_URL`, `OIDC_TOKEN_URL` pour les remplacer) |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | `tooling`, requis | Client sortant |
+| `BACKEND_URL` | requis | Backend |
+| `BACKEND_JWKS_URL` | `BACKEND_URL/.well-known/jwks.json` | Clés des preuves de consentement |
+| `PROOF_ISSUER` | aucun | Émetteur attendu des preuves, si fixé |
+| `XROAD_URL` | requis | X-Road simulé |
+| `EVENTS_PUBLISHER`, `EVENTS_INTERVAL_MS` | `on`, `500` | Publication de l'outbox |
+| `TRACKING_WORKER`, `TRACKING_INTERVAL_MS`, `TRACKING_POLL_MS` | `on`, `1000`, `3000` | Suivi des dossiers |
+| `RATE_LIMIT_USER_PER_MIN`, `RATE_LIMIT_CLIENT_PER_MIN`, `RATE_LIMIT_AUTH_FAILURES_PER_MIN` | `60`, `1200`, `20` | Limites de débit |
+| `TRUST_PROXY` | `false` | Proxy de confiance pour `X-Forwarded-For` |
 
-Toutes les URL de service doivent être en HTTPS hors localhost. Les secrets viennent de l'environnement et ne sont jamais journalisés. Entre le proxy et les répliques, le trafic reste en HTTP sur le réseau privé du déploiement.
+HTTPS est obligatoire pour toute URL hors localhost.
