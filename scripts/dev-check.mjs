@@ -13,6 +13,8 @@ const backendUrl = option("--backend-url", URLS.backend).replace(/\/$/, "");
 const interfaceUrl = option("--interface-url", URLS.interface).replace(/\/$/, "");
 const timeoutMs = Number(option("--timeout", "60000"));
 const question = option("--question", "Bonjour, comment fonctionne l'assistant ?");
+// Deltas received over less than this many ms before message.sent were not streamed during the generation.
+const minStreamMs = Number(option("--min-stream-ms", "150"));
 const failures = [];
 const lines = [];
 
@@ -154,6 +156,7 @@ if (!guest.ok || !guest.json?.token) {
 }
 
 let proxyReachable = false;
+let bffPresent = false; // the Interface exposes /api/backend, even when /v1/home itself fails upstream
 const web = await get(interfaceUrl);
 if (web.status === 0) {
   mark(false, "Interface", `injoignable sur ${interfaceUrl}`, "Interface non lancée : paquet absent, ou `pnpm dev` sans apps/interface/web.");
@@ -162,6 +165,7 @@ if (web.status === 0) {
   // Future interface (techma/interface/redesign): public BFF at /api/backend/v1/home.
   const proxied = await get(`${interfaceUrl}/api/backend/v1/home`, { headers: { traceparent: traceparent() } });
   proxyReachable = proxied.ok;
+  bffPresent = proxied.status !== 0 && proxied.status !== 404 && proxied.status !== 405;
   if (proxied.status === 0) {
     mark(false, "Proxy interface → backend", "l'interface ne répond plus");
   } else if (proxied.ok) {
@@ -243,6 +247,7 @@ async function browserJourney() {
   socket.on("message", (data) => frames.push({ at: Date.now() - startedAt, event: JSON.parse(data.toString()) }));
   const messageId = identifier("msg");
   const sentAt = new Date().toISOString();
+  const postedAt = Date.now();
   const posted = await request("POST", `/api/backend/v1/conversations/${conversationId}/messages`, {
     body: { id: messageId, content: { type: "text", text: question }, sentAt },
     key: messageId,
@@ -272,10 +277,30 @@ async function browserJourney() {
   const received = kinds.indexOf("message.received") >= 0;
   const order = received && kinds.indexOf("message.received") < kinds.indexOf("message.sent") && kinds.lastIndexOf("message.delta") < kinds.indexOf("message.sent");
   const firstDelta = frames.find((frame) => frame.event.data.kind === "message.delta");
+  const lastDelta = frames.findLast((frame) => frame.event.data.kind === "message.delta");
   const last = frames.find((frame) => frame.event.data.kind === "message.sent");
+  const posted_at = postedAt - startedAt;
   const sources = sent.data.message.blocks.flatMap((block) => (block.type === "text" ? block.sources : []));
   mark(order, "Parcours navigateur : ordre des événements", `${kinds.length} trames : message.received → ${deltas.length} × message.delta → message.sent (blocs : ${sent.data.message.blocks.map((block) => block.type).join(", ")} ; ${sources.length} source(s))`);
   mark(deltas.length === 0 || assembled === text, "Parcours navigateur : deltas = message.sent", deltas.length ? `texte assemblé identique (${text.length} car., premier delta à +${firstDelta.at} ms, message.sent à +${last.at} ms)` : "aucun delta (la réponse n'a pas de texte)", "Le texte assemblé des deltas diffère du bloc text final.");
+  // The reply must be streamed while the model writes it: deltas bunched right before message.sent mean the Backend
+  // waited for the end of the generation (the exact defect this check guards against).
+  if (deltas.length === 0) {
+    mark(true, "Parcours navigateur : streaming en direct", "sans objet (aucun delta : réponse sans texte)");
+  } else {
+    const streamMs = last.at - firstDelta.at;
+    const spreadMs = lastDelta.at - firstDelta.at;
+    const detail = `message envoyé à +${posted_at} ms ; premier delta à +${firstDelta.at} ms (${firstDelta.at - posted_at} ms après l'envoi), dernier à +${lastDelta.at} ms, message.sent à +${last.at} ms ; ${deltas.length} delta(s) répartis sur ${spreadMs} ms, ${streamMs} ms entre le premier delta et message.sent`;
+    const grouped = deltas.length >= 3 && streamMs < minStreamMs;
+    mark(
+      !grouped,
+      "Parcours navigateur : streaming en direct",
+      grouped
+        ? `deltas groupés juste avant message.sent — ${detail}`
+        : detail,
+      `Les ${deltas.length} deltas arrivent en moins de ${minStreamMs} ms avant message.sent : le Backend les émet après la fin de la génération au lieu de les écrire au fil du flux du modèle (agent.ts / live-reply.ts). Si le modèle est vraiment très rapide, baisser --min-stream-ms.`,
+    );
+  }
   if (args.includes("--voice")) await voiceJourney(request, origin);
 }
 
@@ -320,7 +345,8 @@ async function voiceJourney(request, origin) {
   }
 }
 
-if (web.status !== 0 && proxyReachable) await browserJourney();
+// The journey does not need /v1/home (X-Road catalogue): it only needs the BFF and a Backend that answers.
+if (web.status !== 0 && bffPresent) await browserJourney();
 
 console.log("");
 if (failures.length) {
