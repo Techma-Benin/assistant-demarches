@@ -69,7 +69,7 @@ function useTicker(active: boolean, ms: number, max: number) {
 }
 
 /** Rise 10px + fade on mount; shown immediately when not animated. */
-function Rise({ animated, children, className, from = 'translate-y-2.5' }: { animated: boolean; children: ReactNode; className?: string; from?: string }) {
+export function Rise({ animated, children, className, from = 'translate-y-2.5' }: { animated: boolean; children: ReactNode; className?: string; from?: string }) {
   const [on, setOn] = useState(!animated);
   useEffect(() => {
     if (on) return;

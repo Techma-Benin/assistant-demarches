@@ -115,7 +115,8 @@ export function formatExpiryShort(iso: string, now: Date = new Date()): string {
 const SCOPE_LABELS: Partial<Record<Scope, string>> = {
   'requests:write': 'créer et remplir votre demande',
   'documents:write': 'joindre vos pièces à la demande',
-  'requests:submit': 'transmettre la demande pour que vous la validiez sur le portail officiel',
+  // Product rule: the user always pays on the payment aggregator; the assistant only files the request.
+  'requests:submit': 'déposer votre demande',
 };
 
 /** What the assistant may do for these scopes, in plain French; unknown scopes are skipped. */
@@ -123,8 +124,12 @@ export function scopeLabels(scopes: readonly string[]): string[] {
   return scopes.flatMap((scope) => SCOPE_LABELS[scope as Scope] ?? []);
 }
 
-/** What the assistant never does, whatever the scopes (payment and final validation stay with the user). */
-export const NEVER_DO = ['payer à votre place', 'valider la demande à votre place'] as const;
+/**
+ * What the assistant never does, whatever the scopes: no NPI or SMS code in the chat (CONTRACTS.md §6),
+ * no payment (product rule: the user pays on the payment aggregator; the Tooling's `request.pay` still
+ * contradicts it, see the Backend meeting notes), and no action without a granted mandate.
+ */
+export const NEVER_DO = ['vous demander votre NPI ou un code SMS dans la conversation', 'payer à votre place', 'agir sans votre accord'] as const;
 
 /** Dossier-panel step state: undefined = no consent requested yet. */
 export function consentStepState(flow: ConsentFlow): 'pending' | 'active' | undefined {

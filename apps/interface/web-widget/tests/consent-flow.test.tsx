@@ -44,9 +44,10 @@ describe('ConsentCard', () => {
     expect(region).not.toHaveTextContent('STOP');
     expect(region).toHaveTextContent('créer et remplir votre demande');
     expect(region).toHaveTextContent('joindre vos pièces à la demande');
-    expect(region).toHaveTextContent('transmettre la demande pour que vous la validiez sur le portail officiel');
+    expect(region).toHaveTextContent('déposer votre demande');
     expect(region).toHaveTextContent('payer à votre place');
-    expect(region).toHaveTextContent('valider la demande à votre place');
+    expect(region).toHaveTextContent('vous demander votre NPI ou un code SMS dans la conversation');
+    expect(region).toHaveTextContent('agir sans votre accord');
     const title = screen.getByRole('heading', { name: 'Autoriser l’assistant à agir pour vous ?' });
     expect(title).toHaveAttribute('tabindex', '-1');
     expect(title).toHaveFocus();

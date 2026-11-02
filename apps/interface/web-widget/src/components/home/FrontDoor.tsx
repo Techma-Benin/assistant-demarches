@@ -11,6 +11,7 @@ import { siteConfig, type SiteConfig } from '@/lib/site-config';
 import { DocumentArt, type DocumentKind } from './DocumentArt';
 import { HERO_PHOTOS, HeroSlideshow } from './HeroSlideshow';
 import { AskDemo, PrepareDemo, ValidateDemo } from './HowItWorksDemos';
+import { NeverShowcase } from './NeverDemos';
 import { PromptDock } from './PromptDock';
 import { useReveal } from './use-reveal';
 
@@ -38,7 +39,7 @@ const SHOWCASE: { name: string; kind: DocumentKind; question: string }[] = [
 const STEPS = [
   { name: 'Vous demandez', text: 'À l’écrit ou à voix haute, avec vos pièces si vous les avez.' },
   { name: 'L’assistant prépare', text: 'Il trouve la fiche officielle, vous dit quoi fournir et remplit le formulaire avec vous.' },
-  { name: 'Vous validez sur le portail', text: 'La validation officielle se fait toujours par vous, jamais par l’assistant.' },
+  { name: 'Vous gardez la main', text: 'Rien ne part sans votre accord. Selon la démarche, vous validez sur le portail officiel ou l’assistant dépose le dossier pour vous.' },
 ];
 
 const CATALOGUE: { title: string; kind: DocumentKind; items: { name: string; question: string; kind?: DocumentKind }[] }[] = [
@@ -95,8 +96,6 @@ const CATALOGUE: { title: string; kind: DocumentKind; items: { name: string; que
     ],
   },
 ];
-
-const NEVER = ['Vous demander votre NPI', 'Vous demander un code SMS', 'Payer à votre place', 'Valider à votre place'];
 
 const navLink = 'inline-flex min-h-11 items-center px-3 text-[16px] font-medium text-ink no-underline hover:underline';
 const cta = 'bg-action text-on-action rounded-pill';
@@ -231,7 +230,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
                 </Chip>
               ))}
             </div>
-            <p className="m-0 text-[16px] text-ink-muted">Aucune connexion requise · Chaque réponse cite sa fiche officielle</p>
+            <p className="m-0 text-[16px] text-ink-muted">Sans connexion pour poser une question · Chaque information administrative cite sa fiche officielle</p>
           </div>
         </section>
 
@@ -370,28 +369,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
         </section>
 
         <section ref={trustRef} aria-labelledby="trust-title" className={sectionPad}>
-          <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-2 px-5 md:px-8 lg:grid-cols-4">
-            <div {...rv(0)} className="col-span-2 flex rounded-card bg-action p-6 text-on-action">
-              <h2 id="trust-title" className="m-0 font-display text-[28px] font-extrabold leading-[1.1] tracking-[-0.03em] lg:text-[32px]">
-                Ce que l’assistant ne fera jamais.
-              </h2>
-            </div>
-            {NEVER.map((t, i) => (
-              <p
-                key={t}
-                {...rv(i + 1)}
-                className="m-0 min-h-[120px] rounded-card bg-sunken p-6 font-display text-[20px] font-bold leading-[1.15] tracking-[-0.02em] md:text-[32px] lg:aspect-[3/2] lg:text-[32px]"
-              >
-                {t}
-              </p>
-            ))}
-            <p
-              {...rv(5)}
-              className="m-0 col-span-2 rounded-card bg-sunken p-6 font-display text-[20px] font-bold leading-[1.15] tracking-[-0.02em] md:text-[32px] lg:text-[32px]"
-            >
-              Chaque réponse cite sa fiche officielle.
-            </p>
-          </div>
+          <NeverShowcase />
         </section>
 
         <section id="whatsapp" ref={closingRef} className="relative flex flex-col overflow-hidden bg-sunken">

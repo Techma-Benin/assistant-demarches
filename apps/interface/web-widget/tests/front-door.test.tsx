@@ -54,8 +54,8 @@ describe('FrontDoor', () => {
 
   it('shows the trust board', () => {
     render(<FrontDoor onAsk={() => {}} config={base} />);
-    expect(screen.getByText('Vous demander votre NPI')).toBeInTheDocument();
-    expect(screen.getByText('Chaque réponse cite sa fiche officielle.')).toBeInTheDocument();
+    expect(screen.getByText('Vous demander votre NPI dans la conversation')).toBeInTheDocument();
+    expect(screen.getAllByText(/Chaque information administrative cite sa fiche officielle/).length).toBeGreaterThan(0);
   });
 
   describe('« Poser ma question »', () => {

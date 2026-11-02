@@ -116,7 +116,7 @@ describe('consent display helpers', () => {
   it('maps scopes to plain labels and skips unknown ones', () => {
     expect(scopeLabels(['requests:write', 'bogus', 'requests:submit'])).toEqual([
       'créer et remplir votre demande',
-      'transmettre la demande pour que vous la validiez sur le portail officiel',
+      'déposer votre demande',
     ]);
   });
 });
