@@ -5,10 +5,9 @@ import addFormats from "ajv-formats";
 import type { components } from "../../../packages/contracts-ts/src/schemas.js";
 
 export type ModelConfig = components["schemas"]["ModelConfig"];
-export type ToolConfig = components["schemas"]["ToolConfig"];
 export type Schemas = components["schemas"];
-export type Config = ModelConfig | ToolConfig | Schemas["Procedure"];
-export type Resource = "models" | "tools" | "procedures";
+export type Config = ModelConfig;
+export type Resource = "models";
 export type Principal = {
   subject: string;
   administrationId: string;
@@ -38,7 +37,7 @@ export function validate(name: string, value: unknown): void {
     throw new Problem(400, "INVALID_REQUEST", "Corps non conforme au contrat.");
 }
 export function configId(body: Config): string {
-  return "id" in body ? body.id : body.name;
+  return body.id;
 }
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";

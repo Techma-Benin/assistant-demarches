@@ -7,14 +7,13 @@ import {
   Problem,
   identifier,
   type Schemas,
-  type ToolConfig,
   type ModelConfig,
 } from "./domain.js";
 import {
   Conversations,
   appendEvent,
   envelope,
-  type Conversation,
+  type OwnedConversation,
   type MessageInput,
 } from "./conversations.js";
 import { transaction } from "./transactions.js";
@@ -97,6 +96,28 @@ export class Agent {
     private consent?: Consent,
     private transcriber?: TranscriptionPort,
   ) {}
+  watch(signal: AbortSignal) {
+    const tick = async () => {
+      if (signal.aborted) return;
+      try {
+        const rows = (
+          await this.pool.query(
+            "SELECT DISTINCT conversation_id FROM backend_messages WHERE processed_at IS NULL LIMIT 5",
+          )
+        ).rows;
+        for (const row of rows) {
+          if (signal.aborted) return;
+          await this.process(row.conversation_id).catch((error: unknown) => {
+            if (!(error instanceof Problem) || error.status !== 503) throw error;
+          });
+        }
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : "Traitement des messages interrompu.");
+      }
+      if (!signal.aborted) setTimeout(tick, 400);
+    };
+    void tick();
+  }
   async process(conversationId: string): Promise<void> {
     // Session lock survives checkpoint transactions, but is released on connection loss/crash.
     const lock = await this.pool.connect();
@@ -118,7 +139,7 @@ export class Agent {
       for (let count = 0; count < 50; count++) {
         const row = (
           await this.pool.query(
-            "SELECT m.*,c.body AS conversation,c.administration_id FROM backend_messages m JOIN backend_conversations c ON c.id=m.conversation_id WHERE m.conversation_id=$1 AND m.processed_at IS NULL ORDER BY m.seq LIMIT 1",
+            "SELECT m.*,(c.body || jsonb_build_object('userRef', c.user_ref)) AS conversation,c.administration_id FROM backend_messages m JOIN backend_conversations c ON c.id=m.conversation_id WHERE m.conversation_id=$1 AND m.processed_at IS NULL ORDER BY m.seq LIMIT 1",
             [conversationId],
           )
         ).rows[0];
@@ -180,7 +201,7 @@ export class Agent {
     }
   }
   private async run(
-    conversation: Conversation,
+    conversation: OwnedConversation,
     input: MessageInput,
     traceparent: string,
     administrationId: string,
@@ -222,10 +243,10 @@ export class Agent {
         await this.consent!.revoke(
           {
             userRef: conversation.userRef,
-            administrationId,
-            channel:
-              conversation.channel === "whatsapp" ? "whatsapp" : "portal",
+            channel: conversation.channel,
+            authenticated: true,
             expiresAt: Date.now() + 60000,
+            roles: new Set<string>(),
           },
           conversation.id,
           mandate.id,
@@ -352,7 +373,7 @@ export class Agent {
         step: 0,
         sources: [],
         requests: [],
-        requestProcedures: Object.fromEntries(previous.flatMap(row => row.body.data.kind === "message.sent" ? (row.body.data.message.blocks as Schemas["AgentMessage"]["blocks"]).flatMap(block => block.type === "statusCard" && block.request.conversationId === conversation.id && block.request.userRef === conversation.userRef ? [[block.request.id, block.request.procedureId]] : []) : [])),
+        requestProcedures: Object.fromEntries(previous.flatMap(row => row.body.data.kind === "message.sent" ? (row.body.data.message.blocks as Schemas["AgentMessage"]["blocks"]).flatMap(block => block.type === "requestCard" && block.request.conversationId === conversation.id ? [[block.request.id, block.request.procedureId]] : []) : [])),
         procedures: [],
         config: configs[0].body,
       };
@@ -539,7 +560,7 @@ export class Agent {
         const output = (isTechma&&!result.isError?result.structuredContent:undefined) as any;
         for (const procedure of output?.items ??
           (output?.source ? [output] : []))
-          if (procedure.validationStatus === "validated") {
+          if (procedure.filing) {
             try {
               validate("Procedure", procedure);
               if (procedure.source.procedureId !== procedure.id) continue;
@@ -548,7 +569,7 @@ export class Agent {
               state.procedures.push(procedure);
             } catch {}
           }
-        if (output?.status && output?.conversationId === conversation.id && output?.userRef === conversation.userRef) {
+        if (output?.status && output?.conversationId === conversation.id) {
           try {
             validate("Request", output);
             state.requests = [...state.requests.filter(request => request.id !== output.id), output];
@@ -637,7 +658,7 @@ export class Agent {
     );
   }
   private async finish(
-    conversation: Conversation,
+    conversation: OwnedConversation,
     input: MessageInput,
     blocks: Schemas["AgentMessage"]["blocks"],
     traceparent: string,

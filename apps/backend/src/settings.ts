@@ -83,30 +83,7 @@ export class Settings {
     method: "POST" | "PUT" | "DELETE",
   ) {
     if (body !== null) {
-      validate(
-        resource === "models"
-          ? "ModelConfig"
-          : resource === "tools"
-            ? "ToolConfig"
-            : "Procedure",
-        body,
-      );
-      if (resource === "procedures") {
-        if (
-          !("administrationId" in body) ||
-          body.administrationId !== principal.administrationId
-        )
-          throw new Problem(403, "FORBIDDEN", "Administration incompatible.");
-        try {
-          ajv.compile(body.formSchema);
-        } catch {
-          throw new Problem(
-            400,
-            "INVALID_REQUEST",
-            "Schéma de formulaire invalide.",
-          );
-        }
-      }
+      validate("ModelConfig", body);
       if (configId(body) !== id)
         throw new Problem(400, "INVALID_REQUEST", "Identifiant incompatible.");
     }
@@ -141,16 +118,6 @@ export class Settings {
         await client.query("COMMIT");
         return previous.response;
       }
-      if (
-        body !== null && resource === "tools" &&
-        "serverUrl" in body &&
-        !approvedMcpUrl(body.serverUrl, this.allowedMcpUrls)
-      )
-        throw new Problem(
-          403,
-          "FORBIDDEN",
-          "Serveur MCP non autorisé au déploiement.",
-        );
       // Serialize all mutations of the same resource, including different keys.
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [canonical([principal.administrationId, resource, id])]);
       const current = (await client.query("SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource=$2 AND resource_id=$3 FOR UPDATE", [principal.administrationId, resource, id])).rows[0];
@@ -158,14 +125,6 @@ export class Settings {
         throw new Problem(409, "INVALID_TRANSITION", "Configuration déjà existante.");
       if (method !== "POST" && !current)
         throw new Problem(404, "NOT_FOUND", "Configuration introuvable.");
-      if (method === "DELETE" && resource === "procedures") {
-        const references = await client.query(`SELECT 1 FROM backend_conversations c WHERE c.administration_id=$1 AND (
-          EXISTS (SELECT 1 FROM backend_requests r WHERE r.conversation_id=c.id AND r.body->>'procedureId'=$2) OR
-          EXISTS (SELECT 1 FROM backend_mandates m WHERE m.conversation_id=c.id AND m.body->>'procedureId'=$2) OR
-          EXISTS (SELECT 1 FROM backend_challenges h WHERE h.conversation_id=c.id AND h.body->>'procedureId'=$2)) LIMIT 1`, [principal.administrationId, id]);
-        if (references.rowCount)
-          throw new Problem(409, "INVALID_TRANSITION", "Fiche référencée par un dossier ou un consentement ; conserver la fiche.");
-      }
       if (method === "POST") {
         const inserted = await client.query("INSERT INTO backend_configurations (administration_id,resource,resource_id,body) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING resource_id", [principal.administrationId,resource,id,body]);
         if (!inserted.rowCount) throw new Problem(409, "INVALID_TRANSITION", "Configuration déjà existante.");
@@ -173,19 +132,6 @@ export class Settings {
         await client.query("UPDATE backend_configurations SET body=$4,updated_at=now() WHERE administration_id=$1 AND resource=$2 AND resource_id=$3", [principal.administrationId,resource,id,body]);
       else
         await client.query("DELETE FROM backend_configurations WHERE administration_id=$1 AND resource=$2 AND resource_id=$3", [principal.administrationId,resource,id]);
-      if(resource==="tools"){
-        // Compatibility bridge for deprecated per-action clients; new clients use mcp-servers.
-        const previous=current?.body;
-        if(previous && (method==="DELETE" || previous.serverUrl!==(body as any)?.serverUrl || previous.secretRef!==(body as any)?.secretRef)){
-          const oldId="mcp_"+createHash("md5").update(previous.serverUrl+String.fromCharCode(31)+previous.secretRef).digest("hex");
-          await client.query("DELETE FROM backend_mcp_tools WHERE administration_id=$1 AND server_id=$2 AND name=$3",[principal.administrationId,oldId,id]);
-        }
-        if(body!==null){const tool=body as any;const serverId="mcp_"+createHash("md5").update(tool.serverUrl+String.fromCharCode(31)+tool.secretRef).digest("hex");
-          await client.query("INSERT INTO backend_mcp_servers(administration_id,id,body) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",[principal.administrationId,serverId,{id:serverId,name:"Serveur MCP migré",url:tool.serverUrl,enabled:true,transport:"streamable-http",auth:{type:"bearer",secretRef:tool.secretRef},policy:"techma"}]);
-          const definition=catalog.find(t=>t.name===tool.name);
-          await client.query("INSERT INTO backend_mcp_tools(administration_id,server_id,name,definition,enabled,requires_mandate) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(administration_id,server_id,name) DO UPDATE SET enabled=excluded.enabled",[principal.administrationId,serverId,tool.name,definition??null,tool.enabled,Boolean(definition?._meta?.["bj.techma/requiresMandate"])]);
-        }
-      }
       const event = {
         specversion: "1.0",
         id: eventId(),
@@ -202,7 +148,6 @@ export class Settings {
           operation: method === "POST" ? "created" : method === "PUT" ? "updated" : "deleted",
         },
       };
-      validate("Event", event);
       await client.query(
         "INSERT INTO backend_outbox (id, administration_id, event) VALUES ($1,$2,$3)",
         [event.id, principal.administrationId, event],

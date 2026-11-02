@@ -16,11 +16,11 @@ execFileSync(
 const assets = new URL("dist/apps/backend/src/assets/", root);
 mkdirSync(assets, { recursive: true });
 cpSync(
-  new URL("../../../contracts/v1/domain.schema.json", import.meta.url),
+  new URL("../../../contracts/v2/domain.schema.json", import.meta.url),
   new URL("domain.schema.json", assets),
 );
 cpSync(
-  new URL("../../../contracts/v1/mcp.tools.json", import.meta.url),
+  new URL("../../../contracts/v2/mcp.tools.json", import.meta.url),
   new URL("mcp.tools.json", assets),
 );
 cpSync(
@@ -32,8 +32,6 @@ cpSync(new URL("migrations/", root), new URL("migrations/", assets), {
   recursive: true,
 });
 
-for (const name of ["conversation", "admin", "events", "backend-resources", "department-admin", "tooling-admin"]) {
-  cpSync(new URL(`../../../contracts/v1/${name}.openapi.json`, import.meta.url), new URL(`${name}.openapi.json`, assets));
+for (const name of ["conversation", "admin", "operator", "backend-internal", "tooling-internal", "xroad"]) {
+  cpSync(new URL(`../../../contracts/v2/${name}.openapi.json`, import.meta.url), new URL(`${name}.openapi.json`, assets));
 }
-
-cpSync(new URL("docs/testing.md", root), new URL("testing.md", assets));

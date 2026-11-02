@@ -11,22 +11,23 @@ import type { User } from "./identity.js";
 import { idempotent, transaction } from "./transactions.js";
 
 export type Conversation = Schemas["Conversation"];
+/** Conversation row plus the owner, which the public schema no longer carries. */
+export type OwnedConversation = Conversation & { userRef: string };
 export type Event = Schemas["Event"];
 export type MessageInput = Schemas["MessageInput"];
 type Db = Pick<Pool, "query"> | Pick<PoolClient, "query">;
 export function envelope(
   data: Event["data"],
-  traceparent: string,
+  _traceparent: string,
   source = "backend",
 ): Event {
   const event = {
     specversion: "1.0",
     id: identifier("evt"),
     source: "urn:techma:" + source,
-    type: `bj.techma.${data.kind}.v1`,
+    type: `bj.techma.${data.kind}.v2`,
     time: new Date().toISOString(),
-    datacontenttype: "application/json",
-    traceparent,
+    datacontenttype: "application/json" as const,
     data,
   };
   validate("Event", event);
@@ -38,7 +39,7 @@ export async function appendEvent(
   event: Event,
 ): Promise<void> {
   validate("Event", event);
-  if (event.type !== `bj.techma.${event.data.kind}.v1`)
+  if (event.type !== `bj.techma.${event.data.kind}.v2`)
     throw new Problem(400, "INVALID_REQUEST", "Type événement incohérent.");
   // Keep all event writes ordered with respect to the conversation, across API/worker instances.
   await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
@@ -51,20 +52,39 @@ export async function appendEvent(
 }
 export class Conversations {
   constructor(readonly pool: Pool) {}
-  async owner(db: Db, id: string, userRef: string): Promise<Conversation> {
+  async owner(db: Db, id: string, userRef: string): Promise<OwnedConversation> {
     const row = (
       await db.query(
-        "SELECT body FROM backend_conversations WHERE id=$1 AND user_ref=$2",
+        "SELECT body, user_ref FROM backend_conversations WHERE id=$1 AND user_ref=$2",
         [id, userRef],
       )
     ).rows[0];
     if (!row) throw new Problem(404, "NOT_FOUND", "Conversation introuvable.");
-    return row.body;
+    return { ...row.body, userRef: row.user_ref };
+  }
+  async list(userRef: string, limit: number, cursor?: string) {
+    const after = cursor
+      ? (
+          await this.pool.query(
+            "SELECT created_at FROM backend_conversations WHERE id=$1 AND user_ref=$2",
+            [cursor, userRef],
+          )
+        ).rows[0]?.created_at
+      : null;
+    if (cursor && !after)
+      throw new Problem(400, "INVALID_REQUEST", "Curseur invalide.");
+    const { rows } = await this.pool.query(
+      "SELECT id, body FROM backend_conversations WHERE user_ref=$1 AND ($2::timestamptz IS NULL OR created_at<$2 OR (created_at=$2 AND id<$3)) ORDER BY created_at DESC, id DESC LIMIT $4",
+      [userRef, after, cursor ?? "", limit + 1],
+    );
+    const page = rows.slice(0, limit);
+    return {
+      items: page.map((row) => row.body as Conversation),
+      nextCursor: rows.length > limit ? page.at(-1).id : null,
+    };
   }
   async create(user: User, body: Schemas["ConversationInput"], key: string) {
     validate("ConversationInput", body);
-    if ((body.channel === "whatsapp") !== (user.channel === "whatsapp"))
-      throw new Problem(403, "FORBIDDEN", "Canal incompatible avec le jeton.");
     return idempotent(
       this.pool,
       [user.userRef, "POST", "/v1/conversations"],
@@ -73,17 +93,50 @@ export class Conversations {
       async (db) => {
         const value: Conversation = {
           id: identifier("cnv"),
-          userRef: user.userRef,
-          ...body,
+          channel: user.channel,
+          locale: body.locale,
+          authenticated: user.authenticated,
           createdAt: new Date().toISOString(),
+          lastMessageAt: null,
         };
         await db.query(
-          "INSERT INTO backend_conversations(id,user_ref,administration_id,body) VALUES($1,$2,$3,$4)",
-          [value.id, user.userRef, user.administrationId, value],
+          "INSERT INTO backend_conversations(id,user_ref,administration_id,body) VALUES($1,$2,'global',$3)",
+          [value.id, user.userRef, value],
         );
         return value;
       },
     );
+  }
+  async attach(user: User, conversationId: string, guest: User) {
+    if (!user.authenticated)
+      throw new Problem(401, "LOGIN_REQUIRED", "Connexion requise.");
+    if (guest.authenticated || guest.userRef === user.userRef)
+      throw new Problem(400, "INVALID_REQUEST", "Jeton invité requis.");
+    const existing = (
+      await this.pool.query(
+        "SELECT body FROM backend_conversations WHERE id=$1 AND user_ref=$2",
+        [conversationId, user.userRef],
+      )
+    ).rows[0];
+    if (existing) return existing.body as Conversation;
+    return transaction(this.pool, async (db) => {
+      const moved = await db.query(
+        "UPDATE backend_conversations SET user_ref=$1, body=jsonb_set(body,'{authenticated}','true'::jsonb) WHERE user_ref=$2 RETURNING id, body",
+        [user.userRef, guest.userRef],
+      );
+      if (!moved.rows.some((row) => row.id === conversationId))
+        throw new Problem(404, "NOT_FOUND", "Conversation introuvable.");
+      await db.query(
+        "UPDATE backend_files SET user_ref=$1 WHERE user_ref=$2",
+        [user.userRef, guest.userRef],
+      );
+      for (const table of ["backend_mandates", "backend_requests"])
+        await db.query(
+          `UPDATE ${table} SET user_ref=$1 WHERE user_ref=$2`,
+          [user.userRef, guest.userRef],
+        );
+      return moved.rows.find((row) => row.id === conversationId).body as Conversation;
+    });
   }
   async accept(
     user: User,
@@ -142,7 +195,16 @@ export class Conversations {
             db,
             conversationId,
             envelope(
-              { kind: "message.received", conversationId, messageId: body.id },
+              {
+                kind: "message.received",
+                conversationId,
+                message: {
+                  id: body.id,
+                  content: body.content,
+                  transcript: null,
+                  sentAt: body.sentAt,
+                },
+              },
               traceparent,
             ),
           );
@@ -170,7 +232,7 @@ export class Conversations {
       after = previous.seq;
     }
     const { rows } = await this.pool.query(
-      "SELECT body FROM backend_conversation_events WHERE conversation_id=$1 AND seq>$2 AND expires_at>now() ORDER BY seq LIMIT 100",
+      "SELECT body FROM backend_conversation_events WHERE conversation_id=$1 AND seq>$2 AND expires_at>now() AND body->'data'->>'kind' IN ('message.received','message.sent') ORDER BY seq LIMIT 100",
       [conversationId, after],
     );
     const items: Event[] = rows.map((row) => row.body);
@@ -212,19 +274,23 @@ export class Conversations {
   }
   async consumeTicket(
     ticket: string,
-  ): Promise<{ conversation: Conversation; expiresAt: number }> {
+  ): Promise<{ conversation: OwnedConversation; expiresAt: number }> {
     const result = await this.pool.query(
       "DELETE FROM backend_socket_tickets WHERE digest=$1 AND expires_at>now() RETURNING conversation_id,token_expires_at",
       [createHash("sha256").update(ticket).digest("hex")],
     );
     const row = result.rows[0];
     if (!row) throw new Problem(401, "UNAUTHORIZED", "Ticket invalide.");
-    const conversation = (
+    const stored = (
       await this.pool.query(
-        "SELECT body FROM backend_conversations WHERE id=$1",
+        "SELECT body, user_ref FROM backend_conversations WHERE id=$1",
         [row.conversation_id],
       )
-    ).rows[0].body;
+    ).rows[0];
+    const conversation: OwnedConversation = {
+      ...stored.body,
+      userRef: stored.user_ref,
+    };
     // Ticket lifetime gates the upgrade; the signed user's original expiry gates the socket.
     return { conversation, expiresAt: row.token_expires_at.getTime() };
   }
@@ -240,26 +306,18 @@ export class Conversations {
   }
   async ingest(event: Event, key: string) {
     validate("Event", event);
-    if (event.type !== `bj.techma.${event.data.kind}.v1`)
+    if (event.type !== `bj.techma.${event.data.kind}.v2`)
       throw new Problem(400, "INVALID_REQUEST", "Type événement incohérent.");
     if (event.source !== "urn:techma:tooling")
       throw new Problem(403, "FORBIDDEN", "Source événement incompatible.");
     const data = event.data;
-    if (
-      data.kind === "message.received" ||
-      data.kind === "message.sent" ||
-      data.kind === "configuration.changed"
-    )
+    if (data.kind === "message.received" || data.kind === "message.sent")
       throw new Problem(403, "FORBIDDEN", "Événement réservé au Backend.");
     const cid =
-      "conversationId" in data
-        ? data.conversationId
-        : "request" in data
-          ? data.request.conversationId
-          : data.mandate.conversationId;
+      "mandate" in data ? data.mandate.conversationId : data.conversationId;
     return idempotent(
       this.pool,
-      ["tooling-events", "POST", "/internal/v1/events"],
+      ["tooling", "POST", "/internal/v1/events"],
       key,
       event,
       async (db) => {
@@ -284,62 +342,21 @@ export class Conversations {
             );
           return event;
         }
-        const conversation = (
-          await db.query("SELECT body FROM backend_conversations WHERE id=$1", [
-            cid,
-          ])
-        ).rows[0]?.body as Conversation | undefined;
-        if (!conversation)
-          throw new Problem(404, "NOT_FOUND", "Conversation introuvable.");
-        const requestId = "request" in data ? data.request.id : data.kind === "request.status_changed" ? data.requestId : undefined;
-        if (requestId && (await db.query("SELECT 1 FROM backend_work_items WHERE id=$1", [requestId])).rowCount)
-          throw new Problem(409, "INVALID_TRANSITION", "Ce dossier est suivi par snapshots versionnés ; publier request.snapshot.");
-        if ("request" in data) {
-          if (data.request.userRef !== conversation.userRef)
-            throw new Problem(403, "FORBIDDEN", "Propriétaire incompatible.");
-          const existing = (
-            await db.query(
-              "SELECT conversation_id,user_ref FROM backend_requests WHERE id=$1",
-              [data.request.id],
-            )
-          ).rows[0];
-          if (
-            existing &&
-            (existing.conversation_id !== cid ||
-              existing.user_ref !== conversation.userRef)
-          )
-            throw new Problem(403, "FORBIDDEN", "Demande incompatible.");
+        const stored = (
           await db.query(
-            "INSERT INTO backend_requests(id,conversation_id,user_ref,body,last_event_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET body=excluded.body,last_event_at=excluded.last_event_at WHERE backend_requests.last_event_at<=excluded.last_event_at",
-            [
-              data.request.id,
-              cid,
-              conversation.userRef,
-              data.request,
-              event.time,
-            ],
-          );
-        } else if (data.kind === "request.status_changed") {
-          const result = await db.query(
-            "UPDATE backend_requests SET body=jsonb_set(jsonb_set(body,'{status}',to_jsonb($1::text)),'{updatedAt}',to_jsonb($2::text)),last_event_at=$3 WHERE id=$4 AND conversation_id=$5 AND last_event_at<=$3",
-            [data.to, data.at, event.time, data.requestId, cid],
-          );
-          if (
-            !result.rowCount &&
-            !(
-              await db.query(
-                "SELECT 1 FROM backend_requests WHERE id=$1 AND conversation_id=$2",
-                [data.requestId, cid],
-              )
-            ).rowCount
+            "SELECT body, user_ref FROM backend_conversations WHERE id=$1",
+            [cid],
           )
-            throw new Problem(404, "NOT_FOUND", "Demande inconnue.");
-        } else if ("mandate" in data) {
-          if (data.mandate.userRef !== conversation.userRef)
+        ).rows[0];
+        if (!stored)
+          throw new Problem(404, "NOT_FOUND", "Conversation introuvable.");
+        const userRef = stored.user_ref as string;
+        if (data.kind === "mandate.granted" || data.kind === "mandate.revoked") {
+          if (data.mandate.userRef !== userRef)
             throw new Problem(403, "FORBIDDEN", "Propriétaire incompatible.");
           const previous = (
             await db.query(
-              "SELECT conversation_id,body FROM backend_mandates WHERE id=$1",
+              "SELECT conversation_id, body FROM backend_mandates WHERE id=$1",
               [data.mandate.id],
             )
           ).rows[0];
@@ -348,10 +365,26 @@ export class Conversations {
           if (!previous || previous.body.status !== "revoked")
             await db.query(
               "INSERT INTO backend_mandates(id,conversation_id,user_ref,body) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
-              [data.mandate.id, cid, conversation.userRef, data.mandate],
+              [data.mandate.id, cid, userRef, data.mandate],
             );
+        } else if (data.kind === "case.updated") {
+          const message = {
+            id: identifier("msg"),
+            conversationId: cid,
+            blocks: [{ type: "caseCard" as const, case: data.case }],
+            createdAt: new Date().toISOString(),
+          };
+          validate("AgentMessage", message);
+          await appendEvent(
+            db,
+            cid,
+            envelope(
+              { kind: "message.sent", conversationId: cid, message },
+              "00-" + "a".repeat(32) + "-" + "b".repeat(16) + "-01",
+            ),
+          );
         }
-        await appendEvent(db, cid, event);
+        if (data.kind !== "case.updated") await appendEvent(db, cid, event);
         await db.query(
           "INSERT INTO backend_ingested_events(id,fingerprint) VALUES($1,$2)",
           [event.id, fingerprint(event)],

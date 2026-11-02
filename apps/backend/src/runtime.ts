@@ -8,7 +8,7 @@ import { Files } from "./files.js";
 import { storageFromEnvironment } from "./storage.js";
 import { Consent, McpProcedureCatalog } from "./consent.js";
 import { HttpMandateControl, McpGateway } from "./tooling.js";
-import { HttpModels, type Provider } from "./model.js";
+import { HttpModels } from "./model.js";
 import { Agent } from "./agent.js";
 import { Problem, approvedMcpUrl } from "./domain.js";
 import type { Runtime } from "./routes.js";
@@ -21,24 +21,17 @@ export const required = (name: string) => {
 };
 export class ServiceTokens {
   private cache = new Map<string, { token: string; expires: number }>();
-  async get(
-    client: "backend-agent" | "backend-mandates" | "backend-delivery",
-    scope: string,
-    audience: string,
-  ) {
-    const prefix =
-      client === "backend-agent"
-        ? "TOOLING_AGENT"
-        : client === "backend-mandates"
-          ? "TOOLING_CONTROL"
-          : "WHATSAPP_DELIVERY";
-    const direct = process.env[prefix + "_TOKEN"];
-    if (direct) return direct;
-    const existing = this.cache.get(client);
+  async get(scope: string) {
+    const existing = this.cache.get(scope);
     if (existing && existing.expires > Date.now() + 30000)
       return existing.token;
-    const endpoint = required("SERVICE_TOKEN_URL");
-    if (!approvedMcpUrl(endpoint, new Set([new URL(endpoint).href])))
+    const endpoint = new URL(
+      "protocol/openid-connect/token",
+      required("OIDC_ISSUER").endsWith("/")
+        ? required("OIDC_ISSUER")
+        : required("OIDC_ISSUER") + "/",
+    ).href;
+    if (!approvedMcpUrl(endpoint, new Set([endpoint])))
       throw new Error("Token endpoint requires HTTPS outside localhost.");
     const result = await fetch(endpoint, {
       method: "POST",
@@ -46,10 +39,9 @@ export class ServiceTokens {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "client_credentials",
-        client_id: client,
-        client_secret: required(prefix + "_CLIENT_SECRET"),
+        client_id: required("OIDC_CLIENT_ID"),
+        client_secret: required("OIDC_CLIENT_SECRET"),
         scope,
-        audience,
       }),
       signal: AbortSignal.timeout(15000),
     });
@@ -69,7 +61,7 @@ export class ServiceTokens {
         "UPSTREAM_UNAVAILABLE",
         "Réponse identité invalide.",
       );
-    this.cache.set(client, {
+    this.cache.set(scope, {
       token: value.access_token,
       expires: Date.now() + value.expires_in * 1000,
     });
@@ -81,11 +73,7 @@ export async function loadRuntime(
   auth: AuthOptions,
   allowedMcpUrls: ReadonlySet<string>,
 ) {
-  const identities = new Identities(
-    pool,
-    required("IDENTITY_HMAC_KEY"),
-    required("DEFAULT_ADMINISTRATION_ID"),
-  );
+  const identities = new Identities(pool);
   const conversations = new Conversations(pool);
   const files = new Files(
     pool,
@@ -96,40 +84,42 @@ export async function loadRuntime(
     process.env.MCP_SECRET_REFERENCES ?? "{}",
   ) as Record<string, string>;
   const tooling = new McpGateway(allowedMcpUrls, async (reference) =>
-    reference === "backend-agent"
-      ? tokens.get("backend-agent", "tools:call", "techma-tooling")
+    reference === "backend"
+      ? tokens.get("tools:call")
       : required(references[reference] ?? "MISSING_MCP_SECRET_REFERENCE"),
   );
+  const signingKey = await importPKCS8(
+    await readFile(required("SIGNING_KEY_FILE"), "utf8"),
+    "RS256",
+  );
+  const signing = {
+    key: signingKey,
+    kid: "backend-signing",
+    issuer: required("PUBLIC_URL"),
+  };
   const runtime: Runtime = {
     pool,
     auth,
     identities,
     conversations,
     files,
-    publicUrl: process.env.PUBLIC_BACKEND_URL,
+    publicUrl: process.env.PUBLIC_URL,
+    signing,
+    xroadUrl: process.env.XROAD_URL,
+    serviceTokens: tokens,
   };
-  if (process.env.MANDATE_SIGNING_KEY_FILE) {
-    const control = new HttpMandateControl(
-      required("TOOLING_CONTROL_URL"),
-      () => tokens.get("backend-mandates", "mandates:grant", "techma-tooling"),
-    );
-    const key = await importPKCS8(
-      await readFile(process.env.MANDATE_SIGNING_KEY_FILE, "utf8"),
-      "RS256",
-    );
-    runtime.consent = new Consent(pool, conversations, control, {
-      key,
-      kid: required("MANDATE_SIGNING_KEY_ID"),
-      issuer: required("MANDATE_ISSUER"),
-    }, new McpProcedureCatalog(pool, tooling));
-  }
-  runtime.tooling = tooling;
-  const models = new HttpModels(
-    JSON.parse(process.env.MODEL_PROVIDERS_JSON ?? "{}") as Record<
-      string,
-      Provider
-    >,
+  const control = new HttpMandateControl(required("TOOLING_URL"), () =>
+    tokens.get("mandates:grant"),
   );
+  runtime.consent = new Consent(
+    pool,
+    conversations,
+    control,
+    signing,
+    new McpProcedureCatalog(pool, tooling),
+  );
+  runtime.tooling = tooling;
+  const models = new HttpModels({});
   const agent = new Agent(
     pool,
     conversations,
