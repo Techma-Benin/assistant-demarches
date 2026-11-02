@@ -12,7 +12,7 @@ L'usager fait sa démarche administrative dans une conversation (web ou WhatsApp
 
 Prérequis : Node.js 22 et pnpm 10.20.0 (`corepack enable`). Pas de Docker, pas de Java, pas de PostgreSQL à installer.
 
-Le backend se lance avec [BACKEND.md](BACKEND.md) : copier `.env.example`, renseigner `MODEL_API_KEY`, puis `pnpm dev backend`.
+Le backend se lance avec [BACKEND.md](BACKEND.md) : copier `.env.example`, renseigner `MODEL_API_KEY`, puis `pnpm dev backend`. La même clé active la transcription des vocaux (pas de `TRANSCRIPTION_ENABLED` ; décision produit de l'utilisateur Billux).
 
 `pnpm dev` sans argument démarre aussi le tooling, le X-Road simulé et l'interface. Ces trois applications ne sont pas encore prêtes pour cette commande. Le détail est dans [BACKEND.md](BACKEND.md).
 

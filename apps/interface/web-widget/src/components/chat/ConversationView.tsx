@@ -232,7 +232,16 @@ export function ConversationView({
                   return (
                     <div key={entry.id} className="ui-enter flex flex-col items-end">
                       <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-[24px] bg-sunken px-[22px] py-3.5 text-[17px] font-medium">
-                        {entry.attachment ? <AttachmentRow attachment={entry.attachment} /> : entry.display}
+                        {entry.attachment ? (
+                          <div className="space-y-2">
+                            <AttachmentRow attachment={entry.attachment} />
+                            {entry.display && entry.display !== entry.attachment.name ? (
+                              <p className="whitespace-pre-wrap">{entry.display}</p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          entry.display
+                        )}
                       </div>
                       <DeliveryLine entry={entry} onRetry={() => retry(entry.id)} />
                     </div>
