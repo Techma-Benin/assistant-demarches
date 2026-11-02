@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Diagnose a running local stack the way the front would: health, then guest → conversation → message → events.
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import WebSocket from "ws";
 import { PORTS, URLS } from "./dev/local-config.mjs";
 
 const args = process.argv.slice(2);
@@ -11,6 +12,7 @@ const option = (name, fallback) => {
 const backendUrl = option("--backend-url", URLS.backend).replace(/\/$/, "");
 const interfaceUrl = option("--interface-url", URLS.interface).replace(/\/$/, "");
 const timeoutMs = Number(option("--timeout", "60000"));
+const question = option("--question", "Bonjour, comment fonctionne l'assistant ?");
 const failures = [];
 const lines = [];
 
@@ -151,6 +153,7 @@ if (!guest.ok || !guest.json?.token) {
   }
 }
 
+let proxyReachable = false;
 const web = await get(interfaceUrl);
 if (web.status === 0) {
   mark(false, "Interface", `injoignable sur ${interfaceUrl}`, "Interface non lancée : paquet absent, ou `pnpm dev` sans apps/interface/web.");
@@ -158,6 +161,7 @@ if (web.status === 0) {
   mark(web.ok, "Interface", `HTTP ${web.status} sur ${interfaceUrl}`);
   // Future interface (techma/interface/redesign): public BFF at /api/backend/v1/home.
   const proxied = await get(`${interfaceUrl}/api/backend/v1/home`, { headers: { traceparent: traceparent() } });
+  proxyReachable = proxied.ok;
   if (proxied.status === 0) {
     mark(false, "Proxy interface → backend", "l'interface ne répond plus");
   } else if (proxied.ok) {
@@ -173,6 +177,150 @@ if (web.status === 0) {
     mark(false, "Proxy interface → backend", diagnose(proxied.status, proxied.json), "Le proxy front n'atteint pas le backend.");
   }
 }
+
+// What the browser does through the Interface: BFF cookie, conversation, WebSocket ticket with the Interface origin,
+// message, then the events until message.sent (apps/interface/web src/lib/c1-client.ts and conversation-stream.ts).
+async function browserJourney() {
+  const jar = new Map();
+  const remember = (headers) => {
+    for (const line of headers ?? []) {
+      const [pair] = line.split(";");
+      const at = pair.indexOf("=");
+      if (at > 0) jar.set(pair.slice(0, at).trim(), pair.slice(at + 1).trim());
+    }
+  };
+  async function request(method, path, options) {
+    try {
+      const response = await fetch(interfaceUrl + path, {
+        method,
+        redirect: "manual",
+        signal: AbortSignal.timeout(15000),
+        headers: {
+          traceparent: traceparent(),
+          ...(options?.key ? { "idempotency-key": options.key } : {}),
+          ...(options?.body !== undefined ? { "content-type": "application/json" } : {}),
+          ...(jar.size ? { cookie: [...jar].map(([name, value]) => `${name}=${value}`).join("; ") } : {}),
+          ...(options?.headers ?? {}),
+        },
+        body: options?.rawBody ?? (options?.body !== undefined ? JSON.stringify(options.body) : undefined),
+      });
+      remember(response.headers.getSetCookie?.());
+      const text = await response.text();
+      let json;
+      try { json = JSON.parse(text); } catch { json = undefined; }
+      return { ok: response.ok, status: response.status, json, text };
+    } catch (error) {
+      return { ok: false, status: 0, error: error instanceof Error ? error.message : "injoignable" };
+    }
+  }
+  const created = await request("POST", "/api/backend/v1/conversations", { body: { locale: "fr" }, key: randomUUID() });
+  if (!created.ok || !created.json?.id) {
+    mark(false, "Parcours navigateur : créer la conversation", diagnose(created.status, created.json), "Le BFF de l'Interface n'a pas obtenu de session invitée du Backend (POST /v1/guest-sessions).");
+    return;
+  }
+  mark(true, "Parcours navigateur : conversation via l'Interface", `${created.json.id} (cookie de session ${jar.size ? "posé" : "ABSENT"})`);
+  const conversationId = created.json.id;
+  const ticket = await request("POST", `/api/backend/v1/conversations/${conversationId}/socket-ticket`, { key: randomUUID() });
+  if (!ticket.ok || !ticket.json?.url) {
+    mark(false, "Parcours navigateur : socket-ticket", diagnose(ticket.status, ticket.json));
+    return;
+  }
+  const origin = new URL(interfaceUrl).origin;
+  const frames = [];
+  const startedAt = Date.now();
+  const socket = new WebSocket(ticket.json.url, { origin });
+  const opened = await new Promise((resolve) => {
+    socket.once("open", () => resolve("open"));
+    socket.once("unexpected-response", (_request, response) => resolve(`HTTP ${response.statusCode}`));
+    socket.once("error", (error) => resolve(error.message));
+    setTimeout(() => resolve("timeout"), 8000);
+  });
+  if (opened !== "open") {
+    mark(false, "Parcours navigateur : WebSocket", `refusé (${opened}) pour l'origine ${origin} sur ${new URL(ticket.json.url).origin}`, "Vérifier CORS_ORIGINS (origine de l'Interface) et PUBLIC_URL du Backend (URL du ticket).");
+  } else {
+    mark(true, "Parcours navigateur : WebSocket", `ouverte depuis l'origine ${origin} (${new URL(ticket.json.url).origin})`);
+  }
+  socket.on("message", (data) => frames.push({ at: Date.now() - startedAt, event: JSON.parse(data.toString()) }));
+  const messageId = identifier("msg");
+  const sentAt = new Date().toISOString();
+  const posted = await request("POST", `/api/backend/v1/conversations/${conversationId}/messages`, {
+    body: { id: messageId, content: { type: "text", text: question }, sentAt },
+    key: messageId,
+  });
+  if (posted.status !== 202) {
+    mark(false, "Parcours navigateur : message", diagnose(posted.status, posted.json));
+    socket.close();
+    return;
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && !frames.some((frame) => frame.event.data?.kind === "message.sent")) await new Promise((resolve) => setTimeout(resolve, 100));
+  socket.close();
+  const events = frames.map((frame) => frame.event);
+  const sent = events.find((event) => event.data?.kind === "message.sent");
+  if (opened !== "open") {
+    mark(false, "Parcours navigateur : événements", "aucun flux WebSocket (l'Interface retombera sur le polling)");
+    return;
+  }
+  if (!sent) {
+    mark(false, "Parcours navigateur : message.sent par WebSocket", `rien reçu en ${timeoutMs} ms (trames : ${events.map((event) => event.data?.kind).join(", ") || "aucune"})`, "Agent bloqué : modèle, Tooling ou MCP.");
+    return;
+  }
+  const deltas = events.filter((event) => event.data.kind === "message.delta");
+  const text = sent.data.message.blocks.filter((block) => block.type === "text").map((block) => block.text).join("");
+  const assembled = deltas.sort((a, b) => a.data.index - b.data.index).map((event) => event.data.delta).join("");
+  const kinds = events.map((event) => event.data.kind);
+  const received = kinds.indexOf("message.received") >= 0;
+  const order = received && kinds.indexOf("message.received") < kinds.indexOf("message.sent") && kinds.lastIndexOf("message.delta") < kinds.indexOf("message.sent");
+  const firstDelta = frames.find((frame) => frame.event.data.kind === "message.delta");
+  const last = frames.find((frame) => frame.event.data.kind === "message.sent");
+  const sources = sent.data.message.blocks.flatMap((block) => (block.type === "text" ? block.sources : []));
+  mark(order, "Parcours navigateur : ordre des événements", `${kinds.length} trames : message.received → ${deltas.length} × message.delta → message.sent (blocs : ${sent.data.message.blocks.map((block) => block.type).join(", ")} ; ${sources.length} source(s))`);
+  mark(deltas.length === 0 || assembled === text, "Parcours navigateur : deltas = message.sent", deltas.length ? `texte assemblé identique (${text.length} car., premier delta à +${firstDelta.at} ms, message.sent à +${last.at} ms)` : "aucun delta (la réponse n'a pas de texte)", "Le texte assemblé des deltas diffère du bloc text final.");
+  if (args.includes("--voice")) await voiceJourney(request, origin);
+}
+
+// --voice : un enregistrement (en-tête EBML d'un webm) par POST /v1/files puis message audio ; vérifie la transcription.
+async function voiceJourney(request, origin) {
+  const created = await request("POST", "/api/backend/v1/conversations", { body: { locale: "fr" }, key: randomUUID() });
+  if (!created.ok) {
+    mark(false, "Vocal : conversation", diagnose(created.status, created.json));
+    return;
+  }
+  const conversationId = created.json.id;
+  const webm = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), randomBytes(2048)]);
+  const uploaded = await request("POST", "/api/backend/v1/files", {
+    rawBody: webm,
+    headers: { "content-type": "application/octet-stream", "x-file-mime-type": "audio/webm" },
+    key: randomUUID(),
+  });
+  if (uploaded.status !== 201) {
+    mark(false, "Vocal : upload audio/webm", diagnose(uploaded.status, uploaded.json));
+    return;
+  }
+  const ticket = await request("POST", `/api/backend/v1/conversations/${conversationId}/socket-ticket`, { key: randomUUID() });
+  const frames = [];
+  const socket = new WebSocket(ticket.json.url, { origin });
+  socket.on("message", (data) => frames.push(JSON.parse(data.toString())));
+  await new Promise((resolve) => { socket.once("open", resolve); socket.once("error", resolve); });
+  const messageId = identifier("msg");
+  await request("POST", `/api/backend/v1/conversations/${conversationId}/messages`, {
+    body: { id: messageId, content: { type: "audio", fileId: uploaded.json.id }, sentAt: new Date().toISOString() },
+    key: messageId,
+  });
+  const deadline = Date.now() + timeoutMs;
+  const done = () => frames.some((event) => event.data.kind === "message.sent");
+  while (Date.now() < deadline && !done()) await new Promise((resolve) => setTimeout(resolve, 100));
+  socket.close();
+  const transcript = frames.find((event) => event.data.kind === "message.received" && event.data.message.id === messageId && event.data.message.transcript);
+  if (transcript) mark(true, "Vocal : transcription sur message.received", `« ${transcript.data.message.transcript} »`);
+  else {
+    const sent = frames.find((event) => event.data.kind === "message.sent");
+    const reply = sent?.data.message.blocks.find((block) => block.type === "text")?.text ?? "aucune réponse";
+    mark(false, "Vocal : transcription sur message.received", reply, "MODEL_API_KEY (ou TRANSCRIPTION_API_KEY_ENV) absente, fournisseur Whisper injoignable, ou audio de test refusé par un vrai fournisseur.");
+  }
+}
+
+if (web.status !== 0 && proxyReachable) await browserJourney();
 
 console.log("");
 if (failures.length) {
