@@ -1,5 +1,5 @@
 import { spawn, execFileSync } from 'node:child_process';
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -14,10 +14,21 @@ async function download(url, target, log) {
   await pipeline(Readable.fromWeb(response.body), createWriteStream(target));
 }
 
-/** tar is available on Linux, macOS and Windows 10+, and extracts both .tar.gz and .zip. */
-function extract(archive, directory) {
-  mkdirSync(directory, { recursive: true });
-  execFileSync('tar', ['-xf', archive, '-C', directory], { stdio: 'ignore' });
+/** Windows 10+ ships a tar that extracts .zip. Named in full: the GNU tar of Git Bash, first in its PATH, cannot. */
+const TAR = windows ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
+
+const INSTALLED = '.installed';
+const installed = (directory) => existsSync(join(directory, INSTALLED));
+
+/**
+ * Extracts in place, then writes a mark: an interrupted extraction must not look like an installation.
+ * No rename into place: on Windows the antivirus keeps fresh files open for minutes, and the rename fails with EPERM.
+ */
+function extract(archive, target, stripComponents = 0) {
+  rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  mkdirSync(target, { recursive: true });
+  execFileSync(TAR, ['-xf', archive, '-C', target, ...(stripComponents ? [`--strip-components=${stripComponents}`] : [])], { stdio: 'ignore' });
+  writeFileSync(join(target, INSTALLED), '');
 }
 
 function findJavaHome(directory) {
@@ -32,7 +43,7 @@ function findJavaHome(directory) {
 /** Downloads a portable Java runtime and Keycloak once into .local/, so no system installation is needed. */
 async function install(log) {
   const javaDir = `${LOCAL}java`;
-  if (!existsSync(javaDir)) {
+  if (!installed(javaDir)) {
     const os = windows ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux';
     const arch = process.arch === 'arm64' ? 'aarch64' : 'x64';
     const archive = `${LOCAL}java-download${windows ? '.zip' : '.tar.gz'}`;
@@ -41,10 +52,10 @@ async function install(log) {
     rmSync(archive);
   }
   const keycloakDir = `${LOCAL}keycloak-${KEYCLOAK_VERSION}`;
-  if (!existsSync(keycloakDir)) {
+  if (!installed(keycloakDir)) {
     const archive = `${LOCAL}keycloak-download.tar.gz`;
     await download(`https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.tar.gz`, archive, log);
-    extract(archive, LOCAL);
+    extract(archive, keycloakDir, 1);
     rmSync(archive);
   }
   return { javaHome: findJavaHome(javaDir), keycloakDir };

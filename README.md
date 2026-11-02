@@ -41,7 +41,7 @@ Comptes de démo, mot de passe `demo-2026` :
 | `super.admin` | Super admin, toutes les administrations |
 | `operateur` | Écran opérateur |
 
-Console Keycloak : <http://127.0.0.1:8080> (admin / admin, poste local uniquement).
+Console Keycloak : <http://127.0.0.1:8080> (admin / admin, poste local uniquement). Si le port 8080 est déjà pris (service Oracle ou EnterpriseDB sous Windows par exemple) : `KEYCLOAK_PORT=8081 pnpm dev`, ou `$env:KEYCLOAK_PORT=8081; pnpm dev` dans PowerShell.
 
 ## Qui travaille où
 

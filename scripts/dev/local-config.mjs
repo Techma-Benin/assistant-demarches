@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const LOCAL = fileURLToPath(new URL('../../.local/', import.meta.url));
 
-export const PORTS = { interface: 3000, backend: 4010, tooling: 4030, xroad: 4040, keycloak: 8080, postgres: 54329 };
+// KEYCLOAK_PORT (shell variable): for machines where 8080 is taken, by an Oracle or EnterpriseDB service on Windows for example.
+export const PORTS = { interface: 3000, backend: 4010, tooling: 4030, xroad: 4040, keycloak: Number(process.env.KEYCLOAK_PORT ?? 8080), postgres: 54329 };
 export const KEYCLOAK_VERSION = '26.8.1';
 export const JAVA_VERSION = 21;
 export const DATABASES = ['backend', 'tooling', 'xroad'];
