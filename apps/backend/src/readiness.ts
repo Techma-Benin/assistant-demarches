@@ -34,6 +34,40 @@ async function ping(url: string): Promise<{ ok: boolean; status?: number; error?
   }
 }
 
+/** JSON-RPC answer of a Streamable HTTP endpoint: plain JSON, or the first `data:` event of an SSE body. */
+async function toolsListPayload(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!(response.headers.get("content-type") ?? "").includes("text/event-stream")) return JSON.parse(text);
+  for (const line of text.split(/\r?\n/))
+    if (line.startsWith("data:")) {
+      try { return JSON.parse(line.slice(5)); } catch { /* next event */ }
+    }
+  return undefined;
+}
+
+/** `ok` needs a real `tools/list`: a non-empty array of well-formed tools that carries the whole local catalogue. */
+export function checkToolsList(payload: unknown): ComponentStatus {
+  const result = (payload as { result?: { tools?: unknown; nextCursor?: unknown } } | undefined)?.result;
+  const tools = result?.tools;
+  if (!Array.isArray(tools)) return { ok: false, detail: "tools/list invalide : aucun tableau d’outils" };
+  if (!tools.length) return { ok: false, detail: "aucun outil MCP" };
+  const names = new Set<string>();
+  for (const tool of tools) {
+    const entry = tool as { name?: unknown; inputSchema?: unknown } | null;
+    if (!entry || typeof entry.name !== "string" || !entry.name || !entry.inputSchema || typeof entry.inputSchema !== "object" || Array.isArray(entry.inputSchema))
+      return { ok: false, detail: "tools/list invalide : outil mal formé" };
+    names.add(entry.name);
+  }
+  // A paginated answer only shows a page of the catalogue.
+  if (result?.nextCursor == null) {
+    const missing = catalog.filter((tool) => !names.has(tool.name));
+    if (missing.length) return { ok: false, detail: `tools/list incomplet : ${missing.length} outil(s) du catalogue absent(s)` };
+  } else if (!catalog.some((tool) => names.has(tool.name))) {
+    return { ok: false, detail: "tools/list non conforme au catalogue" };
+  }
+  return { ok: true, detail: `${tools.length} outils MCP` };
+}
+
 export async function probeReadiness(options: ReadinessOptions): Promise<ReadyReport> {
   const database: ComponentStatus = { ok: false, detail: "base injoignable" };
   try {
@@ -97,10 +131,9 @@ export async function probeReadiness(options: ReadinessOptions): Promise<ReadyRe
         signal: timeout(),
       });
       if (response.ok) {
-        const payload = (await response.json()) as { result?: { tools?: unknown[] } };
-        const count = Array.isArray(payload.result?.tools) ? payload.result.tools.length : catalog.length;
-        mcpTools.ok = count > 0;
-        mcpTools.detail = mcpTools.ok ? `${count} outils MCP` : "aucun outil MCP";
+        const verdict = checkToolsList(await toolsListPayload(response));
+        mcpTools.ok = verdict.ok;
+        mcpTools.detail = verdict.detail;
       } else {
         mcpTools.detail = tooling.ok
           ? `MCP HTTP ${response.status} — ${catalog.length} outils au catalogue local`
