@@ -74,10 +74,13 @@ export class HttpModels implements ModelPort {
     const toolNames = new Map(
       tools.map((tool) => [wireName(tool.name), tool.name]),
     );
+    const extras = Object.values(this.providers).find((item) => item.baseUrl === config.baseUrl);
     const provider: Provider = {
       baseUrl: config.baseUrl,
       protocol: config.protocol,
       apiKeyEnv: config.apiKeyRef,
+      omitTemperature: extras?.omitTemperature,
+      parallelToolCalls: extras?.parallelToolCalls,
     };
     const providerName = new URL(config.baseUrl).host;
     const prompt = readFileSync(

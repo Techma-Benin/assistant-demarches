@@ -8,11 +8,11 @@ export type McpServer = {
     name: string;
     url: string;
     enabled: boolean;
-    transport: 'streamable-http';
+    transport?: 'streamable-http';
     auth: McpAuth;
-    policy: 'generic' | 'techma';
+    policy?: 'generic' | 'techma';
 };
-export const modelToolName = (server: McpServer, name: string) => server.policy === 'techma' && catalog.some(t => t.name === name)
+export const modelToolName = (server: McpServer, name: string) => (server.policy ?? 'generic') === 'techma' && catalog.some(t => t.name === name)
     ? name : 'mcp_' + createHash('sha256').update(server.id + '\0' + name).digest('hex').slice(0, 48);
 export class McpConnections {
     constructor(private pool: Pool, private allowed: ReadonlySet<string>, private gateway?: ToolingPort) { }
@@ -79,7 +79,7 @@ export class McpConnections {
                 await db.query('INSERT INTO backend_mcp_servers(administration_id,id,body) VALUES($1,$2,$3)', [principal.administrationId, id, body]);
             if (method === 'PUT') {
                 // Endpoint/auth changes invalidate previously discovered schemas and permissions.
-                if (canonical([current.body.url, current.body.auth, current.body.policy]) !== canonical([body!.url, body!.auth, body!.policy]))
+                if (canonical([current.body.url, current.body.auth, current.body.policy ?? 'generic']) !== canonical([body!.url, body!.auth, body!.policy ?? 'generic']))
                     await db.query('DELETE FROM backend_mcp_tools WHERE administration_id=$1 AND server_id=$2', [principal.administrationId, id]);
                 await db.query('UPDATE backend_mcp_servers SET body=$3,revision=revision+1 WHERE administration_id=$1 AND id=$2', [principal.administrationId, id, body]);
             }
@@ -146,7 +146,21 @@ export class McpConnections {
         }
         return this.tools(p.administrationId, id);
     }
-    async tools(admin: string, id: string) { const server = await this.get(admin, id); const rows = (await this.pool.query('SELECT * FROM backend_mcp_tools WHERE administration_id=$1 AND server_id=$2 ORDER BY name', [admin, id])).rows; return { items: rows.map(r => ({ ...r.definition, name: r.name, enabled: r.enabled, requiresMandate: r.requires_mandate, available: r.available, modelName: modelToolName(server, r.name) })), nextCursor: null }; }
+    async tools(admin: string, id: string) {
+        const server = await this.get(admin, id);
+        const rows = (await this.pool.query('SELECT * FROM backend_mcp_tools WHERE administration_id=$1 AND server_id=$2 ORDER BY name', [admin, id])).rows;
+        return {
+            items: rows.map((r) => ({
+                serverId: server.id,
+                name: r.name,
+                description: typeof r.definition?.description === 'string' ? r.definition.description : r.name,
+                inputSchema: r.definition?.inputSchema && typeof r.definition.inputSchema === 'object' ? r.definition.inputSchema : { type: 'object' },
+                enabled: r.enabled,
+                requiresMandate: r.requires_mandate,
+            })),
+            discoveredAt: rows.length ? new Date().toISOString() : null,
+        };
+    }
     async permission(p: Principal, id: string, name: string, body: {
         enabled: boolean;
         requiresMandate: boolean;
@@ -160,7 +174,7 @@ export class McpConnections {
             const server = (await db.query('SELECT body FROM backend_mcp_servers WHERE administration_id=$1 AND id=$2 FOR UPDATE', [p.administrationId, id])).rows[0]?.body;
             if (!server)
                 throw new Problem(404, 'NOT_FOUND', 'Serveur introuvable.');
-            const mandatory = server.policy === 'techma' && catalog.find(d => d.name === name)?._meta?.['bj.techma/requiresMandate'];
+            const mandatory = (server.policy ?? 'generic') === 'techma' && catalog.find(d => d.name === name)?._meta?.['bj.techma/requiresMandate'];
             if (mandatory && !body.requiresMandate)
                 throw new Problem(400, 'INVALID_REQUEST', 'Le mandat est obligatoire pour cette action.');
             const r = await db.query('UPDATE backend_mcp_tools SET enabled=$4,requires_mandate=$5 WHERE administration_id=$1 AND server_id=$2 AND name=$3 AND available=true RETURNING name', [p.administrationId, id, name, body.enabled, body.requiresMandate]);

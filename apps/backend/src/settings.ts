@@ -14,6 +14,7 @@ import {
   type Principal,
   type Resource,
 } from "./domain.js";
+import { deactivateOtherModels, modelsLockKey } from "./model-env.js";
 
 export class Settings {
   constructor(
@@ -118,7 +119,10 @@ export class Settings {
         await client.query("COMMIT");
         return previous.response;
       }
-      // Serialize all mutations of the same resource, including different keys.
+      // Serialize every model mutation in the administration so exclusive activation stays unique.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        modelsLockKey(principal.administrationId),
+      ]);
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [canonical([principal.administrationId, resource, id])]);
       const current = (await client.query("SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource=$2 AND resource_id=$3 FOR UPDATE", [principal.administrationId, resource, id])).rows[0];
       if (method === "POST" && current)
@@ -132,6 +136,8 @@ export class Settings {
         await client.query("UPDATE backend_configurations SET body=$4,updated_at=now() WHERE administration_id=$1 AND resource=$2 AND resource_id=$3", [principal.administrationId,resource,id,body]);
       else
         await client.query("DELETE FROM backend_configurations WHERE administration_id=$1 AND resource=$2 AND resource_id=$3", [principal.administrationId,resource,id]);
+      if (method !== "DELETE" && body && "active" in body && body.active)
+        await deactivateOtherModels(client, principal.administrationId, id);
       const event = {
         specversion: "1.0",
         id: eventId(),

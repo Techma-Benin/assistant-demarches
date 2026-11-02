@@ -31,6 +31,7 @@ cpSync(
 cpSync(new URL("migrations/", root), new URL("migrations/", assets), {
   recursive: true,
 });
+cpSync(new URL("../src/assets/testing.md", import.meta.url), new URL("testing.md", assets));
 
 for (const name of ["conversation", "admin", "operator", "backend-internal", "tooling-internal", "xroad"]) {
   cpSync(new URL(`../../../contracts/v2/${name}.openapi.json`, import.meta.url), new URL(`${name}.openapi.json`, assets));

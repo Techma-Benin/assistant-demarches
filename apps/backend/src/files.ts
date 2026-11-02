@@ -95,6 +95,32 @@ export class Files {
       throw new Problem(404, "NOT_FOUND", "Pièce introuvable.");
     return { file, bytes };
   }
+  async storeAvatar(officialId: string, data: Buffer, mime: string) {
+    const previous = (
+      await this.pool.query("SELECT file_id FROM backend_avatars WHERE official_id=$1", [officialId])
+    ).rows[0]?.file_id;
+    const file = await this.upload(
+      "avatar:" + officialId,
+      data,
+      mime,
+      "avatar-" + officialId + "-" + Date.now(),
+      10 * 365 * 86400000,
+      "/v1/admin/avatars/" + officialId,
+    );
+    await this.pool.query(
+      "INSERT INTO backend_avatars(official_id,file_id) VALUES($1,$2) ON CONFLICT(official_id) DO UPDATE SET file_id=excluded.file_id",
+      [officialId, file.id],
+    );
+    if (previous) await this.storage.remove(previous).catch(() => {});
+    return file;
+  }
+  async readAvatar(officialId: string) {
+    const row = (
+      await this.pool.query("SELECT file_id FROM backend_avatars WHERE official_id=$1", [officialId])
+    ).rows[0];
+    if (!row) throw new Problem(404, "NOT_FOUND", "Photo introuvable.");
+    return this.readOwned(row.file_id, "avatar:" + officialId);
+  }
   async purgeExpired() {
     return transaction(this.pool, async (db) => {
       const rows = (

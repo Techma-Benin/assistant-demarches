@@ -30,18 +30,42 @@ export type ReplyEvidence = {
   procedures?: Schemas["Procedure"][];
 };
 
+const MODEL_BLOCK_TYPES = new Set(["text", "buttons", "form"]);
+
 /** Throws on malformed output or fabricated evidence so the caller can retry safely. */
 export function presentModelReply(replyText: string, evidence: ReplyEvidence): Schemas["AgentMessage"]["blocks"] {
   const blocks = parseModelBlocks(replyText).map((block: any) => {
-    if (block?.type !== "text" && block?.type !== "buttons" && block?.type !== "form")
+    if (!MODEL_BLOCK_TYPES.has(block?.type))
       throw new Error("Le modèle ne produit que du texte, des boutons ou un formulaire.");
     if (block.type === "text") {
       if (typeof block.text !== "string" || !block.text.trim() || !Array.isArray(block.sources)) throw new Error("Texte modèle invalide.");
       if (block.sources.some((source: unknown) => !evidence.sources.some((known) => canonical(known) === canonical(source)))) throw new Error("Source non observée.");
+      if (!block.sources.length && /(?:FCFA|PS\d{5}|https?:\/\/|\d{2,})/i.test(block.text) && !SAFE_CONVERSATIONAL_TEXT.includes(block.text))
+        throw new Error("Fait administratif sans source.");
       return { ...block, text: redact(block.text) };
     }
     return block;
   }) as Schemas["AgentMessage"]["blocks"];
+  return validatedBlocks(blocks);
+}
+
+/** Appends Backend-built blocks (loginRequired, consent, requestCard, fileRequest, caseCard) after the model reply. */
+export function mergeSystemBlocks(
+  modelBlocks: Schemas["AgentMessage"]["blocks"],
+  systemBlocks: Schemas["AgentMessage"]["blocks"] = [],
+): Schemas["AgentMessage"]["blocks"] {
+  const merged = [...modelBlocks];
+  const seen = new Set(modelBlocks.map((block) => canonical(block)));
+  for (const block of systemBlocks) {
+    const key = canonical(block);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(block);
+  }
+  return validatedBlocks(merged);
+}
+
+function validatedBlocks(blocks: Schemas["AgentMessage"]["blocks"]): Schemas["AgentMessage"]["blocks"] {
   validate("AgentMessage", {
     id: "msg_00000000000000000000000001",
     conversationId: "cnv_00000000000000000000000001",
