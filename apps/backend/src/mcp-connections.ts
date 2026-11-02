@@ -132,8 +132,12 @@ export class McpConnections {
             if (!row || canonical(row.body) !== canonical(server))
                 throw new Problem(409, 'INVALID_TRANSITION', 'Connexion modifiée pendant la découverte.');
             await db.query('UPDATE backend_mcp_tools SET available=false WHERE administration_id=$1 AND server_id=$2', [p.administrationId, id]);
-            for (const d of definitions)
-                await db.query('INSERT INTO backend_mcp_tools(administration_id,server_id,name,definition,available) VALUES($1,$2,$3,$4,true) ON CONFLICT(administration_id,server_id,name) DO UPDATE SET definition=excluded.definition,available=true,enabled=CASE WHEN backend_mcp_tools.definition IS NULL OR backend_mcp_tools.definition=excluded.definition THEN backend_mcp_tools.enabled ELSE false END', [p.administrationId, id, d.name, d]);
+            const techma = (server.policy ?? 'generic') === 'techma';
+            for (const d of definitions) {
+                // Persist the published catalogue for Techma tools: listed schemas inline $defs for MCP.
+                const stored = techma ? catalog.find(tool => tool.name === d.name) ?? d : d;
+                await db.query('INSERT INTO backend_mcp_tools(administration_id,server_id,name,definition,available) VALUES($1,$2,$3,$4,true) ON CONFLICT(administration_id,server_id,name) DO UPDATE SET definition=excluded.definition,available=true,enabled=CASE WHEN backend_mcp_tools.definition IS NULL OR backend_mcp_tools.definition=excluded.definition THEN backend_mcp_tools.enabled ELSE false END', [p.administrationId, id, d.name, stored]);
+            }
             await this.audit(db, p, id, 'discovered', traceparent);
             await db.query('COMMIT');
         }
