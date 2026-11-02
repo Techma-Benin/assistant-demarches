@@ -71,30 +71,18 @@ export class HttpModels implements ModelPort {
     const toolNames = new Map(
       tools.map((tool) => [wireName(tool.name), tool.name]),
     );
-    const provider = this.providers[config.provider];
-    if (!provider)
-      throw new Problem(
-        503,
-        "UPSTREAM_UNAVAILABLE",
-        "Fournisseur de modèle non configuré.",
-      );
-    if (!/^[a-zA-Z0-9_-]+$/.test(config.promptVersion))
-      throw new Problem(
-        503,
-        "UPSTREAM_UNAVAILABLE",
-        "Version de prompt inconnue.",
-      );
+    const provider: Provider = {
+      baseUrl: config.baseUrl,
+      protocol: config.protocol,
+      apiKeyEnv: config.apiKeyRef,
+    };
+    const providerName = new URL(config.baseUrl).host;
     const prompt = readFileSync(
-      new URL(
-        "./assets/prompts/" + config.promptVersion + ".txt",
-        import.meta.url,
-      ),
+      new URL("./assets/prompts/agent-v1.txt", import.meta.url),
       "utf8",
     );
-    const apiKey = provider.apiKeyEnv
-      ? this.environment[provider.apiKeyEnv]
-      : undefined;
-    if (provider.apiKeyEnv && !apiKey)
+    const apiKey = this.environment[config.apiKeyRef];
+    if (!apiKey)
       throw new Problem(
         503,
         "UPSTREAM_UNAVAILABLE",
@@ -203,7 +191,7 @@ export class HttpModels implements ModelPort {
     );
     } catch (error) {
       throw new DiagnosticProblem("Connexion au fournisseur IA impossible ou expirée.", {
-        stage: "model.request", provider: config.provider, model: config.model,
+        stage: "model.request", provider: providerName, model: config.model,
         reason: "provider_network_error", causeCode: safeProviderIdentifier((error as any)?.cause?.code) ?? safeProviderIdentifier((error as any)?.name),
       });
     }
@@ -228,7 +216,7 @@ export class HttpModels implements ModelPort {
         }
       } catch { /* HTTP status remains useful even for a non-JSON response. */ }
       throw new DiagnosticProblem("Appel au fournisseur IA refusé (HTTP " + res.status + ").", {
-        stage: "model.response", provider: config.provider, model: config.model,
+        stage: "model.response", provider: providerName, model: config.model,
         upstreamStatus: res.status,
         upstreamCode: safeProviderIdentifier(upstream?.error?.code),
         upstreamType: safeProviderIdentifier(upstream?.error?.type),
@@ -242,7 +230,7 @@ export class HttpModels implements ModelPort {
     try { text = await res.text(); }
     catch {
       throw new DiagnosticProblem("Lecture de la réponse fournisseur interrompue.", {
-        stage: "model.response", provider: config.provider, model: config.model,
+        stage: "model.response", provider: providerName, model: config.model,
         reason: "provider_network_error",
       });
     }
@@ -256,12 +244,12 @@ export class HttpModels implements ModelPort {
     try { value = JSON.parse(text); }
     catch {
       throw new DiagnosticProblem("Réponse fournisseur hors contrat JSON.", {
-        stage: "model.response", provider: config.provider, model: config.model,
+        stage: "model.response", provider: providerName, model: config.model,
         reason: "provider_response_invalid",
       });
     }
     const invalidResponse = () => new DiagnosticProblem("Réponse modèle invalide.", {
-      stage: "model.response", provider: config.provider, model: config.model,
+      stage: "model.response", provider: providerName, model: config.model,
       reason: "provider_response_invalid",
     });
     if (responses) {

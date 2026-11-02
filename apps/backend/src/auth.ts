@@ -1,5 +1,6 @@
 import {
   createRemoteJWKSet,
+  decodeJwt,
   jwtVerify,
   type JWTVerifyGetKey,
   type JWTPayload,
@@ -10,6 +11,8 @@ export type AuthOptions = {
   issuer: string;
   audience: string;
   key: JWTVerifyGetKey;
+  guestIssuer?: string;
+  guestKey?: JWTVerifyGetKey;
 };
 export function remoteAuth(issuer: string, jwksUrl: string): AuthOptions {
   for (const value of [issuer, jwksUrl]) {
@@ -34,14 +37,16 @@ export function remoteAuth(issuer: string, jwksUrl: string): AuthOptions {
 export async function authenticate(
   header: string | undefined,
   auth: AuthOptions,
+  role: "operator" | "official",
 ): Promise<Principal> {
   const payload = await verifyIdentity(header, auth);
-  if (typeof payload.administrationId !== "string" || !payload.administrationId)
-    throw new Problem(403, "FORBIDDEN", "Administration manquante.");
+  const permissions = scopes(payload);
+  if (!permissions.has(role))
+    throw new Problem(403, "FORBIDDEN", "Rôle requis manquant.");
   return {
     subject: payload.sub!,
-    administrationId: payload.administrationId,
-    scopes: scopes(payload),
+    administrationId: "global",
+    scopes: permissions,
   };
 }
 export const scopes = (payload: JWTPayload): Set<string> => {
@@ -61,8 +66,10 @@ export async function verifyIdentity(
   const match = /^Bearer (\S+)$/.exec(header ?? "");
   if (!match) throw new Problem(401, "UNAUTHORIZED", "Jeton requis.");
   try {
-    const { payload } = await jwtVerify(match[1], auth.key, {
-      issuer: auth.issuer,
+    const unverified = decodeJwt(match[1]);
+    const guest = Boolean(auth.guestIssuer && unverified.iss === auth.guestIssuer);
+    const { payload } = await jwtVerify(match[1], guest ? auth.guestKey! : auth.key, {
+      issuer: guest ? auth.guestIssuer : auth.issuer,
       audience: auth.audience,
       algorithms: ["RS256"],
       clockTolerance: 30,
