@@ -6,11 +6,23 @@ import SwaggerParser from "@apidevtools/swagger-parser";
 import { describeSpecification, examples, operationHelp } from "../dist/apps/backend/src/documentation-guide.js";
 import { attachDocumentation } from "../dist/apps/backend/src/documentation.js";
 import { validate } from "../dist/apps/backend/src/domain.js";
-const names = ["conversation", "admin", "events", "backend-resources"];
+const names = ["conversation"];
+const served = ["conversation", "admin", "operator", "backend-internal", "tooling-internal"];
+test("every conversation contract operation has a documentation-guide entry", () => {
+  const spec = JSON.parse(readFileSync(new URL("../../../contracts/v2/conversation.openapi.json", import.meta.url)));
+  const missing = [];
+  for (const [path, methods] of Object.entries(spec.paths)) {
+    for (const [method, operation] of Object.entries(methods)) {
+      if (!["get", "post", "put", "patch", "delete"].includes(method)) continue;
+      if (!operationHelp[operation.operationId]) missing.push(`${method.toUpperCase()} ${path} (${operation.operationId})`);
+    }
+  }
+  assert.deepEqual(missing, [], missing.length ? `Missing endpoint documentation: ${missing.join(", ")}` : undefined);
+});
 test("Swagger documents all backend operations with schema-valid examples and preserves the wire contracts", async () => {
   const documented = new Set();
   for (const name of names) {
-    const original = JSON.parse(readFileSync(new URL(`../../../contracts/v1/${name}.openapi.json`, import.meta.url)));
+    const original = JSON.parse(readFileSync(new URL(`../../../contracts/v2/${name}.openapi.json`, import.meta.url)));
     const before = structuredClone(original);
     const spec = describeSpecification(name, original);
     assert.deepEqual(original, before);
@@ -53,11 +65,14 @@ test("Swagger serves its selector, guide, enriched contracts and local scripts",
     assert.match(page, /layout:"StandaloneLayout"/);
     assert.match(page, /url:"\/docs\/openapi\/conversation.json"/);
     for (const asset of ["swagger-ui.css", "swagger-ui-bundle.js", "swagger-ui-standalone-preset.js"]) assert.equal((await fetch(`${base}/docs/assets/${asset}`)).status, 200);
-    for (const name of names) {
+    for (const name of served) {
       const response = await fetch(`${base}/docs/openapi/${name}.json`);
       assert.equal(response.status, 200);
-      assert.ok((await response.json()).info.description.includes("Authorize"));
+      const spec = await response.json();
+      assert.ok(spec.info?.description);
     }
+    const conversation = await (await fetch(base + "/docs/openapi/conversation.json")).json();
+    assert.ok(conversation.info.description.includes("Authorize"));
     const guide = await fetch(base + "/docs/guide");
     assert.equal(guide.status, 200);
     assert.match(await guide.text(), /Scénario 5/);

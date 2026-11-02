@@ -17,12 +17,12 @@ export class LocalProcedureCatalog implements ProcedureLookup {
   constructor(private pool: Pool) {}
   async get(procedureId: string, context: { administrationId: string }) {
     const value = (await this.pool.query(
-      "SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource='procedures' AND resource_id=$2 AND body->>'validationStatus'='validated'",
+      "SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource='procedures' AND resource_id=$2 AND body->'filing' IS NOT NULL AND body->'filing' <> 'null'::jsonb",
       [context.administrationId, procedureId],
     )).rows[0]?.body;
     if (!value) throw new Problem(404, "NOT_FOUND", "Démarche validée introuvable.");
     validate("Procedure", value);
-    if (value.id !== procedureId || value.source.procedureId !== procedureId) throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Référence de démarche incompatible.");
+    if (value.id !== procedureId || value.source.procedureId !== procedureId || !value.filing) throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Référence de démarche incompatible.");
     return value;
   }
 }
@@ -68,7 +68,7 @@ export class Consent {
   ) {
     if (!input?.procedureId || !Array.isArray(input.scopes) || !input.scopes.length)
       throw new Problem(400, "INVALID_REQUEST", "Challenge incomplet.");
-    const scope = [user.userRef, "POST", cid, "mandate-challenges"];
+    const scope = [user.userRef, "POST", cid, "consent-challenge"];
     // Avoid holding a database transaction/connection while discovering and
     // calling a remote catalogue. Completed retries still reuse their challenge.
     const owned = (await this.pool.query(

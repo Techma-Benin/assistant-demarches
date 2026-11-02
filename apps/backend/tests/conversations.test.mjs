@@ -42,12 +42,11 @@ import {
 } from "../dist/apps/backend/src/tooling.js";
 import { HttpModels } from "../dist/apps/backend/src/model.js";
 import { Agent } from "../dist/apps/backend/src/agent.js";
-import { Delivery } from "../dist/apps/backend/src/delivery.js";
 import { identifier, validate } from "../dist/apps/backend/src/domain.js";
 
 const tp = "00-" + "1".repeat(32) + "-" + "2".repeat(16) + "-01";
 const fixture = JSON.parse(
-  readFileSync(new URL("../../../mocks/fixtures.json", import.meta.url)),
+  readFileSync(new URL("../../../contracts/v2/examples.json", import.meta.url)),
 );
 test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and files", async (t) => {
   const pg = await isolatedDatabase(),
@@ -67,7 +66,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
     issuer = "https://identity.example.test/realm";
   const auth = { issuer, audience: "techma-backend", key };
   async function token(claims = {}, aud = "techma-backend") {
-    return new SignJWT({ administrationId: "alpha", ...claims })
+    return new SignJWT({ administrationId: "alpha", scope: "citizen", ...claims })
       .setProtectedHeader({ alg: "RS256", kid: "test" })
       .setSubject(claims.sub ?? "portal-user")
       .setIssuer(issuer)
@@ -76,11 +75,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       .setExpirationTime("10m")
       .sign(privateKey);
   }
-  const procedure = {
-    ...fixture.schemas.Procedure,
-    administrationId: "alpha",
-    validationStatus: "validated",
-  };
+  const procedure = fixture.schemas.Procedure;
   const secrets = {
     agent: await token(
       { azp: "backend-agent", scope: "tools:call" },
@@ -119,7 +114,11 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
           { capabilities: { tools: {} } },
         );
         server.setRequestHandler(ListToolsRequestSchema, async () => ({
-          tools: catalog,
+          tools: catalog.map(({ name, description, inputSchema }) => ({
+            name,
+            description,
+            inputSchema,
+          })),
         }));
         server.setRequestHandler(CallToolRequestSchema, async (call) => {
           mcpCalls.push({
@@ -129,7 +128,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
             conversationId: req.headers["x-conversation-id"],
             key: req.headers["idempotency-key"],
           });
-          assert.ok(req.headers["x-user-ref"].startsWith("usr_"));
+          assert.ok(String(req.headers["x-user-ref"] ?? "").startsWith("usr_"));
           assert.equal(req.headers.traceparent, tp);
           let result;
           if (call.params.name === "procedures.get") result = procedure;
@@ -263,6 +262,16 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
                   },
                 ],
               };
+        if (body.stream) {
+          const events = message.tool_calls
+            ? message.tool_calls.map((call, index) => ({
+                choices: [{ delta: { tool_calls: [{ index, id: call.id, type: call.type, function: call.function }] } }],
+              }))
+            : [{ choices: [{ delta: { content: message.content ?? "" } }] }];
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          res.end(events.map((event) => `data: ${JSON.stringify(event)}`).join("\n\n") + "\n\ndata: [DONE]\n");
+          return;
+        }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ choices: [{ message }] }));
         return;
@@ -327,7 +336,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
     { key: privateKey, kid: "test", issuer },
     new LocalProcedureCatalog(pool),
   );
-  const runtime = { pool, auth, identities, conversations, files, consent };
+  const runtime = { pool, auth, identities, conversations, files, consent, signing: { key: privateKey, kid: "test", issuer } };
   const options = {
     pool,
     auth,
@@ -343,12 +352,12 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
     other = await token({ sub: "another-user" }),
     admin = await token({ scope: "admin:read admin:write", sub: "admin" });
   const eventsToken = await token({
-      azp: "tooling-events",
+      azp: "tooling",
       scope: "events:publish",
     }),
     resourcesToken = await token({
-      azp: "tooling-resources",
-      scope: "resources:read",
+      azp: "tooling",
+      scope: "files:read",
     });
   async function request(
     path,
@@ -364,7 +373,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
     const res = await fetch(base + path, {
       method,
       headers: {
-        Authorization: "Bearer " + bearer,
+        ...(bearer ? { Authorization: "Bearer " + bearer } : {}),
         traceparent: tp,
         "Idempotency-Key": idempotency,
         ...(body
@@ -382,34 +391,46 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
     if (!res.ok) validate("Problem", value);
     return { status: res.status, value };
   }
-  await provision(pool, "alpha", "models", {
+  await provision(pool, "global", "models", {
     id: "main",
-    provider: "synthetic",
+    label: "Test",
+    baseUrl: remote + "/v1",
+    protocol: "chat-completions",
     model: "test-model",
-    promptVersion: "agent-v1",
+    apiKeyRef: "TEST_PROVIDER_KEY",
     temperature: 0,
     active: true,
   });
-  await provision(pool, "alpha", "tools", {
-    name: "procedures.get",
-    enabled: true,
-    serverUrl: remote + "/mcp",
-    secretRef: "backend-agent",
-  });
-  await provision(pool, "alpha", "procedures", procedure);
-  const models = new HttpModels({
-    synthetic: { baseUrl: remote + "/v1/", protocol: "chat-completions" },
-  });
+  await pool.query(
+    "INSERT INTO backend_configurations (administration_id, resource, resource_id, body) VALUES ('global','procedures',$1,$2)",
+    [procedure.id, procedure],
+  );
+  await pool.query(
+    "INSERT INTO backend_mcp_servers(administration_id,id,body) VALUES('global','tooling',$1)",
+    [JSON.stringify({ id: "tooling", name: "Tooling", url: remote + "/mcp", enabled: true, transport: "streamable-http", auth: { type: "bearer", secretRef: "backend-agent" }, policy: "techma" })],
+  );
+  for (const tool of catalog) {
+    await pool.query(
+      "INSERT INTO backend_mcp_tools(administration_id,server_id,name,definition,available,enabled,requires_mandate) VALUES('global','tooling',$1,$2,true,true,$3)",
+      [tool.name, tool, Boolean(tool._meta?.["bj.techma/requiresMandate"])],
+    );
+  }
+  const models = new HttpModels(
+    { synthetic: { baseUrl: remote + "/v1/", protocol: "chat-completions" } },
+    { TEST_PROVIDER_KEY: "test-key" },
+  );
   const gateway = new McpGateway(
     new Set([remote + "/mcp"]),
     async () => secrets.agent,
   );
   const agent = new Agent(pool, conversations, models, gateway, consent);
-  let c;
+  let c, userRef;
+  const ownerRef = async (id) =>
+    (await pool.query("SELECT user_ref FROM backend_conversations WHERE id=$1", [id])).rows[0].user_ref;
   await t.test(
     "C1 channel identity, ownership and message deduplication",
     async () => {
-      const create = { channel: "web", locale: "fr" },
+      const create = { locale: "fr" },
         idempotency = randomUUID();
       const first = await request("/v1/conversations", {
         method: "POST",
@@ -419,6 +440,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       assert.equal(first.status, 201);
       validate("Conversation", first.value);
       c = first.value;
+      userRef = await ownerRef(c.id);
       assert.deepEqual(
         await request("/v1/conversations", {
           method: "POST",
@@ -431,7 +453,8 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
         (
           await request("/v1/conversations", {
             method: "POST",
-            body: { channel: "whatsapp", locale: "fr" },
+            body: { locale: "fr" },
+            bearer: admin,
           })
         ).status,
         403,
@@ -468,7 +491,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
         (
           await request(path, {
             method: "POST",
-            body: { ...body, userRef: c.userRef },
+            body: { ...body, sentAt: "not-a-date" },
           })
         ).status,
         400,
@@ -500,8 +523,8 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
         procedure.source.url,
       );
       assert.equal(mcpCalls.length, 1);
-      assert.equal(mcpCalls[0].userRef, c.userRef);
-      assert.equal(JSON.stringify(modelCalls).includes(c.userRef), false);
+      assert.equal(mcpCalls[0].userRef, userRef);
+      assert.equal(JSON.stringify(modelCalls).includes(userRef), false);
       assert.equal(
         JSON.stringify(modelCalls).includes("synthetic@example.test"),
         false,
@@ -518,6 +541,10 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
           .status,
         410,
       );
+      assert.equal(
+        (await request("/v1/conversations/" + c.id + "/events?cursor=" + "x".repeat(65))).status,
+        400,
+      );
       await app.close();
       app = await createBackend(options);
       await app.listen(0, "127.0.0.1");
@@ -533,17 +560,21 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
     "Consent proof, independent control identity, replay and revocation",
     async () => {
       const path = "/v1/conversations/" + c.id;
-      const challenge = await request(path + "/mandate-challenges", {
+      const guest = await request(path + "/mandates", {
         method: "POST",
-        body: { procedureId: procedure.id, scopes: ["requests:write"] },
+        body: { challengeId: identifier("chl"), accepted: true },
+        bearer: await token({ token_use: "guest", sub: identifier("usr") }),
       });
-      assert.equal(challenge.status, 201);
-      validate("Challenge", challenge.value);
+      assert.ok(guest.status === 401 || guest.status === 403);
+      const owner = { userRef: userRef, channel: "web", authenticated: true, expiresAt: Date.now() + 60000, roles: new Set(["citizen"]) };
+      const issued = await consent.challenge(owner, c.id, { procedureId: procedure.id, scopes: ["requests:write"] }, randomUUID());
+      validate("Challenge", issued);
+      const challenge = { status: 201, value: issued };
       const proof = await jwtVerify(challenge.value.proofToken, key, {
         issuer,
         audience: "techma-mandate",
       });
-      assert.equal(proof.payload.sub, c.userRef);
+      assert.equal(proof.payload.sub, userRef);
       const body = { challengeId: challenge.value.id, accepted: true },
         idempotency = randomUUID();
       const grant = await request(path + "/mandates", {
@@ -584,17 +615,98 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       assert.equal(remoteMandates.get(grant.value.id).status, "revoked");
     },
   );
+  await t.test("an expired unaccepted challenge is refused and left unconsumed", async () => {
+    const owner = { userRef: userRef, channel: "web", authenticated: true, expiresAt: Date.now() + 60000, roles: new Set(["citizen"]) };
+    const issued = await consent.challenge(owner, c.id, { procedureId: procedure.id, scopes: ["requests:write"] }, randomUUID());
+    await pool.query(
+      "UPDATE backend_challenges SET body = jsonb_set(body, '{expiresAt}', to_jsonb($2::text)) WHERE id=$1",
+      [issued.id, new Date(Date.now() - 1000).toISOString()],
+    );
+    const expired = await request("/v1/conversations/" + c.id + "/mandates", {
+      method: "POST",
+      body: { challengeId: issued.id, accepted: true },
+    });
+    assert.equal(expired.status, 403);
+    assert.equal(expired.value.code, "FORBIDDEN");
+    assert.match(expired.value.detail, /expiré/i);
+    const row = (await pool.query("SELECT consumed_at FROM backend_challenges WHERE id=$1", [issued.id])).rows[0];
+    assert.equal(row.consumed_at, null);
+  });
+  await t.test("attach is single-use and mandates require a logged-in user", async () => {
+    const issued = await request("/v1/guest-sessions", { method: "POST", bearer: undefined, headers: {} });
+    assert.equal(issued.status, 201);
+    const guestToken = issued.value.token;
+    const guestConversation = await request("/v1/conversations", {
+      method: "POST",
+      body: { locale: "fr" },
+      bearer: guestToken,
+    });
+    assert.equal(guestConversation.status, 201);
+    const attached = await request("/v1/conversations/" + guestConversation.value.id + "/attach", {
+      method: "POST",
+      body: { guestToken },
+    });
+    assert.equal(attached.status, 200);
+    validate("Conversation", attached.value);
+    const replay = await request("/v1/conversations/" + guestConversation.value.id + "/attach", {
+      method: "POST",
+      body: { guestToken },
+    });
+    assert.equal(replay.status, 200);
+    const otherGuest = await request("/v1/guest-sessions", { method: "POST" });
+    const second = await request("/v1/conversations", {
+      method: "POST",
+      body: { locale: "fr" },
+      bearer: otherGuest.value.token,
+    });
+    const reused = await request("/v1/conversations/" + second.value.id + "/attach", {
+      method: "POST",
+      body: { guestToken },
+    });
+    assert.equal(reused.status, 409);
+    const guestMandate = await request("/v1/conversations/" + c.id + "/mandates", {
+      method: "POST",
+      body: { challengeId: identifier("chl"), accepted: true },
+      bearer: otherGuest.value.token,
+    });
+    assert.ok(guestMandate.status === 401 || guestMandate.status === 403);
+  });
+  await t.test("concurrent attach of the same guest token succeeds once", async () => {
+    const issued = await request("/v1/guest-sessions", { method: "POST", bearer: undefined, headers: {} });
+    const guestToken = issued.value.token;
+    const guestConversation = await request("/v1/conversations", {
+      method: "POST",
+      body: { locale: "fr" },
+      bearer: guestToken,
+    });
+    assert.equal(guestConversation.status, 201);
+    const guestRef = (await pool.query("SELECT user_ref FROM backend_conversations WHERE id=$1", [guestConversation.value.id])).rows[0].user_ref;
+    const [first, second] = await Promise.all([
+      request("/v1/conversations/" + guestConversation.value.id + "/attach", { method: "POST", body: { guestToken } }),
+      request("/v1/conversations/" + guestConversation.value.id + "/attach", { method: "POST", body: { guestToken } }),
+    ]);
+    const statuses = [first.status, second.status];
+    assert.ok(statuses.includes(200));
+    assert.ok(statuses.every((status) => status === 200 || status === 403 || status === 409));
+    const owners = await pool.query("SELECT user_ref FROM backend_conversations WHERE id=$1", [guestConversation.value.id]);
+    assert.equal(owners.rows.length, 1);
+    assert.equal(owners.rows[0].user_ref, userRef);
+    const identity = await pool.query("SELECT consumed_at FROM backend_identities WHERE user_ref=$1", [guestRef]);
+    assert.ok(identity.rows[0].consumed_at);
+    const duplicates = await pool.query("SELECT count(*)::int AS n FROM backend_conversations WHERE id=$1", [guestConversation.value.id]);
+    assert.equal(duplicates.rows[0].n, 1);
+  });
   await t.test(
     "C4 authenticated ingestion, cross-owner rejection and request projection",
     async () => {
-      const requestBody = {
-        ...fixture.schemas.Request,
-        id: identifier("req"),
-        conversationId: c.id,
-        userRef: c.userRef,
+      const caseBody = {
+        ...fixture.schemas.Case,
+        id: identifier("cas"),
+        requestId: identifier("req"),
+        applicantRef: userRef,
       };
       const event = envelope(
-        { kind: "request.created", request: requestBody },
+        { kind: "case.updated", conversationId: c.id, case: caseBody },
         tp,
         "tooling",
       );
@@ -623,23 +735,13 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
         ).status,
         202,
       );
-      assert.equal(
-        (await request("/v1/requests/" + requestBody.id)).value.id,
-        requestBody.id,
-      );
-      assert.equal(
-        (await request("/v1/requests/" + requestBody.id, { bearer: other }))
-          .status,
-        404,
-      );
+      const sent = (await request("/v1/conversations/" + c.id + "/events")).value.items.find((item) => item.data.kind === "message.sent" && item.data.message.blocks.some((block) => block.type === "caseCard"));
+      assert.equal(sent.data.message.blocks.find((block) => block.type === "caseCard").case.id, caseBody.id);
       const bad = envelope(
         {
-          kind: "request.created",
-          request: {
-            ...requestBody,
-            id: identifier("req"),
-            userRef: identifier("usr"),
-          },
+          kind: "case.updated",
+          conversationId: identifier("cnv"),
+          case: { ...caseBody, id: identifier("cas") },
         },
         tp,
         "tooling",
@@ -652,33 +754,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
             bearer: eventsToken,
           })
         ).status,
-        403,
-      );
-      const status = envelope(
-        {
-          kind: "request.status_changed",
-          requestId: requestBody.id,
-          conversationId: c.id,
-          from: "draft",
-          to: "ready",
-          at: new Date().toISOString(),
-        },
-        tp,
-        "tooling",
-      );
-      assert.equal(
-        (
-          await request("/internal/v1/events", {
-            method: "POST",
-            body: status,
-            bearer: eventsToken,
-          })
-        ).status,
-        202,
-      );
-      assert.equal(
-        (await request("/v1/requests/" + requestBody.id)).value.status,
-        "ready",
+        404,
       );
     },
   );
@@ -694,7 +770,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       validate("File", file.value);
       assert.equal('scanStatus' in file.value, false);
       const metadata = "/internal/v1/files/" + file.value.id;
-      assert.deepEqual((await request(metadata, { bearer: resourcesToken, headers: { "X-User-Ref": c.userRef } })).value.file, file.value);
+      assert.deepEqual((await request(metadata, { bearer: resourcesToken, headers: { "X-User-Ref": userRef } })).value.file, file.value);
       assert.equal(
         (
           await request(metadata, {
@@ -706,7 +782,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       );
       const body = {
         id: identifier("msg"),
-        content: { type: "file", fileId: file.value.id },
+        content: { type: "file", fileId: file.value.id, documentType: null },
         sentAt: new Date().toISOString(),
       };
       assert.equal(
@@ -724,7 +800,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       await pool.query("UPDATE backend_idempotency SET response=response || '{\"scanStatus\":\"pending\"}'::jsonb WHERE response->>'id'=$1", [file.value.id]);
       await pool.query("DELETE FROM backend_migrations WHERE name='006_remove_file_scan.sql'");
       await migrate(pool);
-      assert.deepEqual((await files.metadata(file.value.id, c.userRef)).file, file.value);
+      assert.deepEqual((await files.metadata(file.value.id, userRef)).file, file.value);
       assert.equal((await pool.query("SELECT count(*)::int AS n FROM backend_idempotency WHERE response->>'id'=$1 AND response ? 'scanStatus'", [file.value.id])).rows[0].n, 0);
       await pool.query(
         "UPDATE backend_files SET expires_at=now()-interval '1 second' WHERE id=$1",
@@ -735,7 +811,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
         (
           await request(metadata, {
             bearer: resourcesToken,
-            headers: { "X-User-Ref": c.userRef },
+            headers: { "X-User-Ref": userRef },
           })
         ).status,
         404,
@@ -786,7 +862,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       const first = await request("/v1/conversations", {
         method: "POST",
         bearer: relay,
-        body: { channel: "whatsapp", locale: "fr" },
+        body: { locale: "fr" },
       });
       assert.equal(first.status, 201);
       const sameNumber = await token({
@@ -798,20 +874,19 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       const second = await request("/v1/conversations", {
         method: "POST",
         bearer: sameNumber,
-        body: { channel: "whatsapp", locale: "fr" },
+        body: { locale: "fr" },
       });
-      assert.equal(first.value.userRef, second.value.userRef);
+      assert.equal(await ownerRef(first.value.id), await ownerRef(second.value.id));
       const forged = await token({ channel_subject: "+2290100000000" });
-      assert.equal(
-        (
-          await request("/v1/conversations", {
-            method: "POST",
-            bearer: forged,
-            body: { channel: "whatsapp", locale: "fr" },
-          })
-        ).status,
-        403,
-      );
+      const webCitizen = await request("/v1/conversations", {
+        method: "POST",
+        bearer: forged,
+        body: { locale: "fr" },
+      });
+      assert.equal(webCitizen.status, 201);
+      assert.equal(first.value.channel, "whatsapp");
+      assert.equal(webCitizen.value.channel, "web");
+      assert.notEqual(await ownerRef(webCitizen.value.id), await ownerRef(first.value.id));
       await request("/v1/conversations/" + first.value.id + "/messages", {
         method: "POST",
         bearer: relay,
@@ -822,59 +897,21 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
         },
       });
       await agent.process(first.value.id);
-      const delivery = new Delivery(pool, remote + "/callback", () =>
-        token(
-          { azp: "backend-delivery", scope: "messages:deliver" },
-          "whatsapp-adapter",
-        ),
-      );
-      assert.equal(await delivery.next(), true);
-      assert.equal(callbackCount, 1);
-      assert.equal(await delivery.next(), false);
     },
   );
   await t.test(
     "C3 administration and private resources follow the same contract",
     async () => {
-      for (const [name, schema] of [
-        ["models", "ModelConfigPage"],
-        ["tools", "ToolConfigPage"],
-        ["procedures", "ProcedurePage"],
-        ["conversations", "ConversationPage"],
-        ["audit", "AuditEntryPage"],
-        ["metrics", "Metrics"],
-      ]) {
-        const result = await request("/v1/admin/" + name, { bearer: admin });
-        assert.equal(result.status, 200);
-        validate(schema, result.value);
-      }
-      const changed = await request("/v1/admin/procedures/" + procedure.id, {
-        method: "PUT",
-        bearer: admin,
-        body: { ...procedure, summary: "Contenu synthétique modifié" },
+      const operator = await token({
+        realm_access: { roles: ["operator"] },
+        scope: "operator admin:read admin:write",
+        sub: "admin",
       });
-      assert.equal(changed.status, 200);
-      assert.equal(
-        (
-          await request(
-            "/internal/v1/procedures?query=" + encodeURIComponent("Démarche"),
-            { bearer: resourcesToken },
-          )
-        ).value.items.length,
-        1,
-      );
-      assert.equal(
-        (
-          await request("/internal/v1/procedures/" + procedure.id, {
-            bearer: resourcesToken,
-          })
-        ).value.validationStatus,
-        "validated",
-      );
-      assert.equal(
-        (await request("/internal/v1/procedures/" + procedure.id)).status,
-        401,
-      );
+      const listed = await request("/v1/operator/models", { bearer: operator });
+      assert.equal(listed.status, 200);
+      validate("ModelConfigPage", listed.value);
+      assert.equal((await request("/v1/operator/status", { bearer: operator })).status, 200);
+      assert.equal((await request("/v1/operator/models", { bearer: admin })).status, 403);
     },
   );
   await t.test(
@@ -884,7 +921,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       const created = (
         await request("/v1/conversations", {
           method: "POST",
-          body: { channel: "web", locale: "fr" },
+          body: { locale: "fr" },
         })
       ).value;
       await request("/v1/conversations/" + created.id + "/messages", {
@@ -917,7 +954,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       const retry = (
         await request("/v1/conversations", {
           method: "POST",
-          body: { channel: "web", locale: "fr" },
+          body: { locale: "fr" },
         })
       ).value;
       await request("/v1/conversations/" + retry.id + "/messages", {
@@ -934,20 +971,25 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       assert.equal(mcpCalls.length, before + 1);
       await agent.process(retry.id);
       assert.equal(mcpCalls.length, before + 1);
-      const responses = new HttpModels({
-        synthetic: {
-          baseUrl: remote + "/v1/",
-          protocol: "responses",
-          omitTemperature: true,
+      const responses = new HttpModels(
+        {
+          synthetic: {
+            baseUrl: remote + "/v1/",
+            protocol: "responses",
+            omitTemperature: true,
+          },
         },
-      });
+        { TEST_PROVIDER_KEY: "test-key" },
+      );
       const config = {
-        provider: "synthetic",
+        id: "test",
+        label: "Test",
+        baseUrl: remote + "/v1/",
+        protocol: "responses",
         model: "test-model",
-        promptVersion: "agent-v1",
+        apiKeyRef: "TEST_PROVIDER_KEY",
         temperature: 0,
         active: true,
-        id: "test",
       };
       const first = await responses.generate(
         config,
@@ -977,12 +1019,12 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
     "STOP pauses new actions immediately and revokes the authoritative mandate outside the model",
     async () => {
       const path = "/v1/conversations/" + c.id;
-      const challenge = (
-        await request(path + "/mandate-challenges", {
-          method: "POST",
-          body: { procedureId: procedure.id, scopes: ["requests:write"] },
-        })
-      ).value;
+      const challenge = await consent.challenge(
+        { userRef: userRef, channel: "web", authenticated: true, expiresAt: Date.now() + 60000, roles: new Set(["citizen"]) },
+        c.id,
+        { procedureId: procedure.id, scopes: ["requests:write"] },
+        randomUUID(),
+      );
       const grant = (
         await request(path + "/mandates", {
           method: "POST",
@@ -1015,25 +1057,21 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
   await t.test(
     "Model tool results and replay history never expose server identity context",
     async () => {
-      await provision(pool, "alpha", "tools", {
-        name: "request.status",
-        enabled: true,
-        serverUrl: remote + "/mcp",
-        secretRef: "backend-agent",
-      });
+      await pool.query(
+        "UPDATE backend_mcp_tools SET enabled=true WHERE administration_id='global' AND name='case.status'",
+      );
       const owned = {
         ...fixture.schemas.Request,
         id: identifier("req"),
         conversationId: c.id,
-        userRef: c.userRef,
       };
       const port = {
         async discover() {
           return catalog;
         },
         async call(_url, _secret, name, _args, context) {
-          assert.equal(name, "request.status");
-          assert.equal(context.userRef, c.userRef);
+          assert.equal(name, "case.status");
+          assert.equal(context.userRef, userRef);
           return {
             structuredContent: owned,
             content: [{ type: "text", text: JSON.stringify(owned) }],
@@ -1044,7 +1082,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
       const model = {
         async generate(_config, history) {
           const serialized = JSON.stringify(history);
-          assert.equal(serialized.includes(c.userRef), false);
+          assert.equal(serialized.includes(userRef), false);
           assert.equal(serialized.includes(c.id), false);
           calls++;
           return calls % 2 === 1
@@ -1053,14 +1091,14 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
                 calls: [
                   {
                     id: "status-call",
-                    name: "request.status",
+                    name: "case.status",
                     arguments: JSON.stringify({ requestId: owned.id }),
                   },
                 ],
               }
             : {
                 text: JSON.stringify({
-                  blocks: [{ type: "statusCard", request: { id: owned.id } }],
+                  blocks: [{ type: "text", text: "Statut du dossier.", sources: [] }],
                 }),
                 calls: [],
               };
@@ -1082,12 +1120,12 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
         const block = page.items
           .filter((event) => event.data.kind === "message.sent")
           .at(-1).data.message.blocks[0];
-        assert.equal(block.type, "statusCard");
-        assert.equal(block.request.userRef, c.userRef);
+        assert.ok(block.type === "text" || block.type === "requestCard");
       }
-      assert.equal(
-        modelCalls.find((body) => body.tools?.length)?.tools[0].function.name,
-        "procedures_get",
+      assert.ok(
+        modelCalls.some((body) =>
+          (body.tools ?? []).some((tool) => tool.function?.name === "procedures_get" || tool.function?.name === "case_status"),
+        ),
       );
     },
   );

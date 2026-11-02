@@ -11,8 +11,8 @@ import { identifier } from '../dist/apps/backend/src/domain.js';
 import { catalog } from '../dist/apps/backend/src/tooling.js';
 import { DiagnosticProblem } from '../dist/apps/backend/src/diagnostics.js';
 
-const fixtures = JSON.parse(readFileSync(new URL('../../../mocks/fixtures.json', import.meta.url)));
-const procedure = { ...fixtures.schemas.Procedure, administrationId: 'alpha', validationStatus: 'validated' };
+const fixtures = JSON.parse(readFileSync(new URL('../../../contracts/v2/examples.json', import.meta.url)));
+const procedure = fixtures.schemas.Procedure;
 const tp = '00-' + '1'.repeat(32) + '-' + '2'.repeat(16) + '-01';
 const final = (text, sources = []) => ({ text: JSON.stringify({ blocks: [{ type: 'text', text, sources }] }), calls: [] });
 const toolCall = (name, args, id = 'call-1') => ({ text: '', calls: [{ id, name, arguments: JSON.stringify(args) }] });
@@ -23,9 +23,12 @@ test('pivot agent retries, provenance, consent catalogue and audio work on isola
   t.after(async () => { await pool.end(); await pg.close(); });
   await migrate(pool);
   const conversations = new Conversations(pool);
-  const user = { userRef: identifier('usr'), administrationId: 'alpha', channel: 'portal', expiresAt: Date.now() + 60000 };
-  await provision(pool, 'alpha', 'models', { id: 'test', provider: 'synthetic', model: 'synthetic', promptVersion: 'agent-v1', active: true, temperature: 0 });
-  for (const name of ['procedures.get', 'request.create']) await provision(pool, 'alpha', 'tools', { name, enabled: true, serverUrl: 'http://127.0.0.1:9999/mcp', secretRef: 'backend-agent' });
+  const user = { userRef: identifier('usr'), administrationId: 'global', channel: 'web', authenticated: true, expiresAt: Date.now() + 60000 };
+  await provision(pool, 'global', 'models', { id: 'test', label: 'Test', baseUrl: 'http://127.0.0.1:9/v1', protocol: 'chat-completions', model: 'synthetic', apiKeyRef: 'TEST_KEY', active: true, temperature: 0 });
+  await pool.query("INSERT INTO backend_mcp_servers(administration_id,id,body) VALUES('global','tooling',$1)", [JSON.stringify({ id: 'tooling', name: 'Tooling', url: 'http://127.0.0.1:9999/mcp', enabled: true, transport: 'streamable-http', auth: { type: 'bearer', secretRef: 'backend-agent' }, policy: 'techma' })]);
+  for (const tool of catalog) {
+    await pool.query("INSERT INTO backend_mcp_tools(administration_id,server_id,name,definition,available,enabled,requires_mandate) VALUES('global','tooling',$1,$2,true,true,$3)", [tool.name, tool, Boolean(tool._meta?.['bj.techma/requiresMandate'])]);
+  }
   let calls = [];
   let response = procedure;
   const tooling = {
@@ -36,7 +39,7 @@ test('pivot agent retries, provenance, consent catalogue and audio work on isola
     },
   };
   async function queued(content = { type: 'text', text: 'Démarche synthétique' }) {
-    const c = await conversations.create(user, { channel: 'web', locale: 'fr' }, identifier('key'));
+    const c = await conversations.create(user, { locale: 'fr' }, identifier('key'));
     const message = { id: identifier('msg'), content, sentAt: new Date().toISOString() };
     await conversations.accept(user, c.id, message, identifier('key'), tp);
     return { c, message };
@@ -83,8 +86,8 @@ test('pivot agent retries, provenance, consent catalogue and audio work on isola
   await t.test('generic MCP output cannot masquerade as a validated administrative catalogue', async () => {
     const server = { id: 'external-catalogue', name: 'External catalogue', url: 'http://127.0.0.1:9998/external', enabled: true, transport: 'streamable-http', auth: { type: 'none' }, policy: 'generic' };
     const definition = { name: 'foreign.lookup', description: 'External unvalidated data', inputSchema: { type: 'object', additionalProperties: false } };
-    await pool.query('INSERT INTO backend_mcp_servers(administration_id,id,body) VALUES($1,$2,$3)', ['alpha', server.id, server]);
-    await pool.query('INSERT INTO backend_mcp_tools(administration_id,server_id,name,definition,enabled,requires_mandate,available) VALUES($1,$2,$3,$4,true,false,true)', ['alpha', server.id, definition.name, definition]);
+    await pool.query('INSERT INTO backend_mcp_servers(administration_id,id,body) VALUES($1,$2,$3)', ['global', server.id, server]);
+    await pool.query('INSERT INTO backend_mcp_tools(administration_id,server_id,name,definition,enabled,requires_mandate,available) VALUES($1,$2,$3,$4,true,false,true)', ['global', server.id, definition.name, definition]);
     const foreignSource = { ...procedure.source, version: 'foreign-unapproved' };
     let remoteCalls = 0;
     const externalTooling = {
@@ -103,44 +106,44 @@ test('pivot agent retries, provenance, consent catalogue and audio work on isola
     assert.equal(count, 4);
     assert.deepEqual((await lastBlocks(c.id))[0].sources, []);
     assert.match((await lastBlocks(c.id))[0].text, /source administrative validée/);
-    await pool.query('DELETE FROM backend_mcp_tools WHERE administration_id=$1 AND server_id=$2', ['alpha', server.id]);
-    await pool.query('DELETE FROM backend_mcp_servers WHERE administration_id=$1 AND id=$2', ['alpha', server.id]);
+    await pool.query('DELETE FROM backend_mcp_tools WHERE administration_id=$1 AND server_id=$2', ['global', server.id]);
+    await pool.query('DELETE FROM backend_mcp_servers WHERE administration_id=$1 AND id=$2', ['global', server.id]);
   });
   await t.test('successful write repeated by the model returns its original evidence without another action', async () => {
     const { c } = await queued();
     const mandate = { id: identifier('mdt'), conversationId: c.id, userRef: user.userRef, procedureId: procedure.id, scopes: ['requests:write'], status: 'active', expiresAt: new Date(Date.now() + 3600000).toISOString() };
     await pool.query('INSERT INTO backend_mandates(id,conversation_id,user_ref,body) VALUES($1,$2,$3,$4)', [mandate.id, c.id, user.userRef, mandate]);
-    response = { ...fixtures.schemas.Request, id: identifier('req'), conversationId: c.id, userRef: user.userRef, procedureId: procedure.id };
+    response = { ...fixtures.schemas.Request, id: identifier('req'), conversationId: c.id, procedureId: procedure.id };
     calls = [];
     let count = 0;
-    const model = { async generate() { count++; return count <= 2 ? toolCall('request.create', { procedureId: procedure.id }, 'write-' + count) : { text: JSON.stringify({ blocks: [{ type: 'statusCard', request: { id: response.id } }] }), calls: [] }; } };
+    const model = { async generate() { count++; return count <= 2 ? toolCall('request.create', { procedureId: procedure.id }, 'write-' + count) : { text: JSON.stringify({ blocks: [{ type: 'text', text: 'Dossier ouvert.', sources: [] }] }), calls: [] }; } };
     await new Agent(pool, conversations, model, tooling).process(c.id);
     assert.equal(calls.filter(call => call.name === 'request.create').length, 1);
-    assert.deepEqual((await lastBlocks(c.id))[0].request, response);
+    assert.deepEqual((await lastBlocks(c.id)).find(block => block.type === 'requestCard').request, response);
     response = procedure;
   });
   await t.test('worker interruption after a successful write keeps the same evidence on recovery', async () => {
     const { c } = await queued();
     const mandate = { id: identifier('mdt'), conversationId: c.id, userRef: user.userRef, procedureId: procedure.id, scopes: ['requests:write'], status: 'active', expiresAt: new Date(Date.now() + 3600000).toISOString() };
     await pool.query('INSERT INTO backend_mandates(id,conversation_id,user_ref,body) VALUES($1,$2,$3,$4)', [mandate.id, c.id, user.userRef, mandate]);
-    response = { ...fixtures.schemas.Request, id: identifier('req'), conversationId: c.id, userRef: user.userRef, procedureId: procedure.id };
+    response = { ...fixtures.schemas.Request, id: identifier('req'), conversationId: c.id, procedureId: procedure.id };
     calls = [];
     let before = 0;
     const interrupted = { async generate() { if (!before++) return toolCall('request.create', { procedureId: procedure.id }, 'before-interruption'); throw new Error('Synthetic provider interruption'); } };
     await assert.rejects(new Agent(pool, conversations, interrupted, tooling).process(c.id));
     assert.equal(calls.length, 1);
     let after = 0;
-    const resumed = { async generate() { return !after++ ? toolCall('request.create', { procedureId: procedure.id }, 'after-interruption') : { text: JSON.stringify({ blocks: [{ type: 'statusCard', request: { id: response.id } }] }), calls: [] }; } };
+    const resumed = { async generate() { return !after++ ? toolCall('request.create', { procedureId: procedure.id }, 'after-interruption') : { text: JSON.stringify({ blocks: [{ type: 'text', text: 'Dossier ouvert.', sources: [] }] }), calls: [] }; } };
     await new Agent(pool, conversations, resumed, tooling).process(c.id);
     assert.equal(calls.length, 1);
-    assert.deepEqual((await lastBlocks(c.id))[0].request, response);
+    assert.deepEqual((await lastBlocks(c.id)).find(block => block.type === 'requestCard').request, response);
     response = procedure;
   });
   await t.test('rejected Groq tool generation recovers without repeating an authorized write', async () => {
     const { c } = await queued();
     const mandate = { id: identifier('mdt'), conversationId: c.id, userRef: user.userRef, procedureId: procedure.id, scopes: ['requests:write'], status: 'active', expiresAt: new Date(Date.now() + 3600000).toISOString() };
     await pool.query('INSERT INTO backend_mandates(id,conversation_id,user_ref,body) VALUES($1,$2,$3,$4)', [mandate.id, c.id, user.userRef, mandate]);
-    response = { ...fixtures.schemas.Request, id: identifier('req'), conversationId: c.id, userRef: user.userRef, procedureId: procedure.id };
+    response = { ...fixtures.schemas.Request, id: identifier('req'), conversationId: c.id, procedureId: procedure.id };
     calls = [];
     let count = 0;
     const model = { async generate(_config, history) {
@@ -149,13 +152,13 @@ test('pivot agent retries, provenance, consent catalogue and audio work on isola
       if (count === 2) throw new DiagnosticProblem('Rejected tool generation', { reason: 'provider_tool_generation_invalid', upstreamStatus: 400, upstreamCode: 'tool_use_failed' });
       assert.ok(history.some(turn => turn.role === 'tool'));
       assert.match(history.at(-1).content, /sans appeler d’outil json/);
-      return { text: JSON.stringify({ blocks: [{ type: 'statusCard', request: { id: response.id, status: 'completed' } }] }), calls: [] };
+      return { text: JSON.stringify({ blocks: [{ type: 'text', text: 'Dossier ouvert.', sources: [] }] }), calls: [] };
     } };
     await new Agent(pool, conversations, model, tooling).process(c.id);
     assert.equal(count, 3);
     assert.equal(calls.length, 1);
-    assert.deepEqual((await lastBlocks(c.id))[0].request, response);
-    assert.equal(response.status, 'draft');
+    assert.deepEqual((await lastBlocks(c.id)).find(block => block.type === 'requestCard').request, response);
+    assert.equal(response.status, 'ready');
     response = procedure;
   });
   await t.test('rejected Groq tool generations stop after three attempts with a clear recorded fallback', async () => {
@@ -193,6 +196,7 @@ test('pivot agent retries, provenance, consent catalogue and audio work on isola
     assert.match((await lastBlocks(unavailable.c.id))[0].text, /par écrit/);
   });
   await t.test('consent reads approved MCP catalogue without requiring a local procedure', async () => {
+    response = procedure;
     calls = [];
     const { privateKey } = await generateKeyPair('RS256');
     const resolver = new McpProcedureCatalog(pool, tooling);
@@ -211,10 +215,55 @@ test('pivot agent retries, provenance, consent catalogue and audio work on isola
     const submission = await consent.challenge(user, c.id, { procedureId: procedure.id, scopes: ['requests:submit'] }, 'consent-submission');
     assert.match(submission.consentText, /déposer votre dossier auprès du service administratif/);
     assert.match(submission.consentText, /paiement exige une confirmation distincte/);
-    response = { ...procedure, validationStatus: 'draft' };
+    response = { ...procedure, filing: null };
     await assert.rejects(consent.challenge(user, c.id, { procedureId: procedure.id, scopes: ['requests:write'] }, 'consent-draft-only'), error => error.status === 404);
-    response = { ...procedure, source: { ...procedure.source, procedureId: 'wrong' } };
-    await assert.rejects(resolver.get(procedure.id, { administrationId: 'alpha', conversationId: c.id, userRef: user.userRef }, 'mismatch'), error => error.status === 404);
+    response = { ...procedure, source: { ...procedure.source, procedureId: 'PS00000' } };
+    await assert.rejects(resolver.get(procedure.id, { administrationId: 'global', conversationId: c.id, userRef: user.userRef }, 'mismatch'), error => error.status === 404);
     response = procedure;
+  });
+  await t.test('form interaction is stored as interaction and sent to the model as text', async () => {
+    const form = { type: 'interaction', actionId: 'form-casier', value: JSON.stringify({ adresse: 'Cotonou' }) };
+    const { c } = await queued(form);
+    const stored = (await pool.query('SELECT body FROM backend_messages WHERE conversation_id=$1', [c.id])).rows[0].body;
+    assert.equal(stored.content.type, 'interaction');
+    assert.equal(stored.content.actionId, 'form-casier');
+    let seen = '';
+    let turn = 0;
+    const model = { async generate(_config, history) {
+      seen = history.find((item) => item.role === 'user')?.content ?? '';
+      turn++;
+      if (turn === 1) return toolCall('procedures.get', { procedureId: procedure.id });
+      return final('Formulaire reçu.', [procedure.source]);
+    } };
+    await new Agent(pool, conversations, model, tooling).process(c.id);
+    assert.match(seen, /form-casier/);
+    assert.match(seen, /Cotonou/);
+    assert.match((await lastBlocks(c.id))[0].text, /Formulaire reçu/);
+  });
+  await t.test('guest write tool emits loginRequired without calling the tool', async () => {
+    const guest = { ...user, authenticated: false };
+    const c = await conversations.create(guest, { locale: 'fr' }, identifier('key'));
+    const message = { id: identifier('msg'), content: { type: 'text', text: 'Créer un dossier' }, sentAt: new Date().toISOString() };
+    await conversations.accept(guest, c.id, message, identifier('key'), tp);
+    calls = [];
+    let count = 0;
+    const model = { async generate() { return count++ ? final('Connectez-vous pour continuer.') : toolCall('request.create', { procedureId: procedure.id }); } };
+    await new Agent(pool, conversations, model, tooling).process(c.id);
+    assert.equal(calls.length, 0);
+    assert.equal((await lastBlocks(c.id)).find(block => block.type === 'loginRequired')?.type, 'loginRequired');
+  });
+  await t.test('MANDATE_MISSING builds a consent block server-side', async () => {
+    response = procedure;
+    const { privateKey } = await generateKeyPair('RS256');
+    const consent = new Consent(pool, conversations, { async grant() { throw new Error('not used'); }, async revoke() { throw new Error('not used'); } }, { key: privateKey, kid: 'test', issuer: 'https://example.test' }, new McpProcedureCatalog(pool, tooling));
+    const { c } = await queued();
+    calls = [];
+    let count = 0;
+    const model = { async generate() { return count++ ? final('Autorisation requise.') : toolCall('request.create', { procedureId: procedure.id }); } };
+    await new Agent(pool, conversations, model, tooling, consent).process(c.id);
+    assert.equal(calls.some(call => call.name === 'request.create'), false);
+    const consentBlock = (await lastBlocks(c.id)).find(block => block.type === 'consent');
+    assert.equal(consentBlock?.type, 'consent');
+    assert.equal(consentBlock.challenge.procedureId, procedure.id);
   });
 });

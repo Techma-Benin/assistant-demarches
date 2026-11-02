@@ -74,7 +74,7 @@ export class ConversationController {
   }
   @Post("guest-sessions")
   @HttpCode(201)
-  guest(@Req() req: Request) {
+  async guest(@Req() req: Request) {
     if (!this.runtime.signing)
       throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Signature non configurée.");
     return this.runtime.identities.issueGuest(
@@ -129,7 +129,7 @@ export class ConversationController {
       cursor = req.query.cursor;
     if (
       cursor !== undefined &&
-      (typeof cursor !== "string" || !cursor || cursor.length > 256)
+      (typeof cursor !== "string" || !cursor || cursor.length > 64)
     )
       throw new Problem(400, "INVALID_REQUEST", "Curseur invalide.");
     return this.runtime.conversations.page(
@@ -154,6 +154,7 @@ export class ConversationController {
     );
   }
   @Post("conversations/:id/attach")
+  @HttpCode(200)
   async attach(
     @Param("id") id: string,
     @Req() req: Request,
@@ -161,10 +162,16 @@ export class ConversationController {
   ) {
     validate("AttachInput", body);
     const principal = await user(this.runtime, req);
-    const guest = await this.runtime.identities.resolve(
+    loggedIn(principal);
+    const guest = await this.runtime.identities.inspectGuest(
       await verifyIdentity("Bearer " + body.guestToken, this.runtime.auth),
     );
-    return this.runtime.conversations.attach(principal, id, guest);
+    return this.runtime.conversations.attach(
+      principal,
+      id,
+      guest,
+      (userRef, db) => this.runtime.identities.consumeGuest(userRef, db),
+    );
   }
   @Post("conversations/:id/mandates")
   async grant(
@@ -173,6 +180,7 @@ export class ConversationController {
     @Body() body: Schemas["ConsentInput"],
   ) {
     const principal = await user(this.runtime, req);
+    loggedIn(principal);
     if (!this.runtime.consent)
       throw new Problem(
         503,
@@ -195,6 +203,7 @@ export class ConversationController {
     @Req() req: Request,
   ) {
     const principal = await user(this.runtime, req);
+    loggedIn(principal);
     if (!this.runtime.consent)
       throw new Problem(
         503,
@@ -240,6 +249,7 @@ export class ConversationController {
     res.send(file.bytes);
   }
   @Post("files")
+  @HttpCode(201)
   async upload(@Req() req: Request, @Body() body: Buffer) {
     const principal = await user(this.runtime, req);
     if (req.get("content-type") !== "application/octet-stream")

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { SignJWT, type CryptoKey, type JWTPayload } from "jose";
 import { identifier, Problem } from "./domain.js";
 import { scopes } from "./auth.js";
@@ -44,7 +44,7 @@ export class Identities {
       .setAudience("techma-backend")
       .setSubject(userRef)
       .setIssuedAt()
-      .setExpirationTime(expiresAt)
+      .setExpirationTime(Math.floor(now / 1000) + 86_400)
       .sign(signing.key);
     return { token, expiresAt };
   }
@@ -52,11 +52,57 @@ export class Identities {
     const permissions = scopes(payload);
     const client = serviceClient(payload);
     const guest = payload.token_use === "guest";
+    const relay = permissions.has("conversation:relay");
     if (
       !guest &&
+      !relay &&
       (client === "backend" || client === "tooling" || !permissions.has("citizen"))
     )
       throw new Problem(403, "FORBIDDEN", "Identité usager requise.");
+    if (relay && typeof payload.channel_subject !== "string")
+      throw new Problem(403, "FORBIDDEN", "Identité de relais incomplète.");
+    const channel = relay || payload.channel === "whatsapp" ? "whatsapp" : "web";
+    const subject = relay ? String(payload.channel_subject) : String(payload.sub);
+    const digest = createHash("sha256")
+      .update(JSON.stringify([payload.iss, guest ? "guest" : relay ? "whatsapp" : "citizen", subject]))
+      .digest("hex");
+    const result = await this.pool.query(
+      "INSERT INTO backend_identities(identity_hash,user_ref) VALUES($1,$2) ON CONFLICT(identity_hash) DO UPDATE SET identity_hash=excluded.identity_hash RETURNING user_ref, consumed_at",
+      [digest, guest ? subject : identifier("usr")],
+    );
+    if (guest && result.rows[0].consumed_at)
+      throw new Problem(403, "FORBIDDEN", "Session invitée déjà rattachée.");
+    return {
+      userRef: result.rows[0].user_ref,
+      channel,
+      authenticated: !guest,
+      expiresAt: Number(payload.exp) * 1000,
+      roles: permissions,
+    };
+  }
+  async inspectGuest(payload: JWTPayload): Promise<User & { consumed: boolean }> {
+    if (payload.token_use !== "guest")
+      throw new Problem(400, "INVALID_REQUEST", "Jeton invité requis.");
+    const user = await this.resolveAllowConsumed(payload);
+    const consumed = (
+      await this.pool.query(
+        "SELECT consumed_at IS NOT NULL AS consumed FROM backend_identities WHERE user_ref=$1",
+        [user.userRef],
+      )
+    ).rows[0]?.consumed === true;
+    return { ...user, consumed };
+  }
+  async consumeGuest(userRef: string, db: Pick<Pool, "query"> | Pick<PoolClient, "query"> = this.pool): Promise<void> {
+    const updated = await db.query(
+      "UPDATE backend_identities SET consumed_at=now() WHERE user_ref=$1 AND consumed_at IS NULL RETURNING user_ref",
+      [userRef],
+    );
+    if (!updated.rowCount)
+      throw new Problem(409, "CONFLICT", "Session invitée déjà rattachée.");
+  }
+  private async resolveAllowConsumed(payload: JWTPayload): Promise<User> {
+    const permissions = scopes(payload);
+    const guest = payload.token_use === "guest";
     const channel = payload.channel === "whatsapp" ? "whatsapp" : "web";
     const subject = String(payload.sub);
     const digest = createHash("sha256")

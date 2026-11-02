@@ -1,5 +1,23 @@
-import type { Pool } from "pg";
-import { validate, type ModelConfig } from "./domain.js";
+import type { Pool, PoolClient } from "pg";
+import { canonical, validate, type ModelConfig } from "./domain.js";
+
+type Db = Pick<Pool, "query"> | Pick<PoolClient, "query">;
+
+export function modelsLockKey(administrationId: string): string {
+  return canonical([administrationId, "models"]);
+}
+
+/** Leaves `exceptId` as the only active model in the administration. */
+export async function deactivateOtherModels(
+  db: Db,
+  administrationId: string,
+  exceptId: string,
+): Promise<void> {
+  await db.query(
+    "UPDATE backend_configurations SET body=jsonb_set(body,'{active}','false'::jsonb), updated_at=now() WHERE administration_id=$1 AND resource='models' AND resource_id<>$2 AND body->>'active'='true'",
+    [administrationId, exceptId],
+  );
+}
 
 type Preset = { label: string; baseUrl: string; model: string };
 
@@ -45,13 +63,23 @@ export async function syncEnvModel(pool: Pool, env: NodeJS.ProcessEnv = process.
   const model = resolveModelFromEnv(env);
   if (!model) return;
   validate("ModelConfig", model);
-  await pool.query(
-    "UPDATE backend_configurations SET body=jsonb_set(body,'{active}','false'::jsonb), updated_at=now() WHERE administration_id='global' AND resource='models' AND resource_id<>$1 AND body->>'active'='true'",
-    [model.id],
-  );
-  await pool.query(
-    "INSERT INTO backend_configurations(administration_id,resource,resource_id,body) VALUES('global','models',$1,$2) ON CONFLICT(administration_id,resource,resource_id) DO UPDATE SET body=excluded.body, updated_at=now()",
-    [model.id, model],
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+      modelsLockKey("global"),
+    ]);
+    await deactivateOtherModels(client, "global", model.id);
+    await client.query(
+      "INSERT INTO backend_configurations(administration_id,resource,resource_id,body) VALUES('global','models',$1,$2) ON CONFLICT(administration_id,resource,resource_id) DO UPDATE SET body=excluded.body, updated_at=now()",
+      [model.id, model],
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
   console.log(`Modèle actif : ${model.label} / ${model.model}.`);
 }

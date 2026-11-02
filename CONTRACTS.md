@@ -20,7 +20,7 @@ Ce document et les fichiers de `contracts/v2/` sont la seule référence entre l
 | Tooling | `apps/tooling` | 4030 | Tooling | Serveur MCP : brouillons, mandats, dépôt et suivi des dossiers |
 | X-Road simulé | `apps/xroad-sim` | 4040 | Tooling | Administrations, catalogue officiel, dossiers, annuaire des agents, indicateurs |
 | Keycloak | `infra/keycloak` | 8080 | Commun | Connexion des personnes et identités de service |
-| PostgreSQL | lancé par `pnpm dev` | 5433 | Commun | Une instance, une base par service : `backend`, `tooling`, `xroad` |
+| PostgreSQL | lancé par `pnpm dev` | 54329 | Commun | Une instance, une base par service : `backend`, `tooling`, `xroad` |
 
 Pas de Redis, pas de worker séparé, pas de mocks. `pnpm dev` lance tout sans Docker (voir [README](README.md)).
 

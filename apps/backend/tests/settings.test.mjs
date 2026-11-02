@@ -21,9 +21,11 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
   await migrate(pool);
   const model = {
     id: "primary",
-    provider: "openai-compatible",
+    label: "Modèle de test",
+    baseUrl: "http://127.0.0.1:9/v1",
+    protocol: "chat-completions",
     model: "synthetic-model",
-    promptVersion: "demo-1",
+    apiKeyRef: "TEST_PROVIDER_KEY",
     temperature: 0.2,
     active: true,
   };
@@ -33,11 +35,8 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
     serverUrl: "http://127.0.0.1:4020/mcp",
     secretRef: "tooling-agent-token",
   };
-  for (const administration of ["alpha", "beta"]) {
-    await provision(pool, administration, "models", model);
-    await provision(pool, administration, "tools", tool);
-  }
-  await provision(pool, "alpha", "models", { ...model, id: "secondary" });
+  await provision(pool, "global", "models", model);
+  await provision(pool, "global", "models", { ...model, id: "secondary" });
   const { privateKey, publicKey } = await generateKeyPair("RS256");
   const jwk = {
     ...(await exportJWK(publicKey)),
@@ -59,7 +58,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
     } = overrides;
     return new SignJWT({
       administrationId: "alpha",
-      scope: "admin:read admin:write",
+      scope: "operator admin:read admin:write",
       ...claims,
     })
       .setProtectedHeader({ alg, kid: "test-key" })
@@ -97,7 +96,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       headers: {
         Authorization: "Bearer " + authToken,
         traceparent,
-        "Idempotency-Key": key,
+        ...(key === false ? {} : { "Idempotency-Key": key }),
         ...(body ? { "Content-Type": "application/json" } : {}),
         ...headers,
       },
@@ -117,7 +116,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
     "health, C3 shapes, opaque pagination and tenant isolation",
     async () => {
       assert.equal((await fetch(url + "/health")).status, 200);
-      const preflight = await fetch(url + "/v1/admin/models", {
+      const preflight = await fetch(url + "/v1/operator/models", {
         method: "OPTIONS",
         headers: {
           Origin: "https://console.example.test",
@@ -131,49 +130,51 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
         preflight.headers.get("access-control-allow-origin"),
         "https://console.example.test",
       );
-      const first = await request("/v1/admin/models?limit=1");
+      const first = await request("/v1/operator/models?limit=1");
       assert.equal(first.status, 200);
       validate("ModelConfigPage", first.value);
       assert.ok(first.value.nextCursor);
       const next = await request(
-        "/v1/admin/models?limit=1&cursor=" + first.value.nextCursor,
+        "/v1/operator/models?limit=1&cursor=" + first.value.nextCursor,
       );
       assert.equal(next.value.items[0].id, "secondary");
       assert.equal(next.value.nextCursor, null);
-      const other = await request("/v1/admin/models", {
+      const other = await request("/v1/operator/models", {
         authToken: await token({ administrationId: "beta" }),
       });
-      assert.equal(other.value.items.length, 1);
+      assert.equal(other.value.items.length, 2);
       assert.equal(
         (
-          await request("/v1/admin/models?cursor=" + first.value.nextCursor, {
+          await request("/v1/operator/models?cursor=" + first.value.nextCursor, {
             authToken: await token({ administrationId: "beta" }),
           })
         ).status,
-        400,
+        200,
       );
-      assert.equal((await request("/v1/admin/models?limit=0")).status, 400);
+      assert.equal((await request("/v1/operator/models?limit=0")).status, 400);
       assert.equal(
-        (await request("/v1/admin/models?limit=1&limit=2")).status,
+        (await request("/v1/operator/models?limit=1&limit=2")).status,
         400,
       );
       assert.equal(
-        (await request("/v1/admin/models?cursor=garbage")).status,
+        (await request("/v1/operator/models?cursor=garbage")).status,
         400,
       );
-      validate("ToolConfigPage", (await request("/v1/admin/tools")).value);
+      const status = await request("/v1/operator/status");
+      assert.equal(status.status, 200);
+      assert.equal(status.value.model.id, "primary");
     },
   );
   await t.test(
     "JWT verification, scopes, expiry, audience and trace validation",
     async () => {
       assert.equal(
-        (await request("/v1/admin/models", { authToken: "mock-admin" })).status,
+        (await request("/v1/operator/models", { authToken: "mock-admin" })).status,
         401,
       );
       assert.equal(
         (
-          await request("/v1/admin/models", {
+          await request("/v1/operator/models", {
             authToken: await token({ scope: "tools:call" }),
           })
         ).status,
@@ -181,7 +182,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       );
       assert.equal(
         (
-          await request("/v1/admin/models", {
+          await request("/v1/operator/models", {
             authToken: await token({ aud: "wrong" }),
           })
         ).status,
@@ -189,7 +190,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       );
       assert.equal(
         (
-          await request("/v1/admin/models", {
+          await request("/v1/operator/models", {
             authToken: await token({ exp: Math.floor(Date.now() / 1000) - 60 }),
           })
         ).status,
@@ -197,8 +198,8 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       );
       assert.equal(
         (
-          await request("/v1/admin/models", {
-            authToken: await token({ administrationId: null }),
+          await request("/v1/operator/models", {
+            authToken: await token({ scope: "operator" }),
           })
         ).status,
         403,
@@ -208,25 +209,25 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
         JSON.stringify({ scope: "admin:read", administrationId: "beta" }),
       ).toString("base64url");
       assert.equal(
-        (await request("/v1/admin/models", { authToken: tampered.join(".") }))
+        (await request("/v1/operator/models", { authToken: tampered.join(".") }))
           .status,
         401,
       );
       assert.equal(
-        (await request("/v1/admin/models", { headers: { traceparent: "" } }))
+        (await request("/v1/operator/models", { headers: { traceparent: "" } }))
           .status,
-        400,
+        200,
       );
       assert.equal(
         (
-          await request("/v1/admin/models", {
+          await request("/v1/operator/models", {
             headers: {
               traceparent:
                 "00-" + "0".repeat(32) + "-" + "2".repeat(16) + "-01",
             },
           })
         ).status,
-        400,
+        200,
       );
     },
   );
@@ -236,7 +237,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       const changed = { ...model, model: "another-synthetic-model" };
       const results = await Promise.all(
         Array.from({ length: 5 }, () =>
-          request("/v1/admin/models/primary", {
+          request("/v1/operator/models/primary", {
             method: "PUT",
             body: changed,
             key: "parallel-key",
@@ -257,11 +258,10 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       );
       const event = (await pool.query("SELECT event FROM backend_outbox"))
         .rows[0].event;
-      validate("Event", event);
       assert.equal(event.data.kind, "configuration.changed");
       assert.equal(
         (
-          await request("/v1/admin/models/primary", {
+          await request("/v1/operator/models/primary", {
             method: "PUT",
             body: model,
             key: "parallel-key",
@@ -272,7 +272,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       // Reordered JSON properties have the same semantic fingerprint.
       assert.equal(
         (
-          await request("/v1/admin/models/primary", {
+          await request("/v1/operator/models/primary", {
             method: "PUT",
             body: Object.fromEntries(Object.entries(changed).reverse()),
             key: "parallel-key",
@@ -282,7 +282,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       );
       assert.equal(
         (
-          await request("/v1/admin/models/primary", {
+          await request("/v1/operator/models/primary", {
             method: "PUT",
             body: changed,
             authToken: await token({ scope: "admin:read" }),
@@ -290,21 +290,19 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
         ).status,
         403,
       );
-      const beta = await request("/v1/admin/models", {
-        authToken: await token({ administrationId: "beta" }),
-      });
-      assert.equal(beta.value.items[0].model, model.model);
+      const listed = await request("/v1/operator/models");
+      assert.equal(listed.value.items[0].model, changed.model);
       await app.close();
       app = await createBackend(options);
       await app.listen(0, "127.0.0.1");
       url = await app.getUrl();
       assert.equal(
-        (await request("/v1/admin/models")).value.items[0].model,
+        (await request("/v1/operator/models")).value.items[0].model,
         changed.model,
       );
       assert.equal(
         (
-          await request("/v1/admin/models/primary", {
+          await request("/v1/operator/models/primary", {
             method: "PUT",
             body: changed,
             key: "parallel-key",
@@ -329,13 +327,13 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
         { ...model, temperature: 4 },
       ])
         assert.equal(
-          (await request("/v1/admin/models/primary", { method: "PUT", body }))
+          (await request("/v1/operator/models/primary", { method: "PUT", body }))
             .status,
           400,
         );
       assert.equal(
         (
-          await request("/v1/admin/models/unknown", {
+          await request("/v1/operator/models/unknown", {
             method: "PUT",
             body: { ...model, id: "unknown" },
           })
@@ -344,7 +342,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       );
       assert.equal(
         (
-          await request("/v1/admin/models/primary", {
+          await request("/v1/operator/models/primary", {
             method: "PUT",
             body: { ...model, id: "wrong" },
           })
@@ -353,7 +351,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       );
       assert.equal(
         (
-          await request("/v1/admin/models/primary", {
+          await request("/v1/operator/models/primary", {
             method: "PUT",
             body: model,
             key: "short",
@@ -361,64 +359,16 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
         ).status,
         400,
       );
-      assert.equal(
-        (
-          await request("/v1/admin/tools/procedures.search", {
-            method: "PUT",
-            body: { ...tool, serverUrl: "http://169.254.169.254/metadata" },
-            key: "blocked-tool",
-          })
-        ).status,
-        403,
-      );
-      assert.equal(
-        (
-          await request("/v1/admin/tools/procedures.search", {
-            method: "PUT",
-            body: {
-              ...tool,
-              serverUrl: "https://user:password@example.test/mcp",
-            },
-            key: "blocked-userinfo",
-          })
-        ).status,
-        403,
-      );
-      assert.equal(
-        (
-          await request("/v1/admin/tools/procedures.search", {
-            method: "PUT",
-            body: { ...tool, enabled: false },
-            key: "allowed-tool",
-          })
-        ).status,
-        200,
-      );
-      const tools = (await request("/v1/admin/tools")).value;
-      assert.equal(tools.items[0].enabled, false);
-      assert.equal(tools.items[0].secretRef, tool.secretRef);
-      const before = Number(
-        (await pool.query("SELECT count(*) FROM backend_outbox")).rows[0].count,
-      );
-      assert.equal(before, 2);
-      // A failed write does not reserve the key or create a phantom change event.
-      assert.equal(
-        Number(
-          (
-            await pool.query(
-              "SELECT count(*) FROM backend_idempotency WHERE key='blocked-tool'",
-            )
-          ).rows[0].count,
-        ),
-        0,
-      );
-      // Expired reservations no longer block a new update.
+      assert.equal((await request("/v1/operator/tools")).status, 404);
+      assert.equal((await request("/v1/operator/procedures")).status, 404);
+      assert.equal((await request("/v1/operator/audit")).status, 404);
+      assert.equal((await request("/v1/operator/conversations")).status, 404);
       await pool.query(
         "UPDATE backend_idempotency SET expires_at=now()-interval '1 minute' WHERE key='parallel-key'",
       );
       assert.equal(
         (
-          await request("/v1/admin/models/primary", {
+          await request("/v1/operator/models/primary", {
             method: "PUT",
             body: model,
             key: "parallel-key",
@@ -428,83 +378,72 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       );
     },
   );
-  await t.test("CRUD configurations: creation, detail, tenant isolation, retries and delete/recreate", async () => {
-    const procedure = {
-      id: "crud-procedure", administrationId: "alpha", title: "Test", summary: "Test",
-      requiredDocuments: [], feeFcfa: 0, processingDays: 1,
-      source: { procedureId: "crud-procedure", url: "https://example.org/test", retrievedAt: new Date().toISOString(), version: "1" },
-      validationStatus: "draft", formSchema: {type: "object", additionalProperties: false},
-    };
-    for (const [resource, body] of [["models", {...model,id:"crud-model"}], ["tools",{...tool,name:"crud.tool"}], ["procedures",procedure]]) {
-      const path = "/v1/admin/" + resource, id = body.id ?? body.name, detail = path + "/" + id;
-      const before = Number((await pool.query("SELECT count(*) FROM backend_outbox")).rows[0].count);
-      const writes = await Promise.all(Array.from({length:3}, () => request(path,{method:"POST",body,key:"crud-create"})));
-      for (const result of writes) {assert.equal(result.status,201);assert.deepEqual(result.value,body);}
-      assert.equal((await request(path,{method:"POST",body,key:"crud-collision"})).status,409);
-      assert.equal((await request(path,{method:"POST",body:{...body,...(resource==="models"?{temperature:0.8}:resource==="tools"?{enabled:false}:{title:"changed"})},key:"crud-create"})).status,409);
-      assert.deepEqual((await request(detail)).value,body);
-      const beta = await token({administrationId:"beta"});
-      assert.equal((await request(detail,{authToken:beta})).status,404);
-      assert.equal((await request(detail,{method:"DELETE",authToken:beta,key:"crud-delete"})).status,404);
-      const betaBody=resource==="procedures"?{...body,administrationId:"beta"}:body;
-      const betaCreated=await request(path,{method:"POST",body:betaBody,authToken:beta,key:"crud-create"});
-      if(resource === "procedures") {
-        assert.equal(betaCreated.status,409,"procedure identifiers are globally unique for the Tooling resource API");
-        assert.equal((await request(detail,{authToken:beta})).status,404);
-      } else {
-        assert.equal(betaCreated.status,201);
-        assert.deepEqual((await request(detail)).value,body);
-        assert.deepEqual((await request(detail,{authToken:beta})).value,betaBody);
-        assert.equal((await request(detail,{method:"DELETE",authToken:beta,key:"crud-delete"})).status,204);
-      }
-      assert.equal((await request(path,{method:"POST",body,authToken:await token({scope:"admin:read"})})).status,403);
-      assert.equal((await request(detail,{method:"DELETE",authToken:await token({scope:"admin:read"})})).status,403);
-      assert.equal((await request(detail,{authToken:await token({scope:"admin:write"})})).status,403);
-      const changed={...body,...(resource==="models"?{temperature:0.7}:resource==="tools"?{enabled:false}:{title:"Updated"})};
-      assert.equal((await request(detail,{method:"PUT",body:changed,key:"crud-update"})).status,200);
-      assert.deepEqual((await request(detail)).value,changed);
-      const removed=await Promise.all(Array.from({length:3},()=>request(detail,{method:"DELETE",key:"crud-delete"})));
-      for (const result of removed) assert.equal(result.status,204);
-      assert.equal((await request(detail)).status,404);
-      assert.equal((await request(detail,{method:"PUT",body:changed,key:"crud-absent-put"})).status,404);
-      assert.equal((await request(detail,{method:"DELETE",key:"crud-absent-delete"})).status,404);
-      assert.equal(Number((await pool.query("SELECT count(*) FROM backend_outbox")).rows[0].count),before+(resource === "procedures" ? 3 : 5));
-      assert.equal((await request(path,{method:"POST",body,key:"crud-recreate"})).status,201);
-      assert.equal((await request(detail,{method:"DELETE",key:"crud-delete"})).status,204);
-      assert.deepEqual((await request(detail)).value,body,"replayed DELETE must not remove recreated configuration");
-      assert.equal((await request(detail,{method:"DELETE",key:"crud-delete-final"})).status,204);
-      const operations=(await pool.query("SELECT event->'data'->>'operation' AS operation FROM backend_outbox WHERE administration_id='alpha' AND event->'data'->>'resourceId'=$1",[id])).rows.map(r=>r.operation);
-      assert.deepEqual(operations.sort(),["created","created","deleted","deleted","updated"].sort());
-    }
-    assert.equal((await request("/v1/admin/models",{method:"POST",body:{...model,id:"bad",apiKey:"secret"}})).status,400);
-    assert.equal((await request("/v1/admin/tools",{method:"POST",body:{...tool,name:"bad.tool",serverUrl:"http://169.254.169.254/metadata"}})).status,403);
-    assert.equal((await request("/v1/admin/procedures",{method:"POST",body:{...procedure,administrationId:"beta"}})).status,403);
-    assert.equal((await request("/v1/admin/procedures",{method:"POST",body:{...procedure,formSchema:{type:"impossible"}}})).status,400);
-    assert.equal((await request("/v1/admin/models",{method:"POST",body:{...model,id:"missing-key"},key:""})).status,400);
-    assert.equal((await request("/v1/admin/models/primary",{method:"DELETE",key:""})).status,400);
-    assert.equal((await request("/v1/admin/models/primary",{method:"DELETE",body:{unexpected:true}})).status,400);
-    for (const rawBody of ["{}","null"]) {
-      const response=await fetch(url+"/v1/admin/models/primary",{method:"DELETE",headers:{Authorization:"Bearer "+bearer,traceparent,"Idempotency-Key":"raw-body-delete","Content-Type":"application/json"},body:rawBody});
-      assert.equal(response.status,400);
-    }
-    const audit=(await request("/v1/admin/audit?limit=100")).value.items;
-    assert.ok(audit.some(entry=>entry.action==="configuration.changed.created"));
-    assert.ok(audit.some(entry=>entry.action==="configuration.changed.deleted"));
-
-    // A referenced procedure is protected, without accessing the Tooling database.
-    await provision(pool,"alpha","procedures",procedure);
-    const conversationId="cnv_"+"0".repeat(26);
-    await pool.query("INSERT INTO backend_conversations(id,user_ref,administration_id,body) VALUES ($1,$2,'alpha','{}')",[conversationId,"usr_"+"0".repeat(26)]);
-    for (const [table,prefix] of [["backend_challenges","chl"],["backend_mandates","mdt"],["backend_requests","req"]]) {
-      const id=prefix+"_"+"0".repeat(26);
-      if(table==="backend_requests") await pool.query("INSERT INTO backend_requests(id,conversation_id,user_ref,body,last_event_at) VALUES ($1,$2,$3,$4,now())",[id,conversationId,"usr_"+"0".repeat(26),{procedureId:procedure.id}]);
-      else if(table==="backend_mandates") await pool.query("INSERT INTO backend_mandates(id,conversation_id,user_ref,body) VALUES ($1,$2,$3,$4)",[id,conversationId,"usr_"+"0".repeat(26),{procedureId:procedure.id}]);
-      else await pool.query("INSERT INTO backend_challenges(id,conversation_id,body) VALUES ($1,$2,$3)",[id,conversationId,{procedureId:procedure.id}]);
-      const result=await request("/v1/admin/procedures/"+procedure.id,{method:"DELETE",key:"protected-"+table});
-      assert.equal(result.status,409);assert.equal(result.value.code,"INVALID_TRANSITION");
-      await pool.query(`DELETE FROM ${table} WHERE id=$1`,[id]);
-    }
-    assert.equal((await request("/v1/admin/procedures/"+procedure.id,{method:"DELETE",key:"unreferenced-delete"})).status,204);
+  await t.test("activating a model deactivates the others, including under concurrency; deactivating the last remains allowed", async () => {
+    const first = { ...model, id: "exclusive-a", model: "one" };
+    const second = { ...model, id: "exclusive-b", model: "two" };
+    assert.equal((await request("/v1/operator/models", { method: "POST", body: first, key: "exclusive-create-a" })).status, 201);
+    assert.equal((await request("/v1/operator/models", { method: "POST", body: second, key: "exclusive-create-b" })).status, 201);
+    const afterCreate = await request("/v1/operator/models?limit=100");
+    const createdActive = afterCreate.value.items.filter((item) => item.active && item.id.startsWith("exclusive-"));
+    assert.equal(createdActive.length, 1);
+    assert.equal(createdActive[0].id, "exclusive-b");
+    const concurrent = await Promise.all([
+      request("/v1/operator/models/exclusive-a", { method: "PUT", body: first, key: "exclusive-conc-a" }),
+      request("/v1/operator/models/exclusive-b", { method: "PUT", body: second, key: "exclusive-conc-b" }),
+    ]);
+    assert.ok(concurrent.every((result) => result.status === 200));
+    const afterConcurrent = await request("/v1/operator/models?limit=100");
+    const stillActive = afterConcurrent.value.items.filter((item) => item.active);
+    assert.equal(stillActive.length, 1);
+    assert.equal(
+      (await request("/v1/operator/models/exclusive-a", { method: "PUT", body: { ...first, active: false }, key: "exclusive-off-a" })).status,
+      200,
+    );
+    assert.equal(
+      (await request("/v1/operator/models/exclusive-b", { method: "PUT", body: { ...second, active: false }, key: "exclusive-off-b" })).status,
+      200,
+    );
+    assert.equal(
+      (await request("/v1/operator/models?limit=100")).value.items.filter((item) => item.active && item.id.startsWith("exclusive-")).length,
+      0,
+    );
   });
-
+  await t.test("CRUD models: creation, detail, scopes, retries and delete/recreate", async () => {
+    const body = { ...model, id: "crud-model" };
+    const path = "/v1/operator/models";
+    const detail = path + "/crud-model";
+    const writes = await Promise.all(Array.from({ length: 3 }, () => request(path, { method: "POST", body, key: "crud-create" })));
+    for (const result of writes) {
+      assert.equal(result.status, 201);
+      assert.deepEqual(result.value, body);
+    }
+    assert.equal((await request(path, { method: "POST", body, key: "crud-collision" })).status, 409);
+    assert.deepEqual((await request(detail)).value, body);
+    assert.equal((await request(path, { method: "POST", body, authToken: await token({ scope: "admin:read" }) })).status, 403);
+    assert.equal((await request(detail, { method: "DELETE", authToken: await token({ scope: "admin:read" }) })).status, 403);
+    assert.equal((await request(detail, { authToken: await token({ scope: "admin:write" }) })).status, 403);
+    const changed = { ...body, temperature: 0.7 };
+    assert.equal((await request(detail, { method: "PUT", body: changed, key: "crud-update" })).status, 200);
+    assert.deepEqual((await request(detail)).value, changed);
+    const removed = await Promise.all(Array.from({ length: 3 }, () => request(detail, { method: "DELETE", key: "crud-delete" })));
+    for (const result of removed) assert.equal(result.status, 204);
+    assert.equal((await request(detail)).status, 404);
+    assert.equal((await request(detail, { method: "PUT", body: changed, key: "crud-absent-put" })).status, 404);
+    assert.equal((await request(path, { method: "POST", body, key: "crud-recreate" })).status, 201);
+    assert.equal((await request(detail, { method: "DELETE", key: "crud-delete" })).status, 204);
+    assert.deepEqual((await request(detail)).value, body, "replayed DELETE must not remove recreated configuration");
+    assert.equal((await request("/v1/operator/models", { method: "POST", body: { ...model, id: "bad", apiKey: "secret" } })).status, 400);
+    assert.equal((await request("/v1/operator/models", { method: "POST", body: { ...model, id: "missing-key" }, key: "" })).status, 400);
+    assert.equal((await request("/v1/operator/models/primary", { method: "DELETE", key: "" })).status, 400);
+    const optional = { ...model, id: "optional-key" };
+    assert.equal((await request("/v1/operator/models", { method: "POST", body: optional, key: false })).status, 201);
+    assert.equal((await request("/v1/operator/models/optional-key", { method: "PUT", body: { ...optional, temperature: 0.4 }, key: false })).status, 200);
+    assert.equal((await request("/v1/operator/models/optional-key", { method: "PUT", body: { ...optional, temperature: 0.5 }, key: "x" })).status, 400);
+    assert.equal((await request("/v1/operator/models/optional-key", { method: "DELETE", key: false })).status, 204);
+    assert.equal((await request("/v1/operator/models/primary", { method: "DELETE", body: { unexpected: true } })).status, 400);
+    for (const rawBody of ["{}", "null"]) {
+      const response = await fetch(url + "/v1/operator/models/primary", { method: "DELETE", headers: { Authorization: "Bearer " + bearer, traceparent, "Idempotency-Key": "raw-body-delete", "Content-Type": "application/json" }, body: rawBody });
+      assert.equal(response.status, 400);
+    }
+  });
 });

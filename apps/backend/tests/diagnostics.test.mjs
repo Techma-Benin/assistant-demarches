@@ -8,7 +8,7 @@ import {Agent} from '../dist/apps/backend/src/agent.js';
 import {HttpModels} from '../dist/apps/backend/src/model.js';
 import {identifier} from '../dist/apps/backend/src/domain.js';
 import {DiagnosticProblem,describeError} from '../dist/apps/backend/src/diagnostics.js';
-const configuration={id:'primary',provider:'synthetic',model:'test-model',promptVersion:'agent-v1',temperature:0.2,active:true};
+const configuration={id:'primary',label:'Test',baseUrl:'http://127.0.0.1:9/v1',protocol:'chat-completions',model:'test-model',apiKeyRef:'TEST_KEY',temperature:0.2,active:true};
 const trace='00-12345678901234567890123456789012-1234567890123456-01';
 
 test('Provider errors retain HTTP diagnostics without persisting prompts, keys or raw provider messages',async()=>{
@@ -18,13 +18,14 @@ test('Provider errors retain HTTP diagnostics without persisting prompts, keys o
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  try {
-  const models=new HttpModels({synthetic:{baseUrl:`http://127.0.0.1:${server.address().port}/v1/`,protocol:'chat-completions',apiKeyEnv:'TEST_KEY'}},{TEST_KEY:'secret-key-test'});
-  await assert.rejects(models.generate(configuration,[{role:'user',content:'PRIVATE_PROMPT'}],[]),error=>{
+  const baseUrl=`http://127.0.0.1:${server.address().port}/v1`;
+  const models=new HttpModels({synthetic:{baseUrl:baseUrl+'/',protocol:'chat-completions',apiKeyEnv:'TEST_KEY'}},{TEST_KEY:'secret-key-test'});
+  await assert.rejects(models.generate({...configuration,baseUrl},[{role:'user',content:'PRIVATE_PROMPT'}],[]),error=>{
    const diagnostic=describeError(error);
    assert.equal(diagnostic.upstreamStatus,403);
    assert.equal(diagnostic.upstreamRequestId,'upstream-test-001');
    assert.equal(diagnostic.reason,'provider_network_access_denied');
-   assert.equal(diagnostic.provider,'synthetic');
+   assert.equal(diagnostic.provider,new URL(baseUrl).host);
    assert.doesNotMatch(JSON.stringify(diagnostic),/PRIVATE_PROMPT|secret-key-test/);
    return true;
   });
@@ -36,10 +37,10 @@ test('Failed processing is traceable and its cause survives retry exhaustion',as
  const previousError=console.error;const logs=[];
  console.error=(line)=>logs.push(String(line));
  try {
-  await migrate(pool);await provision(pool,'demo','models',configuration);
+  await migrate(pool);await provision(pool,'global','models',configuration);
   const conversations=new Conversations(pool);
-  const user={userRef:identifier('usr'),administrationId:'demo',channel:'portal',expiresAt:Date.now()+3600000};
-  const conversation=await conversations.create(user,{channel:'web',locale:'fr'},'diagnostic-create-001');
+  const user={userRef:identifier('usr'),administrationId:'global',channel:'web',expiresAt:Date.now()+3600000};
+  const conversation=await conversations.create(user,{locale:'fr'},'diagnostic-create-001');
   const input={id:identifier('msg'),content:{type:'text',text:'PRIVATE_PROMPT'},sentAt:new Date().toISOString()};
   await conversations.accept(user,conversation.id,input,'diagnostic-message-001',trace);
   const failure=new DiagnosticProblem('Appel au fournisseur IA refusé (HTTP 403).',{stage:'model.response',provider:'synthetic',model:'test-model',upstreamStatus:403,reason:'provider_network_access_denied'});

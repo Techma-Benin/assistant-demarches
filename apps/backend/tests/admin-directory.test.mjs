@@ -1,186 +1,355 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import http from "node:http";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createBackend } from "../dist/apps/backend/src/app.js";
 import { database, migrate } from "../dist/apps/backend/src/database.js";
-import { requireDepartmentPrincipal } from "../dist/apps/backend/src/department-auth.js";
+import { Conversations } from "../dist/apps/backend/src/conversations.js";
+import { Identities } from "../dist/apps/backend/src/identity.js";
+import { Files } from "../dist/apps/backend/src/files.js";
+import { LocalStorage } from "../dist/apps/backend/src/storage.js";
+import { identifier } from "../dist/apps/backend/src/domain.js";
 import { isolatedDatabase } from "./helpers.mjs";
 
-test("administrative directory: signed identity, department isolation, concurrency and immediate revocation", async t => {
-  const pg = await isolatedDatabase(), pool = database(pg.connection);
-  t.after(async () => { await pool.end(); await pg.close(); });
+const administration = {
+  id: "justice",
+  name: "Justice",
+  shortName: "JUS",
+  themes: ["justice"],
+  connection: { status: "connected", since: "2026-01-01T00:00:00.000Z" },
+};
+const officialRecord = (subject, role) => ({
+  id: role === "admin" ? "off_01JC0000000000000000000002" : "off_01JC0000000000000000000001",
+  subject,
+  email: subject === "official-admin" ? "admin@b.bj" : "a@b.bj",
+  displayName: role === "admin" ? "Administrateur" : "Agent",
+  jobTitle: role === "admin" ? "Chef de service" : "Agent",
+  administrationId: "justice",
+  role,
+  avatarUrl: null,
+  active: true,
+});
+const meOf = (subject) => {
+  const role = subject === "official-admin" ? "admin" : "agent";
+  return {
+    official: officialRecord(subject, role),
+    administration,
+    permissions:
+      role === "admin"
+        ? ["cases:read", "cases:act", "officials:read", "officials:manage"]
+        : ["cases:read", "cases:act"],
+  };
+};
+const metrics = {
+  administrationId: "justice",
+  period: { from: "2026-01-01T00:00:00.000Z", to: "2026-12-31T23:59:59.000Z" },
+  received: 0,
+  pending: 0,
+  informationRequested: 0,
+  completed: 0,
+  completedByAssistant: 0,
+  rejected: 0,
+  medianProcessingHours: null,
+  byChannel: [],
+  topProcedures: [],
+};
+const caseId = "cas_01JC0000000000000000000001";
+const documentId = "doc_01JC0000000000000000000001";
+const foreignCaseId = "cas_01JC0000000000000000000099";
+const foreignDocumentId = "doc_01JC0000000000000000000099";
+
+test("v2 admin API: auth order, Keycloak compensation, 401/403/nominal/404", async (t) => {
+  const pg = await isolatedDatabase();
+  const pool = database(pg.connection);
+  const directory = mkdtempSync(join(tmpdir(), "techma-admin-files-"));
+  t.after(async () => {
+    await pool.end();
+    await pg.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
   await migrate(pool);
-  await migrate(pool);
-  const { privateKey, publicKey } = await generateKeyPair("RS256"), kid = "directory-test";
-  const issuer = "https://identity.example.test/directory";
-  const auth = { issuer, audience: "techma-backend", key: createLocalJWKSet({ keys: [{ ...await exportJWK(publicKey), kid, alg: "RS256" }] }) };
-  const token = (subject, claims = {}) => new SignJWT(claims).setProtectedHeader({ alg: "RS256", kid }).setIssuer(issuer).setAudience(auth.audience).setSubject(subject).setIssuedAt().setExpirationTime("5m").sign(privateKey);
-  const root = await token("root", { scope: "admin:super" });
-  const app = await createBackend({ pool, auth, allowedMcpUrls: new Set() });
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const kid = "admin-v2";
+  let keycloakCreates = 0;
+  const keycloakDisabled = [];
+  const keycloak = http.createServer(async (req, res) => {
+    if (req.method === "POST" && req.url === "/admin/realms/techma/users") {
+      keycloakCreates += 1;
+      const subject = "kc-user-" + keycloakCreates;
+      res.writeHead(201, { location: "http://127.0.0.1/admin/realms/techma/users/" + subject });
+      res.end();
+      return;
+    }
+    if (req.url?.startsWith("/admin/realms/techma/users/")) {
+      keycloakDisabled.push(req.url.split("/").at(-1));
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise((resolve) => keycloak.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => { keycloak.closeAllConnections(); keycloak.close(resolve); }));
+  const issuer = "http://127.0.0.1:" + keycloak.address().port;
+  const auth = { issuer, audience: "techma-backend", key: createLocalJWKSet({ keys: [{ ...(await exportJWK(publicKey)), kid, alg: "RS256" }] }) };
+  const token = (subject, claims = {}) =>
+    new SignJWT(claims).setProtectedHeader({ alg: "RS256", kid }).setIssuer(issuer).setAudience(auth.audience).setSubject(subject).setIssuedAt().setExpirationTime("5m").sign(privateKey);
+  const official = await token("official-1", { realm_access: { roles: ["official"] } });
+  const adminOfficial = await token("official-admin", { realm_access: { roles: ["official"] } });
+  const citizen = await token("citizen-1", { scope: "citizen" });
+  const operator = await token("operator-1", { realm_access: { roles: ["operator"] }, scope: "admin:read" });
+  let failOfficialCreate = false;
+  let keycloakScope = "";
+  const xroad = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const raw = Buffer.concat(chunks);
+    const json = () => {
+      res.writeHead(200, { "content-type": "application/json" });
+    };
+    const problem = (status, code) => {
+      res.writeHead(status, { "content-type": "application/problem+json" });
+      res.end(JSON.stringify({ type: "about:blank", title: code, status, code, detail: code, traceId: "a".repeat(32) }));
+    };
+    const subject = req.headers["x-official-subject"];
+    if (req.url === "/v1/officials/me" && req.method === "GET") {
+      json();
+      res.end(JSON.stringify(meOf(subject)));
+      return;
+    }
+    if (req.url === "/v1/officials/me" && req.method === "PUT") {
+      json();
+      res.end(JSON.stringify({ ...officialRecord(subject, subject === "official-admin" ? "admin" : "agent"), ...JSON.parse(raw.toString() || "{}") }));
+      return;
+    }
+    if (req.url === "/v1/officials/me/avatar") {
+      json();
+      res.end(JSON.stringify({ ...officialRecord(subject, "agent"), avatarUrl: JSON.parse(raw.toString()).avatarUrl }));
+      return;
+    }
+    if (req.url?.startsWith("/v1/administrations")) {
+      json();
+      res.end(JSON.stringify({ items: [administration] }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/v1/officials") {
+      if (failOfficialCreate) return problem(409, "CONFLICT");
+      const body = JSON.parse(raw.toString());
+      res.writeHead(201, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ...officialRecord(body.subject, body.role), email: body.email, displayName: body.displayName, jobTitle: body.jobTitle, id: "off_01JC0000000000000000000003" }));
+      return;
+    }
+    if (req.url === "/v1/officials") {
+      json();
+      res.end(JSON.stringify({ items: [], nextCursor: null }));
+      return;
+    }
+    if (req.method === "PUT" && req.url?.startsWith("/v1/officials/")) {
+      json();
+      res.end(JSON.stringify(officialRecord(subject, "agent")));
+      return;
+    }
+    if (req.url?.includes("/documents/" + foreignDocumentId) || req.url?.startsWith("/v1/cases/" + foreignCaseId)) {
+      return problem(404, "NOT_FOUND");
+    }
+    if (req.url?.includes("/documents/")) {
+      res.writeHead(200, { "content-type": "application/pdf" });
+      res.end("%PDF-1.4 synthetic");
+      return;
+    }
+    if (req.method === "POST" && req.url?.includes("/actions")) {
+      json();
+      res.end(JSON.stringify({
+        id: caseId,
+        reference: "SIM-JUS-2026-000001",
+        simulated: true,
+        procedureId: "PS00373",
+        title: "Casier",
+        administrationId: "justice",
+        applicantRef: "usr_01JC0000000000000000000001",
+        requestId: "req_01JC0000000000000000000001",
+        channel: "web",
+        status: "in_review",
+        fields: {},
+        documents: [],
+        payment: { amountFcfa: 0, status: "not_required", reference: null, paidAt: null, simulated: true },
+        steps: [],
+        informationRequest: null,
+        claimedBy: "off_01JC0000000000000000000001",
+        completedBy: null,
+        decisionNote: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }));
+      return;
+    }
+    if (req.url?.startsWith("/v1/cases/") && req.url !== "/v1/cases/" + caseId && !req.url.startsWith("/v1/cases/" + caseId + "/")) {
+      return problem(404, "NOT_FOUND");
+    }
+    if (req.url?.startsWith("/v1/cases")) {
+      json();
+      res.end(JSON.stringify({ items: [], nextCursor: null }));
+      return;
+    }
+    if (req.url?.startsWith("/v1/metrics")) {
+      json();
+      res.end(JSON.stringify(metrics));
+      return;
+    }
+    if (req.url?.startsWith("/v1/activity")) {
+      json();
+      res.end(JSON.stringify({ items: [], nextCursor: null }));
+      return;
+    }
+    problem(404, "NOT_FOUND");
+  });
+  await new Promise((resolve) => xroad.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => { xroad.closeAllConnections(); xroad.close(resolve); }));
+  const runtime = {
+    pool,
+    auth,
+    identities: new Identities(pool),
+    conversations: new Conversations(pool),
+    files: new Files(pool, new LocalStorage(directory)),
+    publicUrl: "http://127.0.0.1:4010",
+    xroadUrl: "http://127.0.0.1:" + xroad.address().port + "/",
+    serviceTokens: {
+      get: async (scope) => {
+        if (scope === "keycloak-admin") keycloakScope = scope;
+        return "mock-xroad";
+      },
+    },
+  };
+  const app = await createBackend({ pool, auth, allowedMcpUrls: new Set(), runtime });
   t.after(() => app.close());
   await app.listen(0, "127.0.0.1");
-  const url = await app.getUrl(), traceparent = "00-" + "3".repeat(32) + "-" + "4".repeat(16) + "-01";
-  let sequence = 0;
-  async function request(path, options = {}) {
-    const { method = "GET", body, bearer = root, key = "directory-key-" + ++sequence, headers = {} } = options;
-    const response = await fetch(url + "/v1/admin" + path, { method, headers: { ...(bearer ? { Authorization: "Bearer " + bearer } : {}), traceparent, "Idempotency-Key": key, ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...headers }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
-    return { status: response.status, value: response.status === 204 ? null : await response.json() };
+  const base = await app.getUrl();
+  const tp = "00-" + "3".repeat(32) + "-" + "4".repeat(16) + "-01";
+  const call = (path, bearer, extra = {}) =>
+    fetch(base + path, {
+      method: extra.method ?? "GET",
+      headers: {
+        ...(bearer ? { Authorization: "Bearer " + bearer } : {}),
+        traceparent: tp,
+        ...(extra.key === false ? {} : { "Idempotency-Key": extra.key ?? "admin-key-abcdefgh" }),
+        ...extra.headers,
+      },
+      body: extra.body,
+    });
+  const jsonBody = (value) => ({ headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
+  const routes = [
+    { method: "GET", path: "/v1/admin/me" },
+    { method: "PUT", path: "/v1/admin/me", ...jsonBody({ displayName: "Nom", jobTitle: "Poste" }) },
+    { method: "PUT", path: "/v1/admin/me/avatar", headers: { "X-File-Mime-Type": "image/jpeg", "Content-Type": "application/octet-stream" }, body: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) },
+    { method: "GET", path: "/v1/admin/avatars/off_01JC0000000000000000000001" },
+    { method: "GET", path: "/v1/admin/administrations" },
+    { method: "GET", path: "/v1/admin/officials" },
+    { method: "POST", path: "/v1/admin/officials", ...jsonBody({ email: "new.agent@demo.techma.bj", displayName: "Nouvel Agent", jobTitle: "Instructeur", administrationId: "justice", role: "agent" }) },
+    { method: "PUT", path: "/v1/admin/officials/off_01JC0000000000000000000001", ...jsonBody({ administrationId: "justice", role: "agent", active: true }) },
+    { method: "GET", path: "/v1/admin/cases" },
+    { method: "GET", path: "/v1/admin/cases/" + caseId },
+    { method: "POST", path: "/v1/admin/cases/" + caseId + "/actions", ...jsonBody({ action: "claim", note: null }) },
+    { method: "GET", path: "/v1/admin/cases/" + caseId + "/documents/" + documentId },
+    { method: "GET", path: "/v1/admin/dashboard" },
+    { method: "GET", path: "/v1/admin/activity" },
+    { method: "GET", path: "/v1/admin/unanswered" },
+    { method: "POST", path: "/v1/admin/unanswered/unq_01JC0000000000000000000001/resolve" },
+  ];
+  for (const route of routes) {
+    const extra = { method: route.method, headers: route.headers, body: route.body };
+    assert.equal((await call(route.path, undefined, extra)).status, 401, route.method + " " + route.path + " sans jeton");
+    assert.equal((await call(route.path, citizen, extra)).status, 403, route.method + " " + route.path + " citoyen");
+    assert.equal((await call(route.path, operator, extra)).status, 403, route.method + " " + route.path + " opérateur");
   }
-  const addUser = (subject, memberships, extra = {}) => request("/users", { method: "POST", body: { subject, displayName: subject, memberships, ...extra } });
-  const m = (departmentId, role = "agent", active = true) => ({ departmentId, role, active });
-  const principal = async bearer => requireDepartmentPrincipal({ get: name => name === "authorization" ? "Bearer " + bearer : undefined }, auth, pool);
+  assert.equal((await call("/v1/admin/me", undefined, { method: "PUT", ...jsonBody({}) })).status, 401, "validate après authentification");
+  const createdBefore = keycloakCreates;
+  const forbiddenCreate = await call("/v1/admin/officials", official, {
+    method: "POST",
+    ...jsonBody({ email: "orphan@demo.techma.bj", displayName: "Orphelin", jobTitle: "Agent", administrationId: "justice", role: "agent" }),
+  });
+  assert.equal(forbiddenCreate.status, 403);
+  assert.equal(keycloakCreates, createdBefore, "aucun compte Keycloak pour un agent sans officials:manage");
 
-  await t.test("department writes require super admin, validate input, and replay concurrent requests once", async () => {
-    assert.equal((await request("/me", { bearer: null })).status, 401);
-    const results = await Promise.all(Array.from({ length: 3 }, () => request("/departments", { method: "POST", body: { id: "alpha", name: "Ministère Alpha" }, key: "create-alpha" })));
-    for (const result of results) { assert.equal(result.status, 201, JSON.stringify(result.value)); assert.deepEqual(result.value, results[0].value); }
-    assert.equal(Number((await pool.query("SELECT count(*) FROM backend_admin_directory_audit WHERE target='alpha'")).rows[0].count), 1);
-    assert.equal((await request("/departments", { method: "POST", body: { id: "alpha", name: "Autre" }, key: "create-alpha" })).status, 409);
-    assert.equal((await request("/departments", { method: "POST", body: { id: "beta", name: "Ministère Beta" } })).status, 201);
-    assert.equal((await request("/departments", { method: "POST", body: { id: "bad", name: " ", unexpected: true } })).status, 400);
-    assert.equal((await request("/departments", { method: "POST", body: { id: "bad/id", name: "Bad" } })).status, 400);
-    assert.equal((await request("/departments", { method: "POST", body: { id: "gamma", name: "Gamma" }, key: "" })).status, 400);
-    assert.equal((await request("/departments", { headers: { traceparent: "bad" } })).status, 400);
-    assert.equal((await addUser("root", [], { superAdmin: true })).status, 201);
-    for (const [subject, memberships] of [["admin-alpha", [m("alpha", "admin")]], ["admin-beta", [m("beta", "admin")]], ["mixed", [m("alpha", "admin"), m("beta")]], ["agent-alpha", [m("alpha")]], ["shared", [m("alpha"), m("beta")]]]) {
-      const result = await addUser(subject, memberships);
-      assert.equal(result.status, 201, JSON.stringify(result.value));
-    }
-  });
+  assert.equal((await call("/v1/admin/me", official)).status, 200);
+  assert.equal((await call("/v1/admin/me", official, { method: "PUT", ...jsonBody({ displayName: "Agent Justice", jobTitle: "Instructeur" }) })).status, 200);
+  assert.equal((await call("/v1/admin/me/avatar", official, { method: "PUT", headers: { "X-File-Mime-Type": "image/jpeg", "Content-Type": "application/octet-stream" }, body: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })).status, 200);
+  assert.equal((await call("/v1/admin/avatars/off_01JC0000000000000000000001", official)).status, 200);
+  assert.equal((await call("/v1/admin/administrations", official)).status, 200);
+  assert.equal((await call("/v1/admin/officials", official)).status, 200);
+  assert.equal((await call("/v1/admin/cases", official)).status, 200);
+  assert.equal((await call("/v1/admin/cases/" + caseId, official)).status, 200);
+  assert.equal((await call("/v1/admin/cases/" + caseId + "/actions", official, { method: "POST", ...jsonBody({ action: "claim", note: null }) })).status, 200);
+  assert.equal((await call("/v1/admin/cases/" + caseId + "/documents/" + documentId, official)).status, 200);
+  assert.equal((await call("/v1/admin/dashboard", official)).status, 200);
+  assert.equal((await call("/v1/admin/activity", official)).status, 200);
+  assert.equal((await call("/v1/admin/unanswered", official)).status, 200);
+  const unansweredId = identifier("unq");
+  const conversationId = identifier("cnv");
+  await pool.query(
+    "INSERT INTO backend_conversations(id,user_ref,administration_id,body) VALUES($1,$2,'global',$3)",
+    [conversationId, identifier("usr"), { id: conversationId, channel: "web" }],
+  );
+  await pool.query(
+    "INSERT INTO backend_unanswered(id,conversation_id,message_id,administration_id,reason,status) VALUES($1,$2,$3,$4,$5,'open')",
+    [unansweredId, conversationId, identifier("msg"), "justice", "no_source"],
+  );
+  assert.equal((await call("/v1/admin/unanswered/" + unansweredId + "/resolve", official, { method: "POST" })).status, 200);
+  assert.equal((await call("/v1/admin/officials/off_01JC0000000000000000000001", official, { method: "PUT", ...jsonBody({ administrationId: "justice", role: "agent", active: true }) })).status, 200);
 
-  const adminAlpha = await token("admin-alpha", { administrationId: "beta", scope: "admin:super admin:read admin:write" });
-  const adminBeta = await token("admin-beta"), mixed = await token("mixed"), agentAlpha = await token("agent-alpha"), shared = await token("shared");
-  await t.test("business super admins cannot bypass operator grants, with or without directory enrollment", async () => {
-    const headers = { "X-Administration-Id": "alpha" };
-    const model = { id: "operator-test", provider: "openai-compatible", model: "synthetic-model", promptVersion: "agent-v1", temperature: 0.2, active: true };
-    const assertDenied = async bearer => {
-      assert.equal((await request("/models", { bearer, headers })).status, 403);
-      assert.equal((await request("/models", { bearer, headers, method: "POST", body: model })).status, 403);
-    };
-    await assertDenied(root);
-    const unenrolled = await token("unenrolled-business-super", { scope: "admin:super" });
-    await assertDenied(unenrolled);
-    for (const permission of ["operator:read", "operator:write"]) {
-      await assert.rejects(() => requireDepartmentPrincipal({ get: () => "Bearer " + unenrolled }, auth, pool, permission, "alpha"), { status: 403 });
-    }
-    const dedicated = await token("root", { scope: "admin:super operator:read operator:write" });
-    await assertDenied(dedicated);
-    await pool.query("UPDATE backend_admin_users SET operator_permissions=ARRAY['operator:read','operator:write'] WHERE subject='root'");
-    try {
-      await assertDenied(root);
-      await assertDenied(await token("root", { scope: "admin:super admin:read admin:write" }));
-      assert.equal((await request("/models", { bearer: dedicated, headers })).status, 200);
-      assert.equal((await request("/models", { bearer: dedicated, headers, method: "POST", body: model })).status, 201);
-      const readOnly = await token("root", { scope: "admin:super operator:read" });
-      assert.equal((await request("/models", { bearer: readOnly, headers })).status, 200);
-      assert.equal((await request("/models", { bearer: readOnly, headers, method: "POST", body: { ...model, id: "operator-readonly" } })).status, 403);
-      const writeOnly = await token("root", { scope: "admin:super operator:write" });
-      assert.equal((await request("/models", { bearer: writeOnly, headers })).status, 403);
-      assert.equal((await request("/models", { bearer: writeOnly, headers, method: "POST", body: { ...model, id: "operator-writeonly" } })).status, 201);
-    } finally {
-      await pool.query("UPDATE backend_admin_users SET operator_permissions='{}' WHERE subject='root'");
-    }
-    await assertDenied(dedicated);
-  });
-  await t.test("registered assignments override signed legacy claims and enforce per-department roles", async () => {
-    const me = await request("/me", { bearer: adminAlpha });
-    assert.equal(me.status, 200); assert.equal(me.value.superAdmin, false); assert.deepEqual(me.value.departmentIds, ["alpha"]);
-    assert.ok(me.value.permissions.includes("dept:write"));
-    assert.ok(!me.value.permissions.includes("operator:write"));
-    assert.equal(me.value.identityProvider, "oidc"); assert.equal(me.value.directorySource, "backend-demo-adapter");
-    assert.equal((await request("/departments", { bearer: adminAlpha, method: "POST", body: { id: "gamma", name: "Gamma" } })).status, 403);
-    assert.deepEqual((await request("/departments", { bearer: agentAlpha })).value.items.map(d => d.id), ["alpha"]);
-    assert.equal((await request("/users", { bearer: agentAlpha })).status, 403);
-    assert.equal((await request("/users?departmentId=beta", { bearer: adminAlpha })).status, 403);
-    assert.equal((await request("/users?departmentId=beta", { bearer: mixed })).status, 403);
-    const current = await principal(mixed);
-    assert.equal(current.departmentRoles.alpha, "admin"); assert.equal(current.departmentRoles.beta, "agent");
-    await assert.rejects(() => requireDepartmentPrincipal({ get: () => "Bearer " + mixed }, auth, pool, "users:manage", "beta"), { status: 403 });
-    const local = await request("/users", { bearer: adminAlpha });
-    assert.ok(local.value.items.every(u => u.memberships.every(m => m.departmentId === "alpha")));
-    assert.ok(!local.value.items.some(u => u.subject === "admin-beta"));
-    const forged = await request("/users", { bearer: adminAlpha, method: "POST", body: { subject: "forged", displayName: "Forged", superAdmin: true, memberships: [m("alpha")] } });
-    assert.equal(forged.status, 403);
-    assert.equal((await request("/users", { bearer: adminAlpha, method: "POST", body: { subject: "cross", displayName: "Cross", memberships: [m("beta")] } })).status, 403);
-    assert.equal((await request("/users/admin-beta", { bearer: adminAlpha, method: "PUT", body: { revision: 1, displayName: "Cross" } })).status, 404);
-    assert.equal((await request("/users/shared", { bearer: adminAlpha, method: "PUT", body: { revision: 1, displayName: "Global shared change" } })).status, 403);
-    const changed = await request("/users/shared", { bearer: adminAlpha, method: "PUT", body: { revision: 1, memberships: [m("alpha", "agent", false)] } });
-    assert.equal(changed.status, 200); assert.deepEqual(changed.value.memberships, [m("alpha", "agent", false)]);
-    assert.deepEqual((await request("/me", { bearer: shared })).value.departmentIds, ["beta"]);
-    const betaShared = (await request("/users", { bearer: adminBeta })).value.items.find(u => u.subject === "shared");
-    assert.deepEqual(betaShared.memberships, [m("beta")]);
-  });
+  assert.equal((await call("/v1/admin/cases/" + foreignCaseId, official)).status, 404);
+  assert.equal((await call("/v1/admin/cases/" + caseId + "/documents/" + foreignDocumentId, official)).status, 404);
 
-  await t.test("profile changes are revision protected, strictly validated, idempotent and cannot grant rights", async () => {
-    const profile = (await request("/me", { bearer: agentAlpha })).value;
-    const body = { revision: profile.revision, displayName: "Agent Alpha", email: "agent@example.test", photoUrl: "https://cdn.example.test/avatar.png" };
-    const results = await Promise.all(Array.from({ length: 3 }, () => request("/me", { bearer: agentAlpha, method: "PUT", body, key: "profile-concurrent" })));
-    for (const result of results) { assert.equal(result.status, 200); assert.equal(result.value.revision, 2); assert.equal(result.value.displayName, "Agent Alpha"); }
-    assert.equal(Number((await pool.query("SELECT count(*) FROM backend_admin_directory_audit WHERE actor_subject='agent-alpha' AND action='profile.updated'")).rows[0].count), 1);
-    assert.equal((await request("/me", { bearer: agentAlpha, method: "PUT", body })).status, 409);
-    assert.equal((await request("/me", { bearer: agentAlpha, method: "PUT", body: { ...body, revision: 2, superAdmin: true } })).status, 400);
-    assert.equal((await request("/me", { bearer: agentAlpha, method: "PUT", body: { ...body, revision: 2, photoUrl: "javascript:alert(1)" } })).status, 400);
-    assert.equal((await request("/me", { bearer: agentAlpha, method: "PUT", body: { ...body, revision: 2, photoUrl: "https://user:secret@example.test/a" } })).status, 400);
-    const legacy = await token("legacy-reader", { administrationId: "alpha", scope: "admin:read" });
-    const legacyProfile = await request("/me", { bearer: legacy });
-    assert.equal(legacyProfile.value.revision, 0); assert.ok(!legacyProfile.value.permissions.includes("operator:write"));
-    assert.equal((await request("/me", { bearer: legacy, method: "PUT", body: { revision: 1, displayName: "Reader" } })).status, 409);
-    assert.equal((await request("/me", { bearer: await token("public-user") })).status, 403);
-    const operator = await token("technical-operator", { scope: "operator:read" });
-    const operatorMe = await request("/me", { bearer: operator });
-    assert.equal(operatorMe.status, 200); assert.deepEqual(operatorMe.value.departmentIds, []);
-    assert.deepEqual(operatorMe.value.permissions, ["operator:read"]);
-    // A dedicated signed claim alone is insufficient after directory enrollment.
-    const enrolledToken = await token("agent-alpha", { scope: "operator:read operator:write" });
-    assert.ok(!(await principal(enrolledToken)).permissions.has("operator:read"));
-    await pool.query("UPDATE backend_admin_users SET operator_permissions=ARRAY['operator:read'] WHERE subject='agent-alpha'");
-    const enrolled = await principal(enrolledToken);
-    assert.ok(enrolled.permissions.has("operator:read")); assert.ok(!enrolled.permissions.has("operator:write"));
-    assert.ok(!(await principal(agentAlpha)).permissions.has("operator:read"));
-    await pool.query("UPDATE backend_admin_users SET operator_permissions='{}' WHERE subject='agent-alpha'");
+  failOfficialCreate = true;
+  const compensated = await call("/v1/admin/officials", adminOfficial, {
+    method: "POST",
+    key: "create-official-fail-key",
+    ...jsonBody({ email: "fail@demo.techma.bj", displayName: "Echec X-Road", jobTitle: "Agent", administrationId: "justice", role: "agent" }),
   });
+  assert.equal(compensated.status, 409);
+  assert.equal(keycloakDisabled.length > 0, true, "compte Keycloak désactivé si le X-Road refuse");
+  failOfficialCreate = false;
+  const created = await call("/v1/admin/officials", adminOfficial, {
+    method: "POST",
+    key: "create-official-ok-key1",
+    ...jsonBody({ email: "ok@demo.techma.bj", displayName: "Agent Ok", jobTitle: "Instructeur", administrationId: "justice", role: "agent" }),
+  });
+  assert.equal(created.status, 201, await created.clone().text());
+  const createdBody = await created.json();
+  assert.equal(typeof createdBody.temporaryPassword, "string");
+  assert.equal(keycloakScope, "keycloak-admin");
 
-  await t.test("idempotency never replays a former global view after an administrator is demoted", async () => {
-    assert.equal((await addUser("temporary-super", [m("alpha", "admin")], { superAdmin: true })).status, 201);
-    const formerSuper = await token("temporary-super", { scope: "admin:super" });
-    const body = { subject: "cached-shared", displayName: "Cached shared", memberships: [m("alpha"), m("beta")] };
-    const created = await request("/users", { bearer: formerSuper, method: "POST", body, key: "former-super-cache" });
-    assert.equal(created.status, 201); assert.equal(created.value.memberships.length, 2);
-    assert.equal((await request("/users/temporary-super", { method: "PUT", body: { revision: 1, superAdmin: false } })).status, 200);
-    const replay = await request("/users", { bearer: formerSuper, method: "POST", body, key: "former-super-cache" });
-    assert.equal(replay.status, 403);
-    assert.equal((await request("/me", { bearer: formerSuper })).value.superAdmin, false);
+  const createdWithoutKey = await call("/v1/admin/officials", adminOfficial, {
+    method: "POST",
+    key: false,
+    ...jsonBody({ email: "nockey@demo.techma.bj", displayName: "Sans Clé", jobTitle: "Instructeur", administrationId: "justice", role: "agent" }),
   });
-
-  await t.test("pagination is bounded and concurrent distinct edits cannot silently overwrite", async () => {
-    const first = await request("/departments?limit=1"); assert.equal(first.status, 200); assert.equal(first.value.items.length, 1); assert.ok(first.value.nextCursor);
-    const second = await request("/departments?limit=1&cursor=" + first.value.nextCursor); assert.equal(second.status, 200); assert.notEqual(second.value.items[0].id, first.value.items[0].id);
-    assert.equal((await request("/users?cursor=" + first.value.nextCursor)).status, 400);
-    for (const query of ["limit=0", "limit=101", "limit=no", "unknown=true", "cursor=bad"]) assert.equal((await request("/departments?" + query)).status, 400);
-    const edits = await Promise.all(["One", "Two"].map(name => request("/departments/alpha", { method: "PUT", body: { name, active: true, revision: 1 } })));
-    assert.deepEqual(edits.map(r => r.status).sort(), [200, 409]);
-    assert.equal((await request("/departments/missing", { method: "PUT", body: { name: "Missing", active: true, revision: 1 } })).status, 404);
-    const duplicate = await addUser("agent-alpha", [m("alpha")]); assert.equal(duplicate.status, 409);
-    assert.equal((await request("/users/new", { method: "PUT", body: { revision: 1, active: false } })).status, 404);
-    const invalid = await addUser("duplicate-membership", [m("alpha"), m("alpha")]); assert.equal(invalid.status, 400);
+  assert.equal(createdWithoutKey.status, 201, await createdWithoutKey.clone().text());
+  assert.equal(
+    (await call("/v1/admin/officials/off_01JC0000000000000000000001", official, {
+      method: "PUT",
+      key: false,
+      ...jsonBody({ administrationId: "justice", role: "agent", active: true }),
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await call("/v1/admin/officials", adminOfficial, {
+      method: "POST",
+      key: "short",
+      ...jsonBody({ email: "badkey@demo.techma.bj", displayName: "Bad", jobTitle: "Agent", administrationId: "justice", role: "agent" }),
+    })).status,
+    400,
+  );
+  const actionWithoutKey = await call("/v1/admin/cases/" + caseId + "/actions", official, {
+    method: "POST",
+    key: false,
+    ...jsonBody({ action: "claim", note: null }),
   });
-
-  await t.test("logical deactivation revokes live JWT access, preserves other departments and protects last super admin", async () => {
-    const localDelete = await request("/users/mixed", { method: "DELETE", bearer: adminAlpha });
-    assert.equal(localDelete.status, 204);
-    const mixedProfile = await request("/me", { bearer: mixed }); assert.equal(mixedProfile.status, 200); assert.deepEqual(mixedProfile.value.departmentIds, ["beta"]);
-    assert.equal((await request("/users", { bearer: mixed })).status, 403);
-    const deleted = await request("/users/shared", { method: "DELETE", key: "disable-shared" }); assert.equal(deleted.status, 204);
-    assert.equal((await request("/users/shared", { method: "DELETE", key: "disable-shared" })).status, 204);
-    assert.equal((await request("/me", { bearer: shared })).status, 403);
-    await assert.rejects(() => principal(shared), { status: 403 });
-    assert.equal((await request("/users/root", { method: "DELETE" })).status, 409);
-    assert.equal((await request("/users/root", { method: "PUT", body: { revision: 1, superAdmin: false } })).status, 409);
-    const before = Number((await pool.query("SELECT count(*) FROM backend_admin_directory_audit")).rows[0].count);
-    assert.equal((await request("/users/agent-alpha", { method: "DELETE", bearer: adminAlpha, body: {} })).status, 400);
-    assert.equal(Number((await pool.query("SELECT count(*) FROM backend_admin_directory_audit")).rows[0].count), before);
-    const audit = (await pool.query("SELECT * FROM backend_admin_directory_audit ORDER BY created_at")).rows;
-    assert.ok(audit.every(row => row.traceparent === traceparent));
-    assert.ok(audit.every(row => !("email" in row) && !("display_name" in row)));
-  });
+  assert.equal(actionWithoutKey.status, 400);
+  const actionProblem = await actionWithoutKey.json();
+  assert.match(actionProblem.detail ?? "", /Idempotency-Key/);
 });

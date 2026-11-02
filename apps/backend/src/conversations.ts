@@ -8,6 +8,7 @@ import {
   type Schemas,
 } from "./domain.js";
 import type { User } from "./identity.js";
+import { redact } from "./model.js";
 import { idempotent, transaction } from "./transactions.js";
 
 export type Conversation = Schemas["Conversation"];
@@ -139,19 +140,33 @@ export class Conversations {
       },
     );
   }
-  async attach(user: User, conversationId: string, guest: User) {
+  async attach(
+    user: User,
+    conversationId: string,
+    guest: User & { consumed?: boolean },
+    consumeGuest: (userRef: string, db: Db) => Promise<void>,
+  ) {
     if (!user.authenticated)
       throw new Problem(401, "LOGIN_REQUIRED", "Connexion requise.");
     if (guest.authenticated || guest.userRef === user.userRef)
       throw new Problem(400, "INVALID_REQUEST", "Jeton invité requis.");
-    const existing = (
-      await this.pool.query(
-        "SELECT body FROM backend_conversations WHERE id=$1 AND user_ref=$2",
-        [conversationId, user.userRef],
-      )
-    ).rows[0];
-    if (existing) return existing.body as Conversation;
     return transaction(this.pool, async (db) => {
+      const existing = (
+        await db.query(
+          "SELECT body FROM backend_conversations WHERE id=$1 AND user_ref=$2",
+          [conversationId, user.userRef],
+        )
+      ).rows[0];
+      if (existing) return existing.body as Conversation;
+      await consumeGuest(guest.userRef, db);
+      const ownedByGuest = (
+        await db.query(
+          "SELECT 1 FROM backend_conversations WHERE id=$1 AND user_ref=$2",
+          [conversationId, guest.userRef],
+        )
+      ).rows[0];
+      if (!ownedByGuest)
+        throw new Problem(404, "NOT_FOUND", "Conversation introuvable.");
       const moved = await db.query(
         "UPDATE backend_conversations SET user_ref=$1, body=jsonb_set(body,'{authenticated}','true'::jsonb) WHERE user_ref=$2 RETURNING id, body",
         [user.userRef, guest.userRef],
@@ -219,9 +234,13 @@ export class Conversations {
             if (!file)
               throw new Problem(404, "NOT_FOUND", "Pièce introuvable.");
           }
+          const stored =
+            body.content.type === "text"
+              ? { ...body, content: { ...body.content, text: redact(body.content.text) } }
+              : body;
           await db.query(
             "INSERT INTO backend_messages(conversation_id,id,fingerprint,body,traceparent) VALUES($1,$2,$3,$4,$5)",
-            [conversationId, body.id, fingerprint(body), body, traceparent],
+            [conversationId, body.id, fingerprint(body), stored, traceparent],
           );
           await appendEvent(
             db,
@@ -231,10 +250,10 @@ export class Conversations {
                 kind: "message.received",
                 conversationId,
                 message: {
-                  id: body.id,
-                  content: body.content,
+                  id: stored.id,
+                  content: stored.content,
                   transcript: null,
-                  sentAt: body.sentAt,
+                  sentAt: stored.sentAt,
                 },
               },
               traceparent,
