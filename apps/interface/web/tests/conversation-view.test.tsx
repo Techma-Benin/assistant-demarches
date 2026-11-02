@@ -1,15 +1,15 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { components } from '@techma/contracts-ts';
+import type { Schemas } from '@techma/contracts-ts';
 import { describe, expect, it, vi } from 'vitest';
 import { ConversationView } from '@/components/chat/ConversationView';
-import { noopConsent } from '@/lib/consent';
-import type { useConversation } from '@/hooks/use-conversation';
 import { turnDelivery, userTurns, type UserEntry as UserEntryT } from '@/components/chat/UserEntryParts';
 import { initialState, type ConversationState, type TimelineEntry } from '@/lib/conversation-state';
 
-type Block = components['schemas']['Block'];
-type Conversation = ReturnType<typeof useConversation>;
+import { fakeConversation, type Conversation } from './conversation-helper';
+import { caseCardBlock, consentBlock, exampleRequest, requestCardBlock } from './fixtures-v2';
+
+type Block = Schemas['Block'];
 
 const at = '2026-10-22T18:00:00Z';
 const user = (id: string, display: string, delivery: 'received' | 'failed' | 'accepted' = 'received'): TimelineEntry => ({
@@ -24,21 +24,10 @@ const agent = (id: string, ...blocks: Block[]): TimelineEntry => ({
   kind: 'agent',
   message: { id, conversationId: 'cnv_1', blocks, createdAt: at },
 });
-const source = (procedureId: string, url: string) => ({ procedureId, url, retrievedAt: at, version: 'v3' });
+const source = (procedureId: string, url: string) => ({ procedureId, url, retrievedAt: at });
 
 function build(state: Partial<ConversationState>, overrides: Partial<Conversation> = {}): Conversation {
-  return {
-    state: { ...initialState, status: 'ready', conversationId: 'cnv_1', ...state },
-    connection: 'live',
-    sendText: vi.fn(),
-    sendButton: vi.fn(),
-    sendForm: vi.fn(),
-    sendFile: vi.fn(),
-    sendFiles: vi.fn(),
-    retry: vi.fn(),
-    consent: noopConsent,
-    ...overrides,
-  };
+  return fakeConversation({ state: { ...initialState, status: 'ready', conversationId: 'cnv_1', ...state }, ...overrides });
 }
 const view = (conversation: Conversation, onRestart = () => {}) =>
   render(<ConversationView conversation={conversation} onRestart={onRestart} />);
@@ -124,8 +113,9 @@ describe('ConversationView', () => {
     );
     const panel = screen.getByRole('heading', { name: 'Sources' }).closest('section')!;
     expect(within(panel).getByText('casier-judiciaire')).toBeInTheDocument();
-    expect(within(panel).getByText(/service-public\.example · v3/)).toBeInTheDocument();
+    expect(within(panel).getByText('service-public.example')).toBeInTheDocument();
     expect(within(panel).getByText('Consultée le 22/10/2026')).toBeInTheDocument();
+    expect(within(panel).queryByText(/v3/)).toBeNull();
     expect(within(panel).queryByText('ancienne-fiche')).toBeNull();
   });
 
@@ -134,27 +124,41 @@ describe('ConversationView', () => {
     expect(screen.queryByRole('heading', { name: 'Sources' })).toBeNull();
   });
 
-  it('shows the dossier steps, and a header pill opening the dossier sheet on small screens', async () => {
+  it('shows « Vos informations » from the latest requestCard, and a header pill opening it on small screens', async () => {
+    const older = { ...exampleRequest, missing: ['Extrait d’acte de naissance'], documents: [{ ...exampleRequest.documents[0], fileId: null }] };
     view(
       build({
         timeline: [
           user('u1', 'Q'),
-          agent('a1', { type: 'text', text: 'R', sources: [source('casier', 'https://a.example/c')] }, { type: 'form', id: 'frm', title: 'T', fields: [] } as unknown as Block),
+          agent('a1', { type: 'text', text: 'R', sources: [] }, requestCardBlock(older)),
+          user('u2', 'Voici'),
+          agent('a2', requestCardBlock()),
         ],
       }),
     );
-    expect(screen.getByRole('heading', { name: 'Votre demande' })).toBeInTheDocument();
-    expect(screen.getByText('Démarche identifiée')).toBeInTheDocument();
-    const pill = screen.getByRole('button', { name: 'Dossier 1/5' });
-    expect(screen.getAllByText('Démarche identifiée')).toHaveLength(1);
+    const panel = screen.getByRole('heading', { name: 'Vos informations', level: 2 }).closest('section')!;
+    // Latest card wins: nothing is missing any more.
+    expect(within(panel).queryByText('Il manque encore')).toBeNull();
+    expect(within(panel).getByText('Adresse du domicile')).toBeInTheDocument();
+    expect(within(panel).getByText('Cotonou, Akpakpa')).toBeInTheDocument();
+    expect(within(panel).getAllByText('Votre réponse').length).toBeGreaterThan(0);
+    expect(within(panel).getByText(/Extrait d'acte de naissance sécurisé ou légalisé/)).toBeInTheDocument();
+    const pill = screen.getByRole('button', { name: 'Vos informations' });
     await userEvent.setup().click(pill);
-    expect(screen.getAllByText('Démarche identifiée')).toHaveLength(2);
+    expect(screen.getAllByText('Adresse du domicile')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Fermer' })).toBeInTheDocument();
+  });
+
+  it('lists what is missing in the panel', () => {
+    view(build({ timeline: [user('u1', 'Q'), agent('a1', requestCardBlock({ ...exampleRequest, status: 'draft', missing: ['Profession'] }))] }));
+    const panel = screen.getByRole('heading', { name: 'Vos informations', level: 2 }).closest('section')!;
+    expect(within(panel).getByText('Il manque encore')).toBeInTheDocument();
+    expect(within(within(panel).getByText('Il manque encore').parentElement!).getByText('Profession')).toBeInTheDocument();
   });
 
   it('offers a Sources (n) header button when there is no request, opening the sources dialog', async () => {
     view(build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [source('casier', 'https://a.example/c')] })] }));
-    expect(screen.queryByRole('button', { name: /^Dossier/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Vos informations' })).toBeNull();
     expect(screen.getAllByText('casier')).toHaveLength(2);
     await userEvent.setup().click(screen.getByRole('button', { name: 'Sources (1)' }));
     expect(screen.getAllByText('casier')).toHaveLength(3);
@@ -183,26 +187,16 @@ describe('ConversationView', () => {
 
   it('hides the dossier panel and pill on a simple Q&A', () => {
     view(build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [] })] }));
-    expect(screen.queryByRole('button', { name: /^Dossier/ })).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Votre demande' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Vos informations' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Vos informations', level: 2 })).toBeNull();
   });
 
-  it('shows the agent activity while waiting, announced once outside the log', () => {
+  it('shows a neutral activity while waiting, announced once outside the log', () => {
     const { rerender } = view(build({ timeline: [user('u1', 'Q', 'accepted')] }));
     const status = screen.getByRole('status');
-    expect(status).toHaveTextContent('Je réfléchis…');
+    expect(status).toHaveTextContent('L’assistant prépare sa réponse');
     expect(screen.getByRole('log').contains(status)).toBe(false);
     expect(screen.getByRole('log').querySelector('[role="status"]')).toBeNull();
-    rerender(
-      <ConversationView
-        conversation={build({
-          timeline: [user('u1', 'Q', 'accepted')],
-          activity: { toolName: 'procedures.get', at },
-        })}
-        onRestart={() => {}}
-      />,
-    );
-    expect(screen.getByRole('status')).toHaveTextContent('Je consulte la fiche officielle…');
     rerender(
       <ConversationView
         conversation={build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [] })] })}
@@ -211,6 +205,19 @@ describe('ConversationView', () => {
     );
     // Only the copy buttons' empty live regions remain.
     expect(screen.queryAllByRole('status').filter((s) => s.textContent !== '')).toHaveLength(0);
+  });
+
+  it('keeps waiting once the visitor accepted the consent the assistant asked for', () => {
+    const block = consentBlock();
+    const challengeId = (block as Extract<Block, { type: 'consent' }>).challenge.id;
+    view(
+      build(
+        { timeline: [user('u1', 'Q'), agent('a1', block)] },
+        { consent: { states: { [challengeId]: { phase: 'accepted' } }, accept: vi.fn(), refuse: vi.fn() } },
+      ),
+    );
+    expect(screen.getAllByRole('status').filter((node) => node.textContent !== '')).toHaveLength(1);
+    expect(screen.getByText('L’assistant prépare sa réponse', { selector: '[role="status"]' })).toBeInTheDocument();
   });
 
   it('adds a reassurance line after 8 seconds of waiting', () => {
@@ -263,10 +270,16 @@ describe('ConversationView', () => {
     expect(onRestart).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a connecting state while starting', () => {
+  it('shows a connecting state while the first message creates the conversation, with the composer still usable', () => {
     view(build({ status: 'starting', conversationId: null }));
     expect(screen.getByRole('status')).toHaveTextContent('Connexion…');
-    expect(screen.getByLabelText('Votre message')).toBeDisabled();
+    expect(screen.getByLabelText('Votre message')).toBeEnabled();
+  });
+
+  it('greets a visitor with no conversation yet and lets them write', () => {
+    view(build({ status: 'idle', conversationId: null }));
+    expect(screen.getByRole('heading', { name: 'Bonjour !' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Votre message')).toBeEnabled();
   });
 
   it('restarts from the header at once when nothing would be lost', async () => {
@@ -446,7 +459,7 @@ describe('userTurns and turnDelivery', () => {
     const voice: TimelineEntry = {
       kind: 'user',
       id: 'v1',
-      content: { type: 'audio', fileId: 'fil_1' },
+      content: { type: 'audio', fileId: 'fil_1' as never },
       display: 'Message vocal.m4a',
       sentAt: at,
       delivery: 'received',
@@ -506,11 +519,6 @@ describe('userTurns and turnDelivery', () => {
       text: 'Présentation',
       sources: ids.map((id) => source(id, `https://service-public.fr/${id}`)),
     });
-    const statusCard = {
-      type: 'statusCard',
-      request: { id: 'req_1', conversationId: 'cnv_1', userRef: 'u', procedureId: 'F1', status: 'draft', fields: {}, fileIds: [], officialLink: null, updatedAt: at },
-    } as unknown as Block;
-
     it('shows the chip and sends the fixed message on click', async () => {
       const conversation = build({ timeline: [user('u1', 'Q'), agent('a1', cited('F1'))] });
       view(conversation);
@@ -519,33 +527,13 @@ describe('userTurns and turnDelivery', () => {
     });
 
     it.each([
-      ['a status card exists', [user('u1', 'Q'), agent('a0', statusCard), user('u2', 'Q2'), agent('a1', cited('F1'))]],
+      ['a case card exists', [user('u1', 'Q'), agent('a0', caseCardBlock()), user('u2', 'Q2'), agent('a1', cited('F1'))]],
+      ['a draft exists', [user('u1', 'Q'), agent('a0', requestCardBlock()), user('u2', 'Q2'), agent('a1', cited('F1'))]],
       ['the last entry is a user message', [agent('a1', cited('F1')), user('u2', 'Merci')]],
       ['sources span two procedures', [user('u1', 'Q'), agent('a1', cited('F1', 'F2'))]],
     ])('is hidden when %s', (_name, timeline) => {
       view(build({ timeline }));
       expect(screen.queryByRole('button', { name: 'Préparer ma demande' })).not.toBeInTheDocument();
     });
-  });
-});
-
-describe('request entry', () => {
-  const requestEntry = (): TimelineEntry => ({
-    kind: 'request',
-    id: 'evt_1',
-    at,
-    request: { id: 'req_abc123', conversationId: 'cnv_1', userRef: 'u', procedureId: 'p', status: 'draft', fields: {}, fileIds: [], officialLink: null, updatedAt: at },
-  });
-
-  it('shows « Demande créée » with the reference, without the prepare chip', () => {
-    view(
-      build({
-        requestProcedureId: 'p',
-        timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'Rép', sources: [source('p', 'https://a.example/x')] }), requestEntry()],
-      }),
-    );
-    expect(screen.getByText('Demande créée')).toBeInTheDocument();
-    expect(screen.getByText('req_abc123')).toBeInTheDocument();
-    expect(screen.queryByText('Préparer ma demande')).toBeNull();
   });
 });

@@ -1,11 +1,11 @@
 'use client';
 
-import { Badge, StatusPill } from '@techma/ui';
+import { StatusPill } from '@techma/ui';
 import Link from 'next/link';
-import type { AdminWorkItem } from '@/lib/admin/department-api';
+import type { Case, CaseStatus } from '@/lib/admin/api';
 import { formatDateTime } from '@/lib/admin/format';
 import { formatRelative } from '@/lib/admin/relative-time';
-import { completedByLabel, isOverdue, statePhrase } from '@/lib/admin/work-format';
+import { CHANNEL_LABELS, STATUS_LABELS, completedByLabel } from '@/lib/admin/work-format';
 
 export function SimulationPill() {
   return (
@@ -15,11 +15,39 @@ export function SimulationPill() {
   );
 }
 
-/** « Titre · phrase d’état » then received date, receipt, simulation and due hints. */
-export function WorkRow({ item, mode }: { item: AdminWorkItem; mode: 'pending' | 'completed' }) {
-  const phrase = mode === 'completed' ? (completedByLabel(item) ?? 'complété') : statePhrase(item);
-  const when = mode === 'completed' ? (item.completedAt ?? item.updatedAt) : (item.submittedAt ?? item.createdAt);
-  const overdue = mode === 'pending' && isOverdue(item);
+export function statusTone(status: CaseStatus) {
+  switch (status) {
+    case 'completed':
+      return 'validated' as const;
+    case 'rejected':
+      return 'danger' as const;
+    case 'received':
+    case 'information_requested':
+      return 'toValidate' as const;
+    case 'awaiting_payment':
+      return 'draft' as const;
+    default:
+      return 'info' as const;
+  }
+}
+
+export function CaseStatusPill({ status }: { status: CaseStatus }) {
+  return <StatusPill status={statusTone(status)}>{STATUS_LABELS[status]}</StatusPill>;
+}
+
+/** Reference (SIM-…) with the « Simulation » mark when the case is simulated. */
+export function CaseReference({ item }: { item: Pick<Case, 'reference' | 'simulated'> }) {
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <span className="font-mono text-xs text-ink-muted">{item.reference}</span>
+      {item.simulated ? <SimulationPill /> : null}
+    </span>
+  );
+}
+
+/** Compact row of the overview: « Titre · statut », then the reference and the last update. */
+export function CaseRow({ item }: { item: Case }) {
+  const done = item.status === 'completed' ? completedByLabel(item) : null;
   return (
     <li className="border-b border-line-subtle last:border-b-0">
       <Link
@@ -28,20 +56,12 @@ export function WorkRow({ item, mode }: { item: AdminWorkItem; mode: 'pending' |
       >
         <p className="text-base text-ink">
           <strong className="font-bold">{item.title}</strong>
-          {` · ${phrase}`}
+          {` · ${STATUS_LABELS[item.status].toLowerCase()}${done ? ` ${done}` : ''}`}
         </p>
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] text-ink-muted">
-          <span title={formatDateTime(when)}>
-            {mode === 'completed' ? 'Complété ' : 'Reçu '}
-            {formatRelative(when)}
-          </span>
-          {item.receiptRef ? <span className="font-mono">{item.receiptRef}</span> : null}
-          {item.simulation ? <SimulationPill /> : null}
-          {overdue ? (
-            <Badge tone="danger">En retard · échéance {formatDateTime(item.dueAt!)}</Badge>
-          ) : mode === 'pending' && item.dueAt ? (
-            <span>Échéance {formatDateTime(item.dueAt)}</span>
-          ) : null}
+          <span title={formatDateTime(item.updatedAt)}>Mis à jour {formatRelative(item.updatedAt)}</span>
+          <span>{CHANNEL_LABELS[item.channel] ?? item.channel}</span>
+          <CaseReference item={item} />
         </p>
       </Link>
     </li>

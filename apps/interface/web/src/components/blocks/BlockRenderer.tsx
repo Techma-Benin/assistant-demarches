@@ -1,23 +1,40 @@
-import type { components } from '@techma/contracts-ts';
+import type { Schemas } from '@techma/contracts-ts';
+import { ConsentCard } from '@/components/chat/ConsentCard';
+import { noopConsent, type ConsentControls } from '@/lib/consent';
 import { ButtonsBlock } from './ButtonsBlock';
+import { CaseCardBlock } from './CaseCardBlock';
 import { FileRequestBlock } from './FileRequestBlock';
 import { FormBlock } from './FormBlock';
-import { StatusCardBlock } from './StatusCardBlock';
+import { LoginRequiredBlock } from './LoginRequiredBlock';
+import { RequestCardBlock } from './RequestCardBlock';
 import { TextBlock } from './TextBlock';
 
-type Block = components['schemas']['Block'];
+type Block = Schemas['Block'];
 
 export type BlockRendererProps = {
   block: Block;
   interactive: boolean;
   onButton: (item: { id: string; label: string }) => void;
   onForm: (formId: string, values: Record<string, string>, summary: string) => void;
-  onFiles: (files: File[]) => void;
+  onFiles: (files: File[], documentType: string) => void;
+  /** Consent answers (`consent` block). */
+  consent?: ConsentControls;
+  /** Conversation to attach after login (`loginRequired` block). */
+  conversationId?: string | null;
   /** Progressive reveal of a live answer: start delay (ms) of this block. Undefined = shown at once. */
   revealDelay?: number;
 };
 
-export function BlockRenderer({ block, interactive, onButton, onForm, onFiles, revealDelay }: BlockRendererProps) {
+export function BlockRenderer({
+  block,
+  interactive,
+  onButton,
+  onForm,
+  onFiles,
+  consent = noopConsent,
+  conversationId = null,
+  revealDelay,
+}: BlockRendererProps) {
   if (block.type === 'text') return <TextBlock block={block} revealDelay={revealDelay} />;
   const content = (() => {
     switch (block.type) {
@@ -27,8 +44,14 @@ export function BlockRenderer({ block, interactive, onButton, onForm, onFiles, r
         return <FormBlock block={block} interactive={interactive} onForm={onForm} />;
       case 'fileRequest':
         return <FileRequestBlock block={block} interactive={interactive} onFiles={onFiles} />;
-      case 'statusCard':
-        return <StatusCardBlock block={block} />;
+      case 'loginRequired':
+        return <LoginRequiredBlock block={block} conversationId={conversationId} />;
+      case 'consent':
+        return <ConsentCard challenge={block.challenge} consent={consent} interactive={interactive} />;
+      case 'requestCard':
+        return <RequestCardBlock block={block} />;
+      case 'caseCard':
+        return <CaseCardBlock block={block} />;
       default: {
         const unreachable: never = block;
         return unreachable;

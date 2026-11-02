@@ -10,7 +10,7 @@ import type { TimelineEntry } from '@/lib/conversation-state';
 export type AppView = 'home' | 'conversation';
 
 type Voice = { durationMs: number; waveform: number[] };
-/** The first input of a new conversation, sent once the session is ready. */
+/** The first input of a new conversation, sent once the session has mounted. */
 type FirstInput = { text: string } | { files: File[]; note?: string; voice?: Voice };
 
 const CONVERSATION_PATH = '/conversation';
@@ -26,7 +26,7 @@ function conversationTitle(timeline: TimelineEntry[]): string | null {
 
 function lastActivity(timeline: TimelineEntry[]): string {
   const last = timeline[timeline.length - 1];
-  return last.kind === 'agent' ? last.message.createdAt : last.kind === 'request' ? last.at : last.sentAt;
+  return last.kind === 'agent' ? last.message.createdAt : last.sentAt;
 }
 
 function Session({
@@ -50,7 +50,8 @@ function Session({
 }) {
   const conversation = useConversation(undefined, restored);
   const { state, sendText, sendFiles } = conversation;
-  const ready = state.status === 'ready';
+  // No conversation exists before the first message (lazy start), so a send is possible unless the session is lost.
+  const canSend = state.status !== 'error';
   const hasTimeline = state.timeline.length > 0;
   const dispatch = useCallback(
     (input: FirstInput) => {
@@ -67,11 +68,11 @@ function Session({
   // Survives StrictMode's double effect run: the queued input goes out once.
   const sent = useRef(false);
   useEffect(() => {
-    if (!pending || !ready || sent.current) return;
+    if (!pending || !canSend || sent.current) return;
     sent.current = true;
     dispatch(pending);
     onPendingSent();
-  }, [pending, ready, dispatch, onPendingSent]);
+  }, [pending, canSend, dispatch, onPendingSent]);
 
   if (view === 'conversation') {
     return <ConversationView conversation={conversation} onRestart={onRestart} onHome={() => onView('home')} />;
@@ -92,7 +93,6 @@ function Session({
     <FrontDoor
       onAsk={(text) => start({ text })}
       onFiles={(files, note, voice) => start({ files, note, voice })}
-      disabled={!ready && !failed}
       resume={
         hasTimeline
           ? { title: conversationTitle(state.timeline), at: lastActivity(state.timeline), onResume: () => onView('conversation') }

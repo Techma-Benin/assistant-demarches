@@ -1,8 +1,7 @@
-import type { components } from '@techma/contracts-ts';
+import type { Schemas } from '@techma/contracts-ts';
 import type { ContractMimeType } from './files';
 import { newTraceparent } from './trace';
 
-type Schemas = components['schemas'];
 export type ConversationInput = Schemas['ConversationInput'];
 export type Conversation = Schemas['Conversation'];
 export type MessageInput = Schemas['MessageInput'];
@@ -11,11 +10,12 @@ export type EventPage = Schemas['EventPage'];
 export type ConversationEvent = Schemas['Event'];
 export type SocketTicket = Schemas['SocketTicket'];
 export type Problem = Schemas['Problem'];
-export type ChallengeInput = Schemas['ChallengeInput'];
 export type Challenge = Schemas['Challenge'];
-export type Consent = Schemas['Consent'];
+export type ConsentInput = Schemas['ConsentInput'];
 export type Mandate = Schemas['Mandate'];
 export type UploadedFile = Schemas['File'];
+export type Case = Schemas['Case'];
+export type CasePage = Schemas['CasePage'];
 
 export class C1Error extends Error {
   readonly status: number;
@@ -29,6 +29,11 @@ export class C1Error extends Error {
     this.problem = problem;
     this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+/** Download URL of an issued document (the proxy injects the token). */
+export function caseDocumentHref(caseId: string, documentId: string, basePath = '/api/backend'): string {
+  return `${basePath}/v1/cases/${caseId}/documents/${documentId}`;
 }
 
 export class C1Client {
@@ -59,17 +64,22 @@ export class C1Client {
     return this.request('POST', `/v1/conversations/${conversationId}/socket-ticket`, { idempotencyKey });
   }
 
-  // Challenge: 5 min, single use. Consent: stable key `consent-<challengeId>` so a retry replays.
-  createMandateChallenge(conversationId: string, input: ChallengeInput, idempotencyKey: string): Promise<Challenge> {
-    return this.request('POST', `/v1/conversations/${conversationId}/mandate-challenges`, { body: input, idempotencyKey });
-  }
-
-  createMandate(conversationId: string, consent: Consent, idempotencyKey: string): Promise<Mandate> {
+  // The challenge comes from a `consent` block (built by the Backend). Stable key `consent-<challengeId>` so a retry replays.
+  createMandate(conversationId: string, consent: ConsentInput, idempotencyKey: string): Promise<Mandate> {
     return this.request('POST', `/v1/conversations/${conversationId}/mandates`, { body: consent, idempotencyKey });
   }
 
   revokeMandate(conversationId: string, mandateId: string, idempotencyKey: string): Promise<Mandate> {
     return this.request('POST', `/v1/conversations/${conversationId}/mandates/${mandateId}/revoke`, { idempotencyKey });
+  }
+
+  listCases(cursor?: string | null, signal?: AbortSignal): Promise<CasePage> {
+    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+    return this.request('GET', `/v1/cases${query}`, { signal });
+  }
+
+  getCase(caseId: string, signal?: AbortSignal): Promise<Case> {
+    return this.request('GET', `/v1/cases/${caseId}`, { signal });
   }
 
   uploadFile(body: Blob, mimeType: ContractMimeType, idempotencyKey: string, signal?: AbortSignal): Promise<UploadedFile> {

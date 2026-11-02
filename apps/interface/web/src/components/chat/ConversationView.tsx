@@ -1,24 +1,22 @@
 'use client';
 
 import { Fragment, useEffect, useId, useState } from 'react';
-import { BrandMark, Button, Chip, FlagGlyph, InlineAlert, SourceList, StepTracker, ThemeToggle, TypingIndicator, cn } from '@techma/ui';
-import { ArrowDown, FileCheck2, FilePlus2, Plus } from 'lucide-react';
+import { BrandMark, Button, Chip, FlagGlyph, InlineAlert, SourceList, ThemeToggle, TypingIndicator, cn } from '@techma/ui';
+import { ArrowDown, FilePlus2, Plus } from 'lucide-react';
 import { BlockRenderer } from '@/components/blocks/BlockRenderer';
-import { StatusCardBlock } from '@/components/blocks/StatusCardBlock';
 import { useThreadScroll } from '@/hooks/use-thread-scroll';
 import { useUnreadTitle } from '@/hooks/use-unread-title';
 import type { useConversation } from '@/hooks/use-conversation';
-import { activityLabel, type TimelineEntry } from '@/lib/conversation-state';
-import { deriveDossierSteps, lastTextSources, prepareRequestAction, toSourceInfo } from '@/lib/dossier';
-import { consentStepState } from '@/lib/consent';
+import { WAITING_LABEL, type TimelineEntry } from '@/lib/conversation-state';
+import { latestRequest, lastTextSources, prepareRequestAction, toSourceInfo, type DraftRequest } from '@/lib/dossier';
 import { dayKey, formatDayLabel, formatTime } from '@/lib/format-time';
 import { revealDelays } from '@/lib/reveal';
 import { AgentActivity } from './AgentActivity';
 import { Composer } from './Composer';
-import { ConsentCard } from './ConsentCard';
 import { ConnectionNotice } from './ConnectionNotice';
 import { DossierSheet } from './DossierSheet';
 import { MessageActions } from './MessageActions';
+import { RequestPanel } from './RequestPanel';
 import { RestartDialog } from './RestartDialog';
 import { AttachmentRow, DeliveryLine, ErrorPanel, VoiceBubble, VoiceTranscript, isVoice, turnDelivery, userTurns, type UserEntry } from './UserEntryParts';
 
@@ -29,19 +27,12 @@ const PANEL_TITLE = 'font-display text-[20px] font-extrabold tracking-[-0.03em]'
 type Conversation = ReturnType<typeof useConversation>;
 
 
-/** Dossier + sources panels, shared by the wide-screen side panel, the right drawer and the phone bottom sheet. */
-function DossierPanels({ steps, sources }: { steps: ReturnType<typeof deriveDossierSteps>; sources: ReturnType<typeof toSourceInfo>[] }) {
+/** « Vos informations » + sources panels, shared by the wide-screen side panel, the right drawer and the phone bottom sheet. */
+function DossierPanels({ request, sources }: { request: DraftRequest | null; sources: ReturnType<typeof toSourceInfo>[] }) {
   const id = useId();
   return (
     <>
-      {steps !== null && (
-        <section aria-labelledby={`${id}-dossier`} className="flex flex-col gap-5 rounded-card bg-sunken p-5">
-          <h2 id={`${id}-dossier`} className={PANEL_TITLE}>
-            Votre demande
-          </h2>
-          <StepTracker steps={steps} />
-        </section>
-      )}
+      {request !== null && <RequestPanel request={request} titleClassName={PANEL_TITLE} />}
       {sources.length > 0 && (
         <section aria-labelledby={`${id}-sources`} className="flex flex-col gap-4 rounded-card border border-line bg-surface p-5">
           <h2 id={`${id}-sources`} className={PANEL_TITLE}>
@@ -55,11 +46,11 @@ function DossierPanels({ steps, sources }: { steps: ReturnType<typeof deriveDoss
 }
 
 /** Wide screens only: lives in the right gutter, outside the centred thread column, and never pushes it. */
-function SidePanel({ steps, sources }: { steps: ReturnType<typeof deriveDossierSteps>; sources: ReturnType<typeof toSourceInfo>[] }) {
+function SidePanel({ request, sources }: { request: DraftRequest | null; sources: ReturnType<typeof toSourceInfo>[] }) {
   return (
     <div className="pointer-events-none absolute inset-0 hidden min-[1440px]:block">
       <aside className="ui-scrollbar-none pointer-events-auto absolute right-6 top-8 flex max-h-[calc(100%-4rem)] w-[300px] flex-col gap-4 overflow-y-auto">
-        <DossierPanels steps={steps} sources={sources} />
+        <DossierPanels request={request} sources={sources} />
       </aside>
     </div>
   );
@@ -86,15 +77,13 @@ function groupEntries(timeline: TimelineEntry[]): Group[] {
   const groups: Group[] = [];
   timeline.forEach((entry, index) => {
     const last = groups.at(-1);
-    // A request entry never merges with another group.
-    if (last && last.kind === entry.kind && entry.kind !== 'request') last.items.push({ entry, index });
+    if (last && last.kind === entry.kind) last.items.push({ entry, index });
     else groups.push({ kind: entry.kind, items: [{ entry, index }] });
   });
   return groups;
 }
 
-const entryDate = (entry: TimelineEntry) =>
-  entry.kind === 'agent' ? entry.message.createdAt : entry.kind === 'request' ? entry.at : entry.sentAt;
+const entryDate = (entry: TimelineEntry) => (entry.kind === 'agent' ? entry.message.createdAt : entry.sentAt);
 
 /** Day labels to show before some groups (by index): only when the chat spans several days or starts before today. */
 function daySeparators(groups: Group[], now: Date): Map<number, string> {
@@ -114,18 +103,15 @@ function daySeparators(groups: Group[], now: Date): Map<number, string> {
 
 const entryId = (entry: TimelineEntry) => (entry.kind === 'agent' ? entry.message.id : entry.id);
 
-/** True when closing the conversation would lose something worth confirming (form, file, request, status card). */
+/** True when closing the conversation would lose something worth confirming (form, file, draft, case). */
 function holdsDossier(state: Conversation['state']): boolean {
-  if (state.requestProcedureId !== null) return true;
   const formIds = new Set(
     state.timeline.flatMap((e) => (e.kind === 'agent' ? e.message.blocks.flatMap((b) => (b.type === 'form' ? [b.id] : [])) : [])),
   );
   return state.timeline.some((e) =>
-    e.kind === 'request'
-      ? true
-      : e.kind === 'agent'
-        ? e.message.blocks.some((b) => b.type === 'statusCard')
-        : e.attachment !== undefined || (e.content?.type === 'interaction' && formIds.has(e.content.actionId)),
+    e.kind === 'agent'
+      ? e.message.blocks.some((b) => b.type === 'requestCard' || b.type === 'caseCard')
+      : e.attachment !== undefined || (e.content?.type === 'interaction' && formIds.has(e.content.actionId)),
   );
 }
 
@@ -143,15 +129,16 @@ export function ConversationView({
   conversation,
   onRestart,
   onHome,
+  embedded = false,
 }: {
   conversation: Conversation;
   onRestart: () => void;
+  /** Inside an iframe (`/embed`): the brand link opens the site in a new tab instead of replacing the chat. */
+  embedded?: boolean;
   /** Back to the home page; the conversation stays saved. */
   onHome?: () => void;
 }) {
-  const { state, connection, sendText, sendButton, sendForm, sendFiles, retry, consent } = conversation;
-  const consentAnchor = state.consent?.anchorMessageId ?? null;
-  const showConsent = consent.flow.phase !== 'idle';
+  const { state, connection, loadingHistory, sendText, sendButton, sendForm, sendFiles, retry, consent } = conversation;
   const [confirmingRestart, setConfirmingRestart] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const drawerSide = useMediaQuery('(min-width: 768px)') ? 'right' : 'bottom';
@@ -167,29 +154,32 @@ export function ConversationView({
   const { scrollRef, contentRef, onScroll, atBottom, jumpToLatest } = useThreadScroll(
     last ? { key: entryId(last), kind: last.kind === 'user' ? 'user' : 'agent' } : null,
   );
-  const waitingForAgent = last?.kind === 'user' && (last.delivery === 'accepted' || last.delivery === 'received');
-  const label = activityLabel(state.activity?.toolName);
+  // Waiting for an answer: after a user message, or once the visitor accepted the consent the agent was waiting for.
+  const lastBlock = last?.kind === 'agent' ? last.message.blocks.at(-1) : undefined;
+  const waitingForAgent =
+    (last?.kind === 'user' && (last.delivery === 'accepted' || last.delivery === 'received')) ||
+    (lastBlock?.type === 'consent' && consent.states[lastBlock.challenge.id]?.phase === 'accepted');
+  const label = WAITING_LABEL;
 
   let lastAgentIndex = -1;
   let agentCount = 0;
   state.timeline.forEach((entry, index) => {
-    // A new request is news too: it counts as an unread reply.
-    if (entry.kind === 'request') agentCount += 1;
     if (entry.kind !== 'agent') return;
     lastAgentIndex = index;
     agentCount += 1;
   });
   useUnreadTitle(agentCount);
-  const prepareAction = state.status === 'ready' && !waitingForAgent ? prepareRequestAction(state.timeline, state.requestProcedureId) : null;
+  const prepareAction = state.status === 'ready' && !waitingForAgent ? prepareRequestAction(state.timeline) : null;
   const firstQuestion = state.timeline.find((entry) => entry.kind === 'user' && !entry.attachment);
   const title = firstQuestion?.kind === 'user' ? firstQuestion.display : null;
 
-  const steps = deriveDossierSteps(state.timeline, consentStepState(consent.flow), state.requestProcedureId !== null);
+  const request = latestRequest(state.timeline);
   const sources = lastTextSources(state.timeline).map((source, index) => toSourceInfo(source, index, true));
-  const doneSteps = steps?.filter((step) => step.status === 'done').length ?? 0;
-  const panelLabel = steps !== null ? `Dossier ${doneSteps}/${steps.length}` : sources.length > 0 ? `Sources (${sources.length})` : null;
+  const panelLabel = request !== null ? 'Vos informations' : sources.length > 0 ? `Sources (${sources.length})` : null;
 
   const ready = state.status === 'ready';
+  // No conversation yet is fine: it is created by the first message.
+  const canSend = state.status !== 'error';
 
   const restart = () => {
     if (holdsDossier(state)) setConfirmingRestart(true);
@@ -202,6 +192,7 @@ export function ConversationView({
         <a
           href="/"
           aria-label="Accueil"
+          {...(embedded ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
           onClick={(event) => {
             if (!onHome || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
             event.preventDefault();
@@ -292,13 +283,13 @@ export function ConversationView({
             <p className="m-0 text-center text-[13px] text-ink-muted">
               L’IA peut se tromper. Vérifiez les informations importantes sur le portail officiel.
             </p>
-            {state.status === 'starting' && (
+            {(state.status === 'starting' || loadingHistory) && state.timeline.length === 0 && (
               <div className="flex items-center gap-2 text-ink-muted">
                 <TypingIndicator label="Connexion…" />
                 <span aria-hidden="true">Connexion…</span>
               </div>
             )}
-            {ready && state.timeline.length === 0 && (
+            {canSend && !loadingHistory && state.status !== 'starting' && state.timeline.length === 0 && (
               <div className="flex flex-col gap-4">
                 <h2 className="m-0 font-display text-[clamp(36px,4.4vw,56px)] font-extrabold leading-none tracking-[-0.045em]">
                   Bonjour !
@@ -331,15 +322,6 @@ export function ConversationView({
                       <FlagGlyph decorative width={22} height={16} className="shrink-0" />
                       <span className="text-[14px] font-semibold text-ink">Assistant Démarches</span>
                       <Time iso={group.items[0].entry.message.createdAt} />
-                    </div>
-                  )}
-                  {group.kind === 'request' && group.items[0].entry.kind === 'request' && (
-                    <div data-group-header className="flex items-center gap-2">
-                      <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-trust-soft text-trust-text">
-                        <FileCheck2 aria-hidden="true" className="size-3.5" />
-                      </span>
-                      <span className="text-[14px] font-semibold text-ink">Demande créée</span>
-                      <Time iso={group.items[0].entry.at} />
                     </div>
                   )}
                   {group.kind === 'user' &&
@@ -431,13 +413,6 @@ export function ConversationView({
                     })}
                   {group.items.map(({ entry, index }, position) => {
                     const live = !seenAtMount.has(entryId(entry));
-                    if (entry.kind === 'request') {
-                      return (
-                        <div key={entry.id} data-entry-id={entry.id} className={cn(live && 'ui-enter')}>
-                          <StatusCardBlock block={{ type: 'statusCard', request: entry.request }} />
-                        </div>
-                      );
-                    }
                     if (entry.kind === 'agent') {
                       const delays = live ? revealDelays(entry.message.blocks) : null;
                       // Successive replies sit apart (group gap + 32px, about twice the gap inside a reply) so a source never reads as the next reply's.
@@ -454,7 +429,9 @@ export function ConversationView({
                               interactive={index === lastAgentIndex}
                               onButton={sendButton}
                               onForm={sendForm}
-                              onFiles={sendFiles}
+                              onFiles={(files, documentType) => sendFiles(files, undefined, undefined, documentType)}
+                              consent={consent}
+                              conversationId={state.conversationId}
                               revealDelay={delays?.[blockIndex]}
                             />
                           ))}
@@ -469,8 +446,7 @@ export function ConversationView({
                           <div className="-mt-3.5 -ml-2.5">
                             <MessageActions message={entry.message} alwaysVisible={index === lastAgentIndex} />
                           </div>
-                          {showConsent && consentAnchor === entry.message.id && <ConsentCard consent={consent} />}
-                        </div>
+                                        </div>
                       );
                     }
                     return null;
@@ -486,15 +462,12 @@ export function ConversationView({
                   </Button>
                 </div>
               )}
-              {showConsent && (consentAnchor === null || !state.timeline.some((e) => e.kind === 'agent' && e.message.id === consentAnchor)) && (
-                <ConsentCard consent={consent} />
-              )}
               {waitingForAgent && <AgentActivity label={label} />}
             </div>
           </main>
         </div>
       </div>
-      <SidePanel steps={steps} sources={sources} />
+      <SidePanel request={request} sources={sources} />
       </div>
       <div className="relative shrink-0">
         {/* Fade over the thread and the jump button, both aligned on the thread column. */}
@@ -521,13 +494,13 @@ export function ConversationView({
         <div className="overflow-y-hidden [scrollbar-gutter:stable]">
           <div className={column}>
             <div className="pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
-              <Composer disabled={!ready} onSend={sendText} onFiles={sendFiles} />
+              <Composer disabled={!canSend} onSend={sendText} onFiles={sendFiles} />
             </div>
           </div>
         </div>
       </div>
-      <DossierSheet side={drawerSide} label={steps !== null ? 'Votre demande' : 'Sources'} open={sheetOpen} onClose={() => setSheetOpen(false)}>
-        <DossierPanels steps={steps} sources={sources} />
+      <DossierSheet side={drawerSide} label={request !== null ? 'Vos informations' : 'Sources'} open={sheetOpen} onClose={() => setSheetOpen(false)}>
+        <DossierPanels request={request} sources={sources} />
       </DossierSheet>
       {confirmingRestart && <RestartDialog onCancel={() => setConfirmingRestart(false)} onConfirm={onRestart} />}
     </div>

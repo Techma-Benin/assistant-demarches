@@ -9,8 +9,12 @@ const PAGE_SIZE = 100;
 export interface ConversationStreamDeps {
   client: Pick<C1Client, 'createSocketTicket' | 'listEvents'>;
   conversationId: string;
-  /** Replay from this event (restored conversation) instead of from the beginning. */
+  /** Replay from this event instead of from the beginning. */
   initialCursor?: string | null;
+  /** Reload: read the whole history with `GET …/events` (no cursor) before the live connection starts. */
+  restoreHistory?: boolean;
+  /** The history was read (or could not be): the live connection starts next. */
+  onHistoryLoaded?(): void;
   onEvents(items: ConversationEvent[]): void;
   onReplayExpired(): void;
   onStatus(status: StreamStatus): void;
@@ -47,6 +51,7 @@ export class ConversationStream {
   private pollTimer: unknown = null;
   private pollWake: (() => void) | null = null;
   private pollAbort: AbortController | null = null;
+  private historyAbort: AbortController | null = null;
 
   private readonly setT: (fn: () => void, ms: number) => unknown;
   private readonly clearT: (handle: unknown) => void;
@@ -76,12 +81,41 @@ export class ConversationStream {
       window.addEventListener('online', this.handleOnline);
       window.addEventListener('offline', this.handleOffline);
     }
-    this.connect();
+    if (this.deps.restoreHistory) void this.loadHistory().then(() => this.connect());
+    else this.connect();
+  }
+
+  // The WebSocket may not replay a conversation from the start: page through the REST history first.
+  // An unreadable history is not fatal here (polling retries); a gone conversation is.
+  private async loadHistory(): Promise<void> {
+    const controller = new AbortController();
+    this.historyAbort = controller;
+    try {
+      for (;;) {
+        const page = await this.deps.client.listEvents(this.deps.conversationId, this.cursor, controller.signal);
+        if (this.stopped || controller.signal.aborted) return;
+        if (page.items.length > 0) {
+          this.cursor = page.items[page.items.length - 1].id;
+          this.deps.onEvents(page.items);
+        }
+        if (page.items.length === 0 || page.nextCursor === null) break;
+      }
+    } catch (error) {
+      if (this.stopped || controller.signal.aborted) return;
+      if (isFatal(error)) {
+        this.fatal(error.status);
+        return;
+      }
+    }
+    this.historyAbort = null;
+    this.deps.onHistoryLoaded?.();
   }
 
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    this.historyAbort?.abort();
+    this.historyAbort = null;
     this.attemptId++;
     if (typeof window !== 'undefined') {
       window.removeEventListener('online', this.handleOnline);

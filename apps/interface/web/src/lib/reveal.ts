@@ -1,6 +1,6 @@
-import type { components } from '@techma/contracts-ts';
+import type { Schemas } from '@techma/contracts-ts';
 
-type Block = components['schemas']['Block'];
+type Block = Schemas['Block'];
 
 /** Delay between two blocks of the same answer. */
 export const BLOCK_STEP_MS = 70;

@@ -122,9 +122,12 @@ export function AttachmentRow({
         text={attachment.name}
         className={cn('max-w-[12rem] font-semibold', card && 'text-[15px]')}
       />
-      <p className="text-[13px] text-ink-muted">
-        {uploading ? 'Envoi…' : `${formatFileSize(attachment.sizeBytes)} · ${mimeLabel(attachment.mimeType)}`}
-      </p>
+      {/* A file rebuilt from the history has no size or format to show. */}
+      {(uploading || attachment.sizeBytes > 0) && (
+        <p className="text-[13px] text-ink-muted">
+          {uploading ? 'Envoi…' : `${formatFileSize(attachment.sizeBytes)} · ${mimeLabel(attachment.mimeType)}`}
+        </p>
+      )}
     </div>
   );
   if (!card) {

@@ -6,7 +6,7 @@ export const metadata = { title: 'Profil · Console d’administration' };
 export default function Page() {
   return (
     <>
-      <PageHeader title="Profil" description="Votre identité, vos ministères et vos droits, tels que le Backend les connaît." />
+      <PageHeader title="Profil" description="Votre nom, votre fonction et votre photo." />
       <ProfileView />
     </>
   );

@@ -3,18 +3,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { IconButton, cn } from '@techma/ui';
-import type { components } from '@techma/contracts-ts';
-import { STATUS_LABELS } from '@/components/blocks/StatusCardBlock';
+import type { Schemas } from '@techma/contracts-ts';
+import { CASE_STATUS_LABELS } from '@/lib/cases';
 
-type AgentMessage = components['schemas']['AgentMessage'];
+type AgentMessage = Schemas['AgentMessage'];
 type CopyState = 'idle' | 'copied' | 'failed';
 
 const RESET_MS = 2000;
 
 /**
  * Plain-text version of an answer, for the clipboard. Included: text blocks (markdown `**` and heading
- * hashes removed, list numbering kept), buttons labels, form field labels, file request label and
- * status card (procedure + status label), blocks separated by blank lines, then a « Sources : » list.
+ * hashes removed, list numbering kept), buttons labels, form field labels, file request label, case card
+ * (title + status label + reference), consent text and login reason, blocks separated by blank lines, then a « Sources : » list.
  */
 export function messagePlainText(message: AgentMessage): string {
   const parts: string[] = [];
@@ -34,8 +34,12 @@ export function messagePlainText(message: AgentMessage): string {
       parts.push(block.fields.map((field) => field.label).join('\n'));
     } else if (block.type === 'fileRequest') {
       parts.push(block.label);
-    } else if (block.type === 'statusCard') {
-      parts.push(`${block.request.procedureId} : ${STATUS_LABELS[block.request.status]}`);
+    } else if (block.type === 'caseCard') {
+      parts.push(`${block.case.title} : ${CASE_STATUS_LABELS[block.case.status]} (${block.case.reference})`);
+    } else if (block.type === 'consent') {
+      parts.push(block.challenge.consentText);
+    } else if (block.type === 'loginRequired') {
+      parts.push(block.reason);
     }
   }
   const text = parts.filter((part) => part !== '').join('\n\n');

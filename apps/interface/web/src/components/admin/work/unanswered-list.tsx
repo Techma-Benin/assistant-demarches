@@ -1,24 +1,29 @@
 'use client';
 
-import { Button, InlineAlert, StatusPill, Toast } from '@techma/ui';
+import { Button, InlineAlert, SegmentedControl, StatusPill, Toast } from '@techma/ui';
 import { Inbox } from 'lucide-react';
 import { useCallback, useState } from 'react';
+import { AdministrationGate, Skeleton } from '@/components/admin/console/administration-gate';
 import { PageHeader } from '@/components/admin/page-header';
 import { PagedFooter, usePagedList } from '@/components/admin/paginated-table';
 import { useToast } from '@/components/admin/use-toast';
-import { departmentApi, type UnansweredEntry } from '@/lib/admin/department-api';
+import { adminApi, type UnansweredEntry } from '@/lib/admin/api';
+import { toFailure } from '@/lib/admin/errors';
 import { formatDateTime } from '@/lib/admin/format';
 import { formatRelative } from '@/lib/admin/relative-time';
-import { toActionFailure } from '@/lib/admin/work-errors';
-import { DepartmentGate, Skeleton } from './department-gate';
+import { UNANSWERED_REASONS } from '@/lib/admin/work-format';
 
 const LIMIT = 20;
-const mono = 'font-mono text-[13px]';
+const FILTERS = [
+  { value: 'open', label: 'Ouvertes' },
+  { value: 'resolved', label: 'Résolues' },
+];
 
-function Entries({ departmentId }: { departmentId: string | undefined }) {
+function Entries({ administrationId }: { administrationId: string | undefined }) {
+  const [filter, setFilter] = useState<'open' | 'resolved'>('open');
   const load = useCallback(
-    (cursor: string | null) => departmentApi.listUnanswered({ departmentId, cursor, limit: LIMIT }),
-    [departmentId],
+    (cursor: string | null) => adminApi.listUnanswered({ administrationId, status: filter, cursor, limit: LIMIT }),
+    [administrationId, filter],
   );
   const { items, nextCursor, status, error, retry, loadMore } = usePagedList(load);
   const [resolved, setResolved] = useState<ReadonlySet<string>>(new Set());
@@ -30,11 +35,11 @@ function Entries({ departmentId }: { departmentId: string | undefined }) {
     setSending(entry.id);
     setFailure(null);
     try {
-      await departmentApi.resolveUnanswered(entry.id, `resolve-${entry.id}-${crypto.randomUUID()}`);
+      await adminApi.resolveUnanswered(entry.id);
       setResolved((previous) => new Set(previous).add(entry.id));
       toast.show('Question marquée comme résolue.');
     } catch (caught) {
-      setFailure(toActionFailure(caught).message);
+      setFailure(toFailure(caught).message);
     } finally {
       setSending(null);
     }
@@ -44,10 +49,16 @@ function Entries({ departmentId }: { departmentId: string | undefined }) {
     <>
       <PageHeader
         title="Sans réponse"
-        description="Les questions auxquelles l’assistant n’a pas su répondre. Seuls les identifiants sont affichés, jamais le texte de la conversation."
+        description="Les questions auxquelles l’assistant n’a pas su répondre. Seuls le thème et le motif sont affichés, jamais le texte de la question."
         actions={<Toast message={toast.message} onDismiss={toast.dismiss} />}
       />
       <div className="flex flex-col gap-4">
+        <SegmentedControl
+          aria-label="Filtrer les questions"
+          options={FILTERS}
+          value={filter}
+          onValueChange={(value) => setFilter(value as 'open' | 'resolved')}
+        />
         {status === 'loading' && items.length === 0 ? <Skeleton lines={4} /> : null}
         {failure ? <InlineAlert>{failure}</InlineAlert> : null}
         {items.length > 0 ? (
@@ -61,15 +72,14 @@ function Entries({ departmentId }: { departmentId: string | undefined }) {
                 >
                   <div className="flex min-w-0 flex-col gap-1.5">
                     <p className="text-base text-ink">
-                      <strong className="font-bold">{entry.reason}</strong>
+                      <strong className="font-bold">{entry.theme ?? 'Thème non déterminé'}</strong>
+                      {` · ${UNANSWERED_REASONS[entry.reason]}`}
                     </p>
                     <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-muted">
                       <StatusPill status={done ? 'validated' : 'toValidate'} className="px-2.5 py-1 text-xs">
-                        {done ? 'Résolu' : 'Ouvert'}
+                        {done ? 'Résolue' : 'Ouverte'}
                       </StatusPill>
                       <span title={formatDateTime(entry.createdAt)}>{formatRelative(entry.createdAt)}</span>
-                      <span className={mono}>{entry.conversationId}</span>
-                      <span className={mono}>{entry.messageId}</span>
                     </p>
                   </div>
                   {done ? null : (
@@ -79,7 +89,7 @@ function Entries({ departmentId }: { departmentId: string | undefined }) {
                       disabled={sending !== null}
                       onClick={() => void resolve(entry)}
                     >
-                      Marquer résolu
+                      Marquer comme résolu
                     </Button>
                   )}
                 </li>
@@ -90,7 +100,9 @@ function Entries({ departmentId }: { departmentId: string | undefined }) {
         {status === 'idle' && items.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-tile bg-sunken px-6 py-14 text-ink-muted">
             <Inbox aria-hidden="true" className="size-10" />
-            <p className="text-base font-semibold text-ink">Aucune question sans réponse</p>
+            <p className="text-base font-semibold text-ink">
+              {filter === 'open' ? 'Aucune question sans réponse' : 'Aucune question résolue'}
+            </p>
           </div>
         ) : null}
         <PagedFooter
@@ -108,8 +120,8 @@ function Entries({ departmentId }: { departmentId: string | undefined }) {
 
 export function UnansweredList() {
   return (
-    <DepartmentGate header={<PageHeader title="Sans réponse" />}>
-      {(departmentId) => <Entries departmentId={departmentId} />}
-    </DepartmentGate>
+    <AdministrationGate header={<PageHeader title="Sans réponse" />}>
+      {(administrationId) => <Entries administrationId={administrationId} />}
+    </AdministrationGate>
   );
 }

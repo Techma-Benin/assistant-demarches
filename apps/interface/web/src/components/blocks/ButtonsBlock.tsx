@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { Button } from '@techma/ui';
-import type { components } from '@techma/contracts-ts';
+import type { Schemas } from '@techma/contracts-ts';
 
-type Block = components['schemas']['Block'];
+type Block = Schemas['Block'];
 type Props = {
   block: Extract<Block, { type: 'buttons' }>;
   interactive: boolean;

@@ -3,14 +3,9 @@ process.env.TZ = 'UTC';
 import { render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkOverview } from '@/components/admin/work/overview';
-import { formatDuration, formatPeriod } from '@/lib/admin/work-format';
-import { json } from './helpers/c3-fetch';
-import { item, resetConsole, stubFetch } from './helpers/work';
+import { SUPER, caseItem, dashboard, json, problem, resetConsole, stubFetch } from './helpers/fixtures';
 
-vi.mock('@/components/admin/console/console-context', async () => {
-  const helpers = await import('./helpers/work');
-  return { useConsole: () => helpers.consoleStub };
-});
+vi.mock('@/components/admin/console/console-context', async () => (await import('./helpers/fixtures')).consoleModule());
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: any) => (
     <a href={href} {...rest}>
@@ -22,104 +17,92 @@ vi.mock('next/link', () => ({
 beforeEach(() => resetConsole());
 afterEach(() => vi.unstubAllGlobals());
 
-const dashboard = {
-  departmentId: 'justice',
-  period: { from: '2026-10-01T00:00:00Z', to: '2026-10-31T00:00:00Z' },
-  received: 128,
-  pending: 9,
-  blocked: 2,
-  completed: 119,
-  completedByAi: 117,
-  rejected: 0,
-  overdue: 1,
-  unanswered: 0,
-  medianProcessingMs: 2 * 86_400_000 + 4 * 3_600_000,
-  channels: [{ channel: 'whatsapp', count: 100 }, { channel: 'web', count: 28 }],
-  mostRequested: [{ title: 'Casier judiciaire', count: 60 }],
-};
+const tile = (label: string) => screen.getByText(label, { selector: 'dt' }).parentElement!;
 
-function route(simulation: boolean) {
+function stubOverview(metrics = {}, unanswered = 4) {
   return stubFetch((call) => {
-    if (call.url.pathname.endsWith('/dashboard')) return json(dashboard);
-    const status = call.url.searchParams.get('status');
-    return json({
-      items:
-        status === 'completed'
-          ? [item({ id: 'c', title: 'Acte de naissance', status: 'completed', completedBy: 'ai', simulation: false })]
-          : [item({ id: 'p', simulation })],
-      nextCursor: null,
-    });
+    if (call.url.pathname.endsWith('/dashboard')) return json(dashboard(metrics, unanswered));
+    return json({ items: [caseItem()], nextCursor: null });
   });
 }
 
-describe('Vue d’ensemble', () => {
-  it('shows the dashboard counters', async () => {
-    const { calls } = route(true);
+describe('Vue d’ensemble (A2)', () => {
+  it('shows the dashboard figures of v2', async () => {
+    stubOverview();
     render(<WorkOverview />);
-    const counter = async (label: string) => (await screen.findByText(label, { selector: 'dt' })).parentElement!;
-    expect(await counter('Reçus')).toHaveTextContent('128');
-    const pending = await counter('En attente');
-    expect(pending).toHaveTextContent('9');
-    // Blocked and overdue are shown as the share of pending dossiers that needs attention.
-    expect(pending).toHaveTextContent('2 bloqués');
-    expect(pending).toHaveTextContent('1 en retard');
-    expect(within(pending).getByRole('link', { name: /Voir les dossiers/ })).toHaveAttribute('href', '/admin/a-verifier');
-    expect(await counter('Complétés par l’IA')).toHaveTextContent('117');
-    expect(await counter('Complétés par l’IA')).toHaveTextContent('91 % des reçus');
-    expect(await counter('Médiane de traitement')).toHaveTextContent('2 j 4 h');
-    expect(screen.getByText(/^30 derniers jours/)).toBeInTheDocument();
-    expect(calls.find((c) => c.url.pathname.endsWith('/dashboard'))!.url.searchParams.get('departmentId')).toBe('justice');
+    await screen.findByText('Reçus');
+    expect(within(tile('En attente')).getByText('7')).toBeInTheDocument();
+    expect(within(tile('Reçus')).getByText('40')).toBeInTheDocument();
+    expect(within(tile('Complément demandé')).getByText('2')).toBeInTheDocument();
+    expect(within(tile('Rejetés')).getByText('3')).toBeInTheDocument();
+    expect(within(tile('Complétés par l’assistant')).getByText('18')).toBeInTheDocument();
+    expect(within(tile('Délai médian')).getByText('1 j 6 h')).toBeInTheDocument();
+    expect(screen.getByText('30 derniers jours')).toBeInTheDocument();
   });
 
-  it('lists the recent pending and completed items with « Voir tout » links', async () => {
-    const { calls } = route(true);
+  it('computes « Complétés par un agent » as completed − completedByAssistant', async () => {
+    stubOverview({ completed: 25, completedByAssistant: 18 });
     render(<WorkOverview />);
-    const pending = (await screen.findByRole('heading', { name: 'En attente (9)' })).closest('div')!;
-    expect(await within(pending).findByText('Casier judiciaire — simulation')).toBeInTheDocument();
-    expect(within(pending).getByRole('link', { name: /Voir tout/ })).toHaveAttribute('href', '/admin/a-verifier');
-    const done = screen.getByRole('heading', { name: 'Complété' }).closest('div')!;
-    expect(await within(done).findByText('Acte de naissance')).toBeInTheDocument();
-    expect(within(done).getByRole('link', { name: /Voir tout/ })).toHaveAttribute('href', '/admin/complete');
-    const listCalls = calls.filter((c) => c.url.pathname.endsWith('/work-items'));
-    expect(listCalls.map((c) => c.url.searchParams.get('limit'))).toEqual(['5', '5']);
+    await screen.findByText('Reçus');
+    expect(within(tile('Complétés par un agent')).getByText('7')).toBeInTheDocument();
   });
 
-  it('shows the most requested documents and channels', async () => {
-    route(false);
+  it('shows the open unanswered count and a dash for an unknown median', async () => {
+    stubOverview({ medianProcessingHours: null }, 1);
     render(<WorkOverview />);
-    expect(await screen.findByText('Documents les plus demandés')).toBeInTheDocument();
-    expect(screen.getByText('Casier judiciaire')).toBeInTheDocument();
-    expect(screen.getByText('WhatsApp')).toBeInTheDocument();
+    await screen.findByText('Reçus');
+    expect(within(tile('Délai médian')).getByText('-')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '1 question sans réponse' })).toHaveAttribute('href', '/admin/sans-reponse');
   });
 
-  it('shows « Valeurs fictives » only when a listed item is a simulation', async () => {
-    route(true);
-    const first = render(<WorkOverview />);
-    expect(await screen.findByText(/Valeurs fictives/)).toBeInTheDocument();
-    first.unmount();
-    route(false);
+  it('lists the top procedures and the channels', async () => {
+    stubOverview();
     render(<WorkOverview />);
-    await screen.findByText('Reçus', { selector: 'dt' });
-    await screen.findByText('Acte de naissance');
-    expect(screen.queryByText(/Valeurs fictives/)).not.toBeInTheDocument();
+    await screen.findByText('Casier judiciaire');
+    const top = screen.getByRole('heading', { name: 'Démarches les plus demandées' }).parentElement!;
+    expect(within(top).getByText('22')).toBeInTheDocument();
+    expect(within(top).getByText('Acte de naissance sécurisé')).toBeInTheDocument();
+    const channels = screen.getByRole('heading', { name: 'Canaux' }).parentElement!;
+    expect(within(channels).getByText('Web')).toBeInTheDocument();
+    expect(within(channels).getByText('WhatsApp')).toBeInTheDocument();
+    expect(within(channels).getByText('31')).toBeInTheDocument();
   });
 
-  it('asks a super admin without department to choose a ministry', () => {
-    resetConsole({ departmentId: null, isSuperAdmin: true });
-    const { fetchMock } = route(false);
+  it('shows no figure v2 does not provide: overdue, blocked, simulated values', async () => {
+    stubOverview();
     render(<WorkOverview />);
-    expect(screen.getByText('Choisissez un ministère')).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    await screen.findByText('Reçus');
+    expect(screen.queryByText(/retard|bloqué|fictives|Complétés par l’IA/i)).toBeNull();
   });
-});
 
-describe('work formatters', () => {
-  it('formats durations', () => {
-    expect(formatDuration(2 * 86_400_000 + 4 * 3_600_000)).toBe('2 j 4 h');
-    expect(formatDuration(3 * 3_600_000)).toBe('3 h');
-    expect(formatDuration(null)).toBe('-');
+  it('requests the dashboard and the recent cases with the chosen administration (super admin)', async () => {
+    resetConsole(SUPER, { scopeId: 'anip' });
+    const { calls } = stubOverview();
+    render(<WorkOverview />);
+    await screen.findByText('Reçus');
+    await screen.findAllByText(/Casier judiciaire/);
+    const dash = calls.find((c) => c.url.pathname.endsWith('/dashboard'))!;
+    expect(dash.url.searchParams.get('administrationId')).toBe('anip');
+    const cases = calls.filter((c) => c.url.pathname.endsWith('/cases'));
+    expect(cases.map((c) => c.url.searchParams.get('view')).sort()).toEqual(['completed', 'pending']);
+    for (const c of cases) {
+      expect(c.url.searchParams.get('administrationId')).toBe('anip');
+      expect(c.url.searchParams.get('limit')).toBe('5');
+    }
   });
-  it('formats the period', () => {
-    expect(formatPeriod(dashboard.period)).toBe('30 derniers jours');
+
+  it('hides the case tiles and links without cases:read', async () => {
+    resetConsole(['officials:read']);
+    const { calls } = stubOverview();
+    render(<WorkOverview />);
+    await screen.findByText('Reçus');
+    expect(calls.some((c) => c.url.pathname.endsWith('/cases'))).toBe(false);
+    expect(screen.queryByRole('link', { name: /Voir les dossiers/ })).toBeNull();
+  });
+
+  it('shows an error with a retry when the dashboard fails', async () => {
+    stubFetch(() => problem(503, 'UPSTREAM_UNAVAILABLE', 'indisponible'));
+    render(<WorkOverview />);
+    expect(await screen.findByText('Impossible de charger les indicateurs.')).toBeInTheDocument();
   });
 });

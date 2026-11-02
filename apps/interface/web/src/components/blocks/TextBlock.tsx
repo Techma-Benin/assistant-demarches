@@ -1,9 +1,9 @@
 import { CitationMark, SourcePill, cn } from '@techma/ui';
-import type { components } from '@techma/contracts-ts';
+import type { Schemas } from '@techma/contracts-ts';
 import { toSourceInfo } from '@/lib/dossier';
 import { BLOCK_STEP_MS, MAX_WORD_REVEAL, textRevealDuration, wordCount, wordDelay } from '@/lib/reveal';
 
-type Block = components['schemas']['Block'];
+type Block = Schemas['Block'];
 type Props = {
   block: Extract<Block, { type: 'text' }>;
   /** Start delay (ms) of the progressive reveal; undefined renders the text at once (history, reduced motion is CSS). */

@@ -1,37 +1,36 @@
 'use client';
 
-import { StatusPill, Toast } from '@techma/ui';
+import { Toast } from '@techma/ui';
 import { ArrowLeft, FileText } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
+import { Skeleton } from '@/components/admin/console/administration-gate';
+import { useConsole } from '@/components/admin/console/console-context';
+import { RequirePermission } from '@/components/admin/console/require-permission';
 import { PageHeader } from '@/components/admin/page-header';
 import { useToast } from '@/components/admin/use-toast';
-import { departmentApi, type AdminWorkItem } from '@/lib/admin/department-api';
+import { adminApi, type Case, type CaseDocument } from '@/lib/admin/api';
 import { formatDateTime, formatFcfa } from '@/lib/admin/format';
 import {
-  EVIDENCE_SOURCES,
+  ACTOR_LABELS,
+  CHANNEL_LABELS,
   PAYMENT_LABELS,
-  STATUS_LABELS,
+  STEP_STATE_LABELS,
   completedByLabel,
+  formatBytes,
   formatFieldValue,
   humanizeKey,
+  tabOfStatus,
 } from '@/lib/admin/work-format';
 import { useRemote } from '@/lib/admin/work-remote';
-import { Skeleton } from './department-gate';
+import { CaseHistory } from './case-history';
 import { RemoteError } from './remote-error';
-import { SimulationPill } from './work-row';
+import { CaseReference, CaseStatusPill } from './work-row';
 import { WorkActions } from './work-actions';
 
 const h2 = 'font-display text-2xl font-extrabold tracking-[-0.035em]';
 
-function pillTone(status: AdminWorkItem['status']) {
-  if (status === 'completed') return 'validated' as const;
-  if (status === 'blocked' || status === 'rejected' || status === 'cancelled') return 'danger' as const;
-  if (status === 'submitted') return 'toValidate' as const;
-  return 'info' as const;
-}
-
-function Meta({ label, children }: { label: string; children: React.ReactNode }) {
+function Meta({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
       <dt className="text-[13px] text-ink-muted">{label}</dt>
@@ -40,68 +39,113 @@ function Meta({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-function Detail({ item, onUpdated, onConflict }: {
-  item: AdminWorkItem;
-  onUpdated: (item: AdminWorkItem, message: string) => void;
+function Documents({ title, caseId, documents }: { title: string; caseId: string; documents: CaseDocument[] }) {
+  if (documents.length === 0) return null;
+  return (
+    <section aria-label={title} className="flex flex-col gap-4">
+      <h2 className={h2}>{title}</h2>
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {documents.map((doc) => (
+          <li key={doc.id} className="flex flex-wrap items-center gap-3">
+            <FileText aria-hidden="true" className="size-4 text-ink-muted" />
+            <a className="font-semibold underline" href={adminApi.documentUrl(caseId, doc.id)} download>
+              {doc.name}
+            </a>
+            <span className="text-[13px] text-ink-muted">
+              {formatBytes(doc.sizeBytes)} · {formatDateTime(doc.createdAt)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function Detail({
+  item,
+  canAct,
+  onUpdated,
+  onConflict,
+}: {
+  item: Case;
+  canAct: boolean;
+  onUpdated: (item: Case, message: string) => void;
   onConflict: () => void;
 }) {
-  const fields = Object.entries(item.fields ?? {});
-  const evidence = new Map((item.evidence ?? []).map((entry) => [entry.field, entry]));
+  const { officialName } = useConsole();
+  const fields = Object.entries(item.fields);
   const done = completedByLabel(item);
+  const submitted = item.documents.filter((doc) => doc.kind === 'submitted');
+  const issued = item.documents.filter((doc) => doc.kind === 'issued');
   return (
     <div className="flex flex-col gap-10">
       <div className="flex flex-wrap items-center gap-3">
-        <StatusPill status={pillTone(item.status)}>{STATUS_LABELS[item.status]}</StatusPill>
-        {item.simulation ? <SimulationPill /> : null}
-        {item.simulation ? (
-          <span className="text-sm text-ink-muted">Dossier simulé : aucune démarche réelle</span>
-        ) : null}
+        <CaseStatusPill status={item.status} />
+        <CaseReference item={item} />
+        {item.simulated ? <span className="text-sm text-ink-muted">Dossier simulé : aucune démarche réelle</span> : null}
       </div>
 
       <dl className="m-0 grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
-        {item.receiptRef ? (
-          <Meta label="Récépissé">
-            <span className="font-mono">{item.receiptRef}</span>
-          </Meta>
-        ) : null}
-        <Meta label="Créé le">{formatDateTime(item.createdAt)}</Meta>
-        {item.submittedAt ? <Meta label="Déposé le">{formatDateTime(item.submittedAt)}</Meta> : null}
-        {item.dueAt ? <Meta label="Échéance">{formatDateTime(item.dueAt)}</Meta> : null}
-        {item.completedAt ? (
-          <Meta label="Complété le">
-            {formatDateTime(item.completedAt)}
-            {done ? ` ${done}` : ''}
-          </Meta>
-        ) : null}
-        {item.assignedTo ? <Meta label="Pris en charge par">{item.assignedTo}</Meta> : null}
-        {item.progress ? (
-          <Meta label="Avancement">
-            Étape {item.progress.step} sur {item.progress.total} · {item.progress.label}
-          </Meta>
-        ) : null}
-        {item.payment ? (
-          <Meta label="Paiement">
-            {PAYMENT_LABELS[item.payment.status] ?? item.payment.status}
-            {item.payment.status !== 'not_required' ? ` · ${formatFcfa(item.payment.amountFcfa)}` : ''}
-            {item.payment.reference ? (
-              <span className="ml-2 font-mono text-[13px] text-ink-muted">{item.payment.reference}</span>
-            ) : null}
-          </Meta>
-        ) : null}
-        <Meta label="Pièces jointes">
-          {item.fileIds.length} pièce{item.fileIds.length > 1 ? 's' : ''} conservée{item.fileIds.length > 1 ? 's' : ''} par référence
+        <Meta label="Démarche">
+          {item.title} <span className="font-mono text-[13px] text-ink-muted">{item.procedureId}</span>
+        </Meta>
+        <Meta label="Canal">{CHANNEL_LABELS[item.channel] ?? item.channel}</Meta>
+        <Meta label="Déposé le">{formatDateTime(item.createdAt)}</Meta>
+        <Meta label="Mis à jour le">{formatDateTime(item.updatedAt)}</Meta>
+        {item.claimedBy ? <Meta label="Pris en charge par">{officialName(item.claimedBy)}</Meta> : null}
+        {done ? <Meta label="Complété">{done}</Meta> : null}
+        <Meta label="Paiement">
+          {PAYMENT_LABELS[item.payment.status] ?? item.payment.status}
+          {item.payment.status !== 'not_required' ? ` · ${formatFcfa(item.payment.amountFcfa)}` : ''}
+          {item.payment.reference ? (
+            <span className="ml-2 font-mono text-[13px] text-ink-muted">{item.payment.reference}</span>
+          ) : null}
+          {item.payment.paidAt ? (
+            <span className="ml-2 text-[13px] text-ink-muted">le {formatDateTime(item.payment.paidAt)}</span>
+          ) : null}
         </Meta>
       </dl>
 
-      {item.blocking ? (
-        <section aria-label="Blocage" className="rounded-tile bg-danger-soft p-6 text-danger">
-          <h2 className="font-semibold">Dossier bloqué</h2>
-          <p>{item.blocking.detail}</p>
-          <p className="mt-1 font-mono text-[13px]">{item.blocking.code} · {formatDateTime(item.blocking.at)}</p>
+      {item.informationRequest ? (
+        <section aria-label="Complément demandé" className="rounded-tile bg-sunken p-6">
+          <h2 className="font-semibold">Complément demandé à l’usager</h2>
+          <p className="mt-1 whitespace-pre-wrap">{item.informationRequest.note}</p>
+          <p className="mt-2 text-[13px] text-ink-muted">
+            Demandé par {officialName(item.informationRequest.requestedBy)} le{' '}
+            {formatDateTime(item.informationRequest.requestedAt)}
+          </p>
         </section>
       ) : null}
 
-      <WorkActions item={item} onUpdated={onUpdated} onConflict={onConflict} />
+      {item.decisionNote ? (
+        <section aria-label="Décision" className="rounded-tile bg-sunken p-6">
+          <h2 className="font-semibold">{item.status === 'rejected' ? 'Motif du rejet' : 'Note de décision'}</h2>
+          <p className="mt-1 whitespace-pre-wrap">{item.decisionNote}</p>
+        </section>
+      ) : null}
+
+      {canAct ? <WorkActions item={item} onUpdated={onUpdated} onConflict={onConflict} /> : null}
+
+      <section aria-label="Étapes" className="flex flex-col gap-4">
+        <h2 className={h2}>Étapes</h2>
+        <ol className="m-0 flex list-none flex-col gap-3 p-0">
+          {item.steps.map((step) => (
+            <li key={step.id} className="flex flex-col gap-0.5 border-t border-line-subtle pt-3">
+              <p className="text-base text-ink">
+                <strong className="font-semibold">{step.label}</strong>
+                <span className={step.state === 'blocked' ? 'ml-2 font-semibold text-danger' : 'ml-2 text-ink-muted'}>
+                  {STEP_STATE_LABELS[step.state]}
+                </span>
+              </p>
+              <p className="text-[13px] text-ink-muted">
+                {ACTOR_LABELS[step.actor]}
+                {step.at ? ` · ${formatDateTime(step.at)}` : ''}
+              </p>
+              {step.note ? <p className="text-[13px] text-ink-muted">{step.note}</p> : null}
+            </li>
+          ))}
+        </ol>
+      </section>
 
       <section aria-label="Informations du dossier" className="flex flex-col gap-4">
         <h2 className={h2}>Informations</h2>
@@ -109,64 +153,42 @@ function Detail({ item, onUpdated, onConflict }: {
           <p className="text-ink-muted">Aucune information renseignée.</p>
         ) : (
           <dl className="m-0 grid gap-x-8 gap-y-4 sm:grid-cols-2">
-            {fields.map(([key, value]) => {
-              const source = evidence.get(key);
-              return (
-                <div key={key} className="flex flex-col gap-0.5 border-t border-line-subtle pt-3">
-                  <dt className="text-[13px] text-ink-muted">{humanizeKey(key)}</dt>
-                  <dd className="m-0 break-words text-base text-ink">{formatFieldValue(value)}</dd>
-                  {source ? (
-                    <dd className="m-0 text-[13px] text-ink-subtle">
-                      Source : {EVIDENCE_SOURCES[source.source] ?? source.source}
-                      {source.reference ? ` (${source.reference})` : ''}
-                      {source.confirmed ? ' · confirmé' : ' · à confirmer'}
-                    </dd>
-                  ) : null}
-                </div>
-              );
-            })}
+            {fields.map(([key, value]) => (
+              <div key={key} className="flex flex-col gap-0.5 border-t border-line-subtle pt-3">
+                <dt className="text-[13px] text-ink-muted">{humanizeKey(key)}</dt>
+                <dd className="m-0 break-words text-base text-ink">{formatFieldValue(value)}</dd>
+              </div>
+            ))}
           </dl>
         )}
       </section>
 
-      {item.documents && item.documents.length > 0 ? (
-        <section aria-label="Documents délivrés" className="flex flex-col gap-4">
-          <h2 className={h2}>Documents délivrés</h2>
-          <ul className="m-0 flex list-none flex-col gap-2 p-0">
-            {item.documents.map((doc) => (
-              <li key={doc.fileId} className="flex flex-wrap items-center gap-3">
-                <FileText aria-hidden="true" className="size-4 text-ink-muted" />
-                <a
-                  className="font-semibold underline"
-                  href={departmentApi.documentUrl(item.id, doc.fileId)}
-                  download
-                >
-                  {doc.name}
-                </a>
-                <span className="text-[13px] text-ink-muted">Expire le {formatDateTime(doc.expiresAt)}</span>
-                {doc.simulation ? <SimulationPill /> : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <Documents title="Pièces de l’usager" caseId={item.id} documents={submitted} />
+      <Documents title="Documents délivrés" caseId={item.id} documents={issued} />
+
+      <CaseHistory caseId={item.id} administrationId={item.administrationId} version={item.updatedAt} />
     </div>
   );
 }
 
-export function WorkItemDetail({ id }: { id: string }) {
-  const load = useCallback(() => departmentApi.getWorkItem(id), [id]);
+function Content({ id }: { id: string }) {
+  const { can } = useConsole();
+  const load = useCallback(() => adminApi.getCase(id), [id]);
   const { data: item, status, error, reload, setData } = useRemote(load);
   const toast = useToast();
+  const tab = item ? tabOfStatus(item.status) : undefined;
 
   return (
     <>
       <PageHeader
         title={item?.title ?? 'Dossier'}
         description={
-          <Link href="/admin/a-verifier" className="inline-flex items-center gap-1.5 text-sm font-semibold underline">
+          <Link
+            href={`/admin/${tab?.slug ?? 'en-attente'}`}
+            className="inline-flex items-center gap-1.5 text-sm font-semibold underline"
+          >
             <ArrowLeft aria-hidden="true" className="size-4" />
-            Retour aux dossiers en attente
+            Retour aux dossiers {tab ? tab.title.toLowerCase() : 'en attente'}
           </Link>
         }
         actions={<Toast message={toast.message} onDismiss={toast.dismiss} />}
@@ -176,6 +198,7 @@ export function WorkItemDetail({ id }: { id: string }) {
       {item ? (
         <Detail
           item={item}
+          canAct={can('cases:act')}
           onUpdated={(updated, message) => {
             setData(updated);
             toast.show(message);
@@ -184,5 +207,13 @@ export function WorkItemDetail({ id }: { id: string }) {
         />
       ) : null}
     </>
+  );
+}
+
+export function WorkItemDetail({ id }: { id: string }) {
+  return (
+    <RequirePermission permission="cases:read">
+      <Content id={id} />
+    </RequirePermission>
   );
 }

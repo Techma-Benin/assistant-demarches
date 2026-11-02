@@ -6,7 +6,7 @@ export const metadata = { title: 'Utilisateurs · Console d’administration' };
 export default function Page() {
   return (
     <>
-      <PageHeader title="Utilisateurs" description="Les personnes qui ont accès à ce ministère." />
+      <PageHeader title="Utilisateurs" description="Les agents qui ont accès à cette administration." />
       <UsersList />
     </>
   );

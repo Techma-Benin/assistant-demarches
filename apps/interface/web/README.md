@@ -5,14 +5,16 @@ Interface unique (Next.js 16, React 19, Tailwind v4) : site public, conversation
 | Route | Contenu |
 | --- | --- |
 | `/` | site (page d'accueil) |
-| `/conversation` | conversation pleine page (contrat C1) |
+| `/conversation` | conversation pleine page (contrat v2) |
+| `/demarches` | « Mes démarches » : dossiers déposés (`GET /v1/cases`) ; `/demarches/{caseId}` : un dossier |
+| `/embed` | chat intégrable, voir « Chat intégrable » |
 | `/admin` | console d'administration (vue d'ensemble, à vérifier, complété, sans réponse, journal, utilisateurs, profil) |
 
 ## Lancer en local
 
 Démarrée par le `pnpm dev` de la racine (variable `PORT`, 3000 par défaut). Seule : `cp .env.example .env.local`, puis `npx next dev` ici. Autres commandes : `pnpm test | typecheck | build` dans ce dossier.
 
-À faire : migration des appels et types vers le contrat v2. `src/components/operator` et `src/lib/operator` conservent du code de configuration (modèles, outils MCP) non monté pour l'écran opérateur futur.
+Le chat usager suit le contrat v2 (`CONTRACTS.md`, `contracts/v2/`). À faire : migration de la console et de l’écran opérateur. `src/components/operator` et `src/lib/operator` conservent du code de configuration (modèles, outils MCP) non monté pour l'écran opérateur futur.
 
 ## Console d'administration
 
@@ -29,11 +31,41 @@ Démarrée par le `pnpm dev` de la racine (variable `PORT`, 3000 par défaut). S
 
 ## Architecture
 
-- Le navigateur n'a jamais de jeton : tout appel C1 passe par `/api/backend/[...path]` (route Next) qui délègue à `src/server/backend-proxy.ts`.
+- Le navigateur n'a jamais de jeton : tout appel au Backend passe par `/api/backend/[...path]` (route Next) qui délègue à `src/server/backend-proxy.ts`.
 - Le proxy applique une liste blanche (méthode + chemin), ne relaie que quelques en-têtes et injecte `Authorization` : jeton usager, sinon jeton invité (`src/server/auth/tokens.ts`). `GET /v1/home` part sans `Authorization`.
-- `src/lib/c1-client.ts` : client C1 typé (types générés `@techma/contracts-ts`), `traceparent` neuf à chaque appel, `Idempotency-Key` stable.
-- `src/lib/conversation-state.ts` : réducteur pur (déduplication par `Event.id`, reprise par curseur) ; `src/hooks/use-conversation.ts` le relie au flux temps réel (voir « Temps réel »).
-- `src/components/blocks/*` : un composant par type de bloc (`text`, `buttons`, `form`, `fileRequest`, `statusCard`), texte brut uniquement, liens http(s) seulement.
+- `src/lib/c1-client.ts` : client du contrat conversation v2 typé (types générés `@techma/contracts-ts`), `traceparent` neuf à chaque appel, `Idempotency-Key` stable.
+- `src/lib/conversation-state.ts` : réducteur pur (déduplication par `Event.id`). Le flux v2 ne porte que `message.received` et `message.sent` ; `message.received` reconstitue les messages de l’usager (et la transcription d’un vocal) au rechargement ; `src/hooks/use-conversation.ts` le relie au flux temps réel (voir « Temps réel »).
+- `src/components/blocks/*` : un composant par bloc v2 (`text`, `buttons`, `form`, `fileRequest`, `loginRequired`, `consent`, `requestCard`, `caseCard`), texte brut uniquement, liens http(s) seulement. Le bloc `statusCard` de la v1 n'existe plus.
+
+## Conversation (v2)
+
+- Création paresseuse : la conversation (`POST /v1/conversations`, corps `{locale: 'fr'}`) n'est créée qu'au premier message, fichier ou vocal. L'accueil ne dépend pas du Backend, et un seul appel à la fois évite de créer plusieurs sessions invitées.
+- Rechargement : seul l'identifiant de la conversation est gardé dans `sessionStorage` (jamais la chronologie). La chronologie est reconstruite par `GET …/events` sans curseur (historique complet, messages de l'usager et transcriptions compris), puis le flux continue.
+- Pendant l'attente, l'activité reste neutre (« L’assistant prépare sa réponse ») : le flux ne porte plus `tool.called`.
+- Contenus envoyés : `text` ; `audio {fileId}` ; `file {fileId, documentType}` (`documentType` du bloc `fileRequest` auquel le fichier répond, sinon `null`) ; `interaction {actionId, value}` (`value: null` pour un bouton, JSON des réponses pour un formulaire).
+- `loginRequired` : bouton « Se connecter pour continuer » vers `/auth/login?returnTo=<page>&conversationId=<id>` (navigation complète).
+- `consent` : le `consentText` du Backend est affiché tel quel. « J’autorise » appelle `POST …/mandates` (`{challengeId, accepted: true}`, `Idempotency-Key: consent-<challengeId>`). « Refuser » reste local : le contrat n'accepte que `accepted: true`.
+- `requestCard` : met à jour le panneau « Vos informations » (champs avec provenance, pièces, manques). `caseCard` : statut, référence `SIM-…` avec la marque « Simulation », administration, paiement (« simulé »), complément demandé, documents délivrés téléchargeables par `/api/backend/v1/cases/{caseId}/documents/{documentId}`. Aucun bouton de paiement dans le chat.
+- « Mes démarches » (`/demarches`) exige une connexion : un visiteur invité (`GET /api/session` sans utilisateur, ou 401/403) voit « Connectez-vous pour voir vos démarches ».
+
+## Chat intégrable
+
+`/embed` affiche la conversation seule (sans en-tête ni pied de page du site), sur toute la hauteur de la fenêtre. Pour l'intégrer à un autre site :
+
+```html
+<iframe
+  src="https://assistant.example.bj/embed"
+  title="Assistant Démarches"
+  width="420"
+  height="640"
+  style="border: 0; max-width: 100%;"
+  allow="microphone"
+></iframe>
+```
+
+- `title` est obligatoire pour l'accessibilité ; `allow="microphone"` active les messages vocaux ; la taille minimale conseillée est 360 × 520.
+- La conversation se crée au premier message ; un rechargement de l'iframe la reprend (`sessionStorage` de l'onglet).
+- Le logo ouvre le site dans un nouvel onglet. La connexion (`loginRequired`) navigue dans l'iframe : sur un site tiers, les cookies de session doivent être autorisés.
 
 ## Design
 
@@ -53,13 +85,14 @@ Le widget utilise la fondation de design « Sceau » du paquet `@techma/ui` (tok
 
 ## Envoi de pièces
 
-- Depuis le bouton « Joindre une pièce » du bloc `fileRequest` ou du composeur : `POST /v1/files` (corps brut `application/octet-stream`, en-tête `X-File-Mime-Type`, `Idempotency-Key`), puis un message `{ type: image | audio | file, fileId }`.
-- Limites : 10 Mio maximum ; PDF, JPEG, PNG, OGG, MP3, M4A (intersection des formats demandés par le bloc et du contrat). Le proxy refuse aussi en 413 (`FILE_TOO_LARGE`) au-delà de 10 Mio.
+- Depuis le bouton d'ajout d'une ligne `fileRequest` ou du composeur : `POST /v1/files` (corps brut `application/octet-stream`, en-tête `X-File-Mime-Type`, `Idempotency-Key`), puis un message `{ type: file, fileId, documentType }` (`audio {fileId}` pour un vocal ; le type `image` n'existe plus).
+- Limites : 10 Mio maximum ; PDF, JPEG, PNG, OGG, MP3, M4A, WEBM (intersection des formats demandés par le bloc et du contrat). Le proxy refuse aussi en 413 (`FILE_TOO_LARGE`) au-delà de 10 Mio.
 - Validation côté client avant l'envoi (taille, fichier vide, format) ; le nom du fichier reste local et n'est jamais transmis au backend.
-- Une pièce `rejected` n'est pas envoyée comme message ; en cas d'échec, « Réessayer » réutilise le même `Idempotency-Key` (sauf erreurs 413/415).
+- En cas d'échec, « Réessayer » réutilise le même `Idempotency-Key` (sauf erreurs 413/415).
 
 ## Questions de contrat ouvertes
 
-- Encodage des réponses de formulaire : non défini en v1. Provisoire : `interaction` avec `actionId = form.id` et `value` = JSON des valeurs (`src/lib/interactions.ts`), à confirmer avec le Backend.
-- Suivi de l'analyse de sécurité : aucun endpoint ni événement ne permet de suivre un fichier `scanStatus: pending`. Les fichiers `pending` sont envoyés comme message quand même ; l'utilisabilité relève du Backend.
-- Rattachement d'une pièce à une demande : aucun moyen en v1 de lier un fichier déposé au `documentType` d'un bloc `fileRequest`.
+- Encodage des réponses de formulaire : `Content.interaction` n'a que `actionId` et `value`. Provisoire : `actionId = form.id` et `value` = JSON des valeurs (`src/lib/interactions.ts`), à confirmer avec le Backend.
+- Refus d'un consentement : `ConsentInput.accepted` est `true` seulement ; le refus reste local (le Backend n'en est pas informé).
+- Administration d'un dossier : le contrat ne donne que `administrationId` (ex. `justice`) ; l'interface l'affiche lisible (première lettre en majuscule), sans nom officiel.
+- `caseCard` et `requestCard` arrivent comme blocs d'un message `message.sent` (§7.2).

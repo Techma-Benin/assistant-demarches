@@ -1,9 +1,10 @@
-export type RecorderChoice = { recorderType: string; fileType: 'audio/ogg' | 'audio/mp4' };
+export type RecorderChoice = { recorderType: string; fileType: 'audio/ogg' | 'audio/mp4' | 'audio/webm' };
 
-// The upload contract accepts ogg, mpeg and mp4 audio, never webm.
+// The upload contract (v2) accepts ogg, mpeg, mp4 and webm audio. Chrome only records webm.
 const CANDIDATES: RecorderChoice[] = [
   { recorderType: 'audio/ogg;codecs=opus', fileType: 'audio/ogg' },
   { recorderType: 'audio/mp4', fileType: 'audio/mp4' },
+  { recorderType: 'audio/webm;codecs=opus', fileType: 'audio/webm' },
 ];
 
 export const WAVEFORM_BARS = 32;

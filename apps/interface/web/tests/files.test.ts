@@ -31,7 +31,8 @@ describe('validateFile', () => {
 
 describe('helpers', () => {
   it('maps content types', () => {
-    expect(contentTypeFor('image/png')).toBe('image');
+    expect(contentTypeFor('image/png')).toBe('file');
+    expect(contentTypeFor('audio/webm')).toBe('audio');
     expect(contentTypeFor('audio/ogg')).toBe('audio');
     expect(contentTypeFor('application/pdf')).toBe('file');
   });

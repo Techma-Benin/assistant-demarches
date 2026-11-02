@@ -1,13 +1,12 @@
-import type { components } from '@techma/contracts-ts';
+import type { Schemas } from '@techma/contracts-ts';
 import type { UploadedFile } from './c1-client';
-import { isMandateTriggerCode, type MandateTriggerCode } from './consent';
-import { contentTypeFor } from './files';
+import { fileContent } from './interactions';
 
-type Schemas = components['schemas'];
 export type Content = Schemas['Content'];
 export type AgentMessage = Schemas['AgentMessage'];
 export type EventPage = Schemas['EventPage'];
-export type Request = Schemas['Request'];
+export type Block = Schemas['Block'];
+export type UserMessage = Schemas['UserMessage'];
 
 export type Delivery =
   | 'uploading'
@@ -45,78 +44,41 @@ export type TimelineEntry =
       /** Voice message transcription, when the Backend sends it. */
       transcript?: { status: 'done'; text: string } | { status: 'failed' };
     }
-  | { kind: 'agent'; message: AgentMessage }
-  /** Request announced by the server (`request.created`), shown even if the model's reply has no status card. */
-  | { kind: 'request'; id: string; request: Request; at: string };
+  | { kind: 'agent'; message: AgentMessage };
 
-/** A tool needed a mandate (Backend `tool.called` error event). The card is shown after `anchorMessageId`. */
-export interface ConsentNeeded {
-  status: 'needed';
-  toolName: string;
-  eventId: string;
-  code: MandateTriggerCode;
-  /** First agent message received after the trigger (the one that announced it); null until then. */
-  anchorMessageId: string | null;
-}
-
-/** Last successful tool call of the agent's current turn; drives the « Je consulte… » line while waiting. */
-export interface AgentActivity {
-  toolName: string;
-  at: string;
-}
-
-const ACTIVITY_LABELS: Record<string, string> = {
-  'procedures.search': 'Je consulte la fiche officielle…',
-  'procedures.get': 'Je consulte la fiche officielle…',
-  'request.create': 'Je prépare votre dossier…',
-  'request.update': 'Je prépare votre dossier…',
-  'documents.attach': 'Je vérifie votre pièce…',
-  'documents.verify': 'Je vérifie votre pièce…',
-  'request.submit': 'J’envoie votre demande…',
-  'request.status': 'Je vérifie l’état de votre demande…',
-  'request.pay': 'Je prépare le paiement…',
-};
-
-/** User-facing label of what the agent is doing; generic when unknown or when no tool was called yet. */
-export function activityLabel(toolName?: string | null): string {
-  return (toolName && ACTIVITY_LABELS[toolName]) || 'Je réfléchis…';
-}
+/** Neutral line shown while the assistant answers (the v2 stream carries no tool activity). */
+export const WAITING_LABEL = 'L’assistant prépare sa réponse';
 
 export interface ConversationState {
-  status: 'starting' | 'ready' | 'error';
+  /** `idle`: no conversation yet, it is created with the visitor's first message. */
+  status: 'idle' | 'starting' | 'ready' | 'error';
   conversationId: string | null;
   cursor: string | null;
   seenEventIds: string[];
   timeline: TimelineEntry[];
-  /** Procedure of the latest `request.created` event, if any. */
-  requestProcedureId: string | null;
-  /** Set by a successful `tool.called`, cleared when the agent answers or the user sends a message. */
-  activity: AgentActivity | null;
-  consent?: ConsentNeeded;
   error?: string;
   /** The conversation can't be resumed (session expired, access denied, gone): only a new one helps. */
   lost?: boolean;
 }
 
 export const initialState: ConversationState = {
-  status: 'starting',
+  status: 'idle',
   conversationId: null,
   cursor: null,
   seenEventIds: [],
   timeline: [],
-  requestProcedureId: null,
-  activity: null,
 };
 
 export type ConversationAction =
+  | { type: 'conversationStarting' }
   | { type: 'conversationStarted'; conversationId: string }
-  | { type: 'startFailed'; error: string }
+  | { type: 'startFailed' }
   | { type: 'conversationLost'; error: string }
   | { type: 'userMessageQueued'; id: string; content: Content; display: string; sentAt: string; batchId?: string }
   | { type: 'userMessageAccepted'; id: string }
   | { type: 'userMessageFailed'; id: string }
   | { type: 'fileUploadStarted'; id: string; attachment: Attachment; sentAt: string; batchId?: string }
-  | { type: 'fileUploadSucceeded'; id: string; file: UploadedFile }
+  | { type: 'fileUploadSucceeded'; id: string; file: UploadedFile; documentType: string | null }
   | { type: 'fileUploadFailed'; id: string; error: string; retryable: boolean }
   | { type: 'eventsReceived'; page: EventPage }
   | { type: 'replayExpired' };
@@ -146,18 +108,20 @@ export function conversationReducer(state: ConversationState, action: Conversati
   switch (action.type) {
     case 'conversationStarted':
       return { ...state, status: 'ready', conversationId: action.conversationId, error: undefined };
+    case 'conversationStarting':
+      return state.status === 'idle' ? { ...state, status: 'starting', error: undefined } : state;
     case 'startFailed':
-      return { ...state, status: 'error', error: action.error };
+      // Not a dead end: the next send tries again. The queued message shows « Réessayer ».
+      return state.conversationId ? state : { ...state, status: 'idle' };
     case 'conversationLost':
       return { ...state, status: 'error', error: action.error, lost: true };
     case 'userMessageQueued':
       if (state.timeline.some((e) => e.kind === 'user' && e.id === action.id)) {
         // Retry of a failed message: same id, back to "sending".
-        return { ...state, activity: null, timeline: setDelivery(state.timeline, action.id, 'sending') };
+        return { ...state, timeline: setDelivery(state.timeline, action.id, 'sending') };
       }
       return {
         ...state,
-        activity: null,
         timeline: [
           ...state.timeline,
           {
@@ -201,13 +165,12 @@ export function conversationReducer(state: ConversationState, action: Conversati
         ],
       };
     case 'fileUploadSucceeded': {
-      // Contract 1.3.0: no antivirus scan; an uploaded file is usable at once.
       const { file } = action;
       return {
         ...state,
         timeline: updateUser(state.timeline, action.id, (e) => ({
           ...e,
-          content: { type: contentTypeFor(file.mimeType), fileId: file.id },
+          content: fileContent(file, action.documentType),
           delivery: 'sending',
           error: undefined,
           retryable: undefined,
@@ -235,74 +198,89 @@ export function conversationReducer(state: ConversationState, action: Conversati
     case 'eventsReceived': {
       const seen = new Set(state.seenEventIds);
       let timeline = state.timeline;
-      let consent = state.consent;
-      let requestProcedureId = state.requestProcedureId;
-      let activity = state.activity;
       for (const event of action.page.items) {
         if (seen.has(event.id)) continue;
         const data = event.data;
         // Events of another conversation are ignored (and not marked as seen).
         if ('conversationId' in data && data.conversationId !== state.conversationId) continue;
         seen.add(event.id);
-        // Proposed 1.4.0 event (message.transcribed), not in the generated contract types yet.
-        const raw = data as unknown as Record<string, unknown>;
-        if (raw.kind === 'message.transcribed') {
-          const id = raw.messageId;
-          if (typeof id === 'string') {
-            if (raw.status === 'failed') {
-              timeline = updateUser(timeline, id, (e) => ({ ...e, transcript: { status: 'failed' } }));
-            } else if (raw.status === 'done' && typeof raw.text === 'string' && raw.text !== '') {
-              const text = raw.text;
-              timeline = updateUser(timeline, id, (e) => ({ ...e, transcript: { status: 'done', text } }));
-            }
-          }
-          continue;
-        }
         if (data.kind === 'message.received') {
-          timeline = setDelivery(timeline, data.messageId, 'received');
+          timeline = applyUserMessage(timeline, data.message);
         } else if (data.kind === 'message.sent') {
           const message = data.message;
           if (!timeline.some((e) => e.kind === 'agent' && e.message.id === message.id)) {
             timeline = [...timeline, { kind: 'agent', message }];
-            activity = null;
-            if (consent && consent.anchorMessageId === null) consent = { ...consent, anchorMessageId: message.id };
-          }
-        } else if (data.kind === 'request.created') {
-          if (data.request.conversationId === state.conversationId) {
-            requestProcedureId = data.request.procedureId;
-            const request = data.request;
-            const shown = timeline.some((e) =>
-              e.kind === 'request'
-                ? e.request.id === request.id
-                : e.kind === 'agent' && e.message.blocks.some((b) => b.type === 'statusCard' && b.request.id === request.id),
-            );
-            if (!shown) timeline = [...timeline, { kind: 'request', id: event.id, request, at: event.time }];
-          }
-        } else if (data.kind === 'request.status_changed') {
-          timeline = timeline.map((e) =>
-            e.kind === 'request' && e.request.id === data.requestId
-              ? { ...e, request: { ...e.request, status: data.to, updatedAt: data.at } }
-              : e,
-          );
-        } else if (data.kind === 'tool.called' && data.outcome === 'success') {
-          activity = { toolName: data.toolName, at: event.time };
-        } else if (data.kind === 'tool.called' && data.outcome === 'error' && isMandateTriggerCode(data.code)) {
-          // A trigger already waiting for its announcing message is the same agent turn: keep it.
-          if (!consent || consent.anchorMessageId !== null) {
-            consent = { status: 'needed', toolName: data.toolName, eventId: event.id, code: data.code, anchorMessageId: null };
           }
         }
-        // Other kinds are ignored.
+        // The v2 stream carries only these two kinds (CONTRACTS.md §12); anything else is ignored.
       }
       return {
         ...state,
         seenEventIds: [...seen],
         timeline,
-        consent,
-        requestProcedureId,
-        activity,
         cursor: action.page.nextCursor ?? state.cursor,
       };
     }
   }
+}
+
+/** What the visitor sees for a message rebuilt from the history (nothing local remembers it). */
+function describeUserMessage(message: UserMessage, timeline: TimelineEntry[]): { display: string; attachment?: Attachment } {
+  const { content } = message;
+  switch (content.type) {
+    case 'text':
+      return { display: content.text };
+    case 'audio':
+      return { display: VOICE_LABEL, attachment: { name: VOICE_LABEL, sizeBytes: 0, mimeType: 'audio/*' } };
+    case 'file':
+      return { display: FILE_LABEL, attachment: { name: FILE_LABEL, sizeBytes: 0, mimeType: 'application/octet-stream' } };
+    case 'interaction': {
+      for (let i = timeline.length - 1; i >= 0; i--) {
+        const entry = timeline[i];
+        if (entry.kind !== 'agent') continue;
+        for (const block of entry.message.blocks) {
+          if (block.type === 'buttons') {
+            const item = block.items.find((candidate) => candidate.id === content.actionId);
+            if (item) return { display: item.label };
+          }
+          if (block.type === 'form' && block.id === content.actionId) return { display: FORM_SENT_LABEL };
+        }
+      }
+      return { display: content.value ?? content.actionId };
+    }
+  }
+}
+
+export const VOICE_LABEL = 'Message vocal';
+export const FILE_LABEL = 'Pièce jointe';
+export const FORM_SENT_LABEL = 'Formulaire envoyé';
+
+/**
+ * `message.received`: the server's copy of a user message. A message sent from this tab is confirmed (and gets its
+ * transcript); one that is not in the timeline (reload, other device) is rebuilt from the event.
+ */
+function applyUserMessage(timeline: TimelineEntry[], message: UserMessage): TimelineEntry[] {
+  const transcript: Extract<TimelineEntry, { kind: 'user' }>['transcript'] =
+    message.transcript && message.transcript !== '' ? { status: 'done', text: message.transcript } : undefined;
+  if (timeline.some((e) => e.kind === 'user' && e.id === message.id)) {
+    return updateUser(timeline, message.id, (e) => ({
+      ...e,
+      delivery: 'received',
+      transcript: transcript ?? e.transcript,
+    }));
+  }
+  const { display, attachment } = describeUserMessage(message, timeline);
+  return [
+    ...timeline,
+    {
+      kind: 'user',
+      id: message.id,
+      content: message.content,
+      display,
+      sentAt: message.sentAt,
+      delivery: 'received',
+      attachment,
+      transcript,
+    },
+  ];
 }

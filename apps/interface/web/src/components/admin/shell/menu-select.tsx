@@ -8,6 +8,8 @@ export interface MenuOption {
   id: string;
   /** Rendered in the menu row (badge + texts). */
   content: ReactNode;
+  /** Shown but not selectable (e.g. an administration that is not connected). */
+  disabled?: boolean;
 }
 
 /**
@@ -123,7 +125,7 @@ export function MenuSelect({
                 role="menuitemradio"
                 aria-checked={checked}
                 tabIndex={-1}
-                disabled={disabled}
+                disabled={disabled || option.disabled}
                 onClick={() => {
                   close(true);
                   if (!checked) onSelect(option.id);

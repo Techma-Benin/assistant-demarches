@@ -2,47 +2,33 @@
 
 import { Inbox } from 'lucide-react';
 import { useCallback } from 'react';
+import { AdministrationGate, Skeleton } from '@/components/admin/console/administration-gate';
+import { useConsole } from '@/components/admin/console/console-context';
+import { RequirePermission } from '@/components/admin/console/require-permission';
 import { PageHeader } from '@/components/admin/page-header';
 import { PagedFooter, usePagedList } from '@/components/admin/paginated-table';
-import { departmentApi } from '@/lib/admin/department-api';
-import { DepartmentGate, Skeleton } from './department-gate';
+import { adminApi, type CaseView } from '@/lib/admin/api';
+import { tabFor } from '@/lib/admin/work-format';
 import { WorkTable } from './work-table';
 
 const LIMIT = 20;
 
-const COPY = {
-  pending: {
-    title: 'En attente',
-    noun: 'les dossiers en attente',
-    description: 'Les dossiers déposés par les usagers qui attendent une vérification de votre équipe.',
-    empty: 'Aucun dossier',
-  },
-  completed: {
-    title: 'Complété',
-    noun: 'les dossiers complétés',
-    description: 'Les dossiers terminés, par l’IA ou par un agent.',
-    empty: 'Aucun dossier complété',
-  },
-} as const;
-
-function List({ departmentId, mode }: { departmentId: string | undefined; mode: 'pending' | 'completed' }) {
-  const copy = COPY[mode];
+function List({ administrationId, view }: { administrationId: string | undefined; view: CaseView }) {
+  const copy = tabFor(view)!;
+  const { officialName } = useConsole();
   const load = useCallback(
-    (cursor: string | null) => departmentApi.listWorkItems({ departmentId, status: mode, cursor, limit: LIMIT }),
-    [departmentId, mode],
+    (cursor: string | null) => adminApi.listCases({ administrationId, view, cursor, limit: LIMIT }),
+    [administrationId, view],
   );
   const { items, nextCursor, status, error, retry, loadMore } = usePagedList(load);
-  const title = mode === 'pending' && status === 'idle' ? `${copy.title} (${items.length})` : copy.title;
   const firstLoad = status === 'loading' && items.length === 0;
 
   return (
     <>
-      <PageHeader title={title} description={copy.description} />
+      <PageHeader title={copy.title} description={copy.description} />
       <div className="flex flex-col gap-4">
         {firstLoad ? <Skeleton lines={4} /> : null}
-        {items.length > 0 ? (
-          <WorkTable items={items} mode={mode} label={copy.title} />
-        ) : null}
+        {items.length > 0 ? <WorkTable items={items} label={copy.title} officialName={officialName} /> : null}
         {status === 'idle' && items.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-tile bg-sunken px-6 py-14 text-ink-muted">
             <Inbox aria-hidden="true" className="size-10" />
@@ -62,10 +48,14 @@ function List({ departmentId, mode }: { departmentId: string | undefined; mode: 
   );
 }
 
-export function WorkList({ mode }: { mode: 'pending' | 'completed' }) {
+/** One tab of the case queue: En attente (`pending`), Complété (`completed`) or Rejeté (`rejected`). */
+export function WorkList({ view }: { view: Exclude<CaseView, 'all'> }) {
+  const copy = tabFor(view)!;
   return (
-    <DepartmentGate header={<PageHeader title={COPY[mode].title} description={COPY[mode].description} />}>
-      {(departmentId) => <List departmentId={departmentId} mode={mode} />}
-    </DepartmentGate>
+    <RequirePermission permission="cases:read">
+      <AdministrationGate header={<PageHeader title={copy.title} description={copy.description} />}>
+        {(administrationId) => <List administrationId={administrationId} view={view} />}
+      </AdministrationGate>
+    </RequirePermission>
   );
 }

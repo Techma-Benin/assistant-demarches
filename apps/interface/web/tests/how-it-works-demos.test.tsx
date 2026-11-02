@@ -62,7 +62,7 @@ describe('How it works demos', () => {
     expect(screen.queryByText('Demande créée')).not.toBeInTheDocument();
     advance(400 + 2060 + 800 + 800 + 800 + 400 + 100);
     expect(screen.getByText('Demande créée')).toBeInTheDocument();
-    expect(screen.getByText('Brouillon')).toBeInTheDocument();
+    expect(screen.getByText('Dossier reçu')).toBeInTheDocument();
     advance(3400 + 500 + 600 + 100);
     expect(screen.queryByText('Demande créée')).not.toBeInTheDocument();
   });
@@ -84,7 +84,7 @@ describe('How it works demos', () => {
     ask.unmount();
     const prep = render(<PrepareDemo />);
     expect(screen.getByText('Demande créée')).toBeInTheDocument();
-    expect(screen.getByText('Brouillon')).toBeInTheDocument();
+    expect(screen.getByText('Dossier reçu')).toBeInTheDocument();
     prep.unmount();
     render(<ValidateDemo />);
     expect(screen.getByText('Déposée')).toBeInTheDocument();

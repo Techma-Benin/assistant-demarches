@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { conversationReducer, initialState, type ConversationState } from '@/lib/conversation-state';
 import type { EventPage, UploadedFile } from '@/lib/c1-client';
+import { userEvent } from './fixtures-v2';
 
 const CNV = 'cnv_' + '0'.repeat(25) + '1';
 const pad = (n: number) => String(n).padStart(26, '0');
@@ -10,7 +11,7 @@ const file = (): UploadedFile => ({
   id: `fil_${pad(1)}`,
   mimeType: 'application/pdf',
   sizeBytes: 1200,
-  expiresAt: '2026-10-23T18:00:00Z',
+  expiresAt: '2026-11-03T18:00:00Z',
 });
 
 function started(): ConversationState {
@@ -27,34 +28,23 @@ describe('file upload states', () => {
   it('goes uploading -> sending -> accepted -> received', () => {
     let s = started();
     expect(user(s)).toMatchObject({ delivery: 'uploading', content: null, attachment });
-    s = conversationReducer(s, { type: 'fileUploadSucceeded', id: MSG, file: file() });
+    s = conversationReducer(s, { type: 'fileUploadSucceeded', id: MSG, file: file(), documentType: null });
     expect(user(s)).toMatchObject({
       delivery: 'sending',
-      content: { type: 'file', fileId: `fil_${pad(1)}` },
+      content: { type: 'file', fileId: `fil_${pad(1)}`, documentType: null },
     });
     s = conversationReducer(s, { type: 'userMessageAccepted', id: MSG });
     expect(user(s).delivery).toBe('accepted');
     const page: EventPage = {
-      items: [
-        {
-          specversion: '1.0',
-          id: `evt_${pad(1)}`,
-          source: 'urn:techma:backend',
-          type: 'bj.techma.message.received.v1',
-          time: '2026-10-22T18:00:00Z',
-          datacontenttype: 'application/json',
-          traceparent: '00-' + '1'.repeat(32) + '-' + '2'.repeat(16) + '-01',
-          data: { kind: 'message.received', conversationId: CNV, messageId: MSG },
-        },
-      ],
+      items: [userEvent(1, { type: 'file', fileId: `fil_${pad(1)}`, documentType: null }, { messageId: MSG, conversationId: CNV })],
       nextCursor: `evt_${pad(1)}`,
     };
     s = conversationReducer(s, { type: 'eventsReceived', page });
     expect(user(s).delivery).toBe('received');
   });
 
-  it('sends an uploaded file at once: contract 1.3.0 has no antivirus scan state', () => {
-    const s = conversationReducer(started(), { type: 'fileUploadSucceeded', id: MSG, file: file() });
+  it('sends an uploaded file at once: no antivirus scan state in v2', () => {
+    const s = conversationReducer(started(), { type: 'fileUploadSucceeded', id: MSG, file: file(), documentType: null });
     expect(user(s)).toMatchObject({ delivery: 'sending', error: undefined });
     expect(user(s).attachment).toEqual(attachment);
   });
@@ -67,6 +57,21 @@ describe('file upload states', () => {
     expect(s.timeline).toHaveLength(1);
     s = conversationReducer(s, { type: 'fileUploadFailed', id: MSG, error: 'no', retryable: false });
     expect(user(s)).toMatchObject({ delivery: 'uploadFailed', retryable: false });
+  });
+});
+
+describe('file message content', () => {
+  it('carries the documentType of the fileRequest it answers', () => {
+    const s = conversationReducer(started(), { type: 'fileUploadSucceeded', id: MSG, file: file(), documentType: 'extrait-acte-naissance' });
+    expect(user(s).content).toEqual({ type: 'file', fileId: `fil_${pad(1)}`, documentType: 'extrait-acte-naissance' });
+  });
+
+  it('is audio {fileId} for a voice message and never an image type', () => {
+    const voice: UploadedFile = { ...file(), mimeType: 'audio/webm' };
+    const s = conversationReducer(started(), { type: 'fileUploadSucceeded', id: MSG, file: voice, documentType: null });
+    expect(user(s).content).toEqual({ type: 'audio', fileId: `fil_${pad(1)}` });
+    const png = conversationReducer(started(), { type: 'fileUploadSucceeded', id: MSG, file: { ...file(), mimeType: 'image/png' }, documentType: null });
+    expect(user(png).content).toMatchObject({ type: 'file' });
   });
 });
 
@@ -92,7 +97,7 @@ describe('batchId', () => {
     s = conversationReducer(s, { type: 'fileUploadFailed', id: MSG, error: 'x', retryable: true });
     s = conversationReducer(s, { type: 'fileUploadStarted', id: MSG, attachment, sentAt });
     expect(user(s)).toMatchObject({ delivery: 'uploading', batchId: 'batch_1' });
-    s = conversationReducer(s, { type: 'fileUploadSucceeded', id: MSG, file: file() });
+    s = conversationReducer(s, { type: 'fileUploadSucceeded', id: MSG, file: file(), documentType: null });
     s = conversationReducer(s, { type: 'userMessageFailed', id: MSG });
     s = conversationReducer(s, { type: 'userMessageQueued', id: MSG, content: { type: 'text', text: '' }, display: '', sentAt });
     expect(user(s)).toMatchObject({ delivery: 'sending', batchId: 'batch_1' });

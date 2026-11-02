@@ -2,27 +2,14 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssistantApp } from '@/components/app/AssistantApp';
-import { noopConsent } from '@/lib/consent';
-import type { useConversation } from '@/hooks/use-conversation';
 import { initialState, type ConversationState } from '@/lib/conversation-state';
-
-type Conversation = ReturnType<typeof useConversation>;
+import { fakeConversation, type Conversation } from './conversation-helper';
 
 const hook = vi.hoisted(() => ({ current: null as unknown }));
 vi.mock('@/hooks/use-conversation', () => ({ useConversation: () => hook.current }));
 
 function build(state: Partial<ConversationState>): Conversation {
-  return {
-    state: { ...initialState, status: 'ready', conversationId: 'cnv_1', ...state },
-    connection: 'live',
-    sendText: vi.fn(),
-    sendButton: vi.fn(),
-    sendForm: vi.fn(),
-    sendFile: vi.fn(),
-    sendFiles: vi.fn(),
-    retry: vi.fn(),
-    consent: noopConsent,
-  };
+  return fakeConversation({ state: { ...initialState, status: 'ready', conversationId: 'cnv_1', ...state } });
 }
 
 describe('AssistantApp', () => {
@@ -50,10 +37,14 @@ describe('AssistantApp', () => {
     expect(conversation.sendFiles).toHaveBeenCalledWith([file], undefined);
   });
 
-  it('keeps the front door disabled while the conversation is starting', () => {
-    hook.current = build({ status: 'starting', conversationId: null });
+  it('never makes the front door wait for the Backend: no conversation yet, the buttons are live', async () => {
+    const conversation = build({ status: 'idle', conversationId: null });
+    hook.current = conversation;
     render(<AssistantApp />);
-    expect(screen.getByRole('button', { name: 'Renouveler mon passeport' })).toBeDisabled();
+    const ask = screen.getByRole('button', { name: 'Renouveler mon passeport' });
+    expect(ask).toBeEnabled();
+    await userEvent.click(ask);
+    expect(conversation.sendText).toHaveBeenCalledWith('Renouveler mon passeport');
   });
 
   it('switches to the conversation view once a question is sent', async () => {

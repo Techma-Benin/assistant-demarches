@@ -7,15 +7,15 @@ describe('pickRecorderMime', () => {
     expect(pickRecorderMime((t) => t === 'audio/mp4')).toEqual({ recorderType: 'audio/mp4', fileType: 'audio/mp4' });
   });
 
-  it('returns null when neither is supported, and never asks for webm', () => {
-    const asked: string[] = [];
-    expect(
-      pickRecorderMime((t) => {
-        asked.push(t);
-        return t.includes('webm');
-      }),
-    ).toBeNull();
-    expect(asked.some((t) => t.includes('webm'))).toBe(false);
+  it('falls back to webm (Chrome), accepted by the v2 upload contract', () => {
+    expect(pickRecorderMime((t) => t.includes('webm'))).toEqual({
+      recorderType: 'audio/webm;codecs=opus',
+      fileType: 'audio/webm',
+    });
+  });
+
+  it('returns null when nothing the contract accepts can be recorded', () => {
+    expect(pickRecorderMime(() => false)).toBeNull();
   });
 });
 

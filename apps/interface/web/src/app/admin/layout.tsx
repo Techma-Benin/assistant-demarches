@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { ConsoleProvider } from '@/components/admin/console/console-context';
 import { AppShell } from '@/components/admin/shell/app-shell';
 import { AccessDenied } from '@/components/admin/shell/access-denied';
-import { DEPARTMENT_COOKIE, isDepartmentId } from '@/server/admin-department';
+import { ADMINISTRATION_COOKIE, isAdministrationId } from '@/server/admin-administration';
 import { readSession } from '@/server/auth/session';
 
 export const metadata: Metadata = {
@@ -18,10 +18,10 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   if (!user || user.refreshExpiresAt <= Date.now()) redirect('/auth/login?returnTo=/admin');
   if (!user.roles.includes('official')) return <AccessDenied />;
 
-  const department = (await cookies()).get(DEPARTMENT_COOKIE)?.value;
+  const administration = (await cookies()).get(ADMINISTRATION_COOKIE)?.value;
 
   return (
-    <ConsoleProvider initialDepartmentId={isDepartmentId(department) ? department : null}>
+    <ConsoleProvider initialAdministrationId={isAdministrationId(administration) ? administration : null}>
       <AppShell>{children}</AppShell>
     </ConsoleProvider>
   );

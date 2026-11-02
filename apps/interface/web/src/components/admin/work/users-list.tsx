@@ -1,70 +1,128 @@
 'use client';
 
-import { Badge } from '@techma/ui';
-import { useCallback } from 'react';
+import { Badge, Button, Toast } from '@techma/ui';
+import { UserPlus } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { AdministrationGate } from '@/components/admin/console/administration-gate';
 import { useConsole } from '@/components/admin/console/console-context';
+import { RequirePermission } from '@/components/admin/console/require-permission';
+import { PageHeader } from '@/components/admin/page-header';
 import { PaginatedTable, type Column } from '@/components/admin/paginated-table';
-import { departmentApi, type AdminUser } from '@/lib/admin/department-api';
-import { DepartmentGate } from './department-gate';
+import { useToast } from '@/components/admin/use-toast';
+import { adminApi, type OfficialCreated } from '@/lib/admin/api';
+import type { Official } from '@/lib/admin/console-types';
+import { roleLabel } from '@/lib/admin/permissions';
+import { OfficialForm } from './official-form';
+import { PasswordDialog } from './password-dialog';
 
 const LIMIT = 50;
 
-function roleLabel(user: AdminUser, departmentId: string | undefined): string {
-  if (user.superAdmin) return 'Super administrateur';
-  const memberships = user.memberships.filter((m) => !departmentId || m.departmentId === departmentId);
-  const roles = new Set(memberships.map((m) => m.role));
-  if (roles.has('admin')) return 'Administrateur';
-  if (roles.has('agent')) return 'Agent';
-  return '-';
-}
+type Editing = { kind: 'create' } | { kind: 'edit'; official: Official } | null;
 
-function Users({ departmentId }: { departmentId: string | undefined }) {
-  const { departments } = useConsole();
-  const names = new Map(departments.map((d) => [d.id, d.name]));
+function Users({ administrationId }: { administrationId: string | undefined }) {
+  const { administrations, administrationId: selectedId, can } = useConsole();
+  const canManage = can('officials:manage');
+  const names = new Map(administrations.map((a) => [a.id, a.name]));
+  const [refresh, setRefresh] = useState(0);
+  const [editing, setEditing] = useState<Editing>(null);
+  const [created, setCreated] = useState<OfficialCreated | null>(null);
+  const toast = useToast();
   const load = useCallback(
-    (cursor: string | null) => departmentApi.listUsers({ departmentId, cursor, limit: LIMIT }),
-    [departmentId],
+    (cursor: string | null) => {
+      void refresh; // a new value reloads the list from the first page
+      return adminApi.listOfficials({ administrationId, cursor, limit: LIMIT });
+    },
+    [administrationId, refresh],
   );
-  const columns: Column<AdminUser>[] = [
+  const columns: Column<Official>[] = [
     {
       header: 'Nom',
       cell: (u) => (
         <span className="flex flex-col">
           <span className="font-semibold">{u.displayName}</span>
-          {u.email ? <span className="text-[13px] text-ink-muted">{u.email}</span> : null}
+          <span className="text-[13px] text-ink-muted">{u.email}</span>
         </span>
       ),
     },
-    { header: 'Rôle', cell: (u) => roleLabel(u, departmentId) },
+    { header: 'Fonction', cell: (u) => u.jobTitle },
+    { header: 'Rôle', cell: (u) => roleLabel(u.role) },
+    {
+      header: 'Administration',
+      cell: (u) => (u.administrationId ? (names.get(u.administrationId) ?? u.administrationId) : 'Toutes'),
+    },
     {
       header: 'Actif',
       cell: (u) => <Badge tone={u.active ? 'trust' : 'neutral'}>{u.active ? 'Actif' : 'Inactif'}</Badge>,
     },
-    {
-      header: 'Ministères',
-      cell: (u) =>
-        u.memberships.length === 0
-          ? '-'
-          : u.memberships.map((m) => names.get(m.departmentId) ?? m.departmentId).join(', '),
-    },
+    ...(canManage
+      ? [
+          {
+            header: 'Actions',
+            cell: (u: Official) => (
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label={`Modifier ${u.displayName}`}
+                onClick={() => setEditing({ kind: 'edit', official: u })}
+              >
+                Modifier
+              </Button>
+            ),
+          },
+        ]
+      : []),
   ];
   return (
     <div className="flex flex-col gap-4">
+      {canManage ? (
+        <div className="flex items-center justify-between gap-3">
+          <Button onClick={() => setEditing({ kind: 'create' })}>
+            <UserPlus aria-hidden="true" className="size-4" />
+            Ajouter un agent
+          </Button>
+          <Toast message={toast.message} onDismiss={toast.dismiss} />
+        </div>
+      ) : null}
       <PaginatedTable
         label="Utilisateurs"
         noun="les utilisateurs"
         columns={columns}
-        rowKey={(u) => u.subject}
+        rowKey={(u) => u.id}
         load={load}
-        className="min-w-[640px]"
+        className="min-w-[760px]"
       />
-      <p className="text-[13px] text-ink-subtle">
-        Lecture seule : la création et la modification des utilisateurs ne sont pas disponibles dans cette version.
-      </p>
+      {editing ? (
+        <OfficialForm
+          official={editing.kind === 'edit' ? editing.official : null}
+          defaultAdministrationId={selectedId}
+          onClose={() => setEditing(null)}
+          onCreated={(result) => {
+            setEditing(null);
+            setCreated(result);
+            setRefresh((value) => value + 1);
+          }}
+          onUpdated={() => {
+            setEditing(null);
+            setRefresh((value) => value + 1);
+            toast.show('Modifications enregistrées.');
+          }}
+        />
+      ) : null}
+      {created ? (
+        <PasswordDialog
+          displayName={created.official.displayName}
+          password={created.temporaryPassword}
+          onClose={() => setCreated(null)}
+        />
+      ) : null}
     </div>
   );
 }
 
 export function UsersList() {
-  return <DepartmentGate>{(departmentId) => <Users departmentId={departmentId} />}</DepartmentGate>;
+  return (
+    <RequirePermission permission="officials:read">
+      <AdministrationGate>{(administrationId) => <Users administrationId={administrationId} />}</AdministrationGate>
+    </RequirePermission>
+  );
 }

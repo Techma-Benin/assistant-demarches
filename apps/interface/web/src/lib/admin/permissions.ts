@@ -1,18 +1,13 @@
-import type { AdminProfile } from './console-types';
+import type { AdminProfile, OfficialRole, Permission } from './console-types';
 
-/** Operator permissions (models / MCP configuration) are separate from the business console. */
-const OPERATOR_PERMISSIONS = new Set(['operator:read', 'operator:write']);
+/** True when `GET /v1/admin/me` granted `permission`. The server refuses anyway: this only hides. */
+export const can = (profile: AdminProfile | null, permission: Permission): boolean =>
+  !!profile?.permissions.includes(permission);
 
-export const hasOperatorPermission = (profile: AdminProfile | null): boolean =>
-  !!profile?.permissions.some((permission) => OPERATOR_PERMISSIONS.has(permission));
+const ROLE_LABELS: Record<OfficialRole, string> = {
+  agent: 'Agent',
+  admin: 'Administrateur',
+  super_admin: 'Super administrateur',
+};
 
-/** Super admin, or an active `admin` membership on the selected department. */
-export function canManageUsers(profile: AdminProfile | null, departmentId: string | null): boolean {
-  if (!profile) return false;
-  if (profile.superAdmin) return true;
-  return profile.memberships.some(
-    (membership) => membership.active && membership.role === 'admin' && membership.departmentId === departmentId,
-  );
-}
-
-export const roleLabel = (role: 'agent' | 'admin'): string => (role === 'admin' ? 'Admin' : 'Agent');
+export const roleLabel = (role: OfficialRole): string => ROLE_LABELS[role];

@@ -20,9 +20,8 @@ function fakeClient(over: Partial<Record<string, unknown>> = {}) {
 }
 
 async function setup(client: ReturnType<typeof fakeClient>) {
-  const hook = renderHook(() => useConversation(client as unknown as C1Client));
-  await waitFor(() => expect(hook.result.current.state.status).toBe('ready'));
-  return hook;
+  // Lazy start: the conversation exists once the first send created it, so there is nothing to wait for here.
+  return renderHook(() => useConversation(client as unknown as C1Client));
 }
 
 const contents = (client: ReturnType<typeof fakeClient>) =>
@@ -47,7 +46,7 @@ describe('sendFile with a note', () => {
     expect(noteEntry).toMatchObject({ kind: 'user', display: 'Voici ma pièce' });
 
     await waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
-    expect(contents(client)[0].content).toEqual({ type: 'file', fileId: 'fil_1' });
+    expect(contents(client)[0].content).toEqual({ type: 'file', fileId: 'fil_1', documentType: null });
     act(() => release());
     await waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(2));
     expect(contents(client)[1]).toMatchObject({ id: noteEntry.id, content: { type: 'text', text: 'Voici ma pièce' } });
@@ -128,8 +127,8 @@ describe('sendFile with a note', () => {
     act(() => result.current.retry((result.current.state.timeline[0] as { id: string }).id));
     await waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(3));
     expect(contents(client).map((c) => c.content)).toEqual([
-      { type: 'file', fileId: 'fil_1' },
-      { type: 'file', fileId: 'fil_2' },
+      { type: 'file', fileId: 'fil_1', documentType: null },
+      { type: 'file', fileId: 'fil_2', documentType: null },
       { type: 'text', text: 'note' },
     ]);
   });

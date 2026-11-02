@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PaginatedTable, type Column } from '@/components/admin/paginated-table';
-import { C3Error } from '@/lib/operator/c3-client';
+import { AdminError } from '@/lib/admin/errors';
 
 interface Row {
   id: string;
@@ -49,7 +49,7 @@ describe('PaginatedTable', () => {
   it('shows a generic error and retries', async () => {
     const load = vi
       .fn<(cursor: string | null) => Promise<{ items: Row[]; nextCursor: null }>>()
-      .mockRejectedValueOnce(new C3Error(500))
+      .mockRejectedValueOnce(new AdminError(500))
       .mockResolvedValueOnce({ items: [{ id: 'a' }], nextCursor: null });
     renderTable(load);
     expect(await screen.findByRole('alert')).toHaveTextContent('Impossible de charger les lignes.');
@@ -59,18 +59,18 @@ describe('PaginatedTable', () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
-  it.each([401, 403])('shows "Accès administrateur requis" on %i', async (status) => {
+  it.each([401, 403])('shows "Vous n’avez pas accès à cette page." on %i', async (status) => {
     renderTable(async () => {
-      throw new C3Error(status);
+      throw new AdminError(status);
     });
-    expect(await screen.findByRole('alert')).toHaveTextContent('Accès administrateur requis');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Vous n’avez pas accès à cette page.');
   });
 
   it('keeps loaded rows when load more fails and retries the same cursor', async () => {
     const load = vi
       .fn<(cursor: string | null) => Promise<{ items: Row[]; nextCursor: string | null }>>()
       .mockResolvedValueOnce({ items: [{ id: 'a' }], nextCursor: 'c1' })
-      .mockRejectedValueOnce(new C3Error(503))
+      .mockRejectedValueOnce(new AdminError(503))
       .mockResolvedValueOnce({ items: [{ id: 'b' }], nextCursor: null });
     renderTable(load);
     await screen.findByText('a');

@@ -11,7 +11,7 @@ import {
   TableRow,
 } from '@techma/ui';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { C3Error } from '@/lib/operator/c3-client';
+import { AdminError } from '@/lib/admin/errors';
 
 export interface Column<T> {
   header: string;
@@ -27,7 +27,7 @@ export interface PagedPage<T> {
 export interface PaginatedTableProps<T> {
   /** Accessible name of the table. */
   label: string;
-  /** Plural noun used in messages, e.g. « les modèles ». */
+  /** Plural noun used in messages, e.g. « les agents ». */
   noun: string;
   columns: ReadonlyArray<Column<T>>;
   rowKey: (item: T) => string;
@@ -43,8 +43,8 @@ export interface PaginatedTableProps<T> {
 type Status = 'loading' | 'idle' | 'error';
 
 export function errorMessage(error: unknown, noun: string): string {
-  if (error instanceof C3Error && (error.status === 401 || error.status === 403)) {
-    return 'Accès administrateur requis';
+  if (error instanceof AdminError && (error.status === 401 || error.status === 403)) {
+    return 'Vous n’avez pas accès à cette page.';
   }
   return `Impossible de charger ${noun}.`;
 }

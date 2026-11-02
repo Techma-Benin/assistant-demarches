@@ -5,10 +5,9 @@ import { Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { canManageUsers } from '@/lib/admin/permissions';
-import { newTraceparent } from '@/lib/trace';
+import { adminApi } from '@/lib/admin/api';
 import { useConsole } from '../console/console-context';
-import { MinistrySelector } from './ministry-selector';
+import { AdministrationSelector } from './administration-selector';
 import { BUSINESS_NAV, PROFILE_NAV, USERS_NAV, isActive, type NavItem } from './nav-items';
 import { ServiceStatusTile } from './service-status-tile';
 
@@ -23,27 +22,21 @@ function subscribeDesktop(onChange: () => void) {
 
 const isDesktop = () => typeof window.matchMedia === 'function' && window.matchMedia(DESKTOP_QUERY).matches;
 
-/** Number of items waiting for a decision in the selected ministry; null when unknown. One request, refreshed on navigation. */
-function usePendingCount(departmentId: string | null, refreshKey: string): number | null {
+/** Number of cases waiting (`dashboard.metrics.pending`) for the administration; null when unknown. Refreshed on navigation. */
+function usePendingCount(enabled: boolean, scopeId: string | undefined, refreshKey: string): number | null {
   const [count, setCount] = useState<number | null>(null);
   useEffect(() => {
-    if (!departmentId) {
+    if (!enabled) {
       setCount(null);
       return;
     }
     const controller = new AbortController();
-    const query = new URLSearchParams({ departmentId, status: 'pending', limit: '100' });
-    fetch(`/api/admin/v1/admin/work-items?${query}`, {
-      headers: { traceparent: newTraceparent() },
-      signal: controller.signal,
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error('http'))))
-      .then(
-        (page: { items: unknown[] }) => setCount(page.items.length),
-        () => !controller.signal.aborted && setCount(null),
-      );
+    adminApi.getDashboard({ administrationId: scopeId }, controller.signal).then(
+      (dashboard) => setCount(dashboard.metrics.pending),
+      () => !controller.signal.aborted && setCount(null),
+    );
     return () => controller.abort();
-  }, [departmentId, refreshKey]);
+  }, [enabled, scopeId, refreshKey]);
   return count;
 }
 
@@ -73,13 +66,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const desktop = useSyncExternalStore(subscribeDesktop, isDesktop, () => false);
-  const { profile, departmentId, loading, error, reload } = useConsole();
-  const pending = usePendingCount(departmentId, pathname);
+  const { profile, administrationId, scopeId, isSuperAdmin, can, loading, error, reload } = useConsole();
+  const canReadCases = can('cases:read');
+  const pending = usePendingCount(canReadCases && (!isSuperAdmin || scopeId !== undefined), scopeId, pathname);
 
   // Close the mobile menu after navigating.
   useEffect(() => setOpen(false), [pathname]);
 
-  const businessItems = [...BUSINESS_NAV, ...(canManageUsers(profile, departmentId) ? [USERS_NAV] : []), PROFILE_NAV];
+  const businessItems = [...BUSINESS_NAV, USERS_NAV, PROFILE_NAV].filter((item) => !item.permission || can(item.permission));
   const backend = error ? 'down' : loading && !profile ? 'checking' : 'up';
 
   return (
@@ -116,7 +110,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
         >
           <div className="flex flex-col gap-3 px-4 pb-4">
-            <MinistrySelector />
+            <AdministrationSelector />
           </div>
           <nav aria-label="Navigation principale" className="px-4 pb-3 md:min-h-0 md:flex-1 md:overflow-y-auto">
             <ul className="flex flex-col gap-1">
@@ -149,8 +143,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             Chargement…
           </p>
         ) : (
-          // Remounted on every ministry change so pages reload their data.
-          <div key={`${pathname}|${departmentId}`} className="ui-rise">
+          // Remounted on every administration change so pages reload their data.
+          <div key={`${pathname}|${administrationId}`} className="ui-rise">
             {children}
           </div>
         )}

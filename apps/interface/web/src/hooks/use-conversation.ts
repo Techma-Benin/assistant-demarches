@@ -3,36 +3,27 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { C1Client, C1Error, type MessageInput } from '@/lib/c1-client';
 import { ConversationStream, type StreamStatus } from '@/lib/conversation-stream';
-import {
-  MANDATE_SCOPES,
-  idleFlow,
-  resolveProcedureId,
-  toPublicChallenge,
-  type ConsentControls,
-  type ConsentFlow,
-  type PublicChallenge,
-} from '@/lib/consent';
+import type { Challenge, ConsentControls, ConsentState } from '@/lib/consent';
 import { conversationReducer, initialState, type ConversationState } from '@/lib/conversation-state';
 import { saveConversation, type ConversationSnapshot } from '@/lib/conversation-persistence';
-import { CONTRACT_MIME_TYPES, contentTypeFor, validateFile, type ContractMimeType } from '@/lib/files';
+import { CONTRACT_MIME_TYPES, validateFile, type ContractMimeType } from '@/lib/files';
 import { newId } from '@/lib/ids';
-import { buttonInteraction, formInteraction } from '@/lib/interactions';
+import { buttonInteraction, fileContent, formInteraction } from '@/lib/interactions';
 
 interface PendingUpload {
   file: File;
+  documentType: string | null;
   mimeType: ContractMimeType;
   uploadKey: string;
   sentAt: string;
 }
 
 const MAX_TEXT_LENGTH = 4000;
-const SAVE_DEBOUNCE_MS = 150;
-const CONTINUE_TEXT = 'J’ai donné mon autorisation, vous pouvez continuer.';
 
+/** A saved conversation holds only its id: the timeline is rebuilt from the event history. */
 function stateFromSnapshot(snapshot: ConversationSnapshot | null | undefined): ConversationState {
   if (!snapshot) return initialState;
-  const { mandate: _mandate, ...rest } = snapshot;
-  return { ...initialState, ...rest, status: 'ready' };
+  return { ...initialState, conversationId: snapshot.conversationId, status: 'ready' };
 }
 
 /** `restored`: a conversation saved before a reload; it is resumed instead of creating a new one. */
@@ -60,32 +51,44 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
     };
   }, []);
 
-  useEffect(() => {
-    if (resumed.current) return;
-    let cancelled = false;
-    c1.createConversation({ channel: 'web', locale: 'fr' }, idempotencyKey.current)
-      .then((conversation) => {
-        if (!cancelled) dispatch({ type: 'conversationStarted', conversationId: conversation.id });
-      })
-      .catch(() => {
-        if (!cancelled) {
-          dispatch({ type: 'startFailed', error: 'Impossible de démarrer la conversation. Veuillez réessayer.' });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+  // The conversation is created with the visitor's first message, never on page load. One call at a time:
+  // every send waits for this promise, so a first message plus uploads never open several guest sessions.
+  const conversationRef = useRef<string | null>(restored?.conversationId ?? null);
+  const starting = useRef<Promise<string | null> | null>(null);
+  const ensureConversation = useCallback((): Promise<string | null> => {
+    if (conversationRef.current) return Promise.resolve(conversationRef.current);
+    if (!starting.current) {
+      dispatch({ type: 'conversationStarting' });
+      starting.current = c1
+        .createConversation({ locale: 'fr' }, idempotencyKey.current)
+        .then((conversation) => {
+          conversationRef.current = conversation.id;
+          dispatch({ type: 'conversationStarted', conversationId: conversation.id });
+          return conversation.id;
+        })
+        .catch(() => {
+          starting.current = null;
+          dispatch({ type: 'startFailed' });
+          return null;
+        });
+    }
+    return starting.current;
   }, [c1]);
 
   // Realtime (CONTRACTS.md §5): WebSocket with polling fallback, owned by ConversationStream.
   const conversationId = state.conversationId;
   const [connection, setConnection] = useState<StreamStatus>('connecting');
+  // A resumed conversation shows nothing until its history is back.
+  const [loadingHistory, setLoadingHistory] = useState(restored != null);
   useEffect(() => {
     if (!conversationId) return;
+    const resuming = resumed.current?.conversationId === conversationId;
     const stream = new ConversationStream({
       client: c1,
       conversationId,
-      initialCursor: resumed.current?.conversationId === conversationId ? resumed.current.cursor : null,
+      // Reload: no cursor, the whole history (the user's messages and voice transcripts included) rebuilds the timeline.
+      restoreHistory: resuming,
+      onHistoryLoaded: () => setLoadingHistory(false),
       onEvents: (items) =>
         dispatch({ type: 'eventsReceived', page: { items, nextCursor: items[items.length - 1].id } }),
       onReplayExpired: () => dispatch({ type: 'replayExpired' }),
@@ -99,18 +102,23 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
               : 'Cette conversation n’est plus disponible. Commencez-en une nouvelle.',
         }),
     });
+    if (!resuming) setLoadingHistory(false);
     stream.start();
     return () => stream.stop();
   }, [c1, conversationId]);
 
   const post = useCallback(
     async (input: MessageInput): Promise<void> => {
-      if (!conversationId) return;
+      const id = await ensureConversation();
+      if (!id) {
+        dispatch({ type: 'userMessageFailed', id: input.id });
+        return;
+      }
       let next: MessageInput | undefined = input;
       while (next) {
         const current: MessageInput = next;
         try {
-          await c1.sendMessage(conversationId, current);
+          await c1.sendMessage(id, current);
           dispatch({ type: 'userMessageAccepted', id: current.id });
         } catch {
           dispatch({ type: 'userMessageFailed', id: current.id });
@@ -126,17 +134,19 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
         }
       }
     },
-    [c1, conversationId],
+    [c1, ensureConversation],
   );
 
   const upload = useCallback(
     async (id: string, entry: PendingUpload) => {
       try {
+        // Conversation first: a single call opens the guest session, the upload follows.
+        if (!(await ensureConversation())) throw new Error('conversation');
         const uploaded = await c1.uploadFile(entry.file, entry.mimeType, entry.uploadKey);
-        dispatch({ type: 'fileUploadSucceeded', id, file: uploaded });
+        dispatch({ type: 'fileUploadSucceeded', id, file: uploaded, documentType: entry.documentType });
         const input: MessageInput = {
           id,
-          content: { type: contentTypeFor(uploaded.mimeType), fileId: uploaded.id },
+          content: fileContent(uploaded, entry.documentType),
           sentAt: entry.sentAt,
         };
         const prevId = prevOf.current.get(id);
@@ -158,12 +168,11 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
         }
       }
     },
-    [c1, post],
+    [c1, post, ensureConversation],
   );
 
   const sendFiles = useCallback(
-    (files: File[], note?: string, voice?: { durationMs: number; waveform: number[] }) => {
-      if (!conversationId) return;
+    (files: File[], note?: string, voice?: { durationMs: number; waveform: number[] }, documentType: string | null = null) => {
       const text = note?.trim();
       if (text && text.length > MAX_TEXT_LENGTH) return;
       const valid = files.flatMap((file) => {
@@ -185,6 +194,8 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
         const id = newId('msg');
         const entry: PendingUpload = {
           file,
+          // Only a document can answer a `fileRequest`; a voice message is plain audio.
+          documentType: mimeType.startsWith('audio/') ? null : documentType,
           mimeType,
           uploadKey: crypto.randomUUID(),
           sentAt: new Date().toISOString(),
@@ -226,20 +237,19 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
       // Uploads run in parallel; the message POSTs are chained.
       for (const [id, entry] of started) void upload(id, entry);
     },
-    [conversationId, upload],
+    [upload],
   );
 
   const sendFile = useCallback((file: File, note?: string) => sendFiles([file], note), [sendFiles]);
 
   const enqueue = useCallback(
     (content: MessageInput['content'], display: string) => {
-      if (!conversationId) return;
       const input: MessageInput = { id: newId('msg'), content, sentAt: new Date().toISOString() };
       pending.current.set(input.id, input);
       dispatch({ type: 'userMessageQueued', id: input.id, content, display, sentAt: input.sentAt });
       void post(input);
     },
-    [conversationId, post],
+    [post],
   );
 
   const sendText = useCallback(
@@ -301,169 +311,40 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
     [post, upload, state.timeline],
   );
 
-  // Consent (mandate) flow, driven by the Backend `tool.called` MANDATE_* trigger held in the reducer state.
-  const [flow, setFlow] = useState<ConsentFlow>(() =>
-    restored?.mandate ? { phase: 'active', mandate: restored.mandate } : idleFlow,
-  );
-  const attempt = useRef(0); // results of an older attempt are ignored
-  const challengeKey = useRef('');
-  const revokeKey = useRef('');
-  const challenge = useRef<PublicChallenge | null>(null);
-  const mandate = useRef<{ id: string; expiresAt: string } | null>(restored?.mandate ?? null);
-  // A trigger answered by a restored active mandate must not request a new challenge.
-  const handledTrigger = useRef<string | null>(restored?.mandate ? (restored.consent?.eventId ?? null) : null);
-  const procedureId = resolveProcedureId(state);
-  const lastProcedure = useRef<string | null>(null);
-  lastProcedure.current = procedureId;
+  // Consent: the `consent` block brings the challenge; the click calls POST …/mandates (CONTRACTS.md §7.3).
+  const [consents, setConsents] = useState<Record<string, ConsentState>>({});
+  const setConsent = useCallback((id: string, next: ConsentState) => setConsents((all) => ({ ...all, [id]: next })), []);
 
-  const requestChallenge = useCallback(
-    async (procedure: string, key: string) => {
-      if (!conversationId) return;
-      const mine = ++attempt.current;
-      challengeKey.current = key;
-      setFlow({ phase: 'requesting' });
+  const accept = useCallback(
+    async (challenge: Challenge) => {
+      const id = conversationRef.current;
+      if (!id) return;
+      setConsent(challenge.id, { phase: 'accepting' });
       try {
-        const created = await c1.createMandateChallenge(conversationId, { procedureId: procedure, scopes: MANDATE_SCOPES }, key);
-        if (mine !== attempt.current) return;
-        challenge.current = toPublicChallenge(created);
-        setFlow({ phase: 'pending', challenge: challenge.current });
-      } catch {
-        if (mine !== attempt.current) return;
-        setFlow({ phase: 'error', during: 'challenge', message: 'Impossible de demander l’autorisation pour le moment.' });
+        // Stable key per challenge: a retry replays the same answer.
+        await c1.createMandate(id, { challengeId: challenge.id, accepted: true }, `consent-${challenge.id}`);
+        setConsent(challenge.id, { phase: 'accepted' });
+      } catch (error) {
+        const status = error instanceof C1Error ? error.status : undefined;
+        setConsent(
+          challenge.id,
+          status === 403 || status === 404 || status === 409
+            ? { phase: 'invalid' }
+            : { phase: 'error', message: 'Impossible d’enregistrer votre autorisation pour le moment. Réessayez.' },
+        );
       }
     },
-    [c1, conversationId],
+    [c1, setConsent],
   );
 
-  const renew = useCallback(() => {
-    const procedure = lastProcedure.current;
-    if (!procedure) {
-      setFlow({ phase: 'noProcedure' });
-      return;
-    }
-    void requestChallenge(procedure, crypto.randomUUID());
-  }, [requestChallenge]);
+  const refuse = useCallback((challenge: Challenge) => setConsent(challenge.id, { phase: 'refused' }), [setConsent]);
 
-  const trigger = state.consent;
+  // Only the id survives a reload; the history gives the rest back.
   useEffect(() => {
-    if (!trigger || !conversationId) return;
-    if (handledTrigger.current !== trigger.eventId) {
-      handledTrigger.current = trigger.eventId;
-      if (trigger.code === 'MANDATE_REVOKED' && ['active', 'revoking', 'revoked'].includes(flow.phase)) {
-        attempt.current++;
-        setFlow({ phase: 'revoked' });
-        return;
-      }
-      renew();
-    } else if (flow.phase === 'noProcedure' && procedureId) {
-      renew();
-    }
-  }, [trigger, conversationId, procedureId, flow.phase, renew]);
+    if (conversationId) saveConversation({ conversationId });
+  }, [conversationId]);
 
-  const triggerRef = useRef(trigger);
-  triggerRef.current = trigger;
-  // eventId of the trigger already answered by the automatic « continue » message (a ref is enough:
-  // after a reload the challenge is gone, so `accept` can only run again after a new `renew`).
-  const continuedFor = useRef<string | null>(null);
+  const consent: ConsentControls = useMemo(() => ({ states: consents, accept: (c) => void accept(c), refuse }), [consents, accept, refuse]);
 
-  const accept = useCallback(async () => {
-    const current = challenge.current;
-    if (!conversationId || !current) return;
-    const mine = ++attempt.current;
-    setFlow({ phase: 'accepting', challenge: current });
-    try {
-      const granted = await c1.createMandate(conversationId, { challengeId: current.id, accepted: true }, `consent-${current.id}`);
-      if (mine !== attempt.current) return;
-      mandate.current = { id: granted.id, expiresAt: granted.expiresAt };
-      setFlow({ phase: 'active', mandate: mandate.current });
-      const blocked = triggerRef.current;
-      if (blocked && continuedFor.current !== blocked.eventId) {
-        continuedFor.current = blocked.eventId;
-        sendText(CONTINUE_TEXT);
-      }
-    } catch (error) {
-      if (mine !== attempt.current) return;
-      const status = error instanceof C1Error ? error.status : undefined;
-      setFlow(
-        status === 403 || status === 409
-          ? { phase: 'invalid' }
-          : { phase: 'error', during: 'accept', message: 'Impossible d’enregistrer votre autorisation pour le moment.' },
-      );
-    }
-  }, [c1, conversationId, sendText]);
-
-  const retract = useCallback(
-    async (reuseKey = false) => {
-      const current = mandate.current;
-      if (!conversationId || !current) return;
-      if (!reuseKey) revokeKey.current = crypto.randomUUID();
-      const mine = ++attempt.current;
-      setFlow({ phase: 'revoking', mandate: current });
-      try {
-        await c1.revokeMandate(conversationId, current.id, revokeKey.current);
-        if (mine !== attempt.current) return;
-        setFlow({ phase: 'revoked' });
-      } catch {
-        if (mine !== attempt.current) return;
-        setFlow({ phase: 'error', during: 'revoke', message: 'Impossible de retirer l’autorisation pour le moment.' });
-      }
-    },
-    [c1, conversationId],
-  );
-
-  const retryConsent = useCallback(() => {
-    if (flow.phase !== 'error') return;
-    if (flow.during === 'accept') void accept();
-    else if (flow.during === 'revoke') void retract(true);
-    else if (lastProcedure.current) void requestChallenge(lastProcedure.current, challengeKey.current);
-  }, [flow, accept, retract, requestChallenge]);
-
-  const refuse = useCallback(() => {
-    // Nothing to consume server-side: the challenge simply expires.
-    attempt.current++;
-    setFlow({ phase: 'refused' });
-  }, []);
-
-  // Persist after state changes (debounced) and when the page goes away.
-  const snapshot = useRef<ConversationSnapshot | null>(null);
-  snapshot.current =
-    state.conversationId && state.timeline.length > 0
-      ? {
-          conversationId: state.conversationId,
-          cursor: state.cursor,
-          seenEventIds: state.seenEventIds,
-          timeline: state.timeline,
-          requestProcedureId: state.requestProcedureId,
-          consent: state.consent,
-          // A request in flight counts as the previous stable phase: only an active mandate is kept.
-          mandate: flow.phase === 'active' || flow.phase === 'revoking' ? flow.mandate : null,
-        }
-      : null;
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (snapshot.current) saveConversation(snapshot.current);
-    }, SAVE_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [state, flow]);
-  useEffect(() => {
-    const flush = () => {
-      if (snapshot.current) saveConversation(snapshot.current);
-    };
-    window.addEventListener('pagehide', flush);
-    return () => window.removeEventListener('pagehide', flush);
-  }, []);
-
-  const consent: ConsentControls = useMemo(
-    () => ({
-      flow,
-      accept: () => void accept(),
-      refuse,
-      renew,
-      retry: retryConsent,
-      retract: () => void retract(),
-    }),
-    [flow, accept, refuse, renew, retryConsent, retract],
-  );
-
-  return { state, connection, sendText, sendButton, sendForm, sendFile, sendFiles, retry, consent };
+  return { state, connection, loadingHistory, sendText, sendButton, sendForm, sendFile, sendFiles, retry, consent };
 }

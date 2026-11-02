@@ -2,29 +2,34 @@
 
 import { Button, InlineAlert, TextArea } from '@techma/ui';
 import { useRef, useState } from 'react';
-import { departmentApi, type AdminWorkItem, type WorkAction } from '@/lib/admin/department-api';
-import { toActionFailure } from '@/lib/admin/work-errors';
-import { ACTION_SUCCESS, allowedActions } from '@/lib/admin/work-format';
+import { adminApi, type Case, type CaseAction } from '@/lib/admin/api';
+import { toFailure } from '@/lib/admin/errors';
+import { ACTION_SUCCESS, NOTE_ACTIONS, allowedActions } from '@/lib/admin/work-format';
 
-const needsReason: Partial<Record<WorkAction, { label: string; confirm: string }>> = {
-  request_information: { label: 'Information demandée à l’usager', confirm: 'Envoyer la demande' },
-  reject: { label: 'Motif du rejet', confirm: 'Confirmer le rejet' },
+const NOTE_COPY: Partial<Record<CaseAction, { label: string; hint: string; confirm: string }>> = {
+  request_information: {
+    label: 'Complément demandé à l’usager',
+    hint: 'Ce message est envoyé à l’usager.',
+    confirm: 'Envoyer la demande',
+  },
+  reject: { label: 'Motif du rejet', hint: 'Ce motif est communiqué à l’usager.', confirm: 'Confirmer le rejet' },
 };
+const MAX_NOTE = 1000;
 
-/** Agent actions allowed by the item status. Disabled while a request is in flight. */
+/** Agent actions allowed by the case status (§8). Disabled while a request is in flight. */
 export function WorkActions({
   item,
   onUpdated,
   onConflict,
 }: {
-  item: AdminWorkItem;
-  onUpdated: (item: AdminWorkItem, message: string) => void;
-  /** 409: the item changed meanwhile, the parent reloads it. */
+  item: Case;
+  onUpdated: (item: Case, message: string) => void;
+  /** 409: the case changed meanwhile, the parent reloads it. */
   onConflict: () => void;
 }) {
   const actions = allowedActions(item.status);
-  const [pending, setPending] = useState<WorkAction | null>(null); // action awaiting a reason
-  const [reason, setReason] = useState('');
+  const [pending, setPending] = useState<CaseAction | null>(null); // action awaiting a note
+  const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // One key per intent: kept after a retryable failure so the retry is idempotent.
@@ -32,29 +37,26 @@ export function WorkActions({
 
   if (actions.length === 0) return null;
 
-  async function send(action: WorkAction, text?: string) {
-    const signature = `${item.id}:${item.revision}:${action}:${text ?? ''}`;
+  async function send(action: CaseAction, text: string | null) {
+    const signature = `${item.id}:${action}:${text ?? ''}`;
     if (intent.current?.signature !== signature) {
       intent.current = { signature, key: `act-${item.id}-${crypto.randomUUID()}` };
     }
     setSending(true);
     setError(null);
     try {
-      const command = text !== undefined
-        ? { action, revision: item.revision, reason: text }
-        : { action, revision: item.revision };
-      const updated = await departmentApi.act(item.id, command, intent.current.key);
+      const updated = await adminApi.act(item.id, { action, note: text }, intent.current.key);
       intent.current = null;
       setPending(null);
-      setReason('');
+      setNote('');
       onUpdated(updated, ACTION_SUCCESS[action]);
     } catch (caught) {
-      const failure = toActionFailure(caught);
+      const failure = toFailure(caught);
       if (!failure.retryable) intent.current = null;
       setError(failure.message);
       if (failure.conflict) {
         setPending(null);
-        setReason('');
+        setNote('');
         onConflict();
       }
     } finally {
@@ -62,17 +64,17 @@ export function WorkActions({
     }
   }
 
-  const start = (action: WorkAction) => {
+  const start = (action: CaseAction) => {
     setError(null);
-    if (needsReason[action]) {
+    if (NOTE_ACTIONS.includes(action)) {
       setPending(action);
-      setReason('');
+      setNote('');
     } else {
-      void send(action);
+      void send(action, null);
     }
   };
 
-  const reasonCopy = pending ? needsReason[pending] : undefined;
+  const noteCopy = pending ? NOTE_COPY[pending] : undefined;
 
   return (
     <section aria-label="Actions" className="flex flex-col gap-4">
@@ -83,19 +85,14 @@ export function WorkActions({
             Prendre en charge
           </Button>
         ) : null}
-        {actions.includes('resume') ? (
-          <Button disabled={sending} onClick={() => start('resume')}>
-            Reprendre
-          </Button>
-        ) : null}
         {actions.includes('request_information') ? (
           <Button variant="secondary" disabled={sending} onClick={() => start('request_information')}>
-            Demander une information
+            Demander un complément
           </Button>
         ) : null}
         {actions.includes('approve') ? (
           <Button variant="trust" disabled={sending} onClick={() => start('approve')}>
-            Valider
+            Approuver
           </Button>
         ) : null}
         {actions.includes('reject') ? (
@@ -105,31 +102,33 @@ export function WorkActions({
         ) : null}
       </div>
 
-      {pending && reasonCopy ? (
+      {pending && noteCopy ? (
         <form
           className="flex max-w-xl flex-col gap-3"
           onSubmit={(event) => {
             event.preventDefault();
-            if (reason.trim()) void send(pending, reason.trim());
+            if (note.trim()) void send(pending, note.trim());
           }}
         >
           <TextArea
-            label={reasonCopy.label}
+            label={noteCopy.label}
+            hint={noteCopy.hint}
             required
-            value={reason}
+            maxLength={MAX_NOTE}
+            value={note}
             disabled={sending}
-            onChange={(event) => setReason(event.target.value)}
+            onChange={(event) => setNote(event.target.value)}
           />
           <div className="flex gap-3">
-            <Button type="submit" disabled={sending || reason.trim() === ''}>
-              {reasonCopy.confirm}
+            <Button type="submit" disabled={sending || note.trim() === ''}>
+              {noteCopy.confirm}
             </Button>
             <Button
               variant="ghost"
               disabled={sending}
               onClick={() => {
                 setPending(null);
-                setReason('');
+                setNote('');
               }}
             >
               Annuler

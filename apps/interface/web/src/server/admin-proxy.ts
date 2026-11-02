@@ -1,31 +1,89 @@
-const LIST_PATH = /^\/v1\/admin\/(models|tools|procedures|conversations|audit)$/;
-const METRICS_PATH = '/v1/admin/metrics';
-const UPDATE_PATH = /^\/v1\/admin\/(models|tools|procedures)\/([^/]+)$/;
+// Allowlist of the administration console routes (contracts/v2/admin.openapi.json). Nothing else is forwarded.
 
-const FORWARDED_REQUEST_HEADERS = ['content-type', 'idempotency-key', 'traceparent'];
+const FORWARDED_REQUEST_HEADERS = ['content-type', 'idempotency-key', 'traceparent', 'x-file-mime-type'];
 const FORWARDED_RESPONSE_HEADERS = ['content-type', 'retry-after'];
-const DOCUMENT_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'content-length'];
-// Pièces justificatives: plafond de streaming, au-delà la réponse est refusée.
-const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+const BINARY_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'content-length'];
 
-// Department-admin routes (contracts/v1/department-admin.openapi.json).
-const DEPARTMENT_LISTS: Record<string, readonly string[]> = {
-  '/v1/admin/me': [],
-  '/v1/admin/departments': ['cursor', 'limit'],
-  '/v1/admin/users': ['departmentId', 'cursor', 'limit'],
-  '/v1/admin/work-items': ['departmentId', 'status', 'cursor', 'limit'],
-  '/v1/admin/dashboard': ['departmentId', 'from', 'to'],
-  '/v1/admin/activity': ['departmentId', 'cursor', 'limit'],
-  '/v1/admin/unanswered': ['departmentId', 'cursor', 'limit'],
+// Pièces justificatives et documents délivrés: plafond de streaming, au-delà la réponse est refusée.
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+// Photo de profil: 2 Mio (contrat), en entrée comme en sortie.
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+// Corps JSON de la console (profil, agent, action sur un dossier): petits.
+const MAX_JSON_BYTES = 64 * 1024;
+
+const ULID = '[0-9A-HJKMNP-TV-Z]{26}';
+const ID = {
+  case: new RegExp(`^cas_${ULID}$`),
+  document: new RegExp(`^doc_${ULID}$`),
+  official: new RegExp(`^off_${ULID}$`),
+  unanswered: new RegExp(`^unq_${ULID}$`),
 };
-const WORK_ITEM_PATH = /^\/v1\/admin\/work-items\/([^/]+)$/;
-const WORK_ITEM_ACTIONS_PATH = /^\/v1\/admin\/work-items\/([^/]+)\/actions$/;
-const DOCUMENT_PATH = /^\/v1\/admin\/work-items\/([^/]+)\/documents\/([^/]+)$/;
-const RESOLVE_PATH = /^\/v1\/admin\/unanswered\/([^/]+)\/resolve$/;
-const MAX_ID_LENGTH = 128;
-const STATUSES = new Set(['pending', 'completed', 'draft', 'all']);
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}(T[0-9:.]{5,12}(Z|[+-]\d{2}:\d{2}))?$/;
-const DEPARTMENT_ID = /^[A-Za-z0-9_-]{1,100}$/;
+const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T[0-9:.]{5,12}(Z|[+-]\d{2}:\d{2})$/;
+
+/** Validators of the query parameters the contract defines. */
+const QUERY: Record<string, (value: string) => boolean> = {
+  cursor: (v) => v.length >= 1 && v.length <= 4096,
+  limit: (v) => /^[0-9]{1,3}$/.test(v) && +v >= 1 && +v <= 100,
+  administrationId: (v) => /^[a-z][a-z0-9-]{1,62}$/.test(v),
+  view: (v) => ['pending', 'completed', 'rejected', 'all'].includes(v),
+  status: (v) => v === 'open' || v === 'resolved',
+  caseId: (v) => ID.case.test(v),
+  from: (v) => ISO_DATE_TIME.test(v) && !Number.isNaN(Date.parse(v)),
+  to: (v) => ISO_DATE_TIME.test(v) && !Number.isNaN(Date.parse(v)),
+};
+
+interface RouteSpec {
+  method: 'GET' | 'PUT' | 'POST';
+  path: RegExp;
+  /** One validator per capture group of `path`. */
+  ids?: RegExp[];
+  query?: string[];
+  requiredQuery?: string[];
+  body?: 'json' | 'binary';
+  /** Binary responses are streamed with their type/disposition, under a size cap. */
+  binary?: number;
+  /** The route needs a `Idempotency-Key` (8–128 chars). */
+  idempotent?: boolean;
+  /** `X-File-Mime-Type` must be image/jpeg or image/png. */
+  imageMime?: boolean;
+}
+
+const CURSOR = ['cursor', 'limit'];
+
+const ROUTES: RouteSpec[] = [
+  { method: 'GET', path: /^\/v1\/admin\/me$/ },
+  { method: 'PUT', path: /^\/v1\/admin\/me$/, body: 'json' },
+  { method: 'PUT', path: /^\/v1\/admin\/me\/avatar$/, body: 'binary', imageMime: true },
+  { method: 'GET', path: /^\/v1\/admin\/avatars\/([^/]+)$/, ids: [ID.official], binary: MAX_AVATAR_BYTES },
+  { method: 'GET', path: /^\/v1\/admin\/administrations$/ },
+  { method: 'GET', path: /^\/v1\/admin\/officials$/, query: ['administrationId', ...CURSOR] },
+  { method: 'POST', path: /^\/v1\/admin\/officials$/, body: 'json' },
+  { method: 'PUT', path: /^\/v1\/admin\/officials\/([^/]+)$/, ids: [ID.official], body: 'json' },
+  {
+    method: 'GET',
+    path: /^\/v1\/admin\/cases$/,
+    query: ['administrationId', 'view', ...CURSOR],
+    requiredQuery: ['view'],
+  },
+  { method: 'GET', path: /^\/v1\/admin\/cases\/([^/]+)$/, ids: [ID.case] },
+  {
+    method: 'POST',
+    path: /^\/v1\/admin\/cases\/([^/]+)\/actions$/,
+    ids: [ID.case],
+    body: 'json',
+    idempotent: true,
+  },
+  {
+    method: 'GET',
+    path: /^\/v1\/admin\/cases\/([^/]+)\/documents\/([^/]+)$/,
+    ids: [ID.case, ID.document],
+    binary: MAX_DOCUMENT_BYTES,
+  },
+  { method: 'GET', path: /^\/v1\/admin\/dashboard$/, query: ['administrationId', 'from', 'to'] },
+  { method: 'GET', path: /^\/v1\/admin\/activity$/, query: ['administrationId', 'caseId', ...CURSOR] },
+  { method: 'GET', path: /^\/v1\/admin\/unanswered$/, query: ['administrationId', 'status', ...CURSOR] },
+  { method: 'POST', path: /^\/v1\/admin\/unanswered\/([^/]+)\/resolve$/, ids: [ID.unanswered] },
+];
 
 export interface ProxyDeps {
   backendUrl: string;
@@ -43,9 +101,6 @@ function problem(status: number, code: string, detail: string, request: Request,
 
 const notFound = (request: Request) => problem(404, 'NOT_FOUND', 'Route inconnue', request);
 const invalid = (request: Request, detail: string) => problem(400, 'INVALID_REQUEST', detail, request);
-
-// Configuration documents (model, tool, procedure with its form schema) stay small.
-const MAX_JSON_BYTES = 64 * 1024;
 
 /** Reads the body chunk by chunk and stops as soon as `limit` is exceeded (null), never buffering more. */
 async function readCapped(request: Request, limit: number): Promise<ArrayBuffer | null> {
@@ -72,73 +127,18 @@ async function readCapped(request: Request, limit: number): Promise<ArrayBuffer 
   return body.buffer;
 }
 
-/** Keeps only `cursor` and `limit`; null when one is invalid or repeated. Other parameters are dropped. */
-function listQuery(search: URLSearchParams): URLSearchParams | null {
-  const cursors = search.getAll('cursor');
-  const limits = search.getAll('limit');
-  if (cursors.length > 1 || limits.length > 1) return null;
-  const out = new URLSearchParams();
-  if (cursors.length === 1) {
-    if (cursors[0].length < 1 || cursors[0].length > 256) return null;
-    out.set('cursor', cursors[0]);
-  }
-  if (limits.length === 1) {
-    if (!/^[0-9]{1,3}$/.test(limits[0]) || +limits[0] < 1 || +limits[0] > 100) return null;
-    out.set('limit', limits[0]);
-  }
-  return out;
-}
-
-/** Strict query for the department routes: only `allowed` names, each once and valid; null otherwise. */
-function strictQuery(search: URLSearchParams, allowed: readonly string[]): URLSearchParams | null {
+/** Strict query: only the route’s own parameters, each once and valid; null otherwise. */
+function strictQuery(search: URLSearchParams, route: RouteSpec): URLSearchParams | null {
+  const allowed = route.query ?? [];
   const out = new URLSearchParams();
   for (const name of new Set(search.keys())) {
     if (!allowed.includes(name)) return null;
     const values = search.getAll(name);
-    if (values.length !== 1) return null;
-    const value = values[0];
-    const valid =
-      name === 'cursor'
-        ? value.length >= 1 && value.length <= 256
-        : name === 'limit'
-          ? /^[0-9]{1,3}$/.test(value) && +value >= 1 && +value <= 100
-          : name === 'status'
-            ? STATUSES.has(value)
-            : name === 'departmentId'
-              ? DEPARTMENT_ID.test(value)
-              : ISO_DATE.test(value) && !Number.isNaN(Date.parse(value)); // from, to
-    if (!valid) return null;
-    out.set(name, value);
+    if (values.length !== 1 || !QUERY[name](values[0])) return null;
+    out.set(name, values[0]);
   }
+  for (const name of route.requiredQuery ?? []) if (!out.has(name)) return null;
   return out;
-}
-
-/** Streams a document through with its type/disposition; refuses anything beyond MAX_DOCUMENT_BYTES. */
-function documentResponse(upstream: Response, request: Request): Response {
-  if (!upstream.ok || !upstream.body) {
-    // Errors (problem+json) are small: same path as any other response.
-    return new Response(upstream.body ? upstream.body : null, {
-      status: upstream.status,
-      headers: pick(upstream, FORWARDED_RESPONSE_HEADERS),
-    });
-  }
-  const declared = Number(upstream.headers.get('content-length'));
-  if (declared > MAX_DOCUMENT_BYTES) {
-    void upstream.body.cancel();
-    return problem(502, 'UPSTREAM_UNAVAILABLE', 'Document trop volumineux', request);
-  }
-  let total = 0;
-  const capped = new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      total += chunk.byteLength;
-      if (total > MAX_DOCUMENT_BYTES) controller.error(new Error('document too large'));
-      else controller.enqueue(chunk);
-    },
-  });
-  const headers = pick(upstream, DOCUMENT_RESPONSE_HEADERS);
-  headers.set('x-content-type-options', 'nosniff');
-  headers.set('cache-control', 'private, no-store');
-  return new Response(upstream.body.pipeThrough(capped), { status: upstream.status, headers });
 }
 
 function pick(upstream: Response, names: readonly string[]): Headers {
@@ -150,72 +150,44 @@ function pick(upstream: Response, names: readonly string[]): Headers {
   return headers;
 }
 
-interface Route {
-  target: string;
-  query: URLSearchParams;
-  /** Body-carrying method (PUT legacy, POST department). */
-  body: boolean;
-  /** POST routes need an Idempotency-Key (8–128 chars). */
-  idempotent: boolean;
-  document: boolean;
+/** Streams a binary (document, photo) through with its type/disposition; refuses anything beyond `max`. */
+function binaryResponse(upstream: Response, request: Request, max: number): Response {
+  if (!upstream.ok || !upstream.body) {
+    // Errors (problem+json) are small: same path as any other response.
+    return new Response(upstream.body ? upstream.body : null, {
+      status: upstream.status,
+      headers: pick(upstream, FORWARDED_RESPONSE_HEADERS),
+    });
+  }
+  const declared = Number(upstream.headers.get('content-length'));
+  if (declared > max) {
+    void upstream.body.cancel();
+    return problem(502, 'UPSTREAM_UNAVAILABLE', 'Fichier trop volumineux', request);
+  }
+  let total = 0;
+  const capped = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      total += chunk.byteLength;
+      if (total > max) controller.error(new Error('file too large'));
+      else controller.enqueue(chunk);
+    },
+  });
+  const headers = pick(upstream, BINARY_RESPONSE_HEADERS);
+  headers.set('x-content-type-options', 'nosniff');
+  headers.set('cache-control', 'private, no-store');
+  return new Response(upstream.body.pipeThrough(capped), { status: upstream.status, headers });
 }
 
-const idOk = (id: string) => id.length <= MAX_ID_LENGTH;
-const enc = encodeURIComponent;
-
-/** Maps method + path (+ query) to a backend target; 'notFound' / 'invalidQuery' otherwise. */
-function resolveRoute(method: string, pathname: string, search: URLSearchParams): Route | 'notFound' | 'invalidQuery' {
-  const route = (target: string, query = new URLSearchParams(), extra: Partial<Route> = {}): Route => ({
-    target,
-    query,
-    body: false,
-    idempotent: false,
-    document: false,
-    ...extra,
-  });
-  if (method === 'GET') {
-    if (LIST_PATH.test(pathname)) {
-      const filtered = listQuery(search);
-      return filtered ? route(pathname, filtered) : 'invalidQuery';
-    }
-    if (pathname === METRICS_PATH) return route(pathname);
-    const allowed = DEPARTMENT_LISTS[pathname];
-    if (allowed) {
-      const query = strictQuery(search, allowed);
-      return query ? route(pathname, query) : 'invalidQuery';
-    }
-    const document = DOCUMENT_PATH.exec(pathname);
-    if (document) {
-      const [, id, fileId] = document;
-      if (!idOk(id) || !idOk(fileId)) return 'notFound';
-      if ([...search.keys()].length > 0) return 'invalidQuery';
-      return route(`/v1/admin/work-items/${enc(id)}/documents/${enc(fileId)}`, undefined, { document: true });
-    }
-    const item = WORK_ITEM_PATH.exec(pathname);
-    if (item) {
-      if (!idOk(item[1])) return 'notFound';
-      if ([...search.keys()].length > 0) return 'invalidQuery';
-      return route(`/v1/admin/work-items/${enc(item[1])}`);
-    }
-  } else if (method === 'PUT') {
-    const update = UPDATE_PATH.exec(pathname);
-    if (update) {
-      if (update[2].length > MAX_ID_LENGTH) return 'notFound';
-      return route(`/v1/admin/${update[1]}/${enc(update[2])}`, undefined, { body: true });
-    }
-  } else if (method === 'POST') {
-    const action = WORK_ITEM_ACTIONS_PATH.exec(pathname);
-    const resolve = RESOLVE_PATH.exec(pathname);
-    const match = action ?? resolve;
-    if (match) {
-      if (!idOk(match[1])) return 'notFound';
-      if ([...search.keys()].length > 0) return 'invalidQuery';
-      const suffix = action ? 'work-items' : 'unanswered';
-      const tail = action ? 'actions' : 'resolve';
-      return route(`/v1/admin/${suffix}/${enc(match[1])}/${tail}`, undefined, { body: true, idempotent: true });
-    }
+/** Matches method + path; null when no route matches. */
+function matchRoute(method: string, pathname: string): RouteSpec | null {
+  for (const route of ROUTES) {
+    if (route.method !== method) continue;
+    const match = route.path.exec(pathname);
+    if (!match) continue;
+    const ids = route.ids ?? [];
+    if (ids.every((pattern, index) => pattern.test(match[index + 1]))) return route;
   }
-  return 'notFound';
+  return null;
 }
 
 export async function proxyToAdmin(request: Request, path: string[], deps: ProxyDeps): Promise<Response> {
@@ -225,21 +197,27 @@ export async function proxyToAdmin(request: Request, path: string[], deps: Proxy
   const pathname = '/' + path.join('/');
   const method = request.method.toUpperCase();
 
-  const resolved = resolveRoute(method, pathname, new URL(request.url).searchParams);
-  if (resolved === 'notFound') return notFound(request);
-  if (resolved === 'invalidQuery') {
-    return invalid(request, /^\/v1\/admin\/(models|tools|procedures|conversations|audit)$/.test(pathname)
-      ? 'Paramètres de pagination invalides'
-      : 'Paramètres de requête invalides');
-  }
-  const { target, query, body: hasBody, idempotent, document } = resolved;
+  const route = matchRoute(method, pathname);
+  if (!route) return notFound(request);
+  const query = strictQuery(new URL(request.url).searchParams, route);
+  if (!query) return invalid(request, 'Paramètres de requête invalides');
 
-  const tooLarge = () => invalid(request, 'Corps de requête trop volumineux');
+  const bodyLimit = route.body === 'binary' ? MAX_AVATAR_BYTES : MAX_JSON_BYTES;
+  const tooLarge = () =>
+    route.body === 'binary'
+      ? problem(413, 'FILE_TOO_LARGE', 'Image trop volumineuse (2 Mio maximum)', request)
+      : invalid(request, 'Corps de requête trop volumineux');
   // Reject early from the declared size; the streamed read below enforces the cap when it is absent or wrong.
-  if (hasBody && Number(request.headers.get('content-length')) > MAX_JSON_BYTES) return tooLarge();
-  if (idempotent) {
+  if (route.body && Number(request.headers.get('content-length')) > bodyLimit) return tooLarge();
+  if (route.idempotent) {
     const key = request.headers.get('idempotency-key') ?? '';
     if (key.length < 8 || key.length > 128) return invalid(request, 'En-tête Idempotency-Key requis');
+  }
+  if (route.imageMime) {
+    const mime = request.headers.get('x-file-mime-type');
+    if (mime !== 'image/jpeg' && mime !== 'image/png') {
+      return problem(415, 'UNSUPPORTED_MEDIA_TYPE', 'Image JPEG ou PNG requise', request);
+    }
   }
 
   const headers = new Headers();
@@ -260,9 +238,9 @@ export async function proxyToAdmin(request: Request, path: string[], deps: Proxy
 
   let upstream: Response;
   try {
-    const body = hasBody ? await readCapped(request, MAX_JSON_BYTES) : undefined;
+    const body = route.body ? await readCapped(request, bodyLimit) : undefined;
     if (body === null) return tooLarge();
-    const url = new URL(target, deps.backendUrl);
+    const url = new URL(pathname, deps.backendUrl);
     url.search = query.toString();
     upstream = await deps.fetch(url, { method, headers, body });
   } catch {
@@ -271,7 +249,7 @@ export async function proxyToAdmin(request: Request, path: string[], deps: Proxy
     });
   }
 
-  if (document) return documentResponse(upstream, request);
+  if (route.binary) return binaryResponse(upstream, request, route.binary);
   const noBody = [204, 205, 304].includes(upstream.status);
   return new Response(noBody ? null : await upstream.arrayBuffer(), {
     status: upstream.status,

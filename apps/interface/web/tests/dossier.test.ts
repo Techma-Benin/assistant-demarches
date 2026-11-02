@@ -1,214 +1,85 @@
-import type { components } from '@techma/contracts-ts';
+import type { Schemas } from '@techma/contracts-ts';
 import { describe, expect, it } from 'vitest';
 import type { TimelineEntry } from '@/lib/conversation-state';
-import { deriveDossierSteps, prepareRequestAction, lastTextSources, toSourceInfo } from '@/lib/dossier';
+import { latestRequest, prepareRequestAction, lastTextSources, toSourceInfo } from '@/lib/dossier';
+import { caseCardBlock, consentBlock, exampleRequest, fileRequestBlock, msgId, requestCardBlock } from './fixtures-v2';
 
-type Block = components['schemas']['Block'];
-type RequestStatus = components['schemas']['RequestStatus'];
+type Block = Schemas['Block'];
 
 const agent = (n: number, ...blocks: Block[]): TimelineEntry => ({
   kind: 'agent',
-  message: { id: `msg_${n}`, conversationId: 'cnv_1', blocks, createdAt: '2026-10-22T18:00:00Z' },
+  message: { id: msgId(n), conversationId: 'cnv_1', blocks, createdAt: '2026-11-02T18:00:00Z' } as never,
 });
-const user = (n: number, extra: Partial<Extract<TimelineEntry, { kind: 'user' }>> = {}): TimelineEntry => ({
+const user = (n: number): TimelineEntry => ({
   kind: 'user',
   id: `usr_${n}`,
   content: { type: 'text', text: 'q' },
   display: 'q',
-  sentAt: '2026-10-22T18:00:00Z',
+  sentAt: '2026-11-02T18:00:00Z',
   delivery: 'received',
-  ...extra,
 });
-const text = (sources: components['schemas']['Source'][] = []): Block => ({ type: 'text', text: 't', sources });
+const text = (sources: Schemas['Source'][] = []): Block => ({ type: 'text', text: 't', sources });
 const form: Block = { type: 'form', id: 'f1', fields: [] };
-const fileRequest: Block = { type: 'fileRequest', documentType: 'id', label: 'Pièce', acceptedMimeTypes: ['application/pdf'] };
-const card = (status: RequestStatus): Block => ({
-  type: 'statusCard',
-  request: {
-    id: 'req_1',
-    conversationId: 'cnv_1',
-    userRef: 'usr_1',
-    procedureId: 'p',
-    status,
-    fields: {},
-    fileIds: [],
-    officialLink: null,
-    updatedAt: '2026-10-22T18:00:00Z',
-  },
+const src = (url: string, procedureId = 'PS00373'): Schemas['Source'] => ({
+  procedureId: procedureId as never,
+  url,
+  retrievedAt: '2026-11-02T18:00:00Z',
 });
-const summary = (timeline: TimelineEntry[], consent?: 'pending' | 'active', requestCreated?: boolean) =>
-  (deriveDossierSteps(timeline, consent, requestCreated) ?? []).map((s) => `${s.label}:${s.status}`);
-const src = { procedureId: 'p', url: 'https://a.example/x', retrievedAt: '2026-10-22T18:00:00Z', version: 'v1' };
 
-describe('deriveDossierSteps', () => {
-  it('returns null for a simple Q&A', () => {
-    expect(deriveDossierSteps([user(1)])).toBeNull();
-    expect(deriveDossierSteps([user(1), agent(1, text([src]))])).toBeNull();
+describe('latestRequest', () => {
+  it('is null before any requestCard', () => {
+    expect(latestRequest([user(1), agent(1, text())])).toBeNull();
   });
 
-  it('shows the full path once consent is pending', () => {
-    const steps = deriveDossierSteps([user(1), agent(1, text([src]))], 'pending')!;
-    expect(steps.map((s) => `${s.label}:${s.status}`)).toEqual([
-      'Démarche identifiée:done',
-      'Autorisation:current',
-      'Vos informations:todo',
-      'Pièces justificatives:todo',
-      'Validation sur le portail:todo',
-    ]);
-    expect(steps[0].description).toBe('Fiche officielle trouvée');
-    expect(steps[1].description).toBe('À donner');
-    expect(steps[2].description).toBe('À venir');
-    expect(deriveDossierSteps([user(1), agent(1, text())], 'pending')![0].status).toBe('current');
-  });
-
-  it('treats a created request as engaged, with procedure and authorization done', () => {
-    expect(summary([user(1)], undefined, true).slice(0, 3)).toEqual([
-      'Démarche identifiée:done',
-      'Autorisation:done',
-      'Vos informations:current',
-    ]);
-  });
-
-  it('marks the form done once submitted', () => {
-    const received = [user(1), agent(1, text([src]), form)];
-    expect(summary(received, 'active')[2]).toBe('Vos informations:current');
-    const submitted = [...received, user(2, { content: { type: 'interaction', actionId: 'f1', value: '{}' } })];
-    expect(summary(submitted, 'active')[2]).toBe('Vos informations:done');
-    const button = [...received, user(2, { content: { type: 'interaction', actionId: 'other' } })];
-    expect(summary(button, 'active')[2]).toBe('Vos informations:current');
-  });
-
-  it('marks the file done only once the attachment is accepted', () => {
-    const base = [
-      user(1),
-      agent(1, text([src]), form, fileRequest),
-      user(9, { content: { type: 'interaction', actionId: 'f1', value: '{}' } }),
-    ];
-    const attachment = { name: 'a.pdf', sizeBytes: 3, mimeType: 'application/pdf' };
-    const upload = (e: Partial<Extract<TimelineEntry, { kind: 'user' }>>) => [...base, user(2, { attachment, ...e })];
-    expect(summary(base, 'active')[3]).toBe('Pièces justificatives:current');
-    expect(summary(upload({ content: null, delivery: 'uploading' }), 'active')[3]).toBe('Pièces justificatives:current');
-    expect(summary(upload({ content: null, delivery: 'uploadFailed' }), 'active')[3]).toBe('Pièces justificatives:current');
-    expect(summary(upload({ delivery: 'received' }), 'active')[3]).toBe('Pièces justificatives:done');
-    expect(deriveDossierSteps(base, 'active')![3].description).toBe('À ajouter');
-    expect(deriveDossierSteps(upload({ delivery: 'received' }), 'active')![3].description).toBe('1 fichier joint');
-    const two = [...upload({ delivery: 'received' }), user(3, { attachment })];
-    expect(deriveDossierSteps(two, 'active')![3].description).toBe('2 fichiers joints');
-  });
-
-  it('drops the form and file steps when a status card came without them', () => {
-    expect(summary([user(1), agent(1, card('draft'))])).toEqual([
-      'Démarche identifiée:done',
-      'Autorisation:done',
-      'Validation sur le portail:current',
-    ]);
-    expect(summary([user(1), agent(1, form, card('draft'))])).toEqual([
-      'Démarche identifiée:done',
-      'Autorisation:done',
-      'Vos informations:current',
-      'Validation sur le portail:todo',
-    ]);
-  });
-
-  it('derives the portal step from the last status card', () => {
-    const at = (status: RequestStatus) => summary([user(1), agent(1, card('draft')), agent(2, card(status))]);
-    expect(at('awaiting_user_validation')[2]).toBe('Validation sur le portail:current');
-    expect(at('submitted')[2]).toBe('Validation sur le portail:done');
-    expect(at('processing')[2]).toBe('Validation sur le portail:done');
-    expect(at('completed')[2]).toBe('Validation sur le portail:done');
-    expect(at('rejected')[2]).toBe('Validation sur le portail:current');
-  });
-
-  it('makes the portal step current once form and file are done', () => {
-    const attachment = { name: 'a.pdf', sizeBytes: 3, mimeType: 'application/pdf' };
-    const timeline = [
-      user(1),
-      agent(1, form, fileRequest, card('awaiting_user_validation')),
-      user(2, { content: { type: 'interaction', actionId: 'f1', value: '{}' } }),
-      user(3, { attachment }),
-    ];
-    expect(summary(timeline)).toEqual([
-      'Démarche identifiée:done',
-      'Autorisation:done',
-      'Vos informations:done',
-      'Pièces justificatives:done',
-      'Validation sur le portail:current',
-    ]);
-  });
-
-  it('keeps exactly one current step: the first one not done', () => {
-    const steps = deriveDossierSteps([user(1), agent(1, form, fileRequest, card('awaiting_user_validation'))])!;
-    expect(steps.map((s) => s.status)).toEqual(['done', 'done', 'current', 'todo', 'todo']);
+  it('is the request of the latest requestCard, whichever message carries it', () => {
+    const older = { ...exampleRequest, missing: ['Pièce'], status: 'draft' as const };
+    const newer = { ...exampleRequest, missing: [], status: 'ready' as const };
+    const timeline = [agent(1, requestCardBlock(older)), user(2), agent(2, text(), requestCardBlock(newer)), agent(3, text())];
+    expect(latestRequest(timeline)).toEqual(newer);
   });
 });
 
 describe('sources helpers', () => {
-  const src = (url: string, procedureId = 'p') => ({ procedureId, url, retrievedAt: '2026-10-22T18:00:00Z', version: 'v1' });
-
   it('takes the sources of the last text block only', () => {
     const a = src('https://a.example/x');
     const b = src('https://b.example/y');
-    expect(lastTextSources([agent(1, text([a])), agent(2, text([b]), card('draft'))])).toEqual([b]);
+    expect(lastTextSources([agent(1, text([a])), agent(2, text([b]), caseCardBlock())])).toEqual([b]);
     expect(lastTextSources([agent(1, text([a])), agent(2, text([]))])).toEqual([]);
     expect(lastTextSources([user(1)])).toEqual([]);
   });
 
-  it('maps a source to SourceInfo with a safe href', () => {
+  it('maps a source to SourceInfo with a safe href and no version', () => {
     expect(toSourceInfo(src('https://a.example/x', 'casier'), 0, true)).toEqual({
       index: 1,
       title: 'casier',
       domain: 'a.example',
       href: 'https://a.example/x',
-      version: 'v1',
-      retrievedAtLabel: 'Consultée le 22/10/2026',
+      retrievedAtLabel: 'Consultée le 02/11/2026',
     });
     expect(toSourceInfo(src('javascript:alert(1)'), 1).href).toBeUndefined();
   });
 });
 
 describe('prepareRequestAction', () => {
-  const src = (procedureId: string) => ({ procedureId, url: 'https://x.fr', retrievedAt: '2026-10-22T18:00:00Z', version: 'v1' });
   it('returns the procedure when the last agent message cites exactly one', () => {
-    expect(prepareRequestAction([user(1), agent(1, text([src('F1'), src('F1')]))], null)).toEqual({ procedureId: 'F1' });
+    expect(prepareRequestAction([user(1), agent(1, text([src('https://x.fr', 'F1'), src('https://x.fr', 'F1')]))])).toEqual({ procedureId: 'F1' });
   });
   it('is null when the last entry is a user message', () => {
-    expect(prepareRequestAction([agent(1, text([src('F1')])), user(2)], null)).toBeNull();
+    expect(prepareRequestAction([agent(1, text([src('https://x.fr', 'F1')])), user(2)])).toBeNull();
   });
   it('is null with two procedures or none', () => {
-    expect(prepareRequestAction([agent(1, text([src('F1'), src('F2')]))], null)).toBeNull();
-    expect(prepareRequestAction([agent(1, text())], null)).toBeNull();
+    expect(prepareRequestAction([agent(1, text([src('https://x.fr', 'F1'), src('https://x.fr', 'F2')]))])).toBeNull();
+    expect(prepareRequestAction([agent(1, text())])).toBeNull();
   });
-  it('is null with an interactive block or a status card in the message', () => {
-    expect(prepareRequestAction([agent(1, text([src('F1')]), form)], null)).toBeNull();
-    expect(prepareRequestAction([agent(1, text([src('F1')]), fileRequest)], null)).toBeNull();
-    expect(prepareRequestAction([agent(1, text([src('F1')]), card('draft' as RequestStatus))], null)).toBeNull();
+  it('is null with any other block in the message', () => {
+    const cited = text([src('https://x.fr', 'F1')]);
+    expect(prepareRequestAction([agent(1, cited, form)])).toBeNull();
+    expect(prepareRequestAction([agent(1, cited, fileRequestBlock())])).toBeNull();
+    expect(prepareRequestAction([agent(1, cited, consentBlock())])).toBeNull();
   });
-  it('is null once a request exists', () => {
-    expect(prepareRequestAction([agent(1, text([src('F1')]))], 'F1')).toBeNull();
-    expect(prepareRequestAction([agent(1, card('draft' as RequestStatus)), user(2), agent(2, text([src('F1')]))], null)).toBeNull();
-  });
-});
-
-describe('request entry', () => {
-  const entry = (status: RequestStatus): TimelineEntry => ({
-    kind: 'request',
-    id: 'evt_1',
-    at: '2026-10-22T18:00:00Z',
-    request: (card(status) as Extract<Block, { type: 'statusCard' }>).request,
-  });
-
-  it('counts as a created request', () => {
-    expect(summary([user(1), entry('draft')])).toEqual([
-      'Démarche identifiée:done',
-      'Autorisation:done',
-      'Validation sur le portail:current',
-    ]);
-    expect(summary([user(1), entry('submitted')]).at(-1)).toBe('Validation sur le portail:done');
-  });
-
-  it('hides the prepare chip', () => {
-    const sourced = agent(1, { type: 'text', text: 't', sources: [src] });
-    expect(prepareRequestAction([sourced], null)).toEqual({ procedureId: 'p' });
-    expect(prepareRequestAction([entry('draft'), sourced], null)).toBeNull();
+  it('is null once a draft or a case exists in the conversation', () => {
+    const cited = agent(2, text([src('https://x.fr', 'F1')]));
+    expect(prepareRequestAction([agent(1, requestCardBlock()), user(1), cited])).toBeNull();
+    expect(prepareRequestAction([agent(1, caseCardBlock()), user(1), cited])).toBeNull();
   });
 });

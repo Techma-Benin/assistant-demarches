@@ -1,10 +1,10 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConsoleProvider } from '@/components/admin/console/console-context';
-import { AppShell } from '@/components/admin/shell/app-shell';
 import { PageHeader } from '@/components/admin/page-header';
-import { ENSEIGNEMENT, JUSTICE, SUPER, profile, stubConsole } from './helpers/console-fetch';
+import { AppShell } from '@/components/admin/shell/app-shell';
+import { ADMIN, AGENT, ANIP, JUSTICE, SANTE, SUPER, SUPER_ME, me, stubConsole } from './helpers/fixtures';
 
 let pathname = '/admin';
 const router = { push: vi.fn(), refresh: vi.fn() };
@@ -20,9 +20,9 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-function renderShell(departmentId: string | null = null) {
+function renderShell(administrationId: string | null = null) {
   return render(
-    <ConsoleProvider initialDepartmentId={departmentId}>
+    <ConsoleProvider initialAdministrationId={administrationId}>
       <AppShell>contenu</AppShell>
     </ConsoleProvider>,
   );
@@ -34,47 +34,62 @@ const navLinks = () =>
   );
 
 describe('AppShell navigation', () => {
-  it('shows the business nav for an agent: no Utilisateurs, no operator group', async () => {
-    stubConsole({ profile: profile() });
+  it('shows the business nav for an agent: three case tabs, no Utilisateurs', async () => {
+    stubConsole({ me: me(AGENT) });
     pathname = '/admin/complete';
     renderShell();
     expect(await screen.findByText('contenu')).toBeInTheDocument();
-    expect(navLinks()).toEqual(['/admin', '/admin/a-verifier', '/admin/complete', '/admin/sans-reponse', '/admin/journal', '/admin/profil']);
+    expect(navLinks()).toEqual([
+      '/admin',
+      '/admin/en-attente',
+      '/admin/complete',
+      '/admin/rejete',
+      '/admin/sans-reponse',
+      '/admin/journal',
+      '/admin/profil',
+    ]);
     expect(screen.getByRole('link', { name: 'Complété' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Vue d’ensemble' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Rejeté' })).not.toHaveAttribute('aria-current');
     expect(screen.queryByRole('link', { name: 'Utilisateurs' })).toBeNull();
     expect(screen.queryByText('Opérateur')).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Conversations' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Fiches' })).toBeNull();
   });
 
-  it('shows Utilisateurs to a super admin and to a department admin', async () => {
-    stubConsole({ profile: SUPER, departments: [JUSTICE, ENSEIGNEMENT] });
-    const { unmount } = renderShell();
+  it('shows Utilisateurs only with officials:read', async () => {
+    stubConsole({ me: me(ADMIN) });
+    renderShell();
     expect(await screen.findByRole('link', { name: 'Utilisateurs' })).toHaveAttribute('href', '/admin/utilisateurs');
-    unmount();
-    stubConsole({ profile: profile({ memberships: [{ departmentId: 'justice', role: 'admin', active: true }] }) });
-    renderShell();
-    expect(await screen.findByRole('link', { name: 'Utilisateurs' })).toBeInTheDocument();
   });
 
-  it('shows the pending count from one work-items request', async () => {
-    const { calls } = stubConsole({ profile: profile(), pending: 3 });
+  it('hides the case tabs without cases:read', async () => {
+    stubConsole({ me: me(['officials:read']) });
     renderShell();
-    expect(await screen.findByRole('link', { name: 'À vérifier, 3 à traiter' })).toBeInTheDocument();
-    const pendingCalls = calls.filter((call) => call.url.includes('work-items'));
-    expect(pendingCalls).toHaveLength(1);
-    expect(pendingCalls[0].url).toContain('departmentId=justice');
-    expect(pendingCalls[0].url).toContain('status=pending');
-    expect(pendingCalls[0].url).toContain('limit=100');
+    await screen.findByText('contenu');
+    expect(navLinks()).toEqual(['/admin', '/admin/sans-reponse', '/admin/journal', '/admin/utilisateurs', '/admin/profil']);
+  });
+
+  it('shows the pending count from dashboard.metrics.pending, not from a list', async () => {
+    const { calls } = stubConsole({ me: me(AGENT), pending: 3 });
+    renderShell();
+    expect(await screen.findByRole('link', { name: 'En attente, 3 à traiter' })).toBeInTheDocument();
+    expect(calls.filter((call) => call.url.includes('/cases'))).toHaveLength(0);
+    const dashboards = calls.filter((call) => call.url.includes('/v1/admin/dashboard'));
+    expect(dashboards).toHaveLength(1);
+    expect(dashboards[0].url).not.toContain('administrationId');
     expect(screen.getByText('Backend joignable')).toBeInTheDocument();
   });
 
-  it('keeps À vérifier highlighted on a dossier page', async () => {
-    stubConsole({ profile: profile() });
+  it('sends the chosen administration for the pending count of a super admin', async () => {
+    const { calls } = stubConsole({ me: SUPER_ME, administrations: [JUSTICE, ANIP], pending: 5 });
+    renderShell('anip');
+    expect(await screen.findByRole('link', { name: 'En attente, 5 à traiter' })).toBeInTheDocument();
+    expect(calls.find((call) => call.url.includes('/dashboard'))?.url).toContain('administrationId=anip');
+  });
+
+  it('keeps En attente highlighted on a dossier page', async () => {
+    stubConsole({ me: me(AGENT) });
     pathname = '/admin/dossiers/abc';
     renderShell();
-    expect(await screen.findByRole('link', { name: 'À vérifier' })).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByRole('link', { name: 'En attente' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('shows an error with a retry when the profile cannot be loaded', async () => {
@@ -86,7 +101,7 @@ describe('AppShell navigation', () => {
   });
 
   it('toggles the mobile menu with aria-expanded', async () => {
-    stubConsole({ profile: profile() });
+    stubConsole({ me: me(AGENT) });
     renderShell();
     const button = screen.getByRole('button', { name: 'Ouvrir le menu' });
     expect(button).toHaveAttribute('aria-expanded', 'false');
@@ -94,45 +109,63 @@ describe('AppShell navigation', () => {
     await userEvent.setup().click(button);
     expect(screen.getByRole('button', { name: 'Fermer le menu' })).toHaveAttribute('aria-expanded', 'true');
     expect(document.getElementById('console-nav')).not.toHaveAttribute('inert');
-    // The ministry selector lives inside the same panel.
-    const panel = document.getElementById('console-nav')!;
-    expect(within(panel).getByText('Ministère')).toBeInTheDocument();
+    expect(within(document.getElementById('console-nav')!).getByText('Administration')).toBeInTheDocument();
   });
 });
 
-describe('ministry selector', () => {
-  it('shows the ministry as static text for a single-department agent', async () => {
-    stubConsole({ profile: profile() });
+describe('administration selector', () => {
+  it('shows the administration as static text for an agent', async () => {
+    stubConsole({ me: me(AGENT) });
     renderShell();
-    expect(await screen.findByLabelText('Ministère : Justice')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Justice' })).toBeNull();
+    expect(await screen.findByLabelText('Administration : Ministère de la Justice')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ministère de la Justice' })).toBeNull();
   });
 
-  it('lets a super admin pick a ministry and posts the choice', async () => {
-    const { calls } = stubConsole({ profile: SUPER, departments: [JUSTICE, ENSEIGNEMENT] });
+  it('lets a super admin pick a connected administration and posts the choice', async () => {
+    const { calls } = stubConsole({ me: SUPER_ME, administrations: [JUSTICE, ANIP] });
     renderShell();
     const user = userEvent.setup();
-    const trigger = await screen.findByRole('button', { name: 'Justice' });
-    await user.click(trigger);
-    const menu = screen.getByRole('menu', { name: 'Changer de ministère' });
-    await user.click(within(menu).getByRole('menuitemradio', { name: 'Enseignement' }));
+    await user.click(await screen.findByRole('button', { name: 'Ministère de la Justice' }));
+    const menu = screen.getByRole('menu', { name: 'Changer d’administration' });
+    await user.click(within(menu).getByRole('menuitemradio', { name: 'ANIP' }));
     expect(calls.find((call) => call.method === 'POST')).toMatchObject({
-      url: '/api/admin-department',
-      body: { departmentId: 'enseignement' },
+      url: '/api/admin-administration',
+      body: { administrationId: 'anip' },
     });
     expect(router.push).toHaveBeenCalledWith('/admin');
-    expect(await screen.findByRole('status')).toHaveTextContent('Vous êtes maintenant : Enseignement');
-    expect(screen.getByRole('button', { name: 'Enseignement' })).toBeInTheDocument();
+    expect(await screen.findByText('Vous êtes maintenant : ANIP')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ANIP' })).toBeInTheDocument();
+  });
+
+  it('shows a not connected administration as « Non connectée » and does not let it be selected', async () => {
+    const { calls } = stubConsole({ me: SUPER_ME, administrations: [JUSTICE, SANTE] });
+    renderShell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Ministère de la Justice' }));
+    const menu = screen.getByRole('menu', { name: 'Changer d’administration' });
+    const sante = within(menu).getByRole('menuitemradio', { name: /Santé/ });
+    expect(sante).toHaveTextContent('Non connectée');
+    expect(sante).toBeDisabled();
+    await user.click(sante);
+    expect(calls.some((call) => call.method === 'POST')).toBe(false);
   });
 
   it('closes the menu with Escape', async () => {
-    stubConsole({ profile: SUPER, departments: [JUSTICE, ENSEIGNEMENT] });
+    stubConsole({ me: SUPER_ME, administrations: [JUSTICE, ANIP] });
     renderShell();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Justice' }));
+    await user.click(await screen.findByRole('button', { name: 'Ministère de la Justice' }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('asks nothing of a hidden selector: no administrations:all means no administrations request', async () => {
+    const { calls } = stubConsole({ me: me(SUPER.filter((p) => p !== 'administrations:all')) });
+    renderShell();
+    await screen.findByText('contenu');
+    await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+    expect(calls.some((c) => c.url.includes('/administrations'))).toBe(false);
   });
 });
 

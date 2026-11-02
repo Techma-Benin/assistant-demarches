@@ -1,36 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { activityLabel, conversationReducer, initialState, type ConversationState } from '@/lib/conversation-state';
+import { conversationReducer, initialState, type ConversationState } from '@/lib/conversation-state';
 import type { EventPage } from '@/lib/c1-client';
+import { CONVERSATION_ID as CNV, agentEvent, evtId, msgId, textBlock, userEvent } from './fixtures-v2';
 
-const CNV = 'cnv_' + '0'.repeat(25) + '1';
 const OTHER = 'cnv_' + '0'.repeat(25) + '2';
-const pad = (n: number) => String(n).padStart(26, '0');
-const MSG = `msg_${pad(1)}`;
+const MSG = msgId(1);
 
-const sent = (evt: number, msg: number, conversationId = CNV): EventPage['items'][number] => ({
-  specversion: '1.0',
-  id: `evt_${pad(evt)}`,
-  source: 'urn:techma:backend',
-  type: 'bj.techma.message.sent.v1',
-  time: '2026-10-22T18:00:00Z',
-  datacontenttype: 'application/json',
-  traceparent: '00-' + '1'.repeat(32) + '-' + '2'.repeat(16) + '-01',
-  data: {
-    kind: 'message.sent',
-    conversationId,
-    message: {
-      id: `msg_${pad(msg)}`,
+const sent = (evt: number, msg: number, conversationId = CNV) =>
+  ({
+    ...agentEvent(evt, [textBlock('Bonjour')], conversationId),
+    data: {
+      kind: 'message.sent' as const,
       conversationId,
-      blocks: [{ type: 'text', text: 'Bonjour', sources: [] }],
-      createdAt: '2026-10-22T18:00:00Z',
+      message: { id: msgId(msg), conversationId, blocks: [textBlock('Bonjour')], createdAt: '2026-11-02T09:00:00Z' },
     },
-  },
-});
-const received = (evt: number, messageId: string): EventPage['items'][number] => ({
-  ...sent(evt, 99),
-  type: 'bj.techma.message.received.v1',
-  data: { kind: 'message.received', conversationId: CNV, messageId },
-});
+  }) as EventPage['items'][number];
+const received = (evt: number, messageId: string) =>
+  userEvent(evt, { type: 'text', text: 'Salut' }, { messageId }) as EventPage['items'][number];
 const page = (items: EventPage['items'], nextCursor: string | null): EventPage => ({ items, nextCursor });
 
 function ready(): ConversationState {
@@ -40,18 +26,21 @@ function ready(): ConversationState {
     id: MSG,
     content: { type: 'text', text: 'Salut' },
     display: 'Salut',
-    sentAt: '2026-10-22T18:00:00Z',
+    sentAt: '2026-11-02T09:00:00Z',
   });
   return s;
 }
 
 describe('conversationReducer', () => {
-  it('starts and fails', () => {
-    expect(conversationReducer(initialState, { type: 'conversationStarted', conversationId: CNV }).status).toBe('ready');
-    expect(conversationReducer(initialState, { type: 'startFailed', error: 'x' })).toMatchObject({
-      status: 'error',
-      error: 'x',
+  it('is idle before the first message, starts, and falls back to idle when the start fails', () => {
+    expect(initialState.status).toBe('idle');
+    expect(conversationReducer(initialState, { type: 'conversationStarting' }).status).toBe('starting');
+    expect(conversationReducer(initialState, { type: 'conversationStarted', conversationId: CNV })).toMatchObject({
+      status: 'ready',
+      conversationId: CNV,
     });
+    const starting = conversationReducer(initialState, { type: 'conversationStarting' });
+    expect(conversationReducer(starting, { type: 'startFailed' }).status).toBe('idle');
   });
 
   it('tracks delivery accepted / failed / retry', () => {
@@ -66,20 +55,20 @@ describe('conversationReducer', () => {
   });
 
   it('dedupes events by id', () => {
-    const p = page([sent(1, 1)], 'evt_' + pad(1));
+    const p = page([sent(1, 1)], evtId(1));
     let s = conversationReducer(ready(), { type: 'eventsReceived', page: p });
     s = conversationReducer(s, { type: 'eventsReceived', page: p });
     expect(s.timeline.filter((e) => e.kind === 'agent')).toHaveLength(1);
   });
 
   it('appends message.sent once even if replayed with a new event id', () => {
-    let s = conversationReducer(ready(), { type: 'eventsReceived', page: page([sent(1, 5)], `evt_${pad(1)}`) });
-    s = conversationReducer(s, { type: 'eventsReceived', page: page([sent(2, 5)], `evt_${pad(2)}`) });
+    let s = conversationReducer(ready(), { type: 'eventsReceived', page: page([sent(1, 5)], evtId(1)) });
+    s = conversationReducer(s, { type: 'eventsReceived', page: page([sent(2, 5)], evtId(2)) });
     expect(s.timeline.filter((e) => e.kind === 'agent')).toHaveLength(1);
   });
 
   it('marks delivery on message.received, even after accepted', () => {
-    let s = conversationReducer(ready(), { type: 'eventsReceived', page: page([received(1, MSG)], `evt_${pad(1)}`) });
+    let s = conversationReducer(ready(), { type: 'eventsReceived', page: page([received(1, MSG)], evtId(1)) });
     expect(s.timeline[0]).toMatchObject({ delivery: 'received' });
     s = conversationReducer(s, { type: 'userMessageAccepted', id: MSG });
     expect(s.timeline[0]).toMatchObject({ delivery: 'received' });
@@ -93,7 +82,7 @@ describe('conversationReducer', () => {
   });
 
   it('replayExpired resets the cursor without duplicating the timeline', () => {
-    const p = page([sent(1, 1), received(2, MSG)], `evt_${pad(2)}`);
+    const p = page([sent(1, 1), received(2, MSG)], evtId(2));
     let s = conversationReducer(ready(), { type: 'eventsReceived', page: p });
     const before = s.timeline;
     s = conversationReducer(s, { type: 'replayExpired' });
@@ -103,168 +92,86 @@ describe('conversationReducer', () => {
   });
 
   it('ignores events of another conversation', () => {
-    const s = conversationReducer(ready(), { type: 'eventsReceived', page: page([sent(1, 1, OTHER)], `evt_${pad(1)}`) });
+    const s = conversationReducer(ready(), { type: 'eventsReceived', page: page([sent(1, 1, OTHER)], evtId(1)) });
     expect(s.timeline.filter((e) => e.kind === 'agent')).toHaveLength(0);
   });
+
+  it('ignores every kind but message.received and message.sent (CONTRACTS.md §12)', () => {
+    const tool = {
+      ...agentEvent(1, [textBlock('x')]),
+      type: 'bj.techma.tool.called.v2',
+      data: { kind: 'tool.called', conversationId: CNV, toolName: 'request.create', outcome: 'error', code: 'MANDATE_MISSING' },
+    } as EventPage['items'][number];
+    const s = conversationReducer(ready(), { type: 'eventsReceived', page: page([tool], evtId(1)) });
+    expect(s.timeline).toHaveLength(1);
+    expect(s.seenEventIds).toContain(evtId(1));
+  });
 });
 
-describe('agent activity', () => {
-  const tool = (evt: number, toolName: string, outcome: 'success' | 'error' = 'success', conversationId = CNV): EventPage['items'][number] => ({
-    ...sent(evt, 99),
-    type: 'bj.techma.tool.called.v1',
-    time: '2026-10-22T18:00:05Z',
-    data: { kind: 'tool.called', conversationId, toolName, outcome, code: outcome === 'success' ? 'OK' : 'INTERNAL' },
+describe('history rebuild (message.received)', () => {
+  const rebuild = (...items: EventPage['items']) => {
+    const start = conversationReducer(initialState, { type: 'conversationStarted', conversationId: CNV });
+    return conversationReducer(start, { type: 'eventsReceived', page: page(items, null) });
+  };
+
+  it('rebuilds the user messages and the agent answers in event order', () => {
+    const s = rebuild(userEvent(1, { type: 'text', text: 'Comment obtenir mon casier ?' }), sent(2, 2), userEvent(3, { type: 'text', text: 'Merci' }));
+    expect(s.timeline.map((e) => e.kind)).toEqual(['user', 'agent', 'user']);
+    expect(s.timeline[0]).toMatchObject({
+      id: msgId(1),
+      display: 'Comment obtenir mon casier ?',
+      delivery: 'received',
+      content: { type: 'text', text: 'Comment obtenir mon casier ?' },
+    });
   });
 
-  it('is set by a successful tool call of this conversation', () => {
-    let s = ready();
-    expect(s.activity).toBeNull();
-    s = conversationReducer(s, { type: 'eventsReceived', page: page([tool(1, 'procedures.search')], 'evt_1') });
-    expect(s.activity).toEqual({ toolName: 'procedures.search', at: '2026-10-22T18:00:05Z' });
-    s = conversationReducer(s, { type: 'eventsReceived', page: page([tool(2, 'procedures.get')], 'evt_2') });
-    expect(s.activity?.toolName).toBe('procedures.get');
+  it('rebuilds a voice message with its transcript', () => {
+    const s = rebuild(userEvent(1, { type: 'audio', fileId: 'fil_' + '0'.repeat(26) }, { transcript: 'Bonjour, je veux un extrait' }));
+    expect(s.timeline[0]).toMatchObject({
+      kind: 'user',
+      display: 'Message vocal',
+      attachment: { mimeType: 'audio/*' },
+      transcript: { status: 'done', text: 'Bonjour, je veux un extrait' },
+    });
   });
 
-  it('ignores failed calls and calls of another conversation', () => {
-    let s = ready();
-    s = conversationReducer(s, { type: 'eventsReceived', page: page([tool(1, 'request.pay', 'error'), tool(2, 'request.pay', 'success', OTHER)], null) });
-    expect(s.activity).toBeNull();
-  });
-
-  it('is cleared when an agent message arrives or a user message is queued', () => {
-    let s = conversationReducer(ready(), { type: 'eventsReceived', page: page([tool(1, 'procedures.get')], null) });
-    const answered = conversationReducer(s, { type: 'eventsReceived', page: page([sent(2, 2)], null) });
-    expect(answered.activity).toBeNull();
+  it('adds the transcript to a voice message sent from this tab, under the same id', () => {
+    let s = conversationReducer(initialState, { type: 'conversationStarted', conversationId: CNV });
     s = conversationReducer(s, {
       type: 'userMessageQueued',
-      id: `msg_${pad(5)}`,
-      content: { type: 'text', text: 'Suite' },
-      display: 'Suite',
-      sentAt: '2026-10-22T18:01:00Z',
+      id: MSG,
+      content: { type: 'audio', fileId: 'fil_' + '0'.repeat(26) },
+      display: 'Message vocal',
+      sentAt: '2026-11-02T09:00:00Z',
     });
-    expect(s.activity).toBeNull();
-  });
-});
-
-describe('activityLabel', () => {
-  it.each([
-    ['procedures.search', 'Je consulte la fiche officielle…'],
-    ['procedures.get', 'Je consulte la fiche officielle…'],
-    ['request.create', 'Je prépare votre dossier…'],
-    ['request.update', 'Je prépare votre dossier…'],
-    ['documents.attach', 'Je vérifie votre pièce…'],
-    ['documents.verify', 'Je vérifie votre pièce…'],
-    ['request.submit', 'J’envoie votre demande…'],
-    ['request.status', 'Je vérifie l’état de votre demande…'],
-    ['request.pay', 'Je prépare le paiement…'],
-    ['unknown.tool', 'Je réfléchis…'],
-    [undefined, 'Je réfléchis…'],
-  ])('%s', (tool, label) => {
-    expect(activityLabel(tool)).toBe(label);
-  });
-
-  describe('message.transcribed (proposed 1.4.0)', () => {
-    const transcribed = (evt: number, data: Record<string, unknown>): EventPage['items'][number] => ({
-      ...sent(evt, 99),
-      type: 'bj.techma.message.transcribed.v1' as never,
-      data: { kind: 'message.transcribed', conversationId: CNV, messageId: MSG, ...data } as never,
+    s = conversationReducer(s, {
+      type: 'eventsReceived',
+      page: page([userEvent(1, { type: 'audio', fileId: 'fil_' + '0'.repeat(26) }, { messageId: MSG, transcript: 'Salut' })], null),
     });
-    const run = (item: EventPage['items'][number]) => conversationReducer(ready(), { type: 'eventsReceived', page: page([item], null) });
-
-    it('sets a done transcript on the matching entry', () => {
-      expect(run(transcribed(1, { status: 'done', text: 'Bonjour' })).timeline[0]).toMatchObject({
-        transcript: { status: 'done', text: 'Bonjour' },
-      });
-    });
-    it('sets a failed transcript', () => {
-      expect(run(transcribed(1, { status: 'failed' })).timeline[0]).toMatchObject({ transcript: { status: 'failed' } });
-    });
-    it('ignores malformed, unknown-message and other-conversation events', () => {
-      expect(run(transcribed(1, { status: 'done' })).timeline[0]).not.toHaveProperty('transcript');
-      expect(run(transcribed(1, { status: 'done', text: '' })).timeline[0]).not.toHaveProperty('transcript');
-      expect(run(transcribed(1, { status: 'done', text: 'x', messageId: `msg_${pad(7)}` })).timeline[0]).not.toHaveProperty('transcript');
-      expect(run(transcribed(1, { status: 'done', text: 'x', conversationId: OTHER })).timeline[0]).not.toHaveProperty('transcript');
-    });
-    it('ignores a duplicate event id', () => {
-      let s = run(transcribed(1, { status: 'done', text: 'Bonjour' }));
-      s = conversationReducer(s, { type: 'eventsReceived', page: page([transcribed(1, { status: 'failed' })], null) });
-      expect(s.timeline[0]).toMatchObject({ transcript: { status: 'done', text: 'Bonjour' } });
-    });
-  });
-});
-
-describe('request.created', () => {
-  const REQ = (conversationId = CNV, id = 'req_1') => ({
-    id,
-    conversationId,
-    userRef: 'usr_1',
-    procedureId: 'proc_1',
-    status: 'draft' as const,
-    fields: {},
-    fileIds: [],
-    officialLink: null,
-    updatedAt: '2026-10-22T18:00:00Z',
-  });
-  const created = (evt: number, request = REQ()): EventPage['items'][number] => ({
-    ...sent(evt, 99),
-    type: 'bj.techma.request.created.v1',
-    data: { kind: 'request.created', request },
-  });
-  const changed = (evt: number, conversationId = CNV): EventPage['items'][number] => ({
-    ...sent(evt, 99),
-    type: 'bj.techma.request.status_changed.v1',
-    data: {
-      kind: 'request.status_changed',
-      requestId: 'req_1',
-      conversationId,
-      from: 'draft',
-      to: 'ready',
-      at: '2026-10-22T19:00:00Z',
-    },
-  });
-  const apply = (s: ConversationState, ...items: EventPage['items']) =>
-    conversationReducer(s, { type: 'eventsReceived', page: page(items, null) });
-
-  it('adds a request entry once', () => {
-    let s = apply(ready(), created(1));
-    expect(s.timeline.filter((e) => e.kind === 'request')).toHaveLength(1);
-    expect(s.requestProcedureId).toBe('proc_1');
-    s = apply(s, created(1), created(2));
-    expect(s.timeline.filter((e) => e.kind === 'request')).toHaveLength(1);
+    expect(s.timeline).toHaveLength(1);
+    expect(s.timeline[0]).toMatchObject({ delivery: 'received', transcript: { status: 'done', text: 'Salut' } });
   });
 
-  it('is skipped when a status card already shows the request', () => {
-    const s0 = ready();
-    const withCard = {
-      ...s0,
-      timeline: [
-        ...s0.timeline,
-        {
-          kind: 'agent' as const,
-          message: {
-            id: `msg_${pad(5)}`,
-            conversationId: CNV,
-            blocks: [{ type: 'statusCard' as const, request: REQ() }],
-            createdAt: '2026-10-22T18:00:00Z',
-          },
-        },
-      ],
-    };
-    expect(apply(withCard, created(1)).timeline.some((e) => e.kind === 'request')).toBe(false);
+  it('labels a rebuilt button click with the button of the previous answer, and a form as sent', () => {
+    const buttons = {
+      ...agentEvent(1, [{ type: 'buttons', items: [{ id: 'prepare', label: 'Préparer ma demande' }] }]),
+    } as EventPage['items'][number];
+    const form = agentEvent(3, [
+      { type: 'form', id: 'identity', fields: [{ name: 'profession', label: 'Profession', required: true, type: 'text' }] },
+    ]) as EventPage['items'][number];
+    const s = rebuild(
+      buttons,
+      userEvent(2, { type: 'interaction', actionId: 'prepare', value: null }),
+      form,
+      userEvent(4, { type: 'interaction', actionId: 'identity', value: '{"profession":"Comptable"}' }),
+    );
+    const users = s.timeline.filter((e) => e.kind === 'user');
+    expect(users[0]).toMatchObject({ display: 'Préparer ma demande' });
+    expect(users[1]).toMatchObject({ display: 'Formulaire envoyé' });
   });
 
-  it('applies status_changed to the entry', () => {
-    const s = apply(ready(), created(1), changed(2));
-    const entry = s.timeline.find((e) => e.kind === 'request');
-    expect(entry?.kind === 'request' && entry.request.status).toBe('ready');
-    expect(entry?.kind === 'request' && entry.request.updatedAt).toBe('2026-10-22T19:00:00Z');
-  });
-
-  it('ignores other conversations', () => {
-    const s = apply(ready(), created(1, REQ(OTHER)), created(2, REQ(OTHER, 'req_2')));
-    expect(s.timeline.some((e) => e.kind === 'request')).toBe(false);
-    const s2 = apply(apply(ready(), created(3)), changed(4, OTHER));
-    const entry = s2.timeline.find((e) => e.kind === 'request');
-    expect(entry?.kind === 'request' && entry.request.status).toBe('draft');
+  it('rebuilds a file as an attachment without size', () => {
+    const s = rebuild(userEvent(1, { type: 'file', fileId: 'fil_' + '0'.repeat(26), documentType: 'extrait-acte-naissance' }));
+    expect(s.timeline[0]).toMatchObject({ display: 'Pièce jointe', attachment: { sizeBytes: 0 } });
   });
 });

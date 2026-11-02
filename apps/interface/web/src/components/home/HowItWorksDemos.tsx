@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { CitationMark, Chip, FlagGlyph, SourcePill, StatusPill, cn } from '@techma/ui';
 import { CheckCheck, FileCheck2, Loader, Mic } from 'lucide-react';
-import type { components } from '@techma/contracts-ts';
+import type { Schemas } from '@techma/contracts-ts';
 import { AgentActivity } from '@/components/chat/AgentActivity';
-import { StatusCardBlock } from '@/components/blocks/StatusCardBlock';
+import { CaseCardBlock } from '@/components/blocks/CaseCardBlock';
 import { Stamp } from './DocumentArt';
 
 type Loop = { ref: RefObject<HTMLDivElement | null>; step: number; animated: boolean };
@@ -172,21 +172,32 @@ const ANSWER = 'Selon la fiche officielle, il faut la copie de l’acte de la m�
 const PREPARE_STEPS = [400, ANSWER.length * 110 + 300, 800, 800, 800, 400, 3400, 500];
 const PREPARE_FINAL = 6;
 
-type StatusCard = Extract<components['schemas']['Block'], { type: 'statusCard' }>;
-const DEMO_CARD = {
-  type: 'statusCard',
-  request: {
-    id: 'req_DEMO0000000000000000000000',
-    conversationId: 'cnv_DEMO0000000000000000000000',
-    userRef: 'demo',
-    procedureId: 'acte-naissance',
-    status: 'draft',
+// Illustrative data only (simulated case), typed with the v2 contract.
+const DEMO_CARD: { type: 'caseCard'; case: Schemas['Case'] } = {
+  type: 'caseCard',
+  case: {
+    id: 'cas_01JD0000000000000000000000',
+    reference: 'SIM-ANIP-2026-000000',
+    simulated: true,
+    procedureId: 'PS00393',
+    title: 'Acte de naissance sécurisé',
+    administrationId: 'anip',
+    applicantRef: 'usr_01JD0000000000000000000000',
+    requestId: 'req_01JD0000000000000000000000',
+    channel: 'web',
+    status: 'received',
     fields: {},
-    fileIds: [],
-    officialLink: null,
+    documents: [],
+    payment: { amountFcfa: 0, status: 'not_required', reference: null, paidAt: null, simulated: true },
+    steps: [{ id: 'depot', label: 'Dossier déposé par l’assistant', state: 'done', actor: 'assistant', note: null, at: '2026-11-01T09:00:00Z' }],
+    informationRequest: null,
+    claimedBy: null,
+    completedBy: null,
+    decisionNote: null,
+    createdAt: '2026-11-01T09:00:00Z',
     updatedAt: '2026-11-01T09:00:00Z',
   },
-} as unknown as StatusCard;
+};
 
 export function PrepareDemo() {
   const loop = useDemoLoop(PREPARE_STEPS, PREPARE_FINAL);
@@ -230,7 +241,7 @@ export function PrepareDemo() {
             </span>
             <span className="text-[15px] font-semibold text-ink">Demande créée</span>
           </div>
-          <StatusCardBlock block={DEMO_CARD} />
+          <CaseCardBlock block={DEMO_CARD} />
         </Rise>
       )}
     </Frame>

@@ -197,7 +197,7 @@ export function useVoiceRecorder({ maxMs = 120_000, minMs = 1_000, onMaxReached 
       return null;
     }
     setStatus('idle');
-    const ext = choice.fileType === 'audio/ogg' ? 'ogg' : 'm4a';
+    const ext = choice.fileType === 'audio/ogg' ? 'ogg' : choice.fileType === 'audio/webm' ? 'webm' : 'm4a';
     const file = new File(parts, `Message vocal.${ext}`, { type: choice.fileType });
     return { file, durationMs, waveform: downsampleWaveform(levels) };
   }, [choice, maxMs, minMs, release]);

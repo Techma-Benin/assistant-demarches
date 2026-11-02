@@ -5,6 +5,7 @@ export const CONTRACT_MIME_TYPES = [
   'audio/ogg',
   'audio/mpeg',
   'audio/mp4',
+  'audio/webm',
 ] as const;
 export type ContractMimeType = (typeof CONTRACT_MIME_TYPES)[number];
 
@@ -18,6 +19,7 @@ const MIME_LABELS: Record<string, string> = {
   'audio/ogg': 'OGG',
   'audio/mpeg': 'MP3',
   'audio/mp4': 'M4A',
+  'audio/webm': 'WEBM',
 };
 
 export const mimeLabel = (mime: string): string => MIME_LABELS[mime] ?? mime;
@@ -39,10 +41,8 @@ export function validateFile(
   return { ok: true, mimeType };
 }
 
-export function contentTypeFor(mime: string): 'image' | 'audio' | 'file' {
-  if (mime.startsWith('image/')) return 'image';
-  if (mime.startsWith('audio/')) return 'audio';
-  return 'file';
+export function contentTypeFor(mime: string): 'audio' | 'file' {
+  return mime.startsWith('audio/') ? 'audio' : 'file';
 }
 
 const sizeFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
