@@ -14,7 +14,8 @@ execFileSync(process.execPath, [
 ], { stdio: "inherit", cwd: repository });
 const envFile = join(repository, ".env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
-const childEnvironment = { ...process.env, NODE_ENV: "development" };
+const childEnvironment = { ...process.env };
+if (!childEnvironment.NODE_ENV) childEnvironment.NODE_ENV = "development";
 let server;
 let restarting = Promise.resolve();
 let stopping = false;
