@@ -18,6 +18,7 @@ import { KeycloakAdmin } from "./keycloak-admin.js";
 import { RUNTIME, type Runtime } from "./routes.js";
 import { XroadClient } from "./xroad.js";
 import { documentDisposition } from "./download.js";
+import { CONTENT_MISMATCH, matchesDeclaredType } from "./files.js";
 import { idempotencyKey } from "./transactions.js";
 
 const AUTH = Symbol("ADMIN_CONSOLE_AUTH");
@@ -77,6 +78,8 @@ export class AdminConsoleController {
       throw new Problem(400, "INVALID_REQUEST", "Fichier vide.");
     if (body.length > 2 * 1024 * 1024)
       throw new Problem(413, "FILE_TOO_LARGE", "Photo supérieure à 2 Mio.");
+    if (!matchesDeclaredType(body, mime))
+      throw new Problem(415, "UNSUPPORTED_MEDIA_TYPE", CONTENT_MISMATCH);
     if (!this.runtime.files)
       throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Stockage non configuré.");
     const me = await this.client(req).me(principal.subject);

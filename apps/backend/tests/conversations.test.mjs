@@ -772,7 +772,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
     async () => {
       const file = await request("/v1/files", {
         method: "POST",
-        body: Buffer.from("%PDF synthetic"),
+        body: Buffer.from("%PDF-1.4 synthetic"),
         headers: { "X-File-Mime-Type": "application/pdf" },
       });
       assert.equal(file.status, 201);

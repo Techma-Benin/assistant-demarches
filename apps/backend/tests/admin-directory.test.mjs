@@ -284,6 +284,10 @@ test("v2 admin API: auth order, Keycloak compensation, 401/403/nominal/404", asy
 
   assert.equal((await call("/v1/admin/me", official)).status, 200);
   assert.equal((await call("/v1/admin/me", official, { method: "PUT", ...jsonBody({ displayName: "Agent Justice", jobTitle: "Instructeur" }) })).status, 200);
+  const disguised = await call("/v1/admin/me/avatar", official, { method: "PUT", headers: { "X-File-Mime-Type": "image/jpeg", "Content-Type": "application/octet-stream" }, body: Buffer.from("%PDF-1.4 not an image") });
+  assert.equal(disguised.status, 415);
+  assert.equal((await disguised.json()).code, "UNSUPPORTED_MEDIA_TYPE");
+  assert.equal((await call("/v1/admin/me/avatar", official, { method: "PUT", headers: { "X-File-Mime-Type": "image/png", "Content-Type": "application/octet-stream" }, body: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })).status, 415);
   assert.equal((await call("/v1/admin/me/avatar", official, { method: "PUT", headers: { "X-File-Mime-Type": "image/jpeg", "Content-Type": "application/octet-stream" }, body: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })).status, 200);
   assert.equal((await call("/v1/admin/avatars/off_01JC0000000000000000000001", official)).status, 200);
   assert.equal((await call("/v1/admin/administrations", official)).status, 200);

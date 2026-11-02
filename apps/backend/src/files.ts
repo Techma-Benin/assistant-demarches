@@ -9,6 +9,22 @@ import {
 import { idempotent, transaction } from "./transactions.js";
 import type { ObjectStorage } from "./storage.js";
 
+const SIGNATURES: Record<string, number[]> = {
+  "application/pdf": [0x25, 0x50, 0x44, 0x46, 0x2d], // %PDF-
+  "image/jpeg": [0xff, 0xd8, 0xff],
+  "image/png": [0x89, 0x50, 0x4e, 0x47],
+};
+/**
+ * Declared type vs. leading bytes for the document and image types of the contract. Audio keeps its own check at
+ * transcription time (it needs more than the first bytes), so it is not refused here.
+ */
+export function matchesDeclaredType(data: Buffer, mime: string): boolean {
+  const signature = SIGNATURES[mime];
+  if (!signature) return true;
+  return data.length >= signature.length && signature.every((byte, index) => data[index] === byte);
+}
+export const CONTENT_MISMATCH = "Le contenu du fichier ne correspond pas au type déclaré.";
+
 export class Files {
   constructor(
     private pool: Pool,
@@ -34,6 +50,8 @@ export class Files {
         "Type de fichier non autorisé.",
       );
     }
+    if (!matchesDeclaredType(data, mime))
+      throw new Problem(415, "UNSUPPORTED_MEDIA_TYPE", CONTENT_MISMATCH);
     let written = false;
     try {
       return await idempotent(

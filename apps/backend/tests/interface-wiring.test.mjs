@@ -378,7 +378,9 @@ test("upload limits and types as the Interface triggers them (413, 415, empty bo
   problem(await api.uploadFile(Buffer.alloc(0), "audio/webm"), 400, "INVALID_REQUEST");
   problem(await api.uploadFile(Buffer.alloc(10485761, 1), "application/pdf"), 413, "FILE_TOO_LARGE");
   for (const mime of ["audio/ogg", "audio/mp4", "audio/mpeg", "application/pdf", "image/jpeg", "image/png", "audio/webm"]) {
-    const ok = await api.uploadFile(Buffer.from("%PDF-1.4 x"), mime);
+    // Documents and images must start with their own signature; audio is checked at transcription time.
+    const bytes = mime === "image/jpeg" ? Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00]) : mime === "image/png" ? Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) : Buffer.from("%PDF-1.4 x");
+    const ok = await api.uploadFile(bytes, mime);
     assert.equal(ok.status, 201, mime + " " + ok.text);
   }
   const noAuth = await client(h.base).uploadFile(WEBM, "audio/webm");
