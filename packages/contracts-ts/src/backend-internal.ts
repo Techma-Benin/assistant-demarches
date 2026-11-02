@@ -239,7 +239,7 @@ export interface components {
              * @description Toujours bj.techma.{data.kind}.v2.
              * @enum {string}
              */
-            type: "bj.techma.message.received.v2" | "bj.techma.message.sent.v2" | "bj.techma.case.updated.v2" | "bj.techma.tool.called.v2" | "bj.techma.mandate.granted.v2" | "bj.techma.mandate.revoked.v2";
+            type: "bj.techma.message.received.v2" | "bj.techma.message.delta.v2" | "bj.techma.message.sent.v2" | "bj.techma.case.updated.v2" | "bj.techma.tool.called.v2" | "bj.techma.mandate.granted.v2" | "bj.techma.mandate.revoked.v2";
             /** Format: date-time */
             time: string;
             /** @constant */
@@ -251,6 +251,16 @@ export interface components {
             kind: "message.received";
             conversationId: components["schemas"]["ConversationId"];
             message: components["schemas"]["UserMessage"];
+        } | {
+            /** @constant */
+            kind: "message.delta";
+            conversationId: components["schemas"]["ConversationId"];
+            /** @description Même identifiant que le message.sent à venir. */
+            messageId: components["schemas"]["MessageId"];
+            /** @description Morceau du texte du futur bloc text uniquement. Chaîne vide seulement si un signal terminal est indispensable ; le contrat n’exige pas ce delta terminal. */
+            delta: string;
+            /** @description Ordre 0-based des morceaux pour un même messageId. Facultatif. */
+            index?: number;
         } | {
             /** @constant */
             kind: "message.sent";
