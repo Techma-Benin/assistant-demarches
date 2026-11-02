@@ -121,7 +121,7 @@ Le modèle ne produit que `text`, `buttons` et `form`. Les blocs `fileRequest`, 
 
 1. `procedures.search` / `procedures.get` : la fiche indique `filing` (déposable) ou `null` (information et lien officiel seulement).
 2. `request.create` exige un usager connecté. Avec un jeton invité, le Backend renvoie un bloc `loginRequired`. Après `attach`, la conversation continue au même endroit.
-3. Une action sans mandat actif renvoie `MANDATE_MISSING`. Le Backend crée alors le challenge (scopes de la démarche) et envoie un bloc `consent`. Le clic de l'usager accorde le mandat, et l'action est rejouée.
+3. Une action sans mandat actif renvoie `MANDATE_MISSING`. Un mandat périmé (1 h) renvoie `MANDATE_EXPIRED` : le Backend le traite comme `MANDATE_MISSING` (nouveau challenge, bloc `consent`, reprise après accord). Le clic de l'usager accorde le mandat, et l'action est rejouée.
 4. `request.update` et `documents.attach` remplissent le brouillon ; chaque résultat produit un `requestCard`.
 5. `request.submit` : le Tooling lit les pièces (`backend-internal`), les transmet au X-Road (`/v1/uploads`) et dépose le dossier (`POST /v1/cases`). Il renvoie un `caseCard`.
 6. `request.pay` si `status = awaiting_payment`.

@@ -23,7 +23,7 @@ export const URLS = {
 };
 const database = (name) => `postgres://${POSTGRES.user}:${POSTGRES.password}@127.0.0.1:${PORTS.postgres}/${name}`;
 
-/** Defaults for `pnpm dev`. A variable already set in the environment is kept. */
+/** Per-service defaults for `pnpm dev`. Shared keys (DATABASE_URL, OIDC_CLIENT_ID, …) never leak from `.env` to another service. */
 export const SERVICES = {
   backend: {
     package: '@techma/backend',

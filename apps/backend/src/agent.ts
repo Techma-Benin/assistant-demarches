@@ -20,6 +20,7 @@ import { transaction } from "./transactions.js";
 import {
   catalog,
   compileMcpSchema,
+  sameMcpDefinition,
   type ToolingPort,
   type ToolDefinition,
   type ToolResult,
@@ -491,7 +492,7 @@ export class Agent {
         const remote=listed.find(t=>t.name===permission.name);if(!remote)continue;
         const known=server.policy==="techma"?catalog.find(t=>t.name===remote.name):undefined;
         // Techma tools are the published catalogue; generic MCP still requires an unchanged discovered schema.
-        if(server.policy!=="techma"&&permission.definition&&canonical(permission.definition)!==canonical(remote))continue;
+        if(server.policy!=="techma"&&permission.definition&&!sameMcpDefinition(permission.definition,remote))continue;
         const definition=known??remote;
         const name=modelToolName(server,remote.name);
         if(bindings.has(name))throw new Problem(503,"UPSTREAM_UNAVAILABLE","Collision des noms MCP ; utiliser des connexions génériques distinctes.");
@@ -562,7 +563,7 @@ export class Agent {
             const current=(await this.pool.query("SELECT s.body,t.enabled,t.requires_mandate,t.definition FROM backend_mcp_servers s JOIN backend_mcp_tools t ON t.administration_id=s.administration_id AND t.server_id=s.id WHERE s.administration_id=$1 AND s.id=$2 AND t.name=$3",[administrationId,binding.server.id,binding.name])).rows[0];
             if(!current||!current.body.enabled||!current.enabled||canonical(current.body)!==canonical(binding.server))throw new Problem(403,"FORBIDDEN","Connexion ou action désactivée ou modifiée.");
             // Techma listed tools inline $defs; the published catalogue is the frozen contract.
-            if(binding.server.policy!=="techma"&&current.definition&&canonical(current.definition)!==canonical(binding.definition))throw new Problem(403,"FORBIDDEN","Connexion ou action désactivée ou modifiée.");
+            if(binding.server.policy!=="techma"&&current.definition&&!sameMcpDefinition(current.definition,binding.definition))throw new Problem(403,"FORBIDDEN","Connexion ou action désactivée ou modifiée.");
             const requires = binding.requires || current.requires_mandate;
             const requiresLogin = Boolean(binding.definition._meta?.["bj.techma/requiresLogin"]);
             let argumentsValue: Record<string,unknown>;
@@ -678,7 +679,7 @@ export class Agent {
               type: "loginRequired",
               reason: "Connectez-vous pour préparer ou déposer cette démarche.",
             });
-          else if (code === "MANDATE_MISSING")
+          else if (code === "MANDATE_MISSING" || code === "MANDATE_EXPIRED")
             await this.appendConsent(state, conversation, selected, call.arguments, operationKey, traceparent);
         }
         const isTechma=selected?.server.policy==="techma"&&catalog.some(t=>t.name===selected.name);

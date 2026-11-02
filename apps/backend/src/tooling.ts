@@ -3,17 +3,63 @@ import addFormats from "ajv-formats";
 import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { approvedMcpUrl, Problem } from "./domain.js";
+import { approvedMcpUrl, canonical, Problem } from "./domain.js";
 const domain = JSON.parse(readFileSync(new URL("./assets/domain.schema.json", import.meta.url), "utf8")) as { $id: string };
-function bindRefs(schema: Record<string, unknown>) {
-  return JSON.parse(JSON.stringify(schema).replaceAll('"#/$defs/', `"${domain.$id}#/$defs/`)) as Record<string, unknown>;
+const catalogue = JSON.parse(readFileSync(new URL("./assets/mcp.tools.json", import.meta.url), "utf8")) as {
+  tools: ToolDefinition[];
+  $defs?: Record<string, unknown>;
+};
+const catalogDefs = catalogue.$defs ?? {};
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+/** Merge catalogue-root $defs with any schema-local $defs (Tooling may inline a subset). */
+export function mcpSchemaDefs(schema: Record<string, unknown>): Record<string, unknown> {
+  return { ...catalogDefs, ...(isRecord(schema.$defs) ? schema.$defs : {}) };
+}
+/** Attach $defs so Ajv can compile a raw catalogue fragment (`#/$defs/ProcedureId`) or a self-contained Tooling schema. */
+export function withMcpDefs(schema: Record<string, unknown>): Record<string, unknown> {
+  return { ...schema, $defs: mcpSchemaDefs(schema) };
+}
+/** Inline `#/$defs/…` from the catalogue root (and local $defs) so two writings of the same tool compare equal. */
+export function resolveMcpSchema(schema: Record<string, unknown>, defs = mcpSchemaDefs(schema)): Record<string, unknown> {
+  const seen = new Set<string>();
+  const resolve = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(resolve);
+    if (!isRecord(value)) return value;
+    if (typeof value.$ref === "string" && value.$ref.startsWith("#/$defs/")) {
+      const name = value.$ref.slice("#/$defs/".length);
+      const def = defs[name];
+      if (!isRecord(def) || seen.has(name)) return value;
+      seen.add(name);
+      const resolved = resolve(def);
+      seen.delete(name);
+      return resolved;
+    }
+    const next: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value)) {
+      if (key === "$defs") continue;
+      next[key] = resolve(nested);
+    }
+    return next;
+  };
+  return resolve(schema) as Record<string, unknown>;
 }
 // Each remote schema has its own registry: two servers may legitimately reuse $id.
 export function compileMcpSchema(schema: Record<string, unknown>) {
   const validator = new Ajv2020({ strict: false, allErrors: true });
   (addFormats as unknown as (instance: Ajv2020) => void)(validator);
   validator.addSchema(domain);
-  return validator.compile(bindRefs(schema));
+  return validator.compile(withMcpDefs(schema));
+}
+export function sameMcpDefinition(left: unknown, right: unknown): boolean {
+  return canonical(normalizeMcpDefinition(left)) === canonical(normalizeMcpDefinition(right));
+}
+function normalizeMcpDefinition(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const input = isRecord(value.inputSchema) ? resolveMcpSchema(value.inputSchema) : value.inputSchema;
+  const output = isRecord(value.outputSchema) ? resolveMcpSchema(value.outputSchema) : value.outputSchema;
+  return { name: value.name, inputSchema: input, outputSchema: output, _meta: value._meta };
 }
 export type McpAuth = {
   type: "none";
@@ -47,7 +93,7 @@ export type ToolDefinition = {
   outputSchema?: Record<string, unknown>;
   _meta?: Record<string, unknown>;
 };
-export const catalog = JSON.parse(readFileSync(new URL("./assets/mcp.tools.json", import.meta.url), "utf8")).tools as ToolDefinition[];
+export const catalog = catalogue.tools;
 export type ToolResult = {
   isError?: boolean;
   structuredContent?: unknown;
