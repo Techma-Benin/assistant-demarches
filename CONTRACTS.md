@@ -1,4 +1,4 @@
-# Contrat d'intégration v2.0.0
+# Contrat d'intégration v2.1.0
 
 Ce document et les fichiers de `contracts/v2/` sont la seule référence entre les équipes. Ils découlent de la [spécification fonctionnelle](docs/spec.md). Tout ce qui n'y figure pas n'existe pas.
 
@@ -95,8 +95,12 @@ Commandes :
 0. L'accueil affiche `GET /v1/home` (sans authentification) : thèmes des administrations connectées et suggestions de démarches réelles.
 1. L'Interface obtient un jeton invité (ou utilise la session Keycloak si l'usager est déjà connecté), puis `POST /v1/conversations`.
 2. Messages : `POST …/messages` (dédupliqué par `message.id`). Réponse par le flux d'événements : WebSocket via `socket-ticket`, ou `GET …/events` en repli.
-3. `GET …/events` sans curseur restitue **tout l'historique**, messages de l'usager compris (`message.received` porte le contenu et la transcription d'un vocal). Le rechargement ne perd rien.
-4. Vocal : `POST /v1/files` (audio), puis message `{type: audio, fileId}`. Le Backend transcrit, et la transcription apparaît dans `message.received`.
+3. `GET …/events` sans curseur restitue l'historique des **messages complets** (`message.received` et `message.sent`). `message.received` porte le contenu et la transcription d'un vocal. Le rechargement n'est pas un déluge de jetons : **`message.delta` n'y figure pas**.
+4. `message.delta` est une livraison **live uniquement** : trames WebSocket et/ou `GET …/events` **avec curseur** après abonnement. Chaque événement est un Event CloudEvents 1.0 (`type = bj.techma.message.delta.v2`). `data` (objet fermé) : `kind`, `conversationId`, `messageId` (le même que le `message.sent` à venir), `delta` (morceau de texte), `index` facultatif (ordre 0-based). `delta` vide seulement si un signal terminal est indispensable ; le contrat n'exige pas ce delta terminal.
+5. Pendant la génération, le Backend **peut** émettre zéro, un ou plusieurs `message.delta`. Ils portent uniquement le texte du futur bloc `text` — jamais les blocs structurés (`buttons`, `form`, `fileRequest`, `loginRequired`, `consent`, `requestCard`, `caseCard`) ni les `sources`.
+6. La clôture reste `message.sent` : `AgentMessage` complet, `blocks` définitifs. L'Interface remplace / finalise la bulle en cours par cet événement. Sources, boutons, formulaire, `fileRequest` et les autres blocs n'apparaissent que sur `message.sent`. Le modèle ne produit toujours que `text` / `buttons` / `form` ; les autres blocs restent construits par le Backend.
+7. `message.delta` n'est **pas** émis : dans `GET …/events` sans curseur ; après le `message.sent` du même `messageId` ; pour une réponse sans texte (pas de bloc `text` à venir) ; par le Tooling (`POST /internal/v1/events`).
+8. Vocal : `POST /v1/files` (audio), puis message `{type: audio, fileId}`. Le Backend transcrit, et la transcription apparaît dans `message.received`.
 
 ### 7.2 Réponses de l'assistant (`AgentMessage.blocks`)
 
@@ -111,7 +115,7 @@ Commandes :
 | `requestCard` | État du brouillon | Met à jour le panneau « vos informations » (champs avec provenance, pièces, manques) |
 | `caseCard` | État d'un dossier déposé | Affiche statut, référence SIM, paiement, complément demandé, documents délivrés |
 
-Le modèle ne produit que `text`, `buttons` et `form`. Les blocs `fileRequest`, `loginRequired`, `consent`, `requestCard` et `caseCard` sont construits par le code du Backend à partir des résultats d'outils et des événements, jamais inventés par le modèle.
+Le modèle ne produit que `text`, `buttons` et `form`. Les blocs `fileRequest`, `loginRequired`, `consent`, `requestCard` et `caseCard` sont construits par le code du Backend à partir des résultats d'outils et des événements, jamais inventés par le modèle. Un `message.delta` n'ajoute jamais un bloc : il n'apporte que du texte pour le futur bloc `text` (§7.1).
 
 ### 7.3 Démarche déposable
 
@@ -179,7 +183,7 @@ CloudEvents 1.0 en JSON (`Event`), `type = bj.techma.{kind}.v2`, `POST /internal
 | `tool.called` | Chaque appel d'outil | Journal technique (opérateur), jamais affiché à l'usager |
 | `mandate.granted`, `mandate.revoked` | Mandat créé ou retiré | Mise à jour de l'état de consentement |
 
-Le flux de conversation vers l'Interface ne contient que `message.received` et `message.sent`.
+Le flux de conversation vers l'Interface contient `message.received`, `message.delta` et `message.sent`. `message.delta` est live uniquement (§7.1) ; `message.sent` reste la source de vérité de la réponse.
 
 ## 13. Pièces et documents
 

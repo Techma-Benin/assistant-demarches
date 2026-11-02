@@ -89,7 +89,7 @@ export interface paths {
         put?: never;
         /**
          * Envoyer un message
-         * @description Dédupliqué par message.id. La réponse de l’assistant arrive par le flux d’événements.
+         * @description Dédupliqué par message.id. La réponse arrive par le flux : éventuellement des message.delta (texte live), puis message.sent (AgentMessage complet).
          */
         post: operations["sendMessage"];
         delete?: never;
@@ -107,7 +107,7 @@ export interface paths {
         };
         /**
          * Historique et reprise (repli du WebSocket)
-         * @description Sans curseur : tout l’historique de la conversation (messages usager et assistant). Avec curseur : les événements suivants. Au plus 100 par page.
+         * @description Sans curseur : historique des messages complets (message.received et message.sent) ; pas de message.delta (évite un déluge de jetons au rechargement). Avec curseur, après abonnement : les événements suivants, y compris les message.delta live. Au plus 100 par page.
          */
         get: operations["listEvents"];
         put?: never;
@@ -129,7 +129,7 @@ export interface paths {
         put?: never;
         /**
          * Ticket WebSocket à usage unique (60 s)
-         * @description Connexion ensuite sur ticket.url (?ticket=…&cursor=evt_…). Le serveur pousse un Event JSON par trame.
+         * @description Connexion ensuite sur ticket.url (?ticket=…&cursor=evt_…). Le serveur pousse un Event JSON par trame. message.delta n’est livré qu’en direct (trames WebSocket et GET …/events avec curseur après abonnement), jamais dans l’historique sans curseur. message.sent clôture la réponse.
          */
         post: operations["createSocketTicket"];
         delete?: never;
@@ -463,7 +463,7 @@ export interface components {
              * @description Toujours bj.techma.{data.kind}.v2.
              * @enum {string}
              */
-            type: "bj.techma.message.received.v2" | "bj.techma.message.sent.v2" | "bj.techma.case.updated.v2" | "bj.techma.tool.called.v2" | "bj.techma.mandate.granted.v2" | "bj.techma.mandate.revoked.v2";
+            type: "bj.techma.message.received.v2" | "bj.techma.message.delta.v2" | "bj.techma.message.sent.v2" | "bj.techma.case.updated.v2" | "bj.techma.tool.called.v2" | "bj.techma.mandate.granted.v2" | "bj.techma.mandate.revoked.v2";
             /** Format: date-time */
             time: string;
             /** @constant */
@@ -475,6 +475,16 @@ export interface components {
             kind: "message.received";
             conversationId: components["schemas"]["ConversationId"];
             message: components["schemas"]["UserMessage"];
+        } | {
+            /** @constant */
+            kind: "message.delta";
+            conversationId: components["schemas"]["ConversationId"];
+            /** @description Même identifiant que le message.sent à venir. */
+            messageId: components["schemas"]["MessageId"];
+            /** @description Morceau du texte du futur bloc text uniquement. Chaîne vide seulement si un signal terminal est indispensable ; le contrat n’exige pas ce delta terminal. */
+            delta: string;
+            /** @description Ordre 0-based des morceaux pour un même messageId. Facultatif. */
+            index?: number;
         } | {
             /** @constant */
             kind: "message.sent";
