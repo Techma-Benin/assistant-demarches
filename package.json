@@ -11,6 +11,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:infra": "node scripts/dev.mjs --infra",
     "dev:reset": "node scripts/dev.mjs --reset",
+    "dev:check": "node scripts/dev-check.mjs",
     "contracts:sync": "node scripts/sync-contracts.mjs",
     "contracts:check": "node scripts/check-contracts.mjs",
     "contracts:generate": "node scripts/generate-types.mjs",
