@@ -16,14 +16,13 @@ export interface Challenge {
 @Injectable()
 export class ProofVerifier {
   private readonly logger = new Logger(ProofVerifier.name);
-  private readonly jwks?: JWTVerifyGetKey;
+  private readonly jwks: JWTVerifyGetKey;
 
   constructor(@Inject(TOOLING_CONFIG) private readonly config: ToolingConfig) {
-    if (config.jwt) this.jwks = createRemoteJWKSet(config.jwt.proof.jwksUrl, { timeoutDuration: 5000, cooldownDuration: 30000 });
+    this.jwks = createRemoteJWKSet(config.backendJwksUrl, { timeoutDuration: 5000, cooldownDuration: 30000 });
   }
 
   async verify(challenge: Challenge): Promise<void> {
-    if (!this.config.jwt || !this.jwks) return;
     let payload: Record<string, unknown>;
     try {
       ({ payload } = await jwtVerify(challenge.proofToken, this.jwks, {
@@ -31,7 +30,7 @@ export class ProofVerifier {
         algorithms: ['RS256'],
         clockTolerance: 30,
         requiredClaims: ['jti', 'sub', 'exp'],
-        ...(this.config.jwt.proof.issuer ? { issuer: this.config.jwt.proof.issuer } : {}),
+        ...(this.config.proofIssuer ? { issuer: this.config.proofIssuer } : {}),
       }));
     } catch (error) {
       if (error instanceof errors.JOSEError && !(error instanceof errors.JWKSTimeout)) throw this.invalid();

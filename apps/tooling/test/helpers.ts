@@ -2,20 +2,22 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import type { TestContext } from 'node:test';
+import { PGlite } from '@electric-sql/pglite';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { INestApplication } from '@nestjs/common';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormatsPlugin from 'ajv-formats';
-import pg from 'pg';
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWTPayload } from 'jose';
-import type { INestApplication } from '@nestjs/common';
 import { createApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { Database } from '../src/database/database.js';
+import { CaseTracker } from '../src/tracking/case-tracker.js';
 
 const repoRoot = new URL('../../../../', import.meta.url);
-const domain = JSON.parse(readFileSync(new URL('contracts/v1/domain.schema.json', repoRoot), 'utf8'));
+const domain = JSON.parse(readFileSync(new URL('contracts/v2/domain.schema.json', repoRoot), 'utf8'));
 const addFormats = addFormatsPlugin as unknown as (ajv: Ajv2020) => Ajv2020;
 const ajv = addFormats(new Ajv2020({ allErrors: true, strict: false }));
 ajv.addSchema(domain);
@@ -26,80 +28,16 @@ export function assertSchema(name: string, value: unknown): void {
   if (!validate(value)) throw new Error(`${name} : ${ajv.errorsText(validate.errors)}`);
 }
 
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+export const fakeId = (prefix: string) => `${prefix}_${Array.from(randomBytes(26), (b) => CROCKFORD[b % 32]).join('')}`;
 export const TRACEPARENT = `00-${'1'.repeat(32)}-${'2'.repeat(16)}-01`;
 export const CONVERSATION_ID = `cnv_${'0'.repeat(25)}1`;
 export const USER_REF = `usr_${'0'.repeat(25)}1`;
-
-export async function startTooling(t: TestContext, env: NodeJS.ProcessEnv = {}): Promise<string> {
-  return (await startToolingApp(t, env)).url;
-}
-
-async function testDatabase(t: TestContext): Promise<string | undefined> {
-  const admin = process.env.TEST_DATABASE_URL;
-  if (!admin) return undefined;
-  const name = `tooling_test_${randomBytes(6).toString('hex')}`;
-  const run = async (sql: string) => {
-    const client = new pg.Client(admin);
-    await client.connect();
-    try {
-      await client.query(sql);
-    } finally {
-      await client.end();
-    }
-  };
-  await run(`create database ${name}`);
-  t.after(() => run(`drop database if exists ${name} with (force)`));
-  const url = new URL(admin);
-  url.pathname = `/${name}`;
-  return url.href;
-}
-
-export async function startToolingApp(t: TestContext, env: NodeJS.ProcessEnv = {}): Promise<{ url: string; app: INestApplication; db: Database }> {
-  const database = env.DATABASE_URL ?? (await testDatabase(t));
-  const app = await createApp(loadConfig({ TOOLING_PORT: '0', EVENTS_PUBLISHER: 'off', ...(database ? { DATABASE_URL: database } : {}), ...env }));
-  await app.listen(0, '127.0.0.1');
-  t.after(() => app.close());
-  return { url: `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`, app, db: app.get(Database) };
-}
-
-export async function startBackendMock(t: TestContext): Promise<string> {
-  const { startMocks } = await import(new URL('mocks/server.mjs', repoRoot).href);
-  const mocks = await startMocks({ backendPort: 0, toolingPort: 0 });
-  t.after(() => mocks.close());
-  return mocks.backendUrl as string;
-}
-
-export interface XroadSim {
-  url: string;
-  store: any;
-  close(): Promise<void>;
-  restart(): Promise<void>;
-}
-
-export async function startXroadSim(t: TestContext, env: NodeJS.ProcessEnv = {}): Promise<XroadSim> {
-  const { createXroadServer } = await import(new URL('apps/xroad-sim/dist/src/server.js', repoRoot).href);
-  const { loadConfig: loadSimConfig } = await import(new URL('apps/xroad-sim/dist/src/config.js', repoRoot).href);
-  const start = (port: string) => createXroadServer(loadSimConfig({ XROAD_PORT: port, XROAD_SEED_HISTORY: 'off', ...env })).listen();
-  let running = await start('0');
-  let closed = false;
-  const sim: XroadSim = {
-    url: running.url,
-    get store() {
-      return running.store;
-    },
-    close: async () => {
-      if (!closed) await running.close();
-      closed = true;
-    },
-    restart: async () => {
-      await sim.close();
-      running = await start(new URL(sim.url).port);
-      closed = false;
-    },
-  };
-  t.after(() => sim.close());
-  return sim;
-}
+export const OTHER_USER = `usr_${'0'.repeat(25)}2`;
+const subject = (n: string) => `7f3c2a10-${n}-4000-8000-00000000${n}`;
+export const JUSTICE_AGENT = subject('0002');
+export const ANIP_AGENT = subject('0005');
+export const SCOPES = ['requests:write', 'documents:write', 'requests:submit'];
 
 async function listen(t: TestContext, handler: http.RequestListener): Promise<string> {
   const server = http.createServer(handler);
@@ -108,186 +46,291 @@ async function listen(t: TestContext, handler: http.RequestListener): Promise<st
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
-export interface FakeOidc {
-  env: NodeJS.ProcessEnv;
+const json = (res: http.ServerResponse, status: number, body: unknown) => {
+  res.writeHead(status, { 'content-type': status >= 400 ? 'application/problem+json' : 'application/json' }).end(JSON.stringify(body));
+};
+
+export interface FakeKeycloak {
+  issuer: string;
   tokenRequests: number;
-  signProof(challenge: { id: string; userRef: string; conversationId: string; procedureId: string; scopes: string[]; expiresAt: string }, overrides?: JWTPayload): Promise<string>;
-  sign(claims?: JWTPayload, options?: { expiresIn?: string; key?: CryptoKey; alg?: string }): Promise<string>;
+  sign(claims: JWTPayload, options?: { audience?: string | string[]; issuer?: string; expiresIn?: string; key?: CryptoKey; alg?: string }): Promise<string>;
+  backend(scope?: string, audience?: string): Promise<string>;
 }
 
-export async function startFakeOidc(t: TestContext): Promise<FakeOidc> {
+export async function startKeycloak(t: TestContext): Promise<FakeKeycloak> {
   const { publicKey, privateKey } = await generateKeyPair('RS256');
-  const jwk = { ...(await exportJWK(publicKey)), kid: 'test-key', alg: 'RS256', use: 'sig' };
-  const proofKeys = await generateKeyPair('RS256');
-  const proofJwk = { ...(await exportJWK(proofKeys.publicKey)), kid: 'proof-key', alg: 'RS256', use: 'sig' };
-  const issuer = 'http://127.0.0.1/realms/test';
-  const state: FakeOidc = {
-    env: {},
+  const jwk = { ...(await exportJWK(publicKey)), kid: 'realm-key', alg: 'RS256', use: 'sig' };
+  const state = {
+    issuer: '',
     tokenRequests: 0,
-    async sign(claims = {}, options = {}) {
-      return new SignJWT({ azp: 'backend-agent', scope: 'tools:call', ...claims })
-        .setProtectedHeader({ alg: options.alg ?? 'RS256', kid: 'test-key' })
-        .setIssuer(claims.iss ?? issuer)
-        .setAudience(claims.aud ?? 'techma-tooling')
+    sign(claims: JWTPayload, options: { audience?: string | string[]; issuer?: string; expiresIn?: string; key?: CryptoKey; alg?: string } = {}) {
+      return new SignJWT(claims)
+        .setProtectedHeader({ alg: options.alg ?? 'RS256', kid: 'realm-key' })
+        .setIssuer(options.issuer ?? state.issuer)
+        .setAudience(options.audience ?? 'techma-tooling')
         .setIssuedAt()
         .setExpirationTime(options.expiresIn ?? '5m')
         .sign(options.key ?? privateKey);
     },
-    async signProof(challenge, overrides = {}) {
-      return new SignJWT({ conversationId: challenge.conversationId, procedureId: challenge.procedureId, scopes: challenge.scopes, ...overrides })
-        .setProtectedHeader({ alg: 'RS256', kid: 'proof-key' })
-        .setJti(challenge.id)
-        .setSubject(challenge.userRef)
-        .setAudience('techma-mandate')
-        .setExpirationTime(Math.floor(Date.parse(challenge.expiresAt) / 1000))
-        .sign(proofKeys.privateKey);
+    backend(scope = 'tools:call mandates:grant xroad:apply xroad:administer', audience = 'techma-tooling') {
+      return state.sign({ azp: 'backend', scope }, { audience });
     },
   };
   const url = await listen(t, async (req, res) => {
-    if (req.url === '/proof-jwks') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ keys: [proofJwk] }));
-      return;
-    }
-    if (req.url === '/jwks') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ keys: [jwk] }));
-      return;
-    }
-    if (req.url === '/token' && req.method === 'POST') {
+    if (req.url === '/realms/techma/protocol/openid-connect/certs') return json(res, 200, { keys: [jwk] });
+    if (req.url === '/realms/techma/protocol/openid-connect/token' && req.method === 'POST') {
       let body = '';
       for await (const chunk of req) body += chunk;
       const form = new URLSearchParams(body);
       state.tokenRequests += 1;
-      const client = form.get('client_id');
-      const scopes: Record<string, string> = { 'tooling-resources': 'resources:read', 'tooling-events': 'events:publish' };
-      const ok = form.get('grant_type') === 'client_credentials' && !!client && form.get('client_secret') === 'test-secret' && scopes[client] === form.get('scope');
-      res.writeHead(ok ? 200 : 401, { 'content-type': 'application/json' }).end(JSON.stringify(ok ? { access_token: `mock-${client}`, expires_in: 300, token_type: 'Bearer' } : { error: 'invalid_client' }));
-      return;
+      const ok = form.get('grant_type') === 'client_credentials' && form.get('client_id') === 'tooling' && form.get('client_secret') === 'test-secret';
+      if (!ok) return json(res, 401, { error: 'invalid_client' });
+      const token = await state.sign({ azp: 'tooling', scope: 'events:publish files:read xroad:apply' }, { audience: ['techma-backend', 'techma-xroad'] });
+      return json(res, 200, { access_token: token, expires_in: 300, token_type: 'Bearer' });
     }
-    res.writeHead(404).end();
+    json(res, 404, { error: 'not_found' });
   });
-  state.env = {
-    AUTH_MODE: 'jwt',
-    JWT_ISSUER: issuer,
-    JWKS_URL: `${url}/jwks`,
-    OIDC_TOKEN_URL: `${url}/token`,
-    TOOLING_RESOURCES_CLIENT_ID: 'tooling-resources',
-    TOOLING_RESOURCES_CLIENT_SECRET: 'test-secret',
-    TOOLING_EVENTS_CLIENT_ID: 'tooling-events',
-    TOOLING_EVENTS_CLIENT_SECRET: 'test-secret',
-    PROOF_JWKS_URL: `${url}/proof-jwks`,
-  };
+  state.issuer = `${url}/realms/techma`;
   return state;
+}
+
+export interface StoredFile {
+  id: string;
+  userRef: string;
+  mimeType: string;
+  bytes: Buffer;
+  expiresAt: string;
+}
+
+export interface FakeBackend {
+  url: string;
+  events: Array<{ id: string; type: string; data: any }>;
+  files: Map<string, StoredFile>;
+  failEvents: number;
+  addFile(userRef?: string, mimeType?: string, expiresInMs?: number): string;
+  signProof(challenge: { id: string; userRef: string; conversationId: string; procedureId: string; scopes: string[]; expiresAt: string }, overrides?: JWTPayload): Promise<string>;
+}
+
+export async function startBackend(t: TestContext): Promise<FakeBackend> {
+  const { publicKey, privateKey } = await generateKeyPair('RS256');
+  const jwk = { ...(await exportJWK(publicKey)), kid: 'backend-proof', alg: 'RS256', use: 'sig' };
+  const state: FakeBackend = {
+    url: '',
+    events: [],
+    files: new Map(),
+    failEvents: 0,
+    addFile(userRef = USER_REF, mimeType = 'application/pdf', expiresInMs = 3_600_000) {
+      const id = fakeId('fil');
+      state.files.set(id, { id, userRef, mimeType, bytes: Buffer.from(`%PDF-1.4 pièce de test ${id}`), expiresAt: new Date(Date.now() + expiresInMs).toISOString() });
+      return id;
+    },
+    signProof(challenge, overrides = {}) {
+      return new SignJWT({ conversationId: challenge.conversationId, procedureId: challenge.procedureId, scopes: challenge.scopes, ...overrides })
+        .setProtectedHeader({ alg: 'RS256', kid: 'backend-proof' })
+        .setJti(challenge.id)
+        .setSubject(challenge.userRef)
+        .setAudience('techma-mandate')
+        .setExpirationTime(Math.floor(Date.parse(challenge.expiresAt) / 1000))
+        .sign(privateKey);
+    },
+  };
+  state.url = await listen(t, async (req, res) => {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    if (url.pathname === '/.well-known/jwks.json') return json(res, 200, { keys: [jwk] });
+    if (!/^Bearer \S+$/.test(req.headers.authorization ?? '')) return json(res, 401, { code: 'UNAUTHORIZED' });
+    const file = /^\/internal\/v1\/files\/([^/]+)(\/content)?$/.exec(url.pathname);
+    if (file && req.method === 'GET') {
+      const found = state.files.get(file[1]);
+      if (!found || found.userRef !== req.headers['x-user-ref']) return json(res, 404, { code: 'NOT_FOUND' });
+      if (file[2]) {
+        res.writeHead(200, { 'content-type': found.mimeType, 'content-length': String(found.bytes.length) }).end(found.bytes);
+        return;
+      }
+      return json(res, 200, { file: { id: found.id, mimeType: found.mimeType, sizeBytes: found.bytes.length, expiresAt: found.expiresAt }, userRef: found.userRef });
+    }
+    if (url.pathname === '/internal/v1/events' && req.method === 'POST') {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      if (state.failEvents > 0) {
+        state.failEvents -= 1;
+        return json(res, 503, { code: 'UPSTREAM_UNAVAILABLE' });
+      }
+      const event = JSON.parse(body);
+      assertSchema('Event', event);
+      if (!state.events.some((seen) => seen.id === event.id)) state.events.push(event);
+      return json(res, 202, event);
+    }
+    json(res, 404, { code: 'NOT_FOUND' });
+  });
+  return state;
+}
+
+export interface XroadSim {
+  url: string;
+  official(subjectId: string, method: string, path: string, body?: unknown): Promise<{ status: number; body: any }>;
+}
+
+export async function startXroad(t: TestContext, keycloak: FakeKeycloak): Promise<XroadSim> {
+  const { createXroadServer } = await import(new URL('apps/xroad-sim/dist/src/server.js', repoRoot).href);
+  const { loadConfig: loadSimConfig } = await import(new URL('apps/xroad-sim/dist/src/config.js', repoRoot).href);
+  const { migrate } = await import(new URL('apps/xroad-sim/dist/src/database.js', repoRoot).href);
+  const pglite = await PGlite.create();
+  const database = {
+    transaction: <T>(fn: (tx: { query: (sql: string, params?: unknown[]) => Promise<unknown[]> }) => Promise<T>) =>
+      pglite.transaction(async (raw) => fn({ query: async (sql, params) => (await raw.query(sql, params)).rows })),
+    close: async () => {},
+  };
+  await migrate(database);
+  const catalogue = fileURLToPath(new URL('content/service-public/catalogue.json', repoRoot));
+  const running = await createXroadServer(loadSimConfig({ XROAD_PORT: '0', OIDC_ISSUER: keycloak.issuer, DATABASE_URL: 'postgres://unused', CATALOGUE_FILE: catalogue }), database).listen();
+  t.after(async () => {
+    await running.close();
+    await pglite.close();
+  });
+  return {
+    url: running.url,
+    async official(subjectId, method, path, body) {
+      const token = await keycloak.backend('xroad:administer', 'techma-xroad');
+      const res = await fetch(`${running.url}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          traceparent: TRACEPARENT,
+          'X-Official-Subject': subjectId,
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: res.status, body: await res.json() };
+    },
+  };
+}
+
+export interface Stack {
+  url: string;
+  app: INestApplication;
+  db: Database;
+  tracker: CaseTracker;
+  keycloak: FakeKeycloak;
+  backend: FakeBackend;
+  xroad: XroadSim;
+}
+
+export async function startStack(t: TestContext, env: NodeJS.ProcessEnv = {}): Promise<Stack> {
+  const keycloak = await startKeycloak(t);
+  const backend = await startBackend(t);
+  const xroad = await startXroad(t, keycloak);
+  const app = await createApp(
+    loadConfig({
+      NODE_ENV: 'test',
+      TOOLING_PORT: '0',
+      DATABASE_URL: 'pglite:memory',
+      OIDC_ISSUER: keycloak.issuer,
+      OIDC_CLIENT_SECRET: 'test-secret',
+      BACKEND_URL: backend.url,
+      XROAD_URL: xroad.url,
+      EVENTS_PUBLISHER: 'off',
+      TRACKING_WORKER: 'off',
+      TRACKING_POLL_MS: '20',
+      ...env,
+    }),
+    { shutdownHooks: false },
+  );
+  await app.listen(0, '127.0.0.1');
+  t.after(() => app.close());
+  const url = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+  return { url, app, db: app.get(Database), tracker: app.get(CaseTracker), keycloak, backend, xroad };
 }
 
 export interface ToolResult {
   isError?: boolean;
-  structuredContent?: Record<string, unknown>;
-  content: { type: string; text: string }[];
+  content: Array<{ type: string; text: string }>;
+  structuredContent?: Record<string, any>;
 }
 
-export async function mcpClient(t: TestContext | undefined, toolingUrl: string, token: string, headers: Record<string, string> = {}): Promise<Client> {
-  const client = new Client({ name: 'tooling-test', version: '1.0.0' });
-  const transport = new StreamableHTTPClientTransport(new URL(`${toolingUrl}/mcp`), {
-    requestInit: {
-      headers: { Authorization: `Bearer ${token}`, traceparent: TRACEPARENT, 'X-Conversation-Id': CONVERSATION_ID, 'X-User-Ref': USER_REF, ...headers },
-    },
-  });
-  await client.connect(transport);
-  t?.after(() => client.close());
-  return client;
-}
-
-export interface ActOptions {
+export interface CallOptions {
   mandateId?: string;
   key?: string;
+  channel?: string;
   conversationId?: string;
   userRef?: string;
   token?: string;
 }
 
-export async function act(toolingUrl: string, name: string, args: Record<string, unknown>, options: ActOptions = {}): Promise<ToolResult> {
-  const client = await mcpClient(undefined, toolingUrl, options.token ?? 'mock-agent', {
-    'Idempotency-Key': options.key ?? randomUUID(),
-    ...(options.mandateId ? { 'X-Mandate-Id': options.mandateId } : {}),
-    ...(options.conversationId ? { 'X-Conversation-Id': options.conversationId } : {}),
-    ...(options.userRef ? { 'X-User-Ref': options.userRef } : {}),
-  });
+export async function mcpClient(s: Stack, headers: Record<string, string>, token?: string): Promise<Client> {
+  const client = new Client({ name: 'tooling-test', version: '1.0.0' });
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL(`${s.url}/mcp`), {
+      requestInit: { headers: { Authorization: `Bearer ${token ?? (await s.keycloak.backend('tools:call'))}`, traceparent: TRACEPARENT, ...headers } },
+    }),
+  );
+  return client;
+}
+
+export async function act(s: Stack, name: string, args: Record<string, unknown>, options: CallOptions = {}): Promise<ToolResult> {
+  const client = await mcpClient(
+    s,
+    {
+      'X-Conversation-Id': options.conversationId ?? CONVERSATION_ID,
+      'X-User-Ref': options.userRef ?? USER_REF,
+      'Idempotency-Key': options.key ?? randomUUID(),
+      ...(options.mandateId ? { 'X-Mandate-Id': options.mandateId } : {}),
+      ...(options.channel ? { 'X-Channel': options.channel } : {}),
+    },
+    options.token,
+  );
   try {
-    return await callTool(client, name, args);
+    return (await client.callTool({ name, arguments: args })) as ToolResult;
   } finally {
     await client.close();
   }
 }
 
-const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-export const fakeId = (prefix: string) => `${prefix}_${Array.from(randomBytes(26), (b) => CROCKFORD[b % 32]).join('')}`;
-
-export interface ChallengeInput {
-  id: string;
-  conversationId: string;
-  userRef: string;
-  procedureId: string;
-  scopes: string[];
-  consentText: string;
-  expiresAt: string;
-  proofToken: string;
+export function toolError(result: ToolResult): { code: string; detail: string; traceId: string } {
+  if (!result.isError) throw new Error(`Succès inattendu : ${result.content[0]?.text}`);
+  return JSON.parse(result.content[0].text);
 }
 
-export function challenge(overrides: Partial<ChallengeInput> = {}): ChallengeInput {
-  return {
-    id: fakeId('chl'),
-    conversationId: CONVERSATION_ID,
-    userRef: USER_REF,
-    procedureId: 'demo-procedure',
-    scopes: ['requests:write', 'documents:write', 'requests:submit'],
-    consentText: 'Autoriser cette démarche fictive pour une heure.',
-    expiresAt: new Date(Date.now() + 300_000).toISOString(),
-    proofToken: 'mock-proof-test',
-    ...overrides,
-  };
+export function ok(result: ToolResult): Record<string, any> {
+  if (result.isError) throw new Error(`Échec inattendu : ${result.content[0]?.text}`);
+  return result.structuredContent!;
 }
 
-export async function postInternal(toolingUrl: string, path: string, body: unknown, options: { key?: string; token?: string } = {}): Promise<{ status: number; body: Record<string, unknown> }> {
-  const res = await fetch(`${toolingUrl}${path}`, {
+export async function postInternal(s: Stack, path: string, body: unknown, options: { key?: string; token?: string; userRef?: string } = {}) {
+  const res = await fetch(`${s.url}${path}`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${options.token ?? 'mock-backend-control'}`,
+      Authorization: `Bearer ${options.token ?? (await s.keycloak.backend('mandates:grant'))}`,
       traceparent: TRACEPARENT,
       'Idempotency-Key': options.key ?? randomUUID(),
+      ...(options.userRef ? { 'X-User-Ref': options.userRef } : {}),
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  return { status: res.status, body: (await res.json()) as Record<string, any> };
 }
 
-export async function grantMandate(toolingUrl: string, overrides: Partial<ChallengeInput> = {}, options: { key?: string; token?: string } = {}) {
-  return postInternal(toolingUrl, '/internal/v1/mandates', { challenge: challenge(overrides), acceptedAt: new Date().toISOString(), evidenceRef: 'proof_test' }, options);
+export function challenge(procedureId: string, overrides: Partial<{ userRef: string; conversationId: string; scopes: string[] }> = {}) {
+  return {
+    id: fakeId('chl'),
+    conversationId: overrides.conversationId ?? CONVERSATION_ID,
+    userRef: overrides.userRef ?? USER_REF,
+    procedureId,
+    scopes: overrides.scopes ?? SCOPES,
+    consentText: 'Autoriser l’assistant à préparer et déposer cette démarche pendant une heure.',
+    expiresAt: new Date(Date.now() + 300_000).toISOString(),
+  };
 }
 
-export async function uploadFile(backendUrl: string, token = 'mock-user'): Promise<string> {
-  const res = await fetch(`${backendUrl}/v1/files`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, traceparent: TRACEPARENT, 'Idempotency-Key': randomUUID(), 'Content-Type': 'application/octet-stream', 'X-File-Mime-Type': 'application/pdf' },
-    body: new TextEncoder().encode(`SYNTHETIC PDF ${randomUUID()}`),
-  });
-  const file = (await res.json()) as { id: string };
-  return file.id;
+export async function grantMandate(s: Stack, procedureId: string, overrides: Parameters<typeof challenge>[1] = {}): Promise<string> {
+  const base = challenge(procedureId, overrides);
+  const proofToken = await s.backend.signProof(base);
+  const res = await postInternal(s, '/internal/v1/mandates', { challenge: { ...base, proofToken }, acceptedAt: new Date().toISOString(), evidenceRef: 'consent_test' });
+  if (res.status !== 201) throw new Error(`Mandat refusé : ${JSON.stringify(res.body)}`);
+  return res.body.id as string;
 }
 
-export async function callTool(client: Client, name: string, args: Record<string, unknown>): Promise<ToolResult> {
-  return (await client.callTool({ name, arguments: args })) as ToolResult;
-}
-
-export function toolError(result: ToolResult): { code: string; detail: string; traceId: string } {
-  if (!result.isError) throw new Error(`Succès inattendu : ${JSON.stringify(result.structuredContent)}`);
-  return JSON.parse(result.content[0].text);
-}
-
-export function rawInitialize(toolingUrl: string, headers: Record<string, string>): Promise<Response> {
-  return fetch(`${toolingUrl}/mcp`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', traceparent: TRACEPARENT, ...headers },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'raw', version: '1' } } }),
-  });
+export async function rows<R = Record<string, any>>(s: Stack, sql: string, params: unknown[] = []): Promise<R[]> {
+  return s.db.transaction('system', (tx) => tx.query<R>(sql, params));
 }

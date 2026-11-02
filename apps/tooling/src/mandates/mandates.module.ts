@@ -9,11 +9,13 @@ import { traceOf, type TraceContext } from '../common/trace.js';
 import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
 import { domainValidator } from '../contracts.js';
 import { Database, type Tx } from '../database/database.js';
+import { Outbox } from '../events/outbox.js';
 import { Idempotency } from '../idempotency/idempotency.js';
 import { MandatesRepository, type Mandate } from './mandates.repository.js';
 
 const validateGrant = domainValidator('MandateGrant');
 const MANDATE_ID = /^mdt_[0-9A-HJKMNP-TV-Z]{26}$/;
+const USER_REF = /^usr_[0-9A-HJKMNP-TV-Z]{26}$/;
 const CLOCK_SKEW_MS = 30_000;
 
 interface MandateGrant {
@@ -34,12 +36,13 @@ export class MandatesController {
     private readonly mandates: MandatesRepository,
     private readonly idempotency: Idempotency,
     private readonly audit: AuditLog,
+    private readonly outbox: Outbox,
   ) {}
 
   @Post()
   @HttpCode(201)
   async grant(@Req() req: Request, @Body() body: unknown): Promise<Mandate> {
-    const principal = await this.guard.authorize(req, 'backend-mandates', 'mandates:grant');
+    const principal = await this.guard.authorize(req, 'mandates:grant');
     const trace = traceOf(req);
     if (!validateGrant(body)) throw new ProblemError(400, 'INVALID_REQUEST', 'MandateGrant invalide');
     const grant = body as MandateGrant;
@@ -68,6 +71,7 @@ export class MandatesController {
           expiresAt: new Date(now + this.config.mandateTtlMs).toISOString(),
         });
         if (!mandate) throw new ProblemError(403, 'FORBIDDEN', 'Preuve de consentement déjà utilisée');
+        await this.outbox.enqueue(tx, { kind: 'mandate.granted', mandate }, trace.traceId);
         await this.audit.record(tx, { traceId: trace.traceId, actor: principal.client, action: 'mandate.grant', outcome: 'success', code: 'OK', conversationId: mandate.conversationId, userRef: mandate.userRef, mandateId: mandate.id });
         await this.idempotency.complete(tx, reservation.keyHash, mandate);
         return mandate;
@@ -78,15 +82,18 @@ export class MandatesController {
   @Post(':mandateId/revoke')
   @HttpCode(200)
   async revoke(@Req() req: Request, @Param('mandateId') mandateId: string): Promise<Mandate> {
-    const principal = await this.guard.authorize(req, 'backend-mandates', 'mandates:grant');
+    const principal = await this.guard.authorize(req, 'mandates:grant');
     const trace = traceOf(req);
+    const owner = req.headers['x-user-ref'];
+    if (typeof owner !== 'string' || !USER_REF.test(owner)) throw new ProblemError(400, 'INVALID_REQUEST', 'X-User-Ref requis');
     if (!MANDATE_ID.test(mandateId)) throw new ProblemError(404, 'NOT_FOUND', 'Mandat inconnu');
     return this.audited(trace, principal.client, 'mandate.revoke', { mandateId }, async () =>
       this.db.transaction('system', async (tx) => {
-        const reservation = await this.idempotency.reserve(tx, { actor: principal.client, method: 'POST', route: `/internal/v1/mandates/${mandateId}/revoke`, key: this.key(req) }, { mandateId });
+        const reservation = await this.idempotency.reserve(tx, { actor: principal.client, method: 'POST', route: `/internal/v1/mandates/${mandateId}/revoke`, key: this.key(req) }, { mandateId, owner });
         if (reservation.kind === 'replay') return this.replayed(tx, trace, principal.client, 'mandate.revoke', reservation.response as Mandate);
-        const mandate = await this.mandates.revoke(tx, mandateId);
+        const mandate = await this.mandates.revoke(tx, mandateId, owner);
         if (!mandate) throw new ProblemError(404, 'NOT_FOUND', 'Mandat inconnu');
+        await this.outbox.enqueue(tx, { kind: 'mandate.revoked', mandate }, trace.traceId);
         await this.audit.record(tx, { traceId: trace.traceId, actor: principal.client, action: 'mandate.revoke', outcome: 'success', code: 'OK', conversationId: mandate.conversationId, userRef: mandate.userRef, mandateId: mandate.id });
         await this.idempotency.complete(tx, reservation.keyHash, mandate);
         return mandate;
