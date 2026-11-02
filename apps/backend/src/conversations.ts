@@ -45,13 +45,45 @@ export async function appendEvent(
   await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
     conversationId,
   ]);
-  await db.query(
-    "INSERT INTO backend_conversation_events(id,conversation_id,body) VALUES($1,$2,$3)",
-    [event.id, conversationId, event],
-  );
+  // Received and sent are the durable history. Deltas and technical events keep the 48h default.
+  const durable = event.data.kind === "message.received" || event.data.kind === "message.sent";
+  if (durable)
+    await db.query(
+      "INSERT INTO backend_conversation_events(id,conversation_id,body,expires_at) VALUES($1,$2,$3,'infinity')",
+      [event.id, conversationId, event],
+    );
+  else
+    await db.query(
+      "INSERT INTO backend_conversation_events(id,conversation_id,body) VALUES($1,$2,$3)",
+      [event.id, conversationId, event],
+    );
 }
 export class Conversations {
+  private readonly liveListeners = new Map<string, Set<(event: Event) => void>>();
   constructor(readonly pool: Pool) {}
+  /** Fired after a message.delta or message.sent transaction has committed. */
+  onLive(conversationId: string, listener: (event: Event) => void): () => void {
+    let listeners = this.liveListeners.get(conversationId);
+    if (!listeners) {
+      listeners = new Set();
+      this.liveListeners.set(conversationId, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      listeners!.delete(listener);
+      if (listeners!.size === 0) this.liveListeners.delete(conversationId);
+    };
+  }
+  emitLive(conversationId: string, event: Event): void {
+    const kind = event.data.kind;
+    if (kind !== "message.delta" && kind !== "message.sent") return;
+    const listeners = this.liveListeners.get(conversationId);
+    if (!listeners) return;
+    for (const listener of [...listeners]) {
+      try { listener(event); }
+      catch { /* A closed socket must not undo a committed event. */ }
+    }
+  }
   async owner(db: Db, id: string, userRef: string): Promise<OwnedConversation> {
     const row = (
       await db.query(
@@ -231,12 +263,44 @@ export class Conversations {
         throw new Problem(410, "REPLAY_EXPIRED", "Curseur inconnu ou expiré.");
       after = previous.seq;
     }
+    const kinds = cursor
+      ? "('message.received','message.sent','message.delta')"
+      : "('message.received','message.sent')";
     const { rows } = await this.pool.query(
-      "SELECT body FROM backend_conversation_events WHERE conversation_id=$1 AND seq>$2 AND expires_at>now() AND body->'data'->>'kind' IN ('message.received','message.sent') ORDER BY seq LIMIT 100",
+      `SELECT body FROM backend_conversation_events WHERE conversation_id=$1 AND seq>$2 AND expires_at>now() AND body->'data'->>'kind' IN ${kinds} ORDER BY seq LIMIT 100`,
       [conversationId, after],
     );
     const items: Event[] = rows.map((row) => row.body);
     return { items, nextCursor: items.at(-1)?.id ?? cursor ?? null };
+  }
+  async appendDelta(
+    conversationId: string,
+    messageId: string,
+    delta: string,
+    index: number,
+    traceparent: string,
+  ): Promise<number> {
+    if (!delta) return 0;
+    let written = 0;
+    for (let offset = 0; offset < delta.length; offset += 8000) {
+      const event = await transaction(this.pool, async (db) => {
+        const value = envelope(
+          {
+            kind: "message.delta",
+            conversationId,
+            messageId,
+            delta: delta.slice(offset, offset + 8000),
+            index: index + written,
+          },
+          traceparent,
+        );
+        await appendEvent(db, conversationId, value);
+        return value;
+      });
+      written += 1;
+      this.emitLive(conversationId, event);
+    }
+    return written;
   }
   async ticket(
     user: User,
@@ -315,12 +379,14 @@ export class Conversations {
       throw new Problem(403, "FORBIDDEN", "Événement réservé au Backend.");
     const cid =
       "mandate" in data ? data.mandate.conversationId : data.conversationId;
-    return idempotent(
+    const committed: Event[] = [];
+    const result = await idempotent(
       this.pool,
       ["tooling", "POST", "/internal/v1/events"],
       key,
       event,
       async (db) => {
+        committed.length = 0;
         await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
           "event:" + event.id,
         ]);
@@ -375,14 +441,12 @@ export class Conversations {
             createdAt: new Date().toISOString(),
           };
           validate("AgentMessage", message);
-          await appendEvent(
-            db,
-            cid,
-            envelope(
-              { kind: "message.sent", conversationId: cid, message },
-              "00-" + "a".repeat(32) + "-" + "b".repeat(16) + "-01",
-            ),
+          const sent = envelope(
+            { kind: "message.sent", conversationId: cid, message },
+            "00-" + "a".repeat(32) + "-" + "b".repeat(16) + "-01",
           );
+          await appendEvent(db, cid, sent);
+          committed.push(sent);
         }
         if (data.kind !== "case.updated") await appendEvent(db, cid, event);
         await db.query(
@@ -392,6 +456,8 @@ export class Conversations {
         return event;
       },
     );
+    for (const sent of committed) this.emitLive(cid, sent);
+    return result;
   }
   async recordTranscript(
     conversationId: string,
@@ -430,23 +496,21 @@ export class Conversations {
     blocks: Schemas["AgentMessage"]["blocks"],
     traceparent: string,
     preserveError = false,
-  ) {
+    messageId?: string,
+  ): Promise<Event> {
     const message = {
-      id: identifier("msg"),
+      id: messageId ?? identifier("msg"),
       conversationId,
       blocks,
       createdAt: new Date().toISOString(),
     };
     validate("AgentMessage", message);
-    await appendEvent(
-      db,
-      conversationId,
-      envelope({ kind: "message.sent", conversationId, message }, traceparent),
-    );
+    const event = envelope({ kind: "message.sent", conversationId, message }, traceparent);
+    await appendEvent(db, conversationId, event);
     await db.query(
       "UPDATE backend_messages SET processed_at=now(),last_error=CASE WHEN $3 THEN last_error ELSE NULL END WHERE conversation_id=$1 AND id=$2",
       [conversationId, inputId, preserveError],
     );
-    return message;
+    return event;
   }
 }
