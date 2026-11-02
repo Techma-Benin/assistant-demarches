@@ -28,7 +28,7 @@ import { redact, type ModelPort, type ModelReply, type Turn } from "./model.js";
 import type { Consent } from "./consent.js";
 import { presentModelReply, mergeSystemBlocks, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS } from "./model-reply.js";
 import type { TranscriptionPort } from "./transcription.js";
-import { deltasForReply, TextDeltaExtractor, visibleText } from "./text-deltas.js";
+import { LiveReply } from "./live-reply.js";
 
 const MODEL_REPLY_ATTEMPTS = 3;
 function interactionPrompt(content: { actionId: string; value?: string | null }): string {
@@ -499,9 +499,13 @@ export class Agent {
         advertised.push({...definition,name});
       }
     }
+    // Deltas go out while the model generates; every path below settles them before writing message.sent.
+    const live = new LiveReply(this.conversations, conversation.id, state.assistantMessageId, traceparent);
+    try {
     while (state.step < 8) {
       if (!state.pending) {
-        const { reply, blocks, preview } = await this.generateUsable(state, advertised);
+        const { reply, blocks } = await this.generateUsable(state, advertised, live);
+        await live.settle();
         if (!reply) {
           await this.unanswered(conversation.id, input.id, administrationId, state.toolFailed ? "tool_failure" : blocks === UNAVAILABLE_BLOCKS ? "missing_source" : "invalid_reply");
           await this.finish(conversation, input, this.withSystem(state, blocks!), traceparent, false, state.assistantMessageId);
@@ -517,7 +521,6 @@ export class Agent {
           if (blocks!.some(block => block.type === "text" && /Je n[’']ai pas trouvé de démarche validée|Aucune action disponible/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "missing_source");
           else if (state.toolFailed && blocks!.some(block => block.type === "text" && /L[’']outil n[’']a pas pu|Action refusée/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "tool_failure");
           const sent = this.withSystem(state, blocks!);
-          await this.emitVisibleDeltas(conversation.id, state.assistantMessageId, sent, preview ?? [], traceparent);
           await this.finish(conversation, input, sent, traceparent, false, state.assistantMessageId);
           return;
         }
@@ -727,6 +730,9 @@ export class Agent {
       false,
       state.assistantMessageId,
     );
+    } finally {
+      await live.close();
+    }
   }
   private withSystem(state: State, blocks: Schemas["AgentMessage"]["blocks"]) {
     return mergeSystemBlocks(blocks, state.systemBlocks ?? []);
@@ -815,7 +821,8 @@ export class Agent {
   private async generateUsable(
     state: State,
     tools: ToolDefinition[],
-  ): Promise<{ reply?: ModelReply; blocks?: Schemas["AgentMessage"]["blocks"]; preview?: string[] }> {
+    live: LiveReply,
+  ): Promise<{ reply?: ModelReply; blocks?: Schemas["AgentMessage"]["blocks"] }> {
     let fallback = MODEL_UNAVAILABLE_BLOCKS;
     for (let attempt = 0; attempt < MODEL_REPLY_ATTEMPTS; attempt++) {
       // No tool is run in this retry loop. Successfully checkpointed tool results
@@ -824,17 +831,10 @@ export class Agent {
         ...state.history,
         { role: "user", content: "Rappel technique : appelle uniquement les outils annoncés avec leur nom exact, ou fournis l’objet JSON {\"blocks\":[...]} dans le contenu texte assistant, sans appeler d’outil json ou final. Pour un texte sans source, reprends exactement une phrase autorisée du prompt. Ne répète pas une action dont le résultat est déjà présent." },
       ];
-      const extractor = new TextDeltaExtractor();
-      const preview: string[] = [];
+      const listener = await live.attempt();
       let reply: ModelReply;
       try {
-        reply = await this.models.generate(state.config, history, tools, {
-          onTextDelta(delta) {
-            if (typeof delta !== "string" || !delta) return;
-            const visible = extractor.push(delta);
-            if (visible) preview.push(visible);
-          },
-        });
+        reply = await this.models.generate(state.config, history, tools, listener);
       }
       catch (error) {
         // Groq rejects malformed/hallucinated tool generations before any local
@@ -849,26 +849,12 @@ export class Agent {
         continue;
       }
       if (typeof reply.text !== "string" || !reply.text.trim()) continue;
-      try { return { reply, blocks: presentModelReply(reply.text, state), preview }; }
+      try { return { reply, blocks: presentModelReply(reply.text, state) }; }
       catch (error) {
         if (!(error instanceof SyntaxError)) fallback = UNAVAILABLE_BLOCKS;
       }
     }
     return { blocks: fallback };
-  }
-  private async emitVisibleDeltas(
-    conversationId: string,
-    messageId: string,
-    blocks: Schemas["AgentMessage"]["blocks"],
-    preview: string[],
-    traceparent: string,
-  ) {
-    const finalText = visibleText(blocks);
-    if (!finalText) return;
-    let index = 0;
-    for (const delta of deltasForReply(preview, finalText)) {
-      index += await this.conversations.appendDelta(conversationId, messageId, delta, index, traceparent);
-    }
   }
   private save(cid: string, messageId: string, state: State) {
     return this.pool.query(

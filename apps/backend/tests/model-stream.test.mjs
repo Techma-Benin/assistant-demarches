@@ -186,6 +186,39 @@ test('a stream that breaks mid-event rejects', async (t) => {
     }),
     (error) => error.diagnostic?.reason === 'provider_response_invalid',
   );
-  // Invalid streams are retried; each failed attempt may already have emitted text.
-  assert.deepEqual(deltas, ['Bon', 'Bon', 'Bon']);
+  // Invalid streams are retried, but a retry never replays text the listener already received.
+  assert.deepEqual(deltas, ['Bon']);
+});
+
+test('onToolCall fires before the text of the same chunk (chat) and on a function_call item (responses)', async (t) => {
+  const chat = [
+    'data: {"choices":[{"delta":{"content":"Texte ","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup_thing","arguments":"{}"}}]}}]}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n');
+  const chatUrl = await listen(t, async (req, res) => { await readJson(req); res.writeHead(200, { 'Content-Type': 'text/event-stream' }).end(chat); });
+  const order = [];
+  const tools = [{ name: 'lookup.thing', description: 'Lookup', inputSchema: { type: 'object' } }];
+  await modelsFor(chatUrl, 'chat-completions').generate(config(chatUrl, 'chat-completions'), history, tools, {
+    onTextDelta(delta) { order.push('text:' + delta); },
+    onToolCall() { order.push('tool'); },
+  });
+  assert.equal(order[0], 'tool');
+
+  const responses = [
+    'data: {"type":"response.output_text.delta","delta":"Avant"}',
+    '',
+    'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","call_id":"call_1","name":"lookup_thing","arguments":""}}',
+    '',
+    'data: ' + JSON.stringify({ type: 'response.completed', response: { output: [{ type: 'function_call', call_id: 'call_1', name: 'lookup_thing', arguments: '{}' }] } }),
+    '',
+  ].join('\n');
+  const responsesUrl = await listen(t, async (req, res) => { await readJson(req); res.writeHead(200, { 'Content-Type': 'text/event-stream' }).end(responses); });
+  const seen = [];
+  await modelsFor(responsesUrl, 'responses').generate(config(responsesUrl, 'responses'), history, tools, {
+    onTextDelta(delta) { seen.push('text:' + delta); },
+    onToolCall() { seen.push('tool'); },
+  });
+  assert.deepEqual(seen, ['text:Avant', 'tool']);
 });

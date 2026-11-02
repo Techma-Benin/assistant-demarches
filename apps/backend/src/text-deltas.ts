@@ -3,43 +3,6 @@ export function visibleText(blocks: readonly { type: string; text?: string }[]):
   return blocks.flatMap((block) => block.type === "text" && typeof block.text === "string" ? [block.text] : []).join("");
 }
 
-export const DELTA_MAX = 8000;
-const DELTA_TARGET = 24;
-
-export function splitDelta(delta: string, max = DELTA_MAX): string[] {
-  if (!delta) return [];
-  const parts: string[] = [];
-  for (let offset = 0; offset < delta.length; offset += max) parts.push(delta.slice(offset, offset + max));
-  return parts;
-}
-
-/** Word-sized pieces around 24 characters. Every piece is <= 8000 and concatenation equals the input. */
-export function chunkVisibleText(text: string, target = DELTA_TARGET): string[] {
-  if (!text) return [];
-  const chunks: string[] = [];
-  let rest = text;
-  while (rest.length > target) {
-    const window = rest.slice(0, Math.min(DELTA_MAX, target));
-    const space = window.lastIndexOf(" ");
-    const cut = space > 0 ? space + 1 : window.length;
-    chunks.push(rest.slice(0, cut));
-    rest = rest.slice(cut);
-  }
-  if (rest) chunks.push(rest);
-  return chunks;
-}
-
-/**
- * Stream pieces are kept only when they already equal the final redacted text.
- * Otherwise the final text is the only source, so a preview cannot diverge from redact().
- */
-export function deltasForReply(extracted: readonly string[], finalText: string): string[] {
-  if (!finalText) return [];
-  const pieces = extracted.filter((piece) => piece.length > 0);
-  if (pieces.join("") === finalText) return pieces.flatMap((piece) => splitDelta(piece));
-  return chunkVisibleText(finalText);
-}
-
 /**
  * Pulls only the JSON string value of each "text" key from a model stream.
  * Keys, sources, buttons and other structure stay out of the result.

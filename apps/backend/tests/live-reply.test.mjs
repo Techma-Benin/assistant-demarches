@@ -11,12 +11,7 @@ import { transaction } from "../dist/apps/backend/src/transactions.js";
 import { Agent } from "../dist/apps/backend/src/agent.js";
 import { redact } from "../dist/apps/backend/src/model.js";
 import { attachSockets } from "../dist/apps/backend/src/sockets.js";
-import {
-  TextDeltaExtractor,
-  chunkVisibleText,
-  deltasForReply,
-  visibleText,
-} from "../dist/apps/backend/src/text-deltas.js";
+import { TextDeltaExtractor, visibleText } from "../dist/apps/backend/src/text-deltas.js";
 
 const tp = "00-" + "1".repeat(32) + "-" + "2".repeat(16) + "-01";
 
@@ -60,18 +55,6 @@ test("text extractor keeps only text-block values", () => {
     { type: "text", text: "B" },
   ]), "AB");
   assert.equal(visibleText([{ type: "buttons" }]), "");
-
-  const sentence = "Bonjour à tous, ceci est un texte un peu long pour le découpage.";
-  const chunks = chunkVisibleText(sentence);
-  assert.equal(chunks.join(""), sentence);
-  assert.ok(chunks.every((chunk) => chunk.length <= 24));
-  assert.equal(chunkVisibleText("").length, 0);
-  assert.deepEqual(deltasForReply(["Bonjour à vous."], "Bonjour à vous."), ["Bonjour à vous."]);
-  const huge = "a".repeat(8001);
-  assert.deepEqual(deltasForReply([huge], huge).map((piece) => piece.length), [8000, 1]);
-  const redacted = deltasForReply(["ada@exemple.bj"], "Écrivez à [EMAIL]");
-  assert.equal(redacted.join(""), "Écrivez à [EMAIL]");
-  assert.equal(redacted.some((piece) => piece.includes("ada@exemple.bj")), false);
 });
 
 test("durable history, live deltas and socket push", async (t) => {
@@ -173,7 +156,9 @@ test("durable history, live deltas and socket push", async (t) => {
   assert.notEqual(redactedEmail, rawEmail);
   const script = [
     async (options) => {
-      await options.onTextDelta(JSON.stringify({ blocks: [{ type: "text", text: "NE PAS MONTRER", sources: [] }] }));
+      // A tool turn: the provider announces the call first, so whatever text follows is never streamed.
+      options.onToolCall();
+      await options.onTextDelta(JSON.stringify({ blocks: [{ type: "text", text: "TEXTE DU TOUR OUTIL", sources: [] }] }));
       return { text: "", calls: [{ id: "call_1", name: "absent.tool", arguments: "{}" }] };
     },
     async (options) => {
@@ -237,14 +222,23 @@ test("durable history, live deltas and socket push", async (t) => {
   const plainDeltas = deltas.filter((event) => event.data.messageId === plainSent.data.message.id);
   const emailDeltas = deltas.filter((event) => event.data.messageId === emailSent.data.message.id);
   const buttonDeltas = deltas.filter((event) => event.data.messageId === buttonSent.data.message.id);
+  // (a) The live flow carries what the model wrote, as it wrote it, under the messageId of the final message.
   assert.deepEqual(plainDeltas.map((event) => event.data.delta), [plain]);
   assert.equal(plainDeltas.map((event) => event.data.index).join(","), "0");
-  assert.equal(emailDeltas.map((event) => event.data.delta).join(""), redactedEmail);
+  assert.equal(emailDeltas.map((event) => event.data.delta).join(""), rawEmail);
+  // (b) message.sent only carries validated, masked text and replaces the live draft.
   assert.equal(emailSent.data.message.blocks.filter((block) => block.type === "text").map((block) => block.text).join(""), redactedEmail);
-  assert.ok(emailDeltas.every((event) => !event.data.delta.includes("ada@exemple.bj") && !event.data.delta.includes("{")));
+  assert.equal(JSON.stringify(emailSent.data.message).includes("ada@exemple.bj"), false);
+  assert.notEqual(emailDeltas.map((event) => event.data.delta).join(""), visibleText(emailSent.data.message.blocks));
+  // (c) The reloaded history (no cursor) has neither deltas nor any unvalidated text.
+  assert.equal(JSON.stringify(feed.items).includes("ada@exemple.bj"), false);
+  assert.equal(JSON.stringify(feed.items).includes("TEXTE DU TOUR OUTIL"), false);
+  assert.ok(feed.items.every((event) => event.data.kind !== "message.delta"));
+  // Buttons-only reply: no text to stream, never a structured block in a delta.
   assert.equal(buttonDeltas.length, 0);
   assert.equal(buttonSent.data.message.blocks[0].type, "buttons");
-  assert.ok(deltas.every((event) => !event.data.delta.includes("NE PAS MONTRER") && !event.data.delta.includes("\"type\"")));
+  // A tool turn is never streamed.
+  assert.ok(deltas.every((event) => !event.data.delta.includes("TEXTE DU TOUR OUTIL") && !event.data.delta.includes("\"type\"")));
   assert.ok(plainDeltas.every((event) => event.data.messageId === plainSent.data.message.id));
 
   const pushed = await conversations.create(user, { locale: "fr" }, identifier("key"));
