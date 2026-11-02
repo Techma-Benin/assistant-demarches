@@ -1,4 +1,5 @@
 import type { Conversations } from "./conversations.js";
+import { redact } from "./model.js";
 import { TextDeltaExtractor } from "./text-deltas.js";
 
 /** Visible text is written at most this often; the first piece goes out at once. */
@@ -9,7 +10,57 @@ const DELTA_PART_CHARS = 8000;
 export type LiveAttempt = {
   onTextDelta(delta: string): void;
   onToolCall(): void;
+  /** The generation returned `replyText`: releases the held-back tail when the stream carried all of it. */
+  complete(replyText: unknown): void;
 };
+
+const KEYWORDS = ["npi", "otp", "code sms", "mot de passe"];
+const WORD = /[A-Za-z0-9_]/;
+const SENSITIVE_KEYWORD_WITH_VALUE = /\b(?:npi|otp|code\s*sms|mot de passe)\s*[:=]?\s*\S*$/i;
+
+/**
+ * Length of the part of `text` that redact() can no longer change: everything before the last incomplete word and
+ * before any suffix that may still become an e-mail, a phone number or an "NPI/OTP/code SMS/mot de passe" value.
+ */
+export function stableEnd(text: string): number {
+  // 1. The last word is incomplete until a separator follows (an e-mail never contains whitespace).
+  let end = 0;
+  for (let index = text.length - 1; index >= 0; index--)
+    if (/\s/.test(text[index]!)) { end = index + 1; break; }
+  // 2. Whatever is open at the edge of the stable part moves it back, until nothing is (a number may sit right
+  //    after a keyword, a number may be cut between two of its groups).
+  for (;;) {
+    const continues = end === text.length || /[\d .()-]/.test(text[end]!);
+    const next = Math.min(end, openSuffix(text.slice(0, end), continues));
+    if (next === end) return end;
+    end = next;
+  }
+}
+
+/** Start of the suffix of `text` that a later character could still turn into a masked value (text.length if none). */
+function openSuffix(text: string, numbers: boolean): number {
+  let start = text.length;
+  // A trailing run of digits and phone punctuation (spaces included) can still grow into a number when the next
+  // character (`numbers`) continues it.
+  let run = numbers ? text.length : 0;
+  while (run > 0 && /[\d .()-]/.test(text[run - 1]!)) run--;
+  for (let index = run; numbers && index < text.length; index++)
+    if (/\d/.test(text[index]!)) {
+      start = text[index - 1] === "+" ? index - 1 : index;
+      break;
+    }
+  // A keyword whose value is not complete yet, or a keyword still being typed.
+  const keyword = SENSITIVE_KEYWORD_WITH_VALUE.exec(text);
+  if (keyword) start = Math.min(start, keyword.index);
+  for (const word of KEYWORDS)
+    for (let from = Math.max(0, text.length - word.length - 8); from < text.length; from++) {
+      if (/\s/.test(text[from]!) || (from > 0 && WORD.test(text[from - 1]!))) continue;
+      const tail = text.slice(from).toLowerCase();
+      const comparable = word === "code sms" ? tail.replace(/\s+/g, "") : tail;
+      if (comparable && (word === "code sms" ? "codesms" : word).startsWith(comparable)) start = Math.min(start, from);
+    }
+  return start;
+}
 
 /**
  * Live `message.delta` of one assistant reply (CONTRACTS.md §7.1), written while the model is still generating.
@@ -28,6 +79,8 @@ export class LiveReply {
   private started = false;
   private checked = false;
   private pending = "";
+  /** Masked text already handed to the writer (a prefix of what the user sees). */
+  private staged = "";
   private lastFlush = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private tail: Promise<void> = Promise.resolve();
@@ -59,17 +112,34 @@ export class LiveReply {
     }
     const mine = !this.started && !unknown;
     const extractor = new TextDeltaExtractor();
+    let raw = "";
     let muted = !mine;
+    const stage = (visible: string, final: boolean) => {
+      // Only masked text leaves, and only the part no later character can turn into a sensitive value.
+      const masked = redact(final ? visible : visible.slice(0, stableEnd(visible)));
+      if (!masked.startsWith(this.staged) || masked.length === this.staged.length) return;
+      this.pending += masked.slice(this.staged.length);
+      this.staged = masked;
+      this.started = true;
+      this.schedule();
+    };
     return {
       onTextDelta: (delta) => {
         if (muted || !this.open || typeof delta !== "string" || !delta) return;
         const visible = extractor.push(delta);
         if (!visible) return;
-        this.started = true;
-        this.pending += visible;
-        this.schedule();
+        raw += visible;
+        stage(raw, false);
       },
       onToolCall: () => { muted = true; },
+      complete: (replyText) => {
+        if (muted || !this.open || typeof replyText !== "string") return;
+        // The held tail is released only when the stream carried the whole reply (a broken stream retried elsewhere
+        // may end in the middle of an e-mail).
+        const whole = new TextDeltaExtractor().push(replyText);
+        if (whole === raw) stage(raw, true);
+        muted = true;
+      },
     };
   }
 

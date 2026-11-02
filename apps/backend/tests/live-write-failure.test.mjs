@@ -34,6 +34,7 @@ test("a failed delta write keeps the buffered text and retries it without duplic
   listener.onTextDelta("et bienvenue ");
   await sleep(30); // flush #2 fails again
   listener.onTextDelta("au portail.");
+  listener.complete(OPEN + "Bonjour et bienvenue au portail."); // end of the stream: the last word goes out too
   await live.settle(); // the base is back: everything goes out, in order
   assert.equal(fake.written.map((item) => item.delta).join(""), "Bonjour et bienvenue au portail.");
   assert.deepEqual(fake.written.map((item) => item.index), fake.written.map((_, index) => index), "indexes 0-based, contiguous");
@@ -46,7 +47,7 @@ test("a persistent database failure never fails the reply and nothing is lost fo
   const fake = database({ failures: new Set(Array.from({ length: 50 }, (_, index) => index + 1)) });
   const live = new LiveReply(fake, "cnv", "msg", tp, 5);
   const listener = await live.attempt();
-  listener.onTextDelta(OPEN + "Texte");
+  listener.onTextDelta(OPEN + "Un texte ");
   await sleep(20);
   await live.settle(); // resolves, does not throw
   await live.close();
@@ -60,6 +61,7 @@ test("large buffers are written one stored part at a time, so a failure never le
   const listener = await live.attempt();
   const text = "a".repeat(8000) + "b".repeat(8000) + "c".repeat(100);
   listener.onTextDelta(OPEN + text);
+  listener.complete(OPEN + text);
   await live.settle(); // part 1 ok, part 2 fails, settle ends
   await live.settle(); // retried: parts 2 and 3
   assert.equal(fake.written.map((item) => item.delta).join(""), text);
@@ -74,13 +76,13 @@ test("a database error while checking for an earlier draft does not fail the gen
   fake.pool = { async query() { if (down) throw new Error("database down"); return { rows: [] }; } };
   const live = new LiveReply(fake, "cnv", "msg", tp, 5);
   const silent = await live.attempt(); // resolves
-  silent.onTextDelta(OPEN + "Brouillon");
+  silent.onTextDelta(OPEN + "Brouillon ");
   await live.settle();
   assert.deepEqual(fake.written, [], "no draft is streamed when it is unknown whether one already exists");
   down = false;
   const listener = await live.attempt();
-  listener.onTextDelta(OPEN + "Suite");
+  listener.onTextDelta(OPEN + "Suite ");
   await live.settle();
-  assert.equal(fake.written.map((item) => item.delta).join(""), "Suite");
+  assert.equal(fake.written.map((item) => item.delta).join(""), "Suite ");
   await live.close();
 });

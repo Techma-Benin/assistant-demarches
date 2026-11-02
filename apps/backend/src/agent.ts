@@ -835,6 +835,7 @@ export class Agent {
       let reply: ModelReply;
       try {
         reply = await this.models.generate(state.config, history, tools, listener);
+        listener.complete(reply?.text);
       }
       catch (error) {
         // Groq rejects malformed/hallucinated tool generations before any local

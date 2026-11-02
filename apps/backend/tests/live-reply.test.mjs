@@ -170,7 +170,9 @@ test("durable history, live deltas and socket push", async (t) => {
     },
     async (options) => {
       const body = JSON.stringify({ blocks: [{ type: "text", text: rawEmail, sources: [] }] });
-      for (const piece of [body.slice(0, 12), body.slice(12)]) await options.onTextDelta(piece);
+      // The provider cuts the address in two: "…ada@ex" | "emple.bj merci…".
+      const cut = body.indexOf("ada@") + "ada@ex".length;
+      for (const piece of [body.slice(0, cut), body.slice(cut)]) await options.onTextDelta(piece);
       return { text: body, calls: [] };
     },
     async (options) => {
@@ -225,11 +227,14 @@ test("durable history, live deltas and socket push", async (t) => {
   // (a) The live flow carries what the model wrote, as it wrote it, under the messageId of the final message.
   assert.deepEqual(plainDeltas.map((event) => event.data.delta), [plain]);
   assert.equal(plainDeltas.map((event) => event.data.index).join(","), "0");
-  assert.equal(emailDeltas.map((event) => event.data.delta).join(""), rawEmail);
+  assert.equal(emailDeltas.map((event) => event.data.delta).join(""), redactedEmail, "only masked text is streamed");
+  assert.ok(emailDeltas.length >= 1);
+  assert.ok(emailDeltas.every((event) => !/ada|@|exemple/.test(event.data.delta)), "no delta carries any part of the raw address");
   // (b) message.sent only carries validated, masked text and replaces the live draft.
   assert.equal(emailSent.data.message.blocks.filter((block) => block.type === "text").map((block) => block.text).join(""), redactedEmail);
   assert.equal(JSON.stringify(emailSent.data.message).includes("ada@exemple.bj"), false);
-  assert.notEqual(emailDeltas.map((event) => event.data.delta).join(""), visibleText(emailSent.data.message.blocks));
+  assert.equal(emailDeltas.map((event) => event.data.delta).join(""), visibleText(emailSent.data.message.blocks));
+  assert.equal(JSON.stringify(traced.items).includes("ada@"), false, "not even the live events (stored until expiry) hold the raw address");
   // (c) The reloaded history (no cursor) has neither deltas nor any unvalidated text.
   assert.equal(JSON.stringify(feed.items).includes("ada@exemple.bj"), false);
   assert.equal(JSON.stringify(feed.items).includes("TEXTE DU TOUR OUTIL"), false);
