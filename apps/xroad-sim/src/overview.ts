@@ -14,15 +14,14 @@ const escape = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${char.
  * The "simple view of the connections" asked for on the 29 October call: administrations,
  * their connection state and the last exchanges. No personal data: counts and operations only.
  */
-export function overviewPage(store: XroadStore, exchanges: readonly Exchange[]): string {
-  const superAdmin = store.listOfficials(undefined, undefined).find((official) => official.role === 'super_admin');
+export function overviewPage(store: XroadStore, counts: Map<string, { total: number; pending: number; byAssistant: number }>, exchanges: readonly Exchange[]): string {
   const rows = store
     .listAdministrations()
     .map((administration) => {
-      const metrics = superAdmin ? store.metrics(superAdmin, administration.id) : undefined;
+      const count = counts.get(administration.id);
       const connected = administration.connection.status === 'connected';
       return `<tr><td>${escape(administration.name)}</td><td class="${connected ? 'ok' : 'off'}">${connected ? 'Connectée' : 'Non connectée : connexion recommandée'}</td>
-        <td>${store.searchProcedures(undefined, administration.id).length}</td><td>${metrics?.casesTotal ?? 0}</td><td>${metrics?.casesPending ?? 0}</td><td>${metrics?.casesCompletedByAssistant ?? 0}</td></tr>`;
+        <td>${store.searchProcedures(undefined, administration.id).length}</td><td>${count?.total ?? 0}</td><td>${count?.pending ?? 0}</td><td>${count?.byAssistant ?? 0}</td></tr>`;
     })
     .join('');
   const log = exchanges.length

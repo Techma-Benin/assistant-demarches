@@ -343,23 +343,27 @@ importers:
       jose:
         specifier: 6.2.13
         version: 6.2.13
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: 0.5.8
+        version: 0.5.8
+      '@techma/contracts-ts':
+        specifier: workspace:*
+        version: link:../../packages/contracts-ts
       '@types/node':
         specifier: 22.20.5
         version: 22.20.5
+      '@types/pg':
+        specifier: 8.18.0
+        version: 8.18.0
       typescript:
         specifier: 5.9.3
         version: 5.9.3
 
   packages/contracts-ts: {}
-
-  packages/conversation-client:
-    dependencies:
-      '@techma/contracts-ts':
-        specifier: workspace:*
-        version: link:../contracts-ts
-
-  packages/observability: {}
 
   packages/ui:
     dependencies:
