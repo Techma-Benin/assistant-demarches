@@ -47,7 +47,7 @@ export class McpProcedureCatalog implements ProcedureLookup {
     const value = result.structuredContent;
     validate("Procedure", value);
     const procedure = value as Schemas["Procedure"];
-    if (procedure.validationStatus !== "validated" || procedure.id !== procedureId || procedure.source.procedureId !== procedureId) throw new Problem(404, "NOT_FOUND", "Démarche validée introuvable.");
+    if (!procedure.filing || procedure.id !== procedureId || procedure.source.procedureId !== procedureId) throw new Problem(404, "NOT_FOUND", "Démarche validée introuvable.");
     return procedure;
   }
 }
@@ -63,10 +63,11 @@ export class Consent {
   async challenge(
     user: User,
     cid: string,
-    input: Schemas["ChallengeInput"],
+    input: { procedureId: string; scopes: Schemas["Scope"][] },
     key: string,
   ) {
-    validate("ChallengeInput", input);
+    if (!input?.procedureId || !Array.isArray(input.scopes) || !input.scopes.length)
+      throw new Problem(400, "INVALID_REQUEST", "Challenge incomplet.");
     const scope = [user.userRef, "POST", cid, "mandate-challenges"];
     // Avoid holding a database transaction/connection while discovering and
     // calling a remote catalogue. Completed retries still reuse their challenge.
@@ -138,11 +139,11 @@ export class Consent {
   async grant(
     user: User,
     cid: string,
-    input: Schemas["Consent"],
+    input: Schemas["ConsentInput"],
     key: string,
     traceparent: string,
   ) {
-    validate("Consent", input);
+    validate("ConsentInput", input);
     // Persist the interaction before the external call; retries reuse identical evidence.
     await transaction(this.pool, async (db) => {
       await this.conversations.owner(db, cid, user.userRef);

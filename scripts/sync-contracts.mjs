@@ -43,7 +43,8 @@ for (const file of manifest.documents.filter((name) => name !== 'domain.schema.j
   }
   const next = JSON.stringify(document, null, 2) + '\n';
   const target = new URL(file, CONTRACTS);
-  if (fs.readFileSync(target, 'utf8') !== next) {
+  // Windows checkouts may hold CRLF (core.autocrlf): only the content counts.
+  if (fs.readFileSync(target, 'utf8').replace(/\r\n/g, '\n') !== next) {
     stale.push(file);
     if (!check) fs.writeFileSync(target, next);
   }

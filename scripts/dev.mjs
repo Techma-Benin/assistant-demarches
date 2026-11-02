@@ -49,17 +49,34 @@ const free = (port) => new Promise((resolve) => {
   const server = createServer().once('error', () => resolve(false)).once('listening', () => server.close(() => resolve(true)));
   server.listen(port, '127.0.0.1');
 });
-const wantedPorts = { postgres: PORTS.postgres, keycloak: PORTS.keycloak };
+function usesLocalPostgres(url) {
+  if (!url) return true;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    return host && parsed.port === String(PORTS.postgres);
+  } catch {
+    return false;
+  }
+}
+const localPostgres = usesLocalPostgres(process.env.DATABASE_URL);
+const localKeycloak = !process.env.OIDC_ISSUER || process.env.OIDC_ISSUER === URLS.issuer;
+const wantedPorts = {
+  ...(localPostgres ? { postgres: PORTS.postgres } : {}),
+  ...(localKeycloak ? { keycloak: PORTS.keycloak } : {}),
+};
 const busy = [];
 for (const [name, port] of Object.entries(wantedPorts)) if (!(await free(port))) busy.push(`${name} (${port})`);
 if (busy.length) {
   console.error(`Ports déjà utilisés : ${busy.join(', ')}. Arrêter l'autre processus ou une pile déjà lancée.`);
   process.exit(1);
 }
+if (!localPostgres) console.log('DATABASE_URL est défini : PostgreSQL local non démarré.');
+if (!localKeycloak) console.log('OIDC_ISSUER est défini : Keycloak local non démarré.');
 
 try {
-  stops.push(await startPostgres(logger('postgres')));
-  stops.push(await startKeycloak(logger('keycloak')));
+  if (localPostgres) stops.push(await startPostgres(logger('postgres')));
+  if (localKeycloak) stops.push(await startKeycloak(logger('keycloak')));
 } catch (error) {
   console.error(error instanceof Error ? error.message : 'Démarrage de l’infrastructure impossible (voir les messages ci-dessus).');
   await stop(1);
@@ -87,9 +104,10 @@ for (const name of names) {
     log(`pas encore de script dev dans le paquet ${SERVICES[name].package} : non lancé`);
     continue;
   }
+  const defaults = Object.fromEntries(Object.entries(SERVICES[name].env).filter(([key]) => !process.env[key]));
   const child = spawn(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['run', 'dev'], {
     cwd: join(ROOT, directory),
-    env: { ...process.env, ...SERVICES[name].env, NODE_ENV: 'development' },
+    env: { ...process.env, ...defaults, ...(process.env.NODE_ENV ? {} : { NODE_ENV: 'development' }) },
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: process.platform === 'win32',
   });

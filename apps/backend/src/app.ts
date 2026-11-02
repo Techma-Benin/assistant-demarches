@@ -44,7 +44,7 @@ type AdminRequest = Request & { principal: Principal };
 const AUTH = Symbol("ADMIN_AUTH");
 const DB = Symbol("DATABASE");
 function resource(value: string): Resource {
-  if (value !== "models" && value !== "tools" && value !== "procedures")
+  if (value !== "models")
     throw new Problem(404, "NOT_FOUND", "Route non implémentée.");
   return value;
 }
@@ -121,19 +121,15 @@ class HealthController {
     return { status: "ok", service: "backend" };
   }
 }
-@Controller("v1/admin")
+@Controller("v1/operator")
 class AdminController {
   constructor(
     private settings: Settings,
     private mcp: McpConnections,
     @Inject(AUTH) private auth: AuthOptions,
   ) {}
-  private async principal(req: Request, scope: string): Promise<Principal> {
-    const p = await requireDepartmentPrincipal(req, this.auth, this.settings.pool, scope === "admin:read" ? "operator:read" : "operator:write");
-    const administrationId = req.get("X-Administration-Id") ?? (p.departmentIds.length === 1 ? p.departmentIds[0] : undefined);
-    if (!administrationId) throw new Problem(400,"INVALID_REQUEST","Sélectionnez un département par X-Administration-Id.");
-    assertDepartmentPermission(p, scope === "admin:read" ? "operator:read" : "operator:write", administrationId);
-    return { subject: p.subject, administrationId, scopes: new Set<string>(p.permissions) };
+  private async principal(req: Request, _scope?: string): Promise<Principal> {
+    return authenticate(req.get("authorization"), this.auth, "operator");
   }
   @Get("mcp-servers")
   async servers(@Req() req: AdminRequest) {
@@ -232,7 +228,7 @@ class AdminController {
   async create(@Param("resource") value: string, @Body() body: Config, @Req() req: AdminRequest) {
     const principal = await this.principal(req, "admin:write");
     const kind = resource(value);
-    validate(kind === "models" ? "ModelConfig" : kind === "tools" ? "ToolConfig" : "Procedure", body);
+    validate("ModelConfig", body);
     return this.settings.mutate(principal, kind, configId(body), body, this.key(req), req.get("traceparent")!, "POST");
   }
   @Delete(":resource/:id")
@@ -276,11 +272,20 @@ export async function createBackend(options: {
   corsOrigins?: string[];
   runtime?: Runtime;
   developmentTokens?: Record<string, string>;
+  jwks?: { keys: Record<string, unknown>[] };
 }) {
   let closeSockets = () => {};
+  @Controller(".well-known")
+  class JwksController {
+    @Get("jwks.json")
+    keys() {
+      return { keys: options.jwks?.keys ?? [] };
+    }
+  }
   @Module({
     controllers: [
       HealthController,
+      JwksController,
       AdminController,
       ...(options.runtime ? [ConversationController, InternalController] : []),
     ],
@@ -312,13 +317,14 @@ export async function createBackend(options: {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     if (req.path === "/health" || req.method === "OPTIONS") return next();
-    const match = /^00-([a-f0-9]{32})-([a-f0-9]{16})-0[01]$/.exec(
-      req.get("traceparent") ?? "",
-    );
-    if (!match || /^0+$/.test(match[1]) || /^0+$/.test(match[2]))
-      return next(
-        new Problem(400, "INVALID_REQUEST", "traceparent valide requis."),
-      );
+    const header = req.get("traceparent") ?? "";
+    const match = /^00-([a-f0-9]{32})-([a-f0-9]{16})-0[01]$/.exec(header);
+    const trace =
+      match && !/^0+$/.test(match[1]) && !/^0+$/.test(match[2])
+        ? header
+        : `00-${randomBytes(16).toString("hex")}-${randomBytes(8).toString("hex")}-01`;
+    req.headers.traceparent = trace;
+    res.setHeader("traceparent", trace);
     next();
   });
   app.useGlobalFilters(new ProblemFilter());

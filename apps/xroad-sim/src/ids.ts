@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
-export function newId(prefix: 'cas' | 'doc', at = Date.now()): string {
+export function newId(prefix: 'cas' | 'doc' | 'upl' | 'act' | 'off', at = Date.now()): string {
   let time = at;
   let head = '';
   for (let n = 0; n < 10; n += 1) {

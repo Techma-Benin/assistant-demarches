@@ -1,12 +1,17 @@
 import { ConfigError, loadConfig } from './config.js';
+import { PgDatabase } from './database.js';
 import { createXroadServer } from './server.js';
 
 try {
   const config = loadConfig();
-  const running = await createXroadServer(config).listen();
-  console.log(`X-Road simulé sur ${running.url} (authentification ${config.authMode}, historique ${config.seedHistory ? 'fictif chargé' : 'vide'}, état ${config.stateFile ? `conservé dans ${config.stateFile}` : 'en mémoire'})`);
+  const db = new PgDatabase(config.databaseUrl);
+  const running = await createXroadServer(config, db).listen();
+  console.log(`X-Road simulé sur ${running.url} (catalogue ${config.catalogueFile})`);
   const stop = () => {
-    void running.close().then(() => process.exit(0));
+    void running
+      .close()
+      .then(() => db.close())
+      .then(() => process.exit(0));
   };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);

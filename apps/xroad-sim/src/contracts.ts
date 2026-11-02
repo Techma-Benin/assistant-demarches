@@ -6,7 +6,7 @@ import addFormatsPlugin from 'ajv-formats';
 
 const contractsDir = process.env.CONTRACTS_DIR
   ? pathToFileURL(join(resolve(process.env.CONTRACTS_DIR), sep))
-  : new URL('../../../../contracts/v1/', import.meta.url);
+  : new URL('../../../../contracts/v2/', import.meta.url);
 
 export const domain = JSON.parse(readFileSync(new URL('domain.schema.json', contractsDir), 'utf8')) as { $id: string; $defs: Record<string, unknown> };
 

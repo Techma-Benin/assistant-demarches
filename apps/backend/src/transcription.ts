@@ -133,7 +133,11 @@ export function transcriberFromEnvironment(
   files: Files,
   environment: NodeJS.ProcessEnv = process.env,
 ): TranscriptionPort | undefined {
-  if (environment.TRANSCRIPTION_ENABLED !== "true") return undefined;
+  // On by default when a key is present. No TRANSCRIPTION_ENABLED gate
+  // (product decision from the user, Billux).
+  const apiKeyEnv = environment.TRANSCRIPTION_API_KEY_ENV
+    ?? (environment.MODEL_API_KEY?.trim() ? "MODEL_API_KEY" : "GROQ_API_KEY");
+  if (!environment[apiKeyEnv]?.trim()) return undefined;
   const endpoint = environment.TRANSCRIPTION_ENDPOINT ?? groqEndpoint;
   const allowedEndpoints = new Set([
     groqEndpoint,
@@ -143,7 +147,7 @@ export function transcriberFromEnvironment(
     endpoint,
     allowedEndpoints,
     model: environment.TRANSCRIPTION_MODEL,
-    apiKeyEnv: environment.TRANSCRIPTION_API_KEY_ENV ?? "GROQ_API_KEY",
+    apiKeyEnv,
     timeoutMs: environment.TRANSCRIPTION_TIMEOUT_MS === undefined ? undefined : Number(environment.TRANSCRIPTION_TIMEOUT_MS),
   }, environment);
 }

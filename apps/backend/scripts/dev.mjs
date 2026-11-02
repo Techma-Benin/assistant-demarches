@@ -1,8 +1,7 @@
 import { spawn, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 const backend = fileURLToPath(new URL("../", import.meta.url));
@@ -15,16 +14,8 @@ execFileSync(process.execPath, [
 ], { stdio: "inherit", cwd: repository });
 const envFile = join(repository, ".env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
-const childEnvironment = { ...process.env, NODE_ENV: "development" };
-let identityDirectory;
-if (process.env.BACKEND_DEV_AUTH === "true") {
-  const { createDevelopmentIdentity } = await import("../dist/apps/backend/src/development-auth.js");
-  identityDirectory = mkdtempSync(join(tmpdir(), "techma-development-auth-"));
-  const identityFile = join(identityDirectory, "identity.json");
-  writeFileSync(identityFile, JSON.stringify(await createDevelopmentIdentity(process.env.DEFAULT_ADMINISTRATION_ID || "demo-administration")), { mode: 0o600 });
-  childEnvironment.BACKEND_DEV_AUTH_FILE = identityFile;
-  console.log("Local test identities ready: open /docs and click Tester comme usager.");
-}
+const childEnvironment = { ...process.env };
+if (!childEnvironment.NODE_ENV) childEnvironment.NODE_ENV = "development";
 let server;
 let restarting = Promise.resolve();
 let stopping = false;
@@ -58,5 +49,4 @@ for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => {
   stopping = true;
   watcher.close();
   server?.kill(signal);
-  if (identityDirectory) rmSync(identityDirectory, { recursive: true, force: true });
 });

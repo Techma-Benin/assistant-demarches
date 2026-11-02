@@ -138,6 +138,46 @@
         "conversationId": "cnv_01JD0000000000000000000001",
         "message": { "id": "msg_01JD0000000000000000000001", "content": { "type": "text", "text": "Comment obtenir mon casier judiciaire ?" }, "transcript": null, "sentAt": "2026-11-02T08:59:57Z" }
       }
+    },
+    {
+      "specversion": "1.0",
+      "id": "evt_01JD0000000000000000000002",
+      "source": "urn:techma:backend",
+      "type": "bj.techma.message.delta.v2",
+      "time": "2026-11-02T08:59:59Z",
+      "datacontenttype": "application/json",
+      "data": {
+        "kind": "message.delta",
+        "conversationId": "cnv_01JD0000000000000000000001",
+        "messageId": "msg_01JD0000000000000000000002",
+        "delta": "L'extrait B3",
+        "index": 0
+      }
+    },
+    {
+      "specversion": "1.0",
+      "id": "evt_01JD0000000000000000000003",
+      "source": "urn:techma:backend",
+      "type": "bj.techma.message.sent.v2",
+      "time": "2026-11-02T09:00:00Z",
+      "datacontenttype": "application/json",
+      "data": {
+        "kind": "message.sent",
+        "conversationId": "cnv_01JD0000000000000000000001",
+        "message": {
+          "id": "msg_01JD0000000000000000000002",
+          "conversationId": "cnv_01JD0000000000000000000001",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "L'extrait B3 du casier judiciaire coûte 1 900 FCFA et il est délivré en 72 h environ.",
+              "sources": [{ "procedureId": "PS00373", "url": "https://service-public.bj/public/services/service/PS00373", "retrievedAt": "2026-10-30T16:22:40.188Z" }]
+            },
+            { "type": "buttons", "items": [{ "id": "prepare", "label": "Préparer ma demande" }] }
+          ],
+          "createdAt": "2026-11-02T09:00:00Z"
+        }
+      }
     }
   ],
   "tools": {

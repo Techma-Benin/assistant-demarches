@@ -12,20 +12,15 @@ L'usager fait sa démarche administrative dans une conversation (web ou WhatsApp
 
 Prérequis : Node.js 22 et pnpm 10.20.0 (`corepack enable`). Pas de Docker, pas de Java, pas de PostgreSQL à installer.
 
-```sh
-git switch dev
-pnpm install
-cp .env.example .env      # renseigner GROQ_API_KEY
-pnpm dev
-```
+Le backend se lance avec [BACKEND.md](BACKEND.md) : copier `.env.example`, renseigner `MODEL_API_KEY`, puis `pnpm dev backend`. La même clé active la transcription des vocaux (pas de `TRANSCRIPTION_ENABLED` ; décision produit de l'utilisateur Billux).
 
-`pnpm dev` démarre PostgreSQL (binaires npm) et Keycloak (téléchargé une fois dans `.local/` avec un Java portable), importe le realm et les comptes de démo, puis lance les applications. Le premier démarrage télécharge environ 230 Mo.
+`pnpm dev` sans argument démarre aussi le tooling, le X-Road simulé et l'interface. Ces trois applications ne sont pas encore prêtes pour cette commande. Le détail est dans [BACKEND.md](BACKEND.md).
 
 | Commande | Effet |
 |---|---|
-| `pnpm dev` | Toute la pile |
-| `pnpm dev:infra` | PostgreSQL et Keycloak seulement, pour lancer soi-même une application |
-| `pnpm dev backend tooling` | L'infrastructure et les applications citées |
+| `pnpm dev backend` | Backend, avec PostgreSQL et Keycloak locaux si `.env` ne les définit pas |
+| `pnpm dev:infra` | PostgreSQL et Keycloak seulement |
+| `pnpm dev` | L'infrastructure et toutes les applications citées dans le script |
 | `pnpm dev:reset` | Efface les données locales (bases, realm, fichiers) |
 | `pnpm check` | Contrats, types générés, typage et tests de toutes les applications |
 | `pnpm catalogue:import` | Réimporte le catalogue de service-public.bj |
@@ -41,7 +36,7 @@ Comptes de démo, mot de passe `demo-2026` :
 | `super.admin` | Super admin, toutes les administrations |
 | `operateur` | Écran opérateur |
 
-Console Keycloak : <http://127.0.0.1:8080> (admin / admin, poste local uniquement).
+Console Keycloak : <http://127.0.0.1:8080> (admin / admin, poste local uniquement). Si le port 8080 est déjà pris (service Oracle ou EnterpriseDB sous Windows par exemple) : `KEYCLOAK_PORT=8081 pnpm dev`, ou `$env:KEYCLOAK_PORT=8081; pnpm dev` dans PowerShell.
 
 ## Qui travaille où
 
