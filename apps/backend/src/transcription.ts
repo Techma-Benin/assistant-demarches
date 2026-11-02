@@ -143,7 +143,8 @@ export function transcriberFromEnvironment(
     endpoint,
     allowedEndpoints,
     model: environment.TRANSCRIPTION_MODEL,
-    apiKeyEnv: environment.TRANSCRIPTION_API_KEY_ENV ?? "GROQ_API_KEY",
+    apiKeyEnv: environment.TRANSCRIPTION_API_KEY_ENV
+      ?? (environment.MODEL_API_KEY?.trim() ? "MODEL_API_KEY" : "GROQ_API_KEY"),
     timeoutMs: environment.TRANSCRIPTION_TIMEOUT_MS === undefined ? undefined : Number(environment.TRANSCRIPTION_TIMEOUT_MS),
   }, environment);
 }

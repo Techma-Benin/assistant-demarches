@@ -2,45 +2,48 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { resolveModelFromEnv } from "../dist/apps/backend/src/model-env.js";
 
-test("one provider key selects its endpoint and default model", () => {
-  const model = resolveModelFromEnv({ OPENAI_API_KEY: "sk-test" });
-  assert.equal(model.apiKeyRef, "OPENAI_API_KEY");
+test("MODEL_API_KEY alone uses the Groq default", () => {
+  const model = resolveModelFromEnv({ MODEL_API_KEY: "secret" });
+  assert.equal(model.apiKeyRef, "MODEL_API_KEY");
+  assert.equal(model.baseUrl, "https://api.groq.com/openai/v1");
+  assert.equal(model.model, "llama-3.3-70b-versatile");
+  assert.equal(JSON.stringify(model).includes("secret"), false);
+});
+
+test("MODEL_PROVIDER switches the endpoint and the default model", () => {
+  const model = resolveModelFromEnv({ MODEL_API_KEY: "secret", MODEL_PROVIDER: "openai" });
+  assert.equal(model.label, "OpenAI");
   assert.equal(model.baseUrl, "https://api.openai.com/v1");
   assert.equal(model.model, "gpt-4o-mini");
-  assert.equal(model.active, true);
-  assert.equal(JSON.stringify(model).includes("sk-test"), false);
+  assert.equal(model.apiKeyRef, "MODEL_API_KEY");
 });
 
-test("MODEL_NAME overrides the default without changing the key", () => {
-  const model = resolveModelFromEnv({ GROQ_API_KEY: "gsk-test", MODEL_NAME: "llama-3.1-8b-instant" });
-  assert.equal(model.apiKeyRef, "GROQ_API_KEY");
-  assert.equal(model.baseUrl, "https://api.groq.com/openai/v1");
-  assert.equal(model.model, "llama-3.1-8b-instant");
-});
-
-test("a custom OpenAI-compatible endpoint uses MODEL_API_KEY", () => {
+test("URL and model name override the provider defaults", () => {
   const model = resolveModelFromEnv({
     MODEL_API_KEY: "secret",
+    MODEL_PROVIDER: "groq",
     MODEL_BASE_URL: "https://example.com/v1/",
     MODEL_NAME: "custom-model",
-    GROQ_API_KEY: "ignored",
+    MODEL_PROTOCOL: "responses",
   });
-  assert.equal(model.apiKeyRef, "MODEL_API_KEY");
   assert.equal(model.baseUrl, "https://example.com/v1");
   assert.equal(model.model, "custom-model");
+  assert.equal(model.protocol, "responses");
 });
 
-test("several provider keys require an explicit choice", () => {
+test("an unknown provider needs an URL and a model name", () => {
   assert.throws(
-    () => resolveModelFromEnv({ GROQ_API_KEY: "a", OPENAI_API_KEY: "b" }),
-    /Une seule clé modèle/,
+    () => resolveModelFromEnv({ MODEL_API_KEY: "secret", MODEL_PROVIDER: "other" }),
+    /MODEL_BASE_URL et MODEL_NAME/,
   );
   const model = resolveModelFromEnv({
-    GROQ_API_KEY: "a",
-    OPENAI_API_KEY: "b",
-    MODEL_PROVIDER: "openai",
+    MODEL_API_KEY: "secret",
+    MODEL_PROVIDER: "other",
+    MODEL_BASE_URL: "https://models.example/v1",
+    MODEL_NAME: "local",
   });
-  assert.equal(model.apiKeyRef, "OPENAI_API_KEY");
+  assert.equal(model.baseUrl, "https://models.example/v1");
+  assert.equal(model.model, "local");
 });
 
 test("no key leaves the operator configuration alone", () => {
