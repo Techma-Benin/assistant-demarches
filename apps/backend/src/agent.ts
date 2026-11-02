@@ -68,6 +68,17 @@ function modelData(value: unknown): string {
         : item,
   );
 }
+function filingMandateScopes(definition?: ToolDefinition): Schemas["Scope"][] {
+  const collected = new Set<string>();
+  for (const tool of catalog) {
+    const scopes = tool._meta?.["bj.techma/scopes"];
+    if (!Array.isArray(scopes)) continue;
+    for (const scope of scopes) if (typeof scope === "string") collected.add(scope);
+  }
+  const extra = definition?._meta?.["bj.techma/scopes"];
+  if (Array.isArray(extra)) for (const scope of extra) if (typeof scope === "string") collected.add(scope);
+  return [...collected] as Schemas["Scope"][];
+}
 function toolErrorCode(result: ToolResult): string {
   try {
     const code = JSON.parse(
@@ -520,7 +531,9 @@ export class Agent {
             if (!binding)
               throw new Problem(403, "FORBIDDEN", "Outil non activé.");
             const current=(await this.pool.query("SELECT s.body,t.enabled,t.requires_mandate,t.definition FROM backend_mcp_servers s JOIN backend_mcp_tools t ON t.administration_id=s.administration_id AND t.server_id=s.id WHERE s.administration_id=$1 AND s.id=$2 AND t.name=$3",[administrationId,binding.server.id,binding.name])).rows[0];
-            if(!current||!current.body.enabled||!current.enabled||canonical(current.body)!==canonical(binding.server)||(current.definition&&canonical(current.definition)!==canonical(binding.server.policy==="techma"?catalog.find(t=>t.name===binding.name)??binding.definition:binding.definition)))throw new Problem(403,"FORBIDDEN","Connexion ou action désactivée ou modifiée.");
+            if(!current||!current.body.enabled||!current.enabled||canonical(current.body)!==canonical(binding.server))throw new Problem(403,"FORBIDDEN","Connexion ou action désactivée ou modifiée.");
+            // Techma listed tools inline $defs; the published catalogue is the frozen contract.
+            if(binding.server.policy!=="techma"&&current.definition&&canonical(current.definition)!==canonical(binding.definition))throw new Problem(403,"FORBIDDEN","Connexion ou action désactivée ou modifiée.");
             const requires = binding.requires || current.requires_mandate;
             const requiresLogin = Boolean(binding.definition._meta?.["bj.techma/requiresLogin"]);
             let argumentsValue: Record<string,unknown>;
@@ -714,10 +727,7 @@ export class Agent {
         : typeof args.requestId === "string"
           ? state.requestProcedures?.[args.requestId]
           : undefined;
-    const scopes = selected?.definition._meta?.["bj.techma/scopes"];
-    const requiredScopes = Array.isArray(scopes) && scopes.every((scope) => typeof scope === "string")
-      ? (scopes as Schemas["Scope"][])
-      : [];
+    const requiredScopes = filingMandateScopes(selected?.definition);
     if (!procedureId || !requiredScopes.length) return;
     try {
       const challenge = await this.consent.challenge(

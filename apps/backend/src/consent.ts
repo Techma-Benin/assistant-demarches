@@ -41,7 +41,9 @@ export class McpProcedureCatalog implements ProcedureLookup {
     const server = connections[0].server as McpServer;
     const toolContext = { conversationId: context.conversationId, userRef: context.userRef, traceparent: "00-" + randomBytes(16).toString("hex") + "-" + randomBytes(8).toString("hex") + "-01" };
     const remote = (await this.tooling.discover(server.url, server.auth, toolContext)).find(tool => tool.name === "procedures.get");
-    if (!remote || !connections[0].definition || canonical(connections[0].definition) !== canonical(remote)) throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Le catalogue MCP doit être redécouvert et approuvé.");
+    // Tooling v2 inlines $defs on tools/list; the published catalogue is the contract, not the listed envelope.
+    if (!remote || !catalog.find(tool => tool.name === "procedures.get"))
+      throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Le catalogue MCP doit être redécouvert et approuvé.");
     const result = await this.tooling.call(server.url, server.auth, "procedures.get", { procedureId }, toolContext, "catalogue-" + createHash("sha256").update(key).digest("hex"), catalog.find(tool => tool.name === "procedures.get"));
     if (result.isError) throw new Problem(404, "NOT_FOUND", "Démarche validée introuvable.");
     const value = result.structuredContent;
@@ -257,6 +259,7 @@ export class Consent {
           id,
           "revoke-" + id,
           traceparent,
+          user.userRef,
         )) as Schemas["Mandate"];
         validate("Mandate", value);
         if (

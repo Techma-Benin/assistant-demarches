@@ -99,6 +99,8 @@ La transcription est active dès que `MODEL_API_KEY` est présente.
 | Équipe | Adresse |
 |---|---|
 | Interface | la valeur de `PUBLIC_URL` |
-| Tooling, événements | `POST {PUBLIC_URL}/internal/v1/events` |
-| Tooling, pièces | `GET {PUBLIC_URL}/internal/v1/files/{fileId}` avec `X-User-Ref` |
-| Clés des jetons invités | `GET {PUBLIC_URL}/.well-known/jwks.json` |
+| Tooling, événements | `POST {PUBLIC_URL}/internal/v1/events` (scope `events:publish`, audience `techma-backend`) |
+| Tooling, pièces | `GET {PUBLIC_URL}/internal/v1/files/{fileId}` et `/content` avec `X-User-Ref` (scope `files:read`) |
+| Clés des jetons invités et des preuves de mandat | `GET {PUBLIC_URL}/.well-known/jwks.json` (audience `techma-mandate` pour le `proofToken`) |
+
+Le Tooling v2 (équipe Tooling) est le serveur MCP. `TOOLING_MCP_URL` (sinon la première URL de `MCP_ALLOWED_URLS`) enregistre la connexion `tooling` (`policy: techma`, `auth.secretRef: backend` = jeton Keycloak `tools:call`, audience `techma-tooling`). Les mandats partent sur `TOOLING_URL` avec le scope `mandates:grant` ; la révocation envoie `X-User-Ref`. Sans conversation, `tools/list` n’envoie pas le contexte usager ; `tools/call` envoie `X-Conversation-Id`, `X-User-Ref`, `X-Channel`, `X-Mandate-Id` et `Idempotency-Key`.

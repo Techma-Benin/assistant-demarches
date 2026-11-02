@@ -5,7 +5,7 @@ import { Conversations } from "./conversations.js";
 import { Files } from "./files.js";
 import { storageFromEnvironment } from "./storage.js";
 import { Consent, McpProcedureCatalog } from "./consent.js";
-import { HttpMandateControl, McpGateway } from "./tooling.js";
+import { catalog, HttpMandateControl, McpGateway } from "./tooling.js";
 import { HttpModels } from "./model.js";
 import { syncEnvModel } from "./model-env.js";
 import { Agent } from "./agent.js";
@@ -89,6 +89,8 @@ export async function loadRuntime(
       ? tokens.get("tools:call")
       : required(references[reference] ?? "MISSING_MCP_SECRET_REFERENCE"),
   );
+  const mcpUrl = process.env.TOOLING_MCP_URL ?? [...allowedMcpUrls][0];
+  await syncTechmaMcp(pool, mcpUrl);
   const signing = {
     key: signingKey,
     kid: "backend-signing",
@@ -127,4 +129,38 @@ export async function loadRuntime(
     transcriberFromEnvironment(files),
   );
   return { runtime, agent, tokens };
+}
+/** Registers the published Techma Tooling connection when the URL is known. Operator flags are kept. */
+export async function syncTechmaMcp(pool: Pool, mcpUrl?: string) {
+  if (!mcpUrl) return;
+  const url = new URL(mcpUrl).href;
+  if (!approvedMcpUrl(url, new Set([url])))
+    throw new Error("TOOLING_MCP_URL requires HTTPS outside localhost.");
+  const server = {
+    id: "tooling",
+    name: "Tooling Techma",
+    url,
+    enabled: true,
+    transport: "streamable-http",
+    auth: { type: "bearer" as const, secretRef: "backend" },
+    policy: "techma" as const,
+  };
+  await pool.query(
+    `INSERT INTO backend_mcp_servers(administration_id,id,body) VALUES('global','tooling',$1)
+     ON CONFLICT(administration_id,id) DO UPDATE SET
+       body=jsonb_set(excluded.body, '{enabled}', COALESCE(backend_mcp_servers.body->'enabled', 'true'::jsonb)),
+       revision=backend_mcp_servers.revision+1
+     WHERE backend_mcp_servers.body->>'policy'='techma'`,
+    [server],
+  );
+  for (const tool of catalog) {
+    await pool.query(
+      `INSERT INTO backend_mcp_tools(administration_id,server_id,name,definition,available,enabled,requires_mandate)
+       VALUES('global','tooling',$1,$2,true,true,$3)
+       ON CONFLICT(administration_id,server_id,name) DO UPDATE SET
+         definition=COALESCE(backend_mcp_tools.definition, excluded.definition),
+         available=true`,
+      [tool.name, tool, Boolean(tool._meta?.["bj.techma/requiresMandate"])],
+    );
+  }
 }

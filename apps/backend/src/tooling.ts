@@ -56,6 +56,20 @@ export type ToolResult = {
     text?: string;
   }[];
 };
+/** Tooling v2 puts the JSON body in `structuredContent` and duplicates it as a text block. */
+export function structuredFrom(result: ToolResult): unknown {
+  if (result.structuredContent !== undefined) return result.structuredContent;
+  const text = result.content.find((item) => item.type === "text")?.text;
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+export function catalogTool(name: string): ToolDefinition | undefined {
+  return catalog.find((tool) => tool.name === name);
+}
 export type ToolingPort = {
   discover(url: string, secretRef: string | McpAuth, context: ToolContext): Promise<ToolDefinition[]>;
   call(url: string, secretRef: string | McpAuth, name: string, args: Record<string, unknown>, context: ToolContext, key: string, definition?: ToolDefinition): Promise<ToolResult>;
@@ -103,7 +117,7 @@ export class McpGateway implements ToolingPort {
         headers: {
           ...headers,
           traceparent: context.traceparent,
-          ...(!context.external ? {
+          ...(!context.external && context.conversationId && context.userRef ? {
             "X-Conversation-Id": context.conversationId,
             "X-User-Ref": context.userRef,
             ...(context.channel ? { "X-Channel": context.channel } : {}),
@@ -151,6 +165,8 @@ export class McpGateway implements ToolingPort {
       throw new Problem(400, "INVALID_REQUEST", "Arguments outil invalides.");
     return this.using(url, secretRef, context, key, async (client) => {
       const result = (await client.callTool({ name, arguments: args }, undefined, { timeout: 30000 })) as ToolResult;
+      if (result.structuredContent === undefined)
+        result.structuredContent = structuredFrom(result);
       if (!result.isError && expected?.outputSchema && !compileMcpSchema(expected.outputSchema)(result.structuredContent))
         throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Sortie outil non conforme.");
       return result;
@@ -159,14 +175,14 @@ export class McpGateway implements ToolingPort {
 }
 export type MandateControl = {
   grant(body: unknown, key: string, traceparent: string): Promise<unknown>;
-  revoke(id: string, key: string, traceparent: string): Promise<unknown>;
+  revoke(id: string, key: string, traceparent: string, userRef: string): Promise<unknown>;
 };
 export class HttpMandateControl implements MandateControl {
   constructor(private baseUrl: string, private token: () => Promise<string>) {
     if (!approvedMcpUrl(baseUrl, new Set([new URL(baseUrl).href])))
       throw new Error("Tooling control URL requires HTTPS outside localhost.");
   }
-  private async post(path: string, body: unknown, key: string, traceparent: string) {
+  private async post(path: string, body: unknown, key: string, traceparent: string, extra: Record<string, string> = {}) {
     const res = await fetch(new URL(path, this.baseUrl), {
       method: "POST",
       redirect: "error",
@@ -175,6 +191,7 @@ export class HttpMandateControl implements MandateControl {
         traceparent,
         "Idempotency-Key": key,
         "Content-Type": "application/json",
+        ...extra,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30000),
@@ -187,7 +204,9 @@ export class HttpMandateControl implements MandateControl {
   grant(body: unknown, key: string, traceparent: string) {
     return this.post("/internal/v1/mandates", body, key, traceparent);
   }
-  revoke(id: string, key: string, traceparent: string) {
-    return this.post("/internal/v1/mandates/" + encodeURIComponent(id) + "/revoke", {}, key, traceparent);
+  revoke(id: string, key: string, traceparent: string, userRef: string) {
+    return this.post("/internal/v1/mandates/" + encodeURIComponent(id) + "/revoke", {}, key, traceparent, {
+      "X-User-Ref": userRef,
+    });
   }
 }

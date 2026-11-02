@@ -215,6 +215,7 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
           { issuer, audience: "techma-tooling" },
         );
         assert.equal(payload.azp, "backend-mandates");
+        assert.match(String(req.headers["x-user-ref"] ?? ""), /^usr_/);
         const id = req.url.split("/")[4];
         const mandate = { ...remoteMandates.get(id), status: "revoked" };
         remoteMandates.set(id, mandate);
