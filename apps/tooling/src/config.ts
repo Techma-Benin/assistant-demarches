@@ -1,5 +1,5 @@
 export type AuthMode = 'jwt' | 'mock-tokens';
-export type OutboundClient = 'tooling-resources' | 'tooling-events' | 'tooling-xroad';
+export type OutboundClient = 'tooling-resources' | 'tooling-events' | 'tooling-xroad' | 'tooling-documents';
 export type ProcedureSource = 'backend' | 'xroad';
 
 export type OidcClient = { scope: string } & ({ id: string; secret: string; tokenUrl: URL } | { token: string });
@@ -7,7 +7,7 @@ export type OidcClient = { scope: string } & ({ id: string; secret: string; toke
 export interface JwtConfig {
   issuer: string;
   jwksUrl: URL;
-  clients: Record<Exclude<OutboundClient, 'tooling-xroad'>, OidcClient> & { 'tooling-xroad'?: OidcClient };
+  clients: Record<Exclude<OutboundClient, 'tooling-xroad' | 'tooling-documents'>, OidcClient> & { 'tooling-xroad'?: OidcClient; 'tooling-documents'?: OidcClient };
   proof: { jwksUrl: URL; issuer?: string };
 }
 
@@ -24,6 +24,7 @@ export interface ToolingConfig {
   mandateTtlMs: number;
   allowDraftProcedures: boolean;
   procedureSource: ProcedureSource;
+  snapshots: boolean;
   xroadUrl?: URL;
   events: { publisher: boolean; intervalMs: number };
   rateLimits: { perUser: number; perClient: number; authFailuresPerIp: number };
@@ -137,6 +138,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
     mandateTtlMs: 3_600_000,
     allowDraftProcedures: drafts === 'true',
     procedureSource,
+    snapshots: procedureSource === 'xroad',
     ...(xroadUrl ? { xroadUrl } : {}),
     events: { publisher: publisher === 'on', intervalMs: integer(env, 'EVENTS_INTERVAL_MS', 1000, 50, 60_000) },
     rateLimits: {
@@ -163,7 +165,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ToolingConfig 
       clients: {
         'tooling-resources': outboundClient(env, 'TOOLING_RESOURCES', 'resources:read', production),
         'tooling-events': outboundClient(env, 'TOOLING_EVENTS', 'events:publish', production),
-        ...(xroadUrl ? { 'tooling-xroad': outboundClient(env, 'TOOLING_XROAD', 'xroad:read xroad:submit', production) } : {}),
+        ...(xroadUrl
+          ? {
+              'tooling-xroad': outboundClient(env, 'TOOLING_XROAD', 'xroad:read xroad:submit xroad:decide', production),
+              'tooling-documents': outboundClient(env, 'TOOLING_DOCUMENTS', 'documents:transfer', production),
+            }
+          : {}),
       },
       proof: { jwksUrl: serviceUrl(env, 'PROOF_JWKS_URL'), issuer: env.PROOF_ISSUER || undefined },
     },

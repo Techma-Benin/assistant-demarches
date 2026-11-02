@@ -17,7 +17,7 @@ export const OTHER_APPLICANT = `usr_${'0'.repeat(25)}2`;
 export const SUPER_ADMIN = `off_01JC${'0'.repeat(21)}1`;
 export const JUSTICE_ADMIN = `off_01JC${'0'.repeat(20)}10`;
 export const JUSTICE_AGENT = `off_01JC${'0'.repeat(20)}11`;
-export const ENSEIGNEMENT_AGENT = `off_01JC${'0'.repeat(20)}15`;
+export const ENSEIGNEMENT_AGENT = `off_01JC${'0'.repeat(20)}13`;
 
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 export const requestId = () => `req_${Array.from(randomBytes(26), (byte) => CROCKFORD[byte % 32]).join('')}`;

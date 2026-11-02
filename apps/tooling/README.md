@@ -67,6 +67,18 @@ Client `backend-mandates`, scope `mandates:grant`, `Idempotency-Key` obligatoire
 
 Le Tooling ne publie pas `mandate.granted` ni `mandate.revoked` : le Backend reçoit le mandat en réponse synchrone et le diffuse lui-même, comme le fait la simulation.
 
+### Backend, console des ministères : `POST /internal/v1/admin/requests/{id}/actions`
+
+Client `backend-admin`, scope `requests:admin`, `Idempotency-Key` obligatoire. Corps `InternalAdminCommand` (`tooling-admin.openapi.json`) : `action` parmi `claim`, `request_information`, `approve`, `reject`, `resume`, la `revision` lue par l'agent, `departmentId` et `actorRef` fournis par le Backend. Réponse 200 : le `DepartmentRequest` complet, révision supérieure, identique au snapshot publié ensuite.
+
+| Refus | Cas |
+|---|---|
+| 404 | dossier inconnu, ou d'un autre département |
+| 409 | révision dépassée, dossier pas encore déposé ou déjà clos, transition impossible (déjà pris en charge, aucun complément en attente, pas de décision attendue au X-Road) |
+| 400 | commande invalide, motif absent pour `request_information` |
+
+`approve` et `reject` sont relayés au X-Road (`X-Actor-Ref` = `actorRef`). `request_information` met le dossier en `blocked` avec le motif ; `resume` le remet en traitement. Une même clé rejouée renvoie la même réponse pendant 25 h.
+
 ### Ce que le Tooling attend du Backend
 
 | Besoin | Route Backend | Identité Tooling |
@@ -74,8 +86,9 @@ Le Tooling ne publie pas `mandate.granted` ni `mandate.revoked` : le Backend re�
 | Fiches | `GET /internal/v1/procedures`, `GET /internal/v1/procedures/{id}` | `tooling-resources`, scope `resources:read` |
 | Métadonnées de pièces | `GET /internal/v1/files/{id}` avec `X-User-Ref` | `tooling-resources` |
 | Événements | `POST /internal/v1/events`, `Idempotency-Key` = id d'événement | `tooling-events`, scope `events:publish` |
+| Documents délivrés | `POST /internal/v1/requests/{id}/documents`, binaire, `X-User-Ref`, `X-File-Mime-Type` | `tooling-documents`, scope `documents:transfer` |
 
-Événements publiés : `request.created`, `request.status_changed`, `tool.called`. Ordre garanti par conversation, livraison au moins une fois, id stable entre les reprises.
+Avec les fiches du Backend (`PROCEDURES_SOURCE=backend`), événements publiés : `request.created`, `request.status_changed`, `tool.called`. Avec les fiches du X-Road, chaque modification d'une demande publie à la place un snapshot complet `request.snapshot` : révision strictement croissante, `administrationId` du ministère qui traite, `simulation: true`, accusé de dépôt, motif de blocage, paiement, documents délivrés, étape et provenance des champs. Ordre garanti par conversation, livraison au moins une fois, id stable entre les reprises. Le département et la conversation doivent exister côté Backend : tant qu'ils manquent, le snapshot est retenté et les événements suivants de la conversation attendent.
 
 ## Organisation du code
 
@@ -106,7 +119,7 @@ Brancher un vrai connecteur : implémenter `AdministrationConnector` (`id`, `sup
 
 Deux connecteurs existent :
 
-- `xroad` dépose le dossier au X-Road simulé (`apps/xroad-sim`, contrat C5) et en suit l'état : `awaiting_payment` et `received` donnent `submitted`, `in_review` donne `processing`, puis `completed` ou `rejected`. Il exige `XROAD_URL` et des fiches lues au X-Road (`PROCEDURES_SOURCE=xroad`, valeur par défaut dès que `XROAD_URL` est fourni). Il est admis hors poste local : le service distant se déclare simulation dans chaque dossier (CONTRACTS.md §7).
+- `xroad` dépose le dossier au X-Road simulé (`apps/xroad-sim`, contrat C5) et en suit l'état : `awaiting_payment` et `received` donnent `submitted` ; `in_review` donne `blocked` (« à vérifier » par le ministère) jusqu'à ce qu'un agent le prenne en charge (`processing`) ; puis `completed` ou `rejected`. Les documents délivrés sont déposés au Backend et ajoutés au snapshot ; un dépôt en échec est retenté toutes les 30 s sans bloquer le suivi. Il exige `XROAD_URL` et des fiches lues au X-Road (`PROCEDURES_SOURCE=xroad`, valeur par défaut dès que `XROAD_URL` est fourni). Il est admis hors poste local : le service distant se déclare simulation dans chaque dossier (CONTRACTS.md §7).
 - `simulated` produit des statuts fictifs à partir du temps écoulé (références `SIMULATION-…`), sans service distant : refusé en production et hors poste local.
 
 Un refus de l'administration (409) ou un dossier qu'elle ne connaît plus (404) arrête les essais aussitôt : la demande garde son lien officiel. Le transfert des pièces elles-mêmes relève de la phase suivante : le connecteur ne transmet que leurs métadonnées.
@@ -181,7 +194,8 @@ Le déploiement sur un serveur n'est pas automatisé : aucun environnement cible
 | `CONNECTORS` | vide | Connecteurs activés, séparés par des virgules : `xroad`, ou `simulated` seulement en local hors production |
 | `XROAD_URL` | aucun | X-Road simulé (C5) ; HTTPS hors localhost |
 | `PROCEDURES_SOURCE` | `xroad` si `XROAD_URL`, sinon `backend` | Origine des fiches de `procedures.search` et `procedures.get` |
-| `TOOLING_XROAD_CLIENT_ID`, `TOOLING_XROAD_CLIENT_SECRET` ou `TOOLING_XROAD_TOKEN` | aucun | Identité `tooling-xroad` en mode `jwt`, requise avec `XROAD_URL` |
+| `TOOLING_XROAD_CLIENT_ID`, `TOOLING_XROAD_CLIENT_SECRET` ou `TOOLING_XROAD_TOKEN` | aucun | Identité `tooling-xroad` (`xroad:read xroad:submit xroad:decide`) en mode `jwt`, requise avec `XROAD_URL` |
+| `TOOLING_DOCUMENTS_CLIENT_ID`, `TOOLING_DOCUMENTS_CLIENT_SECRET` ou `TOOLING_DOCUMENTS_TOKEN` | aucun | Identité `tooling-documents` (`documents:transfer`) en mode `jwt`, requise avec `XROAD_URL` |
 | `CONNECTOR_WORKER`, `CONNECTOR_INTERVAL_MS` | `on`, 2000 | Processus d'envoi et de suivi |
 | `CONNECTOR_POLL_MS` | 300000 | Intervalle de suivi d'un dossier envoyé |
 | `CONNECTOR_SIMULATED_STEP_MS` | 30000 | Durée de chaque étape fictive du connecteur simulé |

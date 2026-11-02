@@ -1,39 +1,49 @@
 import { randomBytes } from 'node:crypto';
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { AuditLog } from '../audit/audit-log.js';
+import { canonicalJson } from '../common/ids.js';
 import { ProblemError } from '../common/problem.js';
 import type { TraceContext } from '../common/trace.js';
 import { TOOLING_CONFIG, type ToolingConfig } from '../config.js';
 import { Database, type Tx } from '../database/database.js';
-import { Outbox } from '../events/outbox.js';
 import { ProcedureCatalog } from '../procedures/procedures.module.js';
 import { BackendResourcesClient } from '../resources/backend-resources.client.js';
-import type { AttachedDocument, Fields, RequestStatus } from '../requests/requests.repository.js';
-import { ConnectorRegistry, type AdministrationConnector, type ExternalStatus } from './connector.js';
+import { RequestWorkflow, type RelayedDocument } from '../requests/request-workflow.js';
+import type { AttachedDocument, Fields } from '../requests/requests.repository.js';
+import { ConnectorRegistry, type AdministrationConnector, type ExternalCase } from './connector.js';
 
 interface DueRow {
   id: string;
   conversation_id: string;
   user_ref: string;
   procedure_id: string;
-  status: RequestStatus;
   fields: Fields;
   documents: AttachedDocument[];
   connector: string;
   mandate_id: string | null;
   external_ref: string | null;
+  external_state: ExternalCase | null;
+  issued_documents: RelayedDocument[];
+  processing_days: number | null;
   submission_state: 'queued' | 'sent';
   queued_at: Date | string;
   connector_attempts: number;
 }
 
+interface Relayed {
+  documents: RelayedDocument[];
+  added: number;
+  pending: number;
+}
+
 const BATCH = 20;
 const LEASE_SECONDS = 60;
 const MAX_BACKOFF_SECONDS = 3600;
+const DOCUMENT_RETRY_SECONDS = 30;
 const GIVE_UP_MS = 24 * 3600 * 1000;
+const DAY_MS = 24 * 3600 * 1000;
 const ACTOR = 'tooling-connector';
-const RANK: Record<string, number> = { awaiting_user_validation: 0, submitted: 1, processing: 2, completed: 3, rejected: 3 };
-const TERMINAL = new Set<ExternalStatus>(['completed', 'rejected']);
+const TERMINAL = new Set<ExternalCase['stage']>(['completed', 'rejected']);
 
 function newTrace(): TraceContext {
   const traceId = randomBytes(16).toString('hex');
@@ -54,7 +64,7 @@ export class ConnectorWorker implements OnApplicationBootstrap, OnApplicationShu
     private readonly registry: ConnectorRegistry,
     private readonly catalog: ProcedureCatalog,
     private readonly resources: BackendResourcesClient,
-    private readonly outbox: Outbox,
+    private readonly workflow: RequestWorkflow,
     private readonly audit: AuditLog,
   ) {}
 
@@ -90,7 +100,8 @@ export class ConnectorWorker implements OnApplicationBootstrap, OnApplicationShu
   private claim(): Promise<DueRow[]> {
     return this.db.transaction('system', async (tx) => {
       const rows = await tx.query<DueRow>(
-        `select id, conversation_id, user_ref, procedure_id, status, fields, documents, connector, mandate_id, external_ref, submission_state, queued_at, connector_attempts
+        `select id, conversation_id, user_ref, procedure_id, fields, documents, connector, mandate_id, external_ref, external_state, issued_documents,
+           processing_days, submission_state, queued_at, connector_attempts
          from requests
          where submission_state in ('queued', 'sent') and next_check_at <= now()
          order by next_check_at
@@ -136,54 +147,96 @@ export class ConnectorWorker implements OnApplicationBootstrap, OnApplicationShu
     }
     const result = await connector.submit({ requestId: row.id, userRef: row.user_ref, procedure, fields: row.fields, documents, traceId: trace.traceId });
 
-    await this.db.transaction('system', async (tx) => {
-      if (result.kind === 'user_action_required') {
+    if (result.kind === 'user_action_required') {
+      await this.db.transaction('system', async (tx) => {
         const updated = await tx.query(`update requests set official_link = $2, submission_state = 'awaiting_user', connector_error = null, updated_at = now() where id = $1 and submission_state = 'queued' returning id`, [
           row.id,
           result.link,
         ]);
-        if (updated.length) await this.record(tx, row, trace, 'connector.submit', 'success', 'USER_ACTION_REQUIRED');
-        return;
-      }
+        if (!updated.length) return;
+        await this.workflow.publish(tx, row.id, trace.traceId, 'request.user_action_required');
+        await this.record(tx, row, trace, 'connector.submit', 'success', 'USER_ACTION_REQUIRED');
+      });
+      return;
+    }
+
+    const relayed = await this.relay(row, connector, result.externalRef, result.state, trace);
+    const receivedAt = Date.parse(result.receipt.receivedAt);
+    const dueAt = row.processing_days === null ? null : new Date(receivedAt + row.processing_days * DAY_MS).toISOString();
+    await this.db.transaction('system', async (tx) => {
       const updated = await tx.query(
-        `update requests set status = 'submitted', external_ref = $2, receipt = $3::jsonb, submission_state = 'sent', connector_attempts = 0, connector_error = null,
-           next_check_at = now() + make_interval(secs => $4), updated_at = now()
-         where id = $1 and submission_state = 'queued' returning updated_at`,
-        [row.id, result.externalRef, JSON.stringify(result.receipt), this.config.connectors.pollMs / 1000],
+        `update requests set external_ref = $2, receipt = $3::jsonb, submitted_at = $4, due_at = $5, external_state = $6::jsonb, issued_documents = $7::jsonb,
+           connector_attempts = 0, connector_error = null, updated_at = now()
+         where id = $1 and submission_state = 'queued' returning id`,
+        [row.id, result.externalRef, JSON.stringify(result.receipt), result.receipt.receivedAt, dueAt, JSON.stringify(result.state), JSON.stringify(relayed.documents)],
       );
       if (!updated.length) return;
-      await this.changed(tx, row, 'submitted', updated[0].updated_at as Date | string, trace);
+      await this.planNextCheck(tx, row.id, result.state, relayed);
+      await this.workflow.restate(tx, row.id, trace.traceId, 'request.submitted');
       await this.record(tx, row, trace, 'connector.submit', 'success', 'OK');
     });
   }
 
   private async track(row: DueRow, connector: AdministrationConnector, trace: TraceContext): Promise<void> {
-    const status = await connector.status(row.external_ref as string, { requestId: row.id, userRef: row.user_ref, traceId: trace.traceId });
+    const state = await connector.status(row.external_ref as string, { requestId: row.id, userRef: row.user_ref, traceId: trace.traceId });
+    const relayed = await this.relay(row, connector, row.external_ref as string, state, trace);
+    const changed = relayed.added > 0 || row.external_state === null || canonicalJson(state) !== canonicalJson(row.external_state);
     await this.db.transaction('system', async (tx) => {
-      if (RANK[status] <= RANK[row.status]) {
-        await tx.query(`update requests set connector_attempts = 0, connector_error = null, next_check_at = now() + make_interval(secs => $2) where id = $1`, [
-          row.id,
-          this.config.connectors.pollMs / 1000,
-        ]);
+      const [current] = await tx.query<{ external_state: ExternalCase | null }>('select external_state from requests where id = $1 for update', [row.id]);
+      if (canonicalJson(current?.external_state ?? null) !== canonicalJson(row.external_state)) {
+        // Paid or decided from the console while the X-Road answered: that answer may predate the change. Ask again.
+        await tx.query(`update requests set next_check_at = now() where id = $1`, [row.id]);
         return;
       }
-      const terminal = TERMINAL.has(status);
-      const [updated] = await tx.query<{ updated_at: Date | string }>(
-        `update requests set status = $2, submission_state = $3, connector_attempts = 0, connector_error = null,
-           next_check_at = case when $3 = 'done' then null else now() + make_interval(secs => $4) end, updated_at = now()
-         where id = $1 returning updated_at`,
-        [row.id, status, terminal ? 'done' : 'sent', this.config.connectors.pollMs / 1000],
-      );
-      await this.changed(tx, row, status, updated.updated_at, trace);
-      await this.record(tx, row, trace, 'connector.status', 'success', status.toUpperCase());
+      await tx.query(`update requests set connector_attempts = 0, connector_error = null where id = $1`, [row.id]);
+      await this.planNextCheck(tx, row.id, state, relayed);
+      if (!changed) return;
+      await tx.query(`update requests set external_state = $2::jsonb, issued_documents = $3::jsonb, updated_at = now() where id = $1`, [
+        row.id,
+        JSON.stringify(state),
+        JSON.stringify(relayed.documents),
+      ]);
+      const { from, to } = await this.workflow.restate(tx, row.id, trace.traceId, relayed.added > 0 ? 'request.documents_issued' : 'request.tracked');
+      await this.record(tx, row, trace, 'connector.status', 'success', from === to ? 'UPDATED' : to.toUpperCase());
     });
+  }
+
+  private async planNextCheck(tx: Tx, id: string, state: ExternalCase, relayed: Relayed): Promise<void> {
+    const terminal = TERMINAL.has(state.stage);
+    const late = state.completedAt !== undefined && Date.now() - Date.parse(state.completedAt) > GIVE_UP_MS;
+    if (terminal && relayed.pending > 0 && late) this.logger.error(`Demande ${id} : ${relayed.pending} document(s) délivré(s) non transmis après 24 h`);
+    if (terminal && (relayed.pending === 0 || late)) {
+      await tx.query(`update requests set submission_state = 'done', next_check_at = null where id = $1`, [id]);
+      return;
+    }
+    const delayMs = relayed.pending > 0 ? Math.min(DOCUMENT_RETRY_SECONDS * 1000, this.config.connectors.pollMs) : this.config.connectors.pollMs;
+    await tx.query(`update requests set submission_state = 'sent', next_check_at = now() + make_interval(secs => $2) where id = $1`, [id, delayMs / 1000]);
+  }
+
+  private async relay(row: DueRow, connector: AdministrationConnector, externalRef: string, state: ExternalCase, trace: TraceContext): Promise<Relayed> {
+    const documents = [...row.issued_documents];
+    if (!this.workflow.snapshots || !connector.document) return { documents, added: 0, pending: 0 };
+    let added = 0;
+    let pending = 0;
+    for (const issued of state.documents) {
+      if (documents.some((document) => document.sourceId === issued.id)) continue;
+      try {
+        const bytes = await connector.document(externalRef, issued.id, { requestId: row.id, userRef: row.user_ref, traceId: trace.traceId });
+        const stored = await this.resources.storeIssuedDocument(row.id, row.user_ref, { bytes, mimeType: issued.mimeType, idempotencyKey: `issued-${issued.id}` }, trace);
+        documents.push({ sourceId: issued.id, fileId: stored.id, name: issued.name, mimeType: issued.mimeType, createdAt: issued.issuedAt, expiresAt: stored.expiresAt });
+        added += 1;
+      } catch (error) {
+        pending += 1;
+        this.logger.warn(`Document délivré ${issued.id} de ${row.id} non transmis : ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return { documents, added, pending };
   }
 
   private async retry(row: DueRow, trace: TraceContext, error: unknown): Promise<void> {
     const code = error instanceof ProblemError ? error.code : 'UPSTREAM_UNAVAILABLE';
     const action = row.submission_state === 'queued' ? 'connector.submit' : 'connector.status';
     this.logger.warn(`${action} ${row.id} en échec (${code}) : ${error instanceof Error ? error.message : String(error)}`);
-    // A refusal by the administration, or a case it no longer knows, will not change on retry.
     if (error instanceof ProblemError && (error.status === 404 || error.status === 409)) {
       await this.finish(row, trace, 'failed', action, code, `refus définitif (${error.message}) ; le lien officiel reste disponible`);
       return;
@@ -216,15 +269,6 @@ export class ConnectorWorker implements OnApplicationBootstrap, OnApplicationShu
     if (mandate.status === 'revoked') return 'MANDATE_REVOKED';
     if (new Date(mandate.expires_at).getTime() <= Date.now()) return 'MANDATE_EXPIRED';
     return undefined;
-  }
-
-  private async changed(tx: Tx, row: DueRow, to: RequestStatus, at: Date | string, trace: TraceContext): Promise<void> {
-    await this.outbox.enqueue(
-      tx,
-      { kind: 'request.status_changed', requestId: row.id, conversationId: row.conversation_id, from: row.status, to, at: new Date(at).toISOString() },
-      trace.traceId,
-    );
-    row.status = to;
   }
 
   private record(tx: Tx, row: DueRow, trace: TraceContext, action: string, outcome: 'success' | 'error', code: string): Promise<void> {

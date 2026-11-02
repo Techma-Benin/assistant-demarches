@@ -1,9 +1,7 @@
 # Contribution
 
-Branches `interface/…`, `backend/…`, `tooling/…`, `infra/…`, `docs/…` depuis `dev`. PR vers `dev`, puis PR de livraison `dev` vers `main`. Pas de branche permanente par équipe. Commits `feat:`, `fix:`, `docs:`, `chore:`.
-
-Avant PR : `pnpm check`, vérifier les types générés et lire la checklist. Chaque changement de frontière inclut contrat, exemples, simulation et tests dans la même PR. Augmenter `contracts/manifest.json.version` ; rupture = nouveau répertoire v2. Revue par chaque groupe affecté ; sécurité pour consentement, authentification, données et connecteurs. Fusion quotidienne recommandée, branches de deux jours maximum.
-
-Les responsables nominatifs des trois groupes ne sont pas fournis ; `CODEOWNERS` utilise le compte administrateur connu en attendant. Ne pas inventer des équipes GitHub inexistantes. La règle de revue collective reste obligatoire dans la checklist.
-
-Une tâche métier est terminée lorsqu'elle est intégrée, conforme au contrat, testée, documentée et déployée en environnement de test. Le présent socle n'est pas un déploiement de produit.
+- Branches `interface/…`, `backend/…`, `tooling/…`, `docs/…` créées depuis `dev`, PR vers `dev`. Livraison par PR `dev` → `main`.
+- Commits Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`), en anglais. Textes d'interface en français.
+- Avant une PR : `pnpm check` passe, les types générés sont à jour.
+- Un changement de frontière passe d'abord par une PR de contrat (voir [CONTRACTS.md](CONTRACTS.md) §14), relue par les trois équipes.
+- Une fonctionnalité est terminée quand elle marche de bout en bout avec `pnpm dev`, sans donnée en dur, avec ses tests.

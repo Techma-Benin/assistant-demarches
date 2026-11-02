@@ -1,3 +1,4 @@
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { ajv } from './contracts.js';
 import {
@@ -18,6 +19,20 @@ import { newId } from './ids.js';
 import { ProblemError, forbidden, invalid, notFound } from './problem.js';
 
 export type Caller = { kind: 'applicant'; applicantRef: string } | { kind: 'official'; official: Official };
+export type Decider = { kind: 'official'; official: Official } | { kind: 'console'; actorRef: string };
+
+export interface StoredReply {
+  fingerprint: string;
+  reply: { status: number; body: unknown; type?: string };
+}
+
+interface PersistedState {
+  version: 1;
+  cases: Case[];
+  sequences: [string, number][];
+  officials: Official[];
+  replies: [string, StoredReply][];
+}
 export type CaseView = 'pending' | 'completed' | 'all';
 
 export interface CaseInput {
@@ -42,8 +57,8 @@ const HOUR = 3600 * 1000;
 type HistoricOutcome = 'assistant' | 'pending' | 'administration' | 'rejected';
 // Outcomes cycled through for procedures that need an official, so every dashboard state shows up.
 const REVIEW_OUTCOMES: HistoricOutcome[] = ['pending', 'administration', 'pending', 'rejected', 'administration'];
+const MAX_REPLIES = 10_000;
 
-/** In-memory state of the simulated administrations. Lost on restart, by design. */
 export class XroadStore {
   private readonly administrations = new Map(ADMINISTRATIONS.map((administration) => [administration.id, administration]));
   private readonly catalogue = new Map(CATALOGUE.map((entry) => [entry.procedure.id, entry]));
@@ -52,26 +67,60 @@ export class XroadStore {
   private readonly casesByRequest = new Map<string, string>();
   private readonly sequences = new Map<string, number>();
   private readonly forms = new Map<string, ValidateFunction>();
+  private readonly replies = new Map<string, StoredReply>();
   private readonly now: () => number;
+  private readonly stateFile?: string;
 
-  constructor(options: { seedHistory: boolean; now?: () => number }) {
+  constructor(options: { seedHistory: boolean; now?: () => number; stateFile?: string }) {
     this.now = options.now ?? Date.now;
+    this.stateFile = options.stateFile;
+    if (this.stateFile && existsSync(this.stateFile)) {
+      this.load(this.stateFile);
+      return;
+    }
     if (options.seedHistory) this.seedHistory();
+    this.save();
+  }
+
+  recall(scope: string): StoredReply | undefined {
+    return this.replies.get(scope);
+  }
+
+  remember(scope: string, stored: StoredReply): void {
+    this.replies.set(scope, stored);
+    if (this.replies.size > MAX_REPLIES) this.replies.delete(this.replies.keys().next().value as string);
+    this.save();
   }
 
   listAdministrations(): Administration[] {
     return [...this.administrations.values()];
   }
 
+  /**
+   * Ranked search over the official sheets: a citizen's question ("comment renouveler mon passeport") must find the sheet
+   * even when its words differ ("renouvellement"). Title matches weigh more; sheets covering fewer than half of the best
+   * sheet's terms are dropped. No query: the whole catalogue in its order.
+   */
   searchProcedures(query: string | undefined, administrationId: string | undefined): Procedure[] {
-    const words = (query ?? '').toLocaleLowerCase('fr').normalize('NFD').replace(/\p{Diacritic}/gu, '').split(/\s+/).filter(Boolean);
-    return [...this.catalogue.values()]
+    const procedures = [...this.catalogue.values()]
       .map((entry) => entry.procedure)
-      .filter((procedure) => !administrationId || procedure.administrationId === administrationId)
-      .filter((procedure) => {
-        const text = `${procedure.title} ${procedure.summary}`.toLocaleLowerCase('fr').normalize('NFD').replace(/\p{Diacritic}/gu, '');
-        return words.every((word) => text.includes(word));
-      });
+      .filter((procedure) => !administrationId || procedure.administrationId === administrationId);
+    const terms = [...new Set(searchTerms(query ?? ''))];
+    if (terms.length === 0) return query?.trim() ? [] : procedures;
+    const scored = procedures
+      .map((procedure) => {
+        const title = new Set(searchTerms(procedure.title));
+        const body = new Set(searchTerms(`${procedure.summary} ${procedure.official.authority ?? ''}`));
+        const matched = terms.filter((term) => title.has(term) || body.has(term));
+        const score = matched.reduce((sum, term) => sum + (title.has(term) ? 3 : 1), 0);
+        return { procedure, matched: matched.length, score };
+      })
+      .filter((entry) => entry.matched > 0);
+    const best = Math.max(0, ...scored.map((entry) => entry.matched));
+    return scored
+      .filter((entry) => entry.matched * 2 >= best)
+      .sort((a, b) => b.matched - a.matched || b.score - a.score || a.procedure.id.localeCompare(b.procedure.id))
+      .map((entry) => entry.procedure);
   }
 
   getProcedure(procedureId: string): Procedure {
@@ -90,6 +139,7 @@ export class XroadStore {
     const entry = this.catalogue.get(input.procedureId);
     if (!entry) throw notFound('Démarche inconnue');
     const { procedure, rule } = entry;
+    if (!rule) throw new ProblemError(409, 'INVALID_TRANSITION', `Dépôt par l'assistant non disponible pour cette démarche : voir la fiche officielle ${procedure.source.url}`);
     if (this.administrations.get(procedure.administrationId)?.connection.status !== 'connected') {
       throw new ProblemError(503, 'UPSTREAM_UNAVAILABLE', "Administration non connectée à X-Road : dépôt impossible, connexion recommandée");
     }
@@ -102,7 +152,7 @@ export class XroadStore {
     if (missing.length) throw new ProblemError(409, 'REQUEST_INCOMPLETE', `Pièces manquantes : ${missing.join(', ')}`);
 
     const at = this.iso();
-    const fee = procedure.feeFcfa > 0;
+    const fee = (procedure.feeFcfa ?? 0) > 0;
     const record: Case = {
       id: newId('cas', this.now()),
       reference: this.nextReference(rule.code),
@@ -114,7 +164,7 @@ export class XroadStore {
       status: fee ? 'awaiting_payment' : 'received',
       fields: { ...input.fields },
       documents: input.documents.map((document) => ({ ...document })),
-      payment: { amountFcfa: procedure.feeFcfa, status: fee ? 'pending' : 'not_required', method: null, reference: null, paidAt: null },
+      payment: { amountFcfa: procedure.feeFcfa ?? 0, status: fee ? 'pending' : 'not_required', method: null, reference: null, paidAt: null },
       steps: [
         step('form', "Formulaire complété avec l'assistant", 'done', 'assistant', at),
         step('documents', 'Pièces transmises', 'done', 'assistant', at),
@@ -128,6 +178,7 @@ export class XroadStore {
     this.cases.set(record.id, record);
     this.casesByRequest.set(record.requestId, record.id);
     if (record.status === 'received') this.instruct(record, rule);
+    this.save();
     return record;
   }
 
@@ -146,16 +197,19 @@ export class XroadStore {
     record.status = 'received';
     record.updatedAt = at;
     this.instruct(record, this.ruleOf(record));
+    this.save();
     return record;
   }
 
-  decide(official: Official, caseId: string, decision: 'approve' | 'reject', note: string | null): Case {
-    const record = this.getCase({ kind: 'official', official }, caseId);
+  decide(decider: Decider, caseId: string, decision: 'approve' | 'reject', note: string | null): Case {
+    const record = decider.kind === 'official' ? this.getCase(decider, caseId) : this.cases.get(caseId);
+    if (!record) throw notFound('Dossier inconnu');
     if (record.status !== 'in_review') throw new ProblemError(409, 'INVALID_TRANSITION', "Ce dossier n'attend pas de décision");
     const at = this.iso();
+    const verifier = decider.kind === 'official' ? decider.official.displayName : "un agent du ministère, depuis la console d'administration";
     if (decision === 'approve') {
       for (const blocked of record.steps.filter((candidate) => candidate.state === 'blocked')) {
-        Object.assign(blocked, { state: 'done', actor: 'administration', note: `Vérifié par ${official.displayName}`, at });
+        Object.assign(blocked, { state: 'done', actor: 'administration', note: `Vérifié par ${verifier}`, at });
       }
       this.updateStep(record, 'decision', { state: 'done', note: note ?? 'Dossier approuvé', at });
       this.issue(record, this.ruleOf(record), at);
@@ -166,6 +220,7 @@ export class XroadStore {
       record.status = 'rejected';
     }
     record.updatedAt = at;
+    this.save();
     return record;
   }
 
@@ -208,6 +263,7 @@ export class XroadStore {
       throw new ProblemError(409, 'INVALID_TRANSITION', 'Impossible de retirer le dernier super administrateur');
     }
     Object.assign(target, { administrationId, role });
+    this.save();
     return target;
   }
 
@@ -231,6 +287,32 @@ export class XroadStore {
         .slice(0, 5)
         .map(([procedureId, count]) => ({ procedureId, title: this.getProcedure(procedureId).title, count })),
     };
+  }
+
+  private save(): void {
+    if (!this.stateFile) return;
+    const state: PersistedState = {
+      version: 1,
+      cases: [...this.cases.values()],
+      sequences: [...this.sequences.entries()],
+      officials: [...this.officials.values()],
+      replies: [...this.replies.entries()],
+    };
+    const temporary = `${this.stateFile}.${process.pid}.tmp`;
+    writeFileSync(temporary, JSON.stringify(state));
+    renameSync(temporary, this.stateFile);
+  }
+
+  private load(file: string): void {
+    const state = JSON.parse(readFileSync(file, 'utf8')) as PersistedState;
+    if (state.version !== 1 || !Array.isArray(state.cases) || !Array.isArray(state.officials)) throw new Error(`État du X-Road illisible : ${file}`);
+    for (const record of state.cases) {
+      this.cases.set(record.id, record);
+      this.casesByRequest.set(record.requestId, record.id);
+    }
+    for (const [key, value] of state.sequences) this.sequences.set(key, value);
+    for (const official of state.officials) if (this.officials.has(official.id)) this.officials.set(official.id, official);
+    for (const [scope, stored] of state.replies) this.replies.set(scope, stored);
   }
 
   /** Administration an official may look at: their own, or any (null = all) for the super admin. */
@@ -269,7 +351,7 @@ export class XroadStore {
 
   private ruleOf(record: Case): InstructionRule {
     const entry = this.catalogue.get(record.procedureId);
-    if (!entry) throw new Error(`Démarche disparue du catalogue : ${record.procedureId}`);
+    if (!entry?.rule) throw new Error(`Démarche disparue du catalogue : ${record.procedureId}`);
     return entry.rule;
   }
 
@@ -308,6 +390,7 @@ export class XroadStore {
     };
     const end = this.now();
     for (const { procedure, rule } of this.catalogue.values()) {
+      if (!rule) continue;
       const total = 4 + Math.floor(random() * 6);
       for (let n = 0; n < total; n += 1) {
         const createdAt = end - Math.floor((1 + random() * 20) * 24) * HOUR;
@@ -323,7 +406,7 @@ export class XroadStore {
     const createdAt = new Date(createdAtMs).toISOString();
     const closedAt = new Date(createdAtMs + Math.floor(1 + random() * 72) * HOUR).toISOString();
     const reference = this.nextReference(rule.code, createdAtMs);
-    const paid = procedure.feeFcfa > 0;
+    const paid = (procedure.feeFcfa ?? 0) > 0;
     const steps: CaseStep[] = [
       step('form', "Formulaire complété avec l'assistant", 'done', 'assistant', createdAt),
       step('documents', 'Pièces transmises', 'done', 'assistant', createdAt),
@@ -358,7 +441,7 @@ export class XroadStore {
         sizeBytes: 1024,
       })),
       payment: paid
-        ? { amountFcfa: procedure.feeFcfa, status: 'paid', method: 'mobile_money', reference: `SIM-PAY-${reference.slice(-6)}`, paidAt: createdAt }
+        ? { amountFcfa: procedure.feeFcfa ?? 0, status: 'paid', method: 'mobile_money', reference: `SIM-PAY-${reference.slice(-6)}`, paidAt: createdAt }
         : { amountFcfa: 0, status: 'not_required', method: null, reference: null, paidAt: null },
       steps,
       issuedDocuments,
@@ -367,6 +450,25 @@ export class XroadStore {
       updatedAt: outcome === 'pending' ? createdAt : closedAt,
     };
   }
+}
+
+/** Words that say what the citizen wants to do rather than which procedure: they would match half the catalogue. */
+const STOP_WORDS = new Set(
+  ('au aux avec ce ces comment dans de des du elle en est et faire il je la le les leur ma mes moi mon nos notre ou par pour quel quelle ' +
+    'quels quelles qui quoi sa ses son sur ta tes ton une un vos votre obtenir avoir demande demander besoin veux voudrais peux puis doit ' +
+    'dois faut comme cette mais plus tout tous etre suis sont')
+    .split(' '),
+);
+
+/** Lowercase, no accents, no stop words, cut to a 6-letter stem ("renouveler" and "renouvellement" meet). */
+export function searchTerms(text: string): string[] {
+  return text
+    .toLocaleLowerCase('fr')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 3 && !STOP_WORDS.has(word))
+    .map((word) => word.slice(0, 6));
 }
 
 function step(id: string, label: string, state: CaseStep['state'], actor: CaseStep['actor'], at: string | null, note: string | null = null): CaseStep {

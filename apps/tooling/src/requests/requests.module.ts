@@ -1,6 +1,6 @@
 import { Injectable, Module, type OnModuleInit } from '@nestjs/common';
-import { newId } from '../common/ids.js';
-import { ConnectorRegistry } from '../connectors/connector.js';
+import { canonicalJson, newId } from '../common/ids.js';
+import { ConnectorRegistry, externalCaseOf } from '../connectors/connector.js';
 import { ProblemError } from '../common/problem.js';
 import { tools } from '../contracts.js';
 import { MandatesRepository } from '../mandates/mandates.repository.js';
@@ -9,6 +9,7 @@ import { ProcedureCatalog, ProceduresModule } from '../procedures/procedures.mod
 import { BackendResourcesClient, type FileMetadata, type Procedure } from '../resources/backend-resources.client.js';
 import { ResourcesModule } from '../resources/resources.module.js';
 import { FormSchemas } from './form-schemas.js';
+import { RequestWorkflow } from './request-workflow.js';
 import { XroadClient, type XroadCase } from '../xroad/xroad.client.js';
 import { RequestsRepository, toContract, type Fields, type RequestRecord, type RequestStatus } from './requests.repository.js';
 
@@ -30,12 +31,13 @@ class RequestTools implements OnModuleInit {
     private readonly connectors: ConnectorRegistry,
     private readonly mandates: MandatesRepository,
     private readonly xroad: XroadClient,
+    private readonly workflow: RequestWorkflow,
   ) {}
 
   onModuleInit(): void {
     const create: ToolHandler<Procedure> = {
       name: 'request.create',
-      prepare: (args, call) => this.catalog.get(args.procedureId as string, call.trace),
+      prepare: (args, call) => this.catalog.getFileable(args.procedureId as string, call.trace),
       run: (_args, call) => this.create(call),
     };
     const update: ToolHandler<Loaded> = {
@@ -67,7 +69,12 @@ class RequestTools implements OnModuleInit {
       run: async (_args, call) => {
         const { request, paid } = call.prepared;
         await call.requireMandate(request.procedureId);
-        await this.requests.checkSoon(call.tx, request.id);
+        const state = externalCaseOf(paid);
+        const before = await this.workflow.load(call.tx, request.id, true);
+        if (canonicalJson(before.external_state) !== canonicalJson(state)) {
+          await this.requests.recordExternal(call.tx, request.id, state);
+          await this.workflow.restate(call.tx, request.id, call.trace.traceId, 'request.paid');
+        }
         return {
           requestId: request.id,
           caseReference: paid.reference,
@@ -112,9 +119,10 @@ class RequestTools implements OnModuleInit {
       fields: {},
       documents: [],
       officialLink: null,
-    });
+    }, { administrationId: procedure.administrationId as string, title: String(procedure.title).slice(0, 200), processingDays: (procedure.processingDays as number | null) ?? null });
     const output = toContract(request);
-    call.emit({ kind: 'request.created', request: output });
+    if (this.workflow.snapshots) await this.workflow.publish(call.tx, request.id, call.trace.traceId, 'request.created');
+    else call.emit({ kind: 'request.created', request: output });
     return output;
   }
 
@@ -200,7 +208,9 @@ class RequestTools implements OnModuleInit {
 
   private async save(before: RequestRecord, next: RequestRecord, call: ToolInvocation<unknown>) {
     const saved = await this.requests.update(call.tx, next);
-    if (saved.status !== before.status) {
+    if (this.workflow.snapshots) {
+      await this.workflow.publish(call.tx, saved.id, call.trace.traceId, saved.status === 'awaiting_user_validation' && before.status !== saved.status ? 'request.validated' : 'request.updated');
+    } else if (saved.status !== before.status) {
       call.emit({ kind: 'request.status_changed', requestId: saved.id, conversationId: saved.conversationId, from: before.status, to: saved.status, at: saved.updatedAt });
     }
     return toContract(saved);

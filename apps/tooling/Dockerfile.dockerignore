@@ -1,8 +1,0 @@
-# Contexte de construction de apps/tooling/Dockerfile (BuildKit).
-.git
-**/node_modules
-**/dist
-**/.turbo
-**/.env
-**/.env.*
-**/tooling.env

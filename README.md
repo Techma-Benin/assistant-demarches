@@ -1,60 +1,55 @@
-# Assistant démarches — Techma Bénin
+# Assistant-démarches — Techma Bénin
 
-Socle de collaboration pour trois équipes : contrats v1, types générés, client TypeScript, simulations exécutables et tests. Le [Backend NestJS](apps/backend/README.md) implémente les parcours texte C1/C2/C3/C4, la configuration, les fichiers et un worker BullMQ. Le [Tooling MCP](apps/tooling/README.md) implémente les outils, mandats, demandes et événements. Les interfaces métier et les intégrations de déploiement restent à valider.
+L'usager fait sa démarche administrative dans une conversation (web ou WhatsApp) : il s'informe sur la fiche officielle, prépare, dépose, paie et suit. Le dossier arrive dans une console unique pour tous les ministères, au-dessus d'un X-Road simulé.
 
-## Tester le Backend et le Tooling ensemble
-
-Sur la branche `integration/backend-tooling`, `pnpm test:integration` vérifie les vrais services et `pnpm dev:integration` ouvre une pile locale avec Swagger sur le port 4110. Préparation des dépendances, parcours manuel et résultats attendus : [guide d’intégration](integration/README.md).
+À lire dans cet ordre :
+1. [Spécification fonctionnelle](docs/spec.md) : ce que l'application fait.
+2. [Contrat v2](CONTRACTS.md) et `contracts/v2/` : la seule référence entre les équipes.
+3. [Architecture](docs/architecture.md) : services, processus, décisions.
+4. [Tâches par équipe](docs/taches.md) : ce qui reste à construire.
 
 ## Démarrer
 
-Node.js 22 et pnpm 10.20.0 (version déclarée dans `package.json`). Si Corepack est disponible : `corepack enable`, puis `corepack prepare pnpm@10.20.0 --activate`.
-
-```sh
-git clone https://github.com/Techma-Benin/assistant-demarches.git
-cd assistant-demarches
-git switch dev
-pnpm install --frozen-lockfile
-pnpm check
-pnpm mocks
-```
-
-Simulations en mémoire : Backend `http://127.0.0.1:4010`, Tooling `http://127.0.0.1:4020/mcp`. Écoute locale uniquement. Aucun fournisseur, aucune clé, aucune démarche officielle nécessaires. Tout est perdu au redémarrage.
-
-**Lire [CONTRACTS.md](CONTRACTS.md) avant d'implémenter une frontière entre groupes.** Les JSON de `contracts/v1/` sont la référence machine ; le guide fixe les comportements et l'authentification. Le PDF technique décrit l'intention initiale ; les décisions précisées dans ce dépôt priment pour l'implémentation.
-
-## Qui travaille où ?
-
-| Équipe | Répertoires | Dépendances simulées |
-|---|---|---|
-| Interface | `apps/interface/whatsapp-adapter`, `web-widget`, `admin-console`, `packages/ui` | C1 + C3 et WebSocket sur le Backend simulé |
-| Backend | `apps/backend`, `prompts`, `evals`, `packages/conversation-client` | Serveur MCP Streamable HTTP sur le Tooling simulé |
-| Tooling | `apps/tooling`, `content` | Client MCP et fixtures dans les tests ; réception C4 simulée |
-| Commun | `contracts`, `packages/contracts-ts`, `packages/observability`, `infra` | Tests et conventions partagés |
-
-Les types C1/C3 sont générés par `pnpm contracts:generate` ; ne pas les modifier à la main. `pnpm check` valide schémas, OpenAPI, exemples, compilation TypeScript, parcours HTTP/MCP/WebSocket, suites Backend/Tooling et leur intégration réelle. Prévoir PostgreSQL et Redis pour le parcours intégré ; voir le [guide d’intégration](integration/README.md).
-
-## Branches
-
-`main` : livraison stable. `dev` : intégration. Chaque chantier part de `dev` et ouvre une PR vers `dev` :
+Prérequis : Node.js 22 et pnpm 10.20.0 (`corepack enable`). Pas de Docker, pas de Java, pas de PostgreSQL à installer.
 
 ```sh
 git switch dev
-git pull --ff-only
-git switch -c interface/whatsapp-webhook
-# ou backend/conversations, tooling/procedures-search
+pnpm install
+cp .env.example .env      # renseigner GROQ_API_KEY
+pnpm dev
 ```
 
-Branches courtes ; Conventional Commits ; CI verte ; relecture par un autre groupe ; revue sécurité pour mandat, authentification et données personnelles. Promotion `dev` → `main` par PR de livraison. Voir [CONTRIBUTING.md](CONTRIBUTING.md).
+`pnpm dev` démarre PostgreSQL (binaires npm) et Keycloak (téléchargé une fois dans `.local/` avec un Java portable), importe le realm et les comptes de démo, puis lance les applications. Le premier démarrage télécharge environ 230 Mo.
 
-## Documents
+| Commande | Effet |
+|---|---|
+| `pnpm dev` | Toute la pile |
+| `pnpm dev:infra` | PostgreSQL et Keycloak seulement, pour lancer soi-même une application |
+| `pnpm dev backend tooling` | L'infrastructure et les applications citées |
+| `pnpm dev:reset` | Efface les données locales (bases, realm, fichiers) |
+| `pnpm check` | Contrats, types générés, typage et tests de toutes les applications |
+| `pnpm catalogue:import` | Réimporte le catalogue de service-public.bj |
 
-- [Contrats et comportements](CONTRACTS.md)
-- [Architecture et décisions](docs/architecture.md)
-- [Démarrage par équipe](docs/team-start.md)
-- [Analyse des lacunes du PDF](docs/contract-review.md)
-- [État de livraison et limites](docs/readiness.md)
+Comptes de démo, mot de passe `demo-2026` :
 
-Objectif interne : démonstration et dossier prêts le 6 novembre 2026. Selon le communiqué local, dépôt des candidatures du 29 octobre au 12 novembre 2026 ; règlement complet à confirmer avant candidature.
+| Compte | Rôle |
+|---|---|
+| `aminata.usager` | Usager |
+| `agent.justice`, `admin.justice` | Agent et admin de la Justice |
+| `agent.enseignement` | Agent de l'Enseignement |
+| `agent.anip` | Agent de l'ANIP |
+| `super.admin` | Super admin, toutes les administrations |
+| `operateur` | Écran opérateur |
 
-Les serveurs MCP sont désormais administrables par connexion : ajout d’URL/authentification, découverte réelle des actions, activation du serveur et permissions individuelles. Le serveur métier Techma reste connecté ; d’autres serveurs peuvent exposer leurs propres actions hors catalogue historique. [Guide des connexions MCP](docs/mcp-connections.md).
+Console Keycloak : <http://127.0.0.1:8080> (admin / admin, poste local uniquement).
+
+## Qui travaille où
+
+| Équipe | Dossiers |
+|---|---|
+| Interface | `apps/interface/*`, `packages/ui` |
+| Backend | `apps/backend`, `prompts` |
+| Tooling | `apps/tooling`, `apps/xroad-sim`, `content` |
+| Commun | `contracts`, `packages/contracts-ts`, `infra`, `scripts` |
+
+Branches et revue : [CONTRIBUTING.md](CONTRIBUTING.md). Échéance : démonstration complète le 6 novembre 2026.

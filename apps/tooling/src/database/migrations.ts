@@ -153,6 +153,27 @@ alter table requests
 create index requests_connector_due_idx on requests (next_check_at) where submission_state in ('queued','sent');
 `,
   },
+  {
+    version: 4,
+    name: 'department snapshots and administrative actions',
+    sql: `
+alter table requests drop constraint requests_status_check;
+alter table requests add constraint requests_status_check
+  check (status in ('draft','ready','awaiting_user_validation','submitted','processing','completed','rejected','cancelled','blocked'));
+alter table requests
+  add column administration_id text,
+  add column title text,
+  add column processing_days integer,
+  add column revision integer not null default 0,
+  add column submitted_at timestamptz,
+  add column due_at timestamptz,
+  add column external_state jsonb,
+  add column assigned_to text,
+  add column information_request jsonb,
+  add column issued_documents jsonb not null default '[]'::jsonb;
+create index requests_administration_idx on requests (administration_id);
+`,
+  },
 ];
 
 const MIGRATION_LOCK = 7_304_221_001;

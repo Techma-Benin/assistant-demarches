@@ -1,0 +1,3196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.techma.example/v2/domain.schema.json",
+  "title": "Schémas partagés — Assistant-démarches v2",
+  "$defs": {
+    "ConversationId": {
+      "type": "string",
+      "pattern": "^cnv_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "MessageId": {
+      "type": "string",
+      "pattern": "^msg_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Généré par le client pour dédupliquer les envois."
+    },
+    "EventId": {
+      "type": "string",
+      "pattern": "^evt_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "UserRef": {
+      "type": "string",
+      "pattern": "^usr_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Référence opaque de l’usager, attribuée par le Backend. Jamais fournie par le navigateur ni par le modèle."
+    },
+    "FileId": {
+      "type": "string",
+      "pattern": "^fil_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "RequestId": {
+      "type": "string",
+      "pattern": "^req_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "CaseId": {
+      "type": "string",
+      "pattern": "^cas_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "OfficialId": {
+      "type": "string",
+      "pattern": "^off_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "MandateId": {
+      "type": "string",
+      "pattern": "^mdt_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "ChallengeId": {
+      "type": "string",
+      "pattern": "^chl_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "DocumentId": {
+      "type": "string",
+      "pattern": "^doc_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "UploadId": {
+      "type": "string",
+      "pattern": "^upl_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "UnansweredId": {
+      "type": "string",
+      "pattern": "^unq_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "ActivityId": {
+      "type": "string",
+      "pattern": "^act_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "AdministrationId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,62}$",
+      "description": "Identifiant stable d’une administration du X-Road simulé (ex. justice, anip)."
+    },
+    "ProcedureId": {
+      "type": "string",
+      "pattern": "^PS[0-9]{5}$",
+      "description": "Identifiant officiel de la fiche sur service-public.bj."
+    },
+    "Locale": {
+      "type": "string",
+      "enum": [
+        "fr"
+      ]
+    },
+    "Channel": {
+      "type": "string",
+      "enum": [
+        "web",
+        "whatsapp"
+      ]
+    },
+    "Source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "procedureId": {
+          "$ref": "#/$defs/ProcedureId"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Fiche publique sur service-public.bj."
+        },
+        "retrievedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Date de collecte de la fiche."
+        }
+      },
+      "required": [
+        "procedureId",
+        "url",
+        "retrievedAt"
+      ]
+    },
+    "RequiredDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "documentType": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,62}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "acceptedMimeTypes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png"
+            ]
+          }
+        }
+      },
+      "required": [
+        "documentType",
+        "label",
+        "acceptedMimeTypes"
+      ]
+    },
+    "Filing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Cas couverts par le dépôt via l’assistant ; les autres cas suivent la fiche officielle."
+        },
+        "formSchema": {
+          "type": "object",
+          "description": "JSON Schema 2020-12 des champs du dossier."
+        },
+        "requiredDocuments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RequiredDocument"
+          }
+        },
+        "feeFcfa": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "processingDays": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "scope",
+        "formSchema",
+        "requiredDocuments",
+        "feeFcfa",
+        "processingDays"
+      ]
+    },
+    "Procedure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ProcedureId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "administrationId": {
+          "$ref": "#/$defs/AdministrationId"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "authority": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "feeFcfa": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Montant unique publié par la fiche, sinon null (voir inPerson/online)."
+        },
+        "processingDays": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "inPerson": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "fee": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "delay": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "documents": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "process": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "where": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uri"
+                }
+              },
+              "required": [
+                "fee",
+                "delay",
+                "documents",
+                "process",
+                "where",
+                "url"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Texte officiel du canal « sur place », sans réécriture."
+        },
+        "online": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "fee": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "delay": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "documents": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "process": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "where": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uri"
+                }
+              },
+              "required": [
+                "fee",
+                "delay",
+                "documents",
+                "process",
+                "where",
+                "url"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Texte officiel du canal « en ligne », sans réécriture."
+        },
+        "hours": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "filing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Filing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Présent si l’assistant peut déposer le dossier ; null = information seulement."
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "administrationId",
+        "summary",
+        "target",
+        "authority",
+        "feeFcfa",
+        "processingDays",
+        "inPerson",
+        "online",
+        "hours",
+        "source",
+        "filing"
+      ]
+    },
+    "ProcedurePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Procedure"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Curseur opaque de la page suivante ; null en fin de liste."
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "Administration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/AdministrationId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "shortName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "themes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": "Thèmes affichés à l’accueil usager."
+        },
+        "connection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "connected",
+                "not_connected"
+              ]
+            },
+            "since": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "status",
+            "since"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "shortName",
+        "themes",
+        "connection"
+      ]
+    },
+    "AdministrationList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Administration"
+          }
+        }
+      },
+      "required": [
+        "items"
+      ]
+    },
+    "OfficialRole": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "admin",
+        "super_admin"
+      ]
+    },
+    "Official": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/OfficialId"
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Identifiant Keycloak (claim sub) de la personne."
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "jobTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "administrationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdministrationId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null pour un super_admin."
+        },
+        "role": {
+          "$ref": "#/$defs/OfficialRole"
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        },
+        "active": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "email",
+        "displayName",
+        "jobTitle",
+        "administrationId",
+        "role",
+        "avatarUrl",
+        "active"
+      ]
+    },
+    "OfficialPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Official"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Curseur opaque de la page suivante ; null en fin de liste."
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "OfficialInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "jobTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "administrationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdministrationId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "$ref": "#/$defs/OfficialRole"
+        }
+      },
+      "required": [
+        "email",
+        "displayName",
+        "jobTitle",
+        "administrationId",
+        "role"
+      ]
+    },
+    "OfficialCreated": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "official": {
+          "$ref": "#/$defs/Official"
+        },
+        "temporaryPassword": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Mot de passe Keycloak à changer à la première connexion. Retourné une seule fois."
+        }
+      },
+      "required": [
+        "official",
+        "temporaryPassword"
+      ]
+    },
+    "OfficialUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "administrationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdministrationId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "$ref": "#/$defs/OfficialRole"
+        },
+        "active": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "administrationId",
+        "role",
+        "active"
+      ]
+    },
+    "OfficialRegistration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "jobTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "administrationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdministrationId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "$ref": "#/$defs/OfficialRole"
+        }
+      },
+      "required": [
+        "subject",
+        "email",
+        "displayName",
+        "jobTitle",
+        "administrationId",
+        "role"
+      ]
+    },
+    "ProfileUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "jobTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "displayName",
+        "jobTitle"
+      ]
+    },
+    "AvatarInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "avatarUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "required": [
+        "avatarUrl"
+      ]
+    },
+    "Permission": {
+      "type": "string",
+      "enum": [
+        "cases:read",
+        "cases:act",
+        "officials:read",
+        "officials:manage",
+        "administrations:all"
+      ]
+    },
+    "Me": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "official": {
+          "$ref": "#/$defs/Official"
+        },
+        "administration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Administration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Permission"
+          }
+        }
+      },
+      "required": [
+        "official",
+        "administration",
+        "permissions"
+      ]
+    },
+    "CaseStatus": {
+      "type": "string",
+      "enum": [
+        "awaiting_payment",
+        "received",
+        "in_review",
+        "information_requested",
+        "completed",
+        "rejected"
+      ]
+    },
+    "CaseView": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "completed",
+        "rejected",
+        "all"
+      ],
+      "description": "pending = received, in_review, information_requested."
+    },
+    "CaseStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,62}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "done",
+            "blocked",
+            "pending"
+          ]
+        },
+        "actor": {
+          "type": "string",
+          "enum": [
+            "assistant",
+            "applicant",
+            "administration"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "state",
+        "actor",
+        "note",
+        "at"
+      ]
+    },
+    "CaseDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/DocumentId"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "submitted",
+            "issued"
+          ],
+          "description": "submitted = pièce de l’usager ; issued = document délivré par l’administration (simulation)."
+        },
+        "documentType": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,62}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "mimeType": {
+          "type": "string",
+          "enum": [
+            "application/pdf",
+            "image/jpeg",
+            "image/png"
+          ]
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10485760
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "documentType",
+        "name",
+        "mimeType",
+        "sizeBytes",
+        "createdAt"
+      ]
+    },
+    "CasePayment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "amountFcfa": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "not_required",
+            "pending",
+            "paid"
+          ]
+        },
+        "reference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paidAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "simulated": {
+          "const": true
+        }
+      },
+      "required": [
+        "amountFcfa",
+        "status",
+        "reference",
+        "paidAt",
+        "simulated"
+      ]
+    },
+    "InformationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "requestedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "requestedBy": {
+          "$ref": "#/$defs/OfficialId"
+        }
+      },
+      "required": [
+        "note",
+        "requestedAt",
+        "requestedBy"
+      ]
+    },
+    "Case": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/CaseId"
+        },
+        "reference": {
+          "type": "string",
+          "pattern": "^SIM-[A-Z]{2,5}-[0-9]{4}-[0-9]{6}$"
+        },
+        "simulated": {
+          "const": true
+        },
+        "procedureId": {
+          "$ref": "#/$defs/ProcedureId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "administrationId": {
+          "$ref": "#/$defs/AdministrationId"
+        },
+        "applicantRef": {
+          "$ref": "#/$defs/UserRef"
+        },
+        "requestId": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "channel": {
+          "$ref": "#/$defs/Channel"
+        },
+        "status": {
+          "$ref": "#/$defs/CaseStatus"
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          "description": "Valeurs du formulaire de la démarche, conformes à Procedure.filing.formSchema."
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CaseDocument"
+          }
+        },
+        "payment": {
+          "$ref": "#/$defs/CasePayment"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/CaseStep"
+          }
+        },
+        "informationRequest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InformationRequest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Renseigné tant que status = information_requested."
+        },
+        "claimedBy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OfficialId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "completedBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "assistant",
+            "administration",
+            null
+          ]
+        },
+        "decisionNote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "reference",
+        "simulated",
+        "procedureId",
+        "title",
+        "administrationId",
+        "applicantRef",
+        "requestId",
+        "channel",
+        "status",
+        "fields",
+        "documents",
+        "payment",
+        "steps",
+        "informationRequest",
+        "claimedBy",
+        "completedBy",
+        "decisionNote",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CasePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Case"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Curseur opaque de la page suivante ; null en fin de liste."
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "DocumentRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "documentType": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,62}$"
+        },
+        "uploadId": {
+          "$ref": "#/$defs/UploadId"
+        }
+      },
+      "required": [
+        "documentType",
+        "uploadId"
+      ]
+    },
+    "CaseInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "procedureId": {
+          "$ref": "#/$defs/ProcedureId"
+        },
+        "channel": {
+          "$ref": "#/$defs/Channel"
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          "description": "Valeurs du formulaire de la démarche, conformes à Procedure.filing.formSchema."
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DocumentRef"
+          }
+        }
+      },
+      "required": [
+        "requestId",
+        "procedureId",
+        "channel",
+        "fields",
+        "documents"
+      ]
+    },
+    "CaseResponseInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          "description": "Valeurs du formulaire de la démarche, conformes à Procedure.filing.formSchema."
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DocumentRef"
+          }
+        }
+      },
+      "required": [
+        "message",
+        "fields",
+        "documents"
+      ]
+    },
+    "CaseActionInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "claim",
+            "request_information",
+            "approve",
+            "reject"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1000,
+          "description": "Obligatoire pour request_information et reject."
+        }
+      },
+      "required": [
+        "action",
+        "note"
+      ]
+    },
+    "PaymentInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "mobile_money"
+        }
+      },
+      "required": [
+        "method"
+      ]
+    },
+    "Upload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/UploadId"
+        },
+        "mimeType": {
+          "type": "string",
+          "enum": [
+            "application/pdf",
+            "image/jpeg",
+            "image/png"
+          ]
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10485760
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "mimeType",
+        "sizeBytes",
+        "expiresAt"
+      ]
+    },
+    "Metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "administrationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdministrationId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "period": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "to": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ]
+        },
+        "received": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "informationRequested": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completedByAssistant": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "medianProcessingHours": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "byChannel": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "channel": {
+                "$ref": "#/$defs/Channel"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "channel",
+              "count"
+            ]
+          }
+        },
+        "topProcedures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "procedureId": {
+                "$ref": "#/$defs/ProcedureId"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "procedureId",
+              "title",
+              "count"
+            ]
+          }
+        }
+      },
+      "required": [
+        "administrationId",
+        "period",
+        "received",
+        "pending",
+        "informationRequested",
+        "completed",
+        "completedByAssistant",
+        "rejected",
+        "medianProcessingHours",
+        "byChannel",
+        "topProcedures"
+      ]
+    },
+    "Dashboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "$ref": "#/$defs/Metrics"
+        },
+        "unansweredOpen": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "metrics",
+        "unansweredOpen"
+      ]
+    },
+    "ActivityEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ActivityId"
+        },
+        "caseId": {
+          "$ref": "#/$defs/CaseId"
+        },
+        "caseReference": {
+          "type": "string"
+        },
+        "administrationId": {
+          "$ref": "#/$defs/AdministrationId"
+        },
+        "actor": {
+          "type": "string",
+          "enum": [
+            "assistant",
+            "applicant",
+            "administration"
+          ]
+        },
+        "officialId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OfficialId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "case.created",
+            "case.paid",
+            "step.completed",
+            "case.claimed",
+            "information.requested",
+            "information.provided",
+            "case.approved",
+            "case.rejected",
+            "document.issued"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "caseId",
+        "caseReference",
+        "administrationId",
+        "actor",
+        "officialId",
+        "action",
+        "note",
+        "at"
+      ]
+    },
+    "ActivityPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ActivityEntry"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Curseur opaque de la page suivante ; null en fin de liste."
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "UnansweredEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/UnansweredId"
+        },
+        "administrationId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdministrationId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null si aucune administration n’a pu être rattachée (visible du super admin seulement)."
+        },
+        "theme": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 100
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "no_procedure_found",
+            "no_source",
+            "model_unavailable",
+            "tool_failed"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "resolved"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolvedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "administrationId",
+        "theme",
+        "reason",
+        "status",
+        "createdAt",
+        "resolvedAt"
+      ]
+    },
+    "UnansweredPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UnansweredEntry"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Curseur opaque de la page suivante ; null en fin de liste."
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "HomeContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "themes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "administrationId": {
+                "$ref": "#/$defs/AdministrationId"
+              },
+              "administrationName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              }
+            },
+            "required": [
+              "label",
+              "administrationId",
+              "administrationName"
+            ]
+          },
+          "description": "Thèmes des administrations connectées."
+        },
+        "suggestions": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "procedureId": {
+                "$ref": "#/$defs/ProcedureId"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "assisted": {
+                "type": "boolean",
+                "description": "true si l’assistant peut déposer le dossier."
+              }
+            },
+            "required": [
+              "procedureId",
+              "title",
+              "assisted"
+            ]
+          },
+          "description": "Démarches déposables puis les plus demandées."
+        }
+      },
+      "required": [
+        "themes",
+        "suggestions"
+      ]
+    },
+    "GuestSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "JWT invité signé par le Backend."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "token",
+        "expiresAt"
+      ]
+    },
+    "Conversation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ConversationId"
+        },
+        "channel": {
+          "$ref": "#/$defs/Channel"
+        },
+        "locale": {
+          "$ref": "#/$defs/Locale"
+        },
+        "authenticated": {
+          "type": "boolean",
+          "description": "true si la conversation est rattachée à un compte Keycloak ou à un numéro WhatsApp vérifié."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastMessageAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "channel",
+        "locale",
+        "authenticated",
+        "createdAt",
+        "lastMessageAt"
+      ]
+    },
+    "ConversationPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Conversation"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Curseur opaque de la page suivante ; null en fin de liste."
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "ConversationInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "locale": {
+          "$ref": "#/$defs/Locale"
+        }
+      },
+      "required": [
+        "locale"
+      ]
+    },
+    "AttachInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "guestToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "guestToken"
+      ]
+    },
+    "Content": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "audio"
+            },
+            "fileId": {
+              "$ref": "#/$defs/FileId"
+            }
+          },
+          "required": [
+            "type",
+            "fileId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "file"
+            },
+            "fileId": {
+              "$ref": "#/$defs/FileId"
+            },
+            "documentType": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Réponse à un bloc fileRequest ; null pour une pièce libre."
+            }
+          },
+          "required": [
+            "type",
+            "fileId",
+            "documentType"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "interaction"
+            },
+            "actionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "type",
+            "actionId",
+            "value"
+          ]
+        }
+      ]
+    },
+    "MessageInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/MessageId"
+        },
+        "content": {
+          "$ref": "#/$defs/Content"
+        },
+        "sentAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "content",
+        "sentAt"
+      ]
+    },
+    "MessageAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "messageId": {
+          "$ref": "#/$defs/MessageId"
+        },
+        "conversationId": {
+          "$ref": "#/$defs/ConversationId"
+        },
+        "status": {
+          "const": "accepted"
+        }
+      },
+      "required": [
+        "messageId",
+        "conversationId",
+        "status"
+      ]
+    },
+    "UserMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/MessageId"
+        },
+        "content": {
+          "$ref": "#/$defs/Content"
+        },
+        "transcript": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Transcription d’un message vocal."
+        },
+        "sentAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "content",
+        "transcript",
+        "sentAt"
+      ]
+    },
+    "RequestStatus": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "ready",
+        "submitted",
+        "cancelled"
+      ],
+      "description": "Brouillon côté Tooling. Après submitted, l’état fait foi dans le dossier X-Road (caseId)."
+    },
+    "RequestField": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "value": {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "answer",
+            "document",
+            null
+          ],
+          "description": "Provenance affichée dans le panneau « vos informations »."
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "value",
+        "source"
+      ]
+    },
+    "RequestDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "documentType": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,62}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "fileId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "documentType",
+        "label",
+        "fileId"
+      ]
+    },
+    "Request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "conversationId": {
+          "$ref": "#/$defs/ConversationId"
+        },
+        "procedureId": {
+          "$ref": "#/$defs/ProcedureId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "administrationId": {
+          "$ref": "#/$defs/AdministrationId"
+        },
+        "status": {
+          "$ref": "#/$defs/RequestStatus"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RequestField"
+          }
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RequestDocument"
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": "Champs et pièces encore requis avant dépôt."
+        },
+        "caseId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CaseId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "conversationId",
+        "procedureId",
+        "title",
+        "administrationId",
+        "status",
+        "fields",
+        "documents",
+        "missing",
+        "caseId",
+        "updatedAt"
+      ]
+    },
+    "Block": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Source"
+              },
+              "description": "Obligatoire et non vide pour toute information administrative."
+            }
+          },
+          "required": [
+            "type",
+            "text",
+            "sources"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "buttons"
+            },
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 24
+                  }
+                },
+                "required": [
+                  "id",
+                  "label"
+                ]
+              }
+            }
+          },
+          "required": [
+            "type",
+            "items"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "form"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "fields": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "number",
+                      "date"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "required",
+                  "type"
+                ]
+              }
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "fields"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "fileRequest"
+            },
+            "requestId": {
+              "$ref": "#/$defs/RequestId"
+            },
+            "documentType": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,62}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "acceptedMimeTypes": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "received": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "requestId",
+            "documentType",
+            "label",
+            "acceptedMimeTypes",
+            "received"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "loginRequired"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          },
+          "required": [
+            "type",
+            "reason"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "consent"
+            },
+            "challenge": {
+              "$ref": "#/$defs/Challenge"
+            }
+          },
+          "required": [
+            "type",
+            "challenge"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "requestCard"
+            },
+            "request": {
+              "$ref": "#/$defs/Request"
+            }
+          },
+          "required": [
+            "type",
+            "request"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "caseCard"
+            },
+            "case": {
+              "$ref": "#/$defs/Case"
+            }
+          },
+          "required": [
+            "type",
+            "case"
+          ]
+        }
+      ]
+    },
+    "AgentMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/MessageId"
+        },
+        "conversationId": {
+          "$ref": "#/$defs/ConversationId"
+        },
+        "blocks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Block"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "conversationId",
+        "blocks",
+        "createdAt"
+      ]
+    },
+    "Event": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "specversion": {
+          "const": "1.0"
+        },
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "urn:techma:backend",
+            "urn:techma:tooling"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "bj.techma.message.received.v2",
+            "bj.techma.message.sent.v2",
+            "bj.techma.case.updated.v2",
+            "bj.techma.tool.called.v2",
+            "bj.techma.mandate.granted.v2",
+            "bj.techma.mandate.revoked.v2"
+          ],
+          "description": "Toujours bj.techma.{data.kind}.v2."
+        },
+        "time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "datacontenttype": {
+          "const": "application/json"
+        },
+        "data": {
+          "$ref": "#/$defs/EventData"
+        }
+      },
+      "required": [
+        "specversion",
+        "id",
+        "source",
+        "type",
+        "time",
+        "datacontenttype",
+        "data"
+      ]
+    },
+    "EventData": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "message.received"
+            },
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "message": {
+              "$ref": "#/$defs/UserMessage"
+            }
+          },
+          "required": [
+            "kind",
+            "conversationId",
+            "message"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "message.sent"
+            },
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "message": {
+              "$ref": "#/$defs/AgentMessage"
+            }
+          },
+          "required": [
+            "kind",
+            "conversationId",
+            "message"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "case.updated"
+            },
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "case": {
+              "$ref": "#/$defs/Case"
+            }
+          },
+          "required": [
+            "kind",
+            "conversationId",
+            "case"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "tool.called"
+            },
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "toolName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "success",
+                "error"
+              ]
+            },
+            "code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "kind",
+            "conversationId",
+            "toolName",
+            "outcome",
+            "code"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "mandate.granted",
+                "mandate.revoked"
+              ]
+            },
+            "mandate": {
+              "$ref": "#/$defs/Mandate"
+            }
+          },
+          "required": [
+            "kind",
+            "mandate"
+          ]
+        }
+      ]
+    },
+    "EventPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Event"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Curseur opaque de la page suivante ; null en fin de liste."
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "SocketTicket": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "required": [
+        "ticket",
+        "expiresAt",
+        "url"
+      ]
+    },
+    "File": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/FileId"
+        },
+        "mimeType": {
+          "type": "string",
+          "enum": [
+            "application/pdf",
+            "image/jpeg",
+            "image/png",
+            "audio/ogg",
+            "audio/mpeg",
+            "audio/mp4",
+            "audio/webm"
+          ]
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10485760
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "mimeType",
+        "sizeBytes",
+        "expiresAt"
+      ]
+    },
+    "FileAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/File"
+        },
+        "userRef": {
+          "$ref": "#/$defs/UserRef"
+        }
+      },
+      "required": [
+        "file",
+        "userRef"
+      ]
+    },
+    "Scope": {
+      "type": "string",
+      "enum": [
+        "requests:write",
+        "documents:write",
+        "requests:submit"
+      ]
+    },
+    "Challenge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ChallengeId"
+        },
+        "conversationId": {
+          "$ref": "#/$defs/ConversationId"
+        },
+        "userRef": {
+          "$ref": "#/$defs/UserRef"
+        },
+        "procedureId": {
+          "$ref": "#/$defs/ProcedureId"
+        },
+        "scopes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Scope"
+          }
+        },
+        "consentText": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "description": "Texte affiché tel quel par l’Interface."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "proofToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "description": "JWT RS256 signé par le Backend, opaque pour l’Interface et le modèle."
+        }
+      },
+      "required": [
+        "id",
+        "conversationId",
+        "userRef",
+        "procedureId",
+        "scopes",
+        "consentText",
+        "expiresAt",
+        "proofToken"
+      ]
+    },
+    "ConsentInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "challengeId": {
+          "$ref": "#/$defs/ChallengeId"
+        },
+        "accepted": {
+          "const": true
+        }
+      },
+      "required": [
+        "challengeId",
+        "accepted"
+      ]
+    },
+    "Mandate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/MandateId"
+        },
+        "conversationId": {
+          "$ref": "#/$defs/ConversationId"
+        },
+        "userRef": {
+          "$ref": "#/$defs/UserRef"
+        },
+        "procedureId": {
+          "$ref": "#/$defs/ProcedureId"
+        },
+        "scopes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Scope"
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "revoked",
+            "expired"
+          ]
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "conversationId",
+        "userRef",
+        "procedureId",
+        "scopes",
+        "status",
+        "expiresAt"
+      ]
+    },
+    "MandateGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "challenge": {
+          "$ref": "#/$defs/Challenge"
+        },
+        "acceptedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidenceRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "challenge",
+        "acceptedAt",
+        "evidenceRef"
+      ]
+    },
+    "ModelConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "baseUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Point d’accès compatible OpenAI (ex. https://api.groq.com/openai/v1)."
+        },
+        "protocol": {
+          "type": "string",
+          "enum": [
+            "chat-completions",
+            "responses"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "apiKeyRef": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,100}$",
+          "description": "Nom de la variable d’environnement qui contient la clé. La clé ne transite jamais par l’API."
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Un seul modèle actif à la fois."
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "baseUrl",
+        "protocol",
+        "model",
+        "apiKeyRef",
+        "temperature",
+        "active"
+      ]
+    },
+    "ModelConfigPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModelConfig"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Curseur opaque de la page suivante ; null en fin de liste."
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "McpAuth": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "none"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "bearer"
+            },
+            "secretRef": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]{1,100}$"
+            }
+          },
+          "required": [
+            "type",
+            "secretRef"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "oauth-client-credentials"
+            },
+            "tokenUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "clientId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "clientSecretRef": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]{1,100}$"
+            },
+            "scope": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "type",
+            "tokenUrl",
+            "clientId",
+            "clientSecretRef",
+            "scope"
+          ]
+        }
+      ]
+    },
+    "McpServer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "auth": {
+          "$ref": "#/$defs/McpAuth"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "url",
+        "enabled",
+        "auth"
+      ]
+    },
+    "McpServerPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/McpServer"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Curseur opaque de la page suivante ; null en fin de liste."
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "McpTool": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string"
+        },
+        "inputSchema": {
+          "type": "object"
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Désactivé par défaut après découverte."
+        },
+        "requiresMandate": {
+          "type": "boolean",
+          "description": "Consentement requis ; vrai par défaut après découverte."
+        }
+      },
+      "required": [
+        "serverId",
+        "name",
+        "description",
+        "inputSchema",
+        "enabled",
+        "requiresMandate"
+      ]
+    },
+    "McpToolList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/McpTool"
+          }
+        },
+        "discoveredAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "items",
+        "discoveredAt"
+      ]
+    },
+    "McpToolPermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "requiresMandate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled",
+        "requiresMandate"
+      ]
+    },
+    "OperatorStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "reachable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "reachable"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mcpServers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "reachable": {
+                "type": "boolean"
+              },
+              "toolCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "checkedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "enabled",
+              "reachable",
+              "toolCount",
+              "checkedAt"
+            ]
+          }
+        },
+        "administrations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Administration"
+          }
+        }
+      },
+      "required": [
+        "model",
+        "mcpServers",
+        "administrations"
+      ]
+    },
+    "Problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "INVALID_REQUEST",
+            "UNAUTHORIZED",
+            "LOGIN_REQUIRED",
+            "FORBIDDEN",
+            "NOT_FOUND",
+            "CONFLICT",
+            "IDEMPOTENCY_CONFLICT",
+            "MANDATE_MISSING",
+            "MANDATE_EXPIRED",
+            "MANDATE_REVOKED",
+            "MANDATE_SCOPE_DENIED",
+            "REQUEST_INCOMPLETE",
+            "INVALID_TRANSITION",
+            "NOT_ASSISTED",
+            "REPLAY_EXPIRED",
+            "UNSUPPORTED_MEDIA_TYPE",
+            "FILE_TOO_LARGE",
+            "RATE_LIMITED",
+            "UPSTREAM_UNAVAILABLE",
+            "MCP_AUTH_FAILED",
+            "MCP_CONNECTION_FAILED",
+            "MCP_DISCOVERY_FAILED"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "traceId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        }
+      },
+      "required": [
+        "type",
+        "title",
+        "status",
+        "code",
+        "detail",
+        "traceId"
+      ]
+    }
+  }
+}

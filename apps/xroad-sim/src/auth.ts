@@ -11,7 +11,7 @@ export interface Principal {
 
 // Static tokens, accepted only on a local, non-production listener (see config).
 const MOCK_PRINCIPALS: Record<string, Principal> = {
-  'mock-tooling-xroad': { client: 'tooling-xroad', scopes: new Set(['xroad:read', 'xroad:submit']) },
+  'mock-tooling-xroad': { client: 'tooling-xroad', scopes: new Set(['xroad:read', 'xroad:submit', 'xroad:decide']) },
   'mock-backend-xroad': { client: 'backend-xroad', scopes: new Set(['xroad:read', 'xroad:administer']) },
 };
 
