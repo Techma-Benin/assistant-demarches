@@ -25,5 +25,5 @@ SELECT administration_id,'mcp_'||md5((body->>'serverUrl')||chr(31)||(body->>'sec
 FROM backend_configurations WHERE resource='tools' GROUP BY administration_id,body->>'serverUrl',body->>'secretRef';
 INSERT INTO backend_mcp_tools(administration_id,server_id,name,enabled,requires_mandate)
 SELECT administration_id,'mcp_'||md5((body->>'serverUrl')||chr(31)||(body->>'secretRef')),resource_id,
- (body->>'enabled')::boolean,resource_id NOT IN ('procedures.search','procedures.get','request.status','documents.verify')
+ (body->>'enabled')::boolean,resource_id NOT IN ('procedures.search','procedures.get','request.status','documents.verify','case.status')
 FROM backend_configurations WHERE resource='tools';

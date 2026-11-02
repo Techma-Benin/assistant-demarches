@@ -115,24 +115,26 @@ test(
         }),
     );
     const origin = "http://127.0.0.1:" + provider.address().port;
-    await provision(pool, "alpha", "models", {
+    await provision(pool, "global", "models", {
       id: "model",
-      provider: "synthetic",
+      label: "Test",
+      baseUrl: origin + "/v1",
+      protocol: "chat-completions",
       model: "test",
+      apiKeyRef: "TEST_KEY",
       temperature: 0,
       active: true,
-      promptVersion: "agent-v1",
     });
     const conversations = new Conversations(pool),
       user = {
         userRef: identifier("usr"),
-        administrationId: "alpha",
-        channel: "portal",
+        administrationId: "global",
+        channel: "web",
         expiresAt: Date.now() + 600000,
       };
     const conversation = await conversations.create(
       user,
-      { channel: "web", locale: "fr" },
+      { locale: "fr" },
       randomUUID(),
     );
     const message = {
@@ -159,6 +161,7 @@ test(
       QUEUE_PREFIX: prefix,
       STORAGE_DRIVER: "local",
       STORAGE_LOCAL_DIRECTORY: join(root, "files"),
+      TEST_KEY: "synthetic",
       MODEL_PROVIDERS_JSON: JSON.stringify({
         synthetic: { baseUrl: origin + "/v1/", protocol: "chat-completions" },
       }),

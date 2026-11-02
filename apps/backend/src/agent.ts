@@ -26,14 +26,21 @@ import {
 } from "./tooling.js";
 import { redact, type ModelPort, type ModelReply, type Turn } from "./model.js";
 import type { Consent } from "./consent.js";
-import { presentModelReply, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS } from "./model-reply.js";
+import { presentModelReply, mergeSystemBlocks, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS } from "./model-reply.js";
 import type { TranscriptionPort } from "./transcription.js";
 import { deltasForReply, TextDeltaExtractor, visibleText } from "./text-deltas.js";
 
 const MODEL_REPLY_ATTEMPTS = 3;
+function interactionPrompt(content: { actionId: string; value?: string | null }): string {
+  const submitted = content.value?.trim();
+  return submitted
+    ? `Formulaire « ${content.actionId} » : ${submitted}`
+    : `Choix « ${content.actionId} ».`;
+}
 function modelData(value: unknown): string {
   const privateFields = new Set([
     "userRef",
+    "applicantRef",
     "conversationId",
     "proofToken",
     "evidenceRef",
@@ -54,7 +61,7 @@ function modelData(value: unknown): string {
     "expiresAt",
   ]);
   return JSON.stringify(value, (key, item) =>
-    privateFields.has(key)
+    privateFields.has(key) || (typeof item === "string" && /^(usr|cnv)_/.test(item))
       ? undefined
       : typeof item === "string" && !technicalFields.has(key)
         ? redact(item)
@@ -86,6 +93,7 @@ type State = {
   procedures?: Schemas["Procedure"][];
   successfulActions?: { fingerprint: string; operationKey: string }[];
   toolFailed?: boolean;
+  systemBlocks?: Schemas["AgentMessage"]["blocks"];
   config: ModelConfig;
   assistantMessageId?: string;
 };
@@ -98,27 +106,45 @@ export class Agent {
     private consent?: Consent,
     private transcriber?: TranscriptionPort,
   ) {}
-  watch(signal: AbortSignal) {
-    const tick = async () => {
-      if (signal.aborted) return;
-      try {
-        const rows = (
-          await this.pool.query(
-            "SELECT DISTINCT conversation_id FROM backend_messages WHERE processed_at IS NULL LIMIT 5",
-          )
-        ).rows;
-        for (const row of rows) {
-          if (signal.aborted) return;
-          await this.process(row.conversation_id).catch((error: unknown) => {
-            if (!(error instanceof Problem) || error.status !== 503) throw error;
-          });
-        }
-      } catch (error) {
-        console.error(error instanceof Error ? error.message : "Traitement des messages interrompu.");
+  watch(signal: AbortSignal): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let running: Promise<void> = Promise.resolve();
+    return new Promise((resolve) => {
+      const finish = async () => {
+        if (timer) clearTimeout(timer);
+        await running.catch(() => undefined);
+        resolve();
+      };
+      if (signal.aborted) {
+        void finish();
+        return;
       }
-      if (!signal.aborted) setTimeout(tick, 400);
-    };
-    void tick();
+      signal.addEventListener("abort", () => void finish(), { once: true });
+      const tick = async () => {
+        if (signal.aborted) return;
+        try {
+          const rows = (
+            await this.pool.query(
+              "SELECT DISTINCT conversation_id FROM backend_messages WHERE processed_at IS NULL LIMIT 5",
+            )
+          ).rows;
+          for (const row of rows) {
+            if (signal.aborted) return;
+            await this.process(row.conversation_id).catch((error: unknown) => {
+              if (!(error instanceof Problem) || error.status !== 503) throw error;
+            });
+          }
+        } catch (error) {
+          if (signal.aborted) return;
+          console.error(error instanceof Error ? error.message : "Traitement des messages interrompu.");
+        }
+        if (!signal.aborted)
+          timer = setTimeout(() => {
+            running = tick();
+          }, 400);
+      };
+      running = tick();
+    });
   }
   async process(conversationId: string): Promise<void> {
     // Session lock survives checkpoint transactions, but is released on connection loss/crash.
@@ -326,6 +352,12 @@ export class Agent {
       );
       return;
     }
+    if (input.content.type === "interaction") {
+      input = {
+        ...input,
+        content: { type: "text", text: interactionPrompt(input.content) },
+      };
+    }
     if (input.content.type !== "text") {
       await this.finish(
         conversation,
@@ -372,7 +404,8 @@ export class Agent {
         .filter(
           (row) =>
             row.body.data.kind === "message.sent" ||
-            row.input?.content?.type === "text",
+            row.input?.content?.type === "text" ||
+            row.input?.content?.type === "interaction",
         )
         .map((row) =>
           row.body.data.kind === "message.sent"
@@ -380,7 +413,14 @@ export class Agent {
                 role: "assistant",
                 content: modelData(row.body.data.message.blocks),
               }
-            : { role: "user", content: redact(row.input.content.text) },
+            : {
+                role: "user",
+                content: redact(
+                  row.input.content.type === "interaction"
+                    ? interactionPrompt(row.input.content)
+                    : row.input.content.text,
+                ),
+              },
         );
       state = {
         history: [
@@ -392,6 +432,7 @@ export class Agent {
         requests: [],
         requestProcedures: Object.fromEntries(previous.flatMap(row => row.body.data.kind === "message.sent" ? (row.body.data.message.blocks as Schemas["AgentMessage"]["blocks"]).flatMap(block => block.type === "requestCard" && block.request.conversationId === conversation.id ? [[block.request.id, block.request.procedureId]] : []) : [])),
         procedures: [],
+        systemBlocks: [],
         config: configs[0].body,
       };
       await this.save(conversation.id, input.id, state);
@@ -400,7 +441,7 @@ export class Agent {
       state.assistantMessageId = identifier("msg");
       await this.save(conversation.id, input.id, state);
     }
-    const context = {conversationId:conversation.id,userRef:conversation.userRef,traceparent};
+    const context = {conversationId:conversation.id,userRef:conversation.userRef,traceparent,channel:conversation.channel,authenticated:conversation.authenticated};
     type Binding={server:McpServer;name:string;definition:ToolDefinition;requires:boolean};
     const bindings=new Map<string,Binding>();
     const servers=(await this.pool.query("SELECT body FROM backend_mcp_servers WHERE administration_id=$1 AND body->>'enabled'='true' ORDER BY id",[administrationId])).rows.map(r=>r.body as McpServer);
@@ -411,9 +452,9 @@ export class Agent {
       for(const permission of permissions){
         if(!permission.enabled)continue;
         const remote=listed.find(t=>t.name===permission.name);if(!remote)continue;
-        // A changed remote contract requires explicit admin rediscovery/approval.
-        if(permission.definition&&canonical(permission.definition)!==canonical(remote))continue;
         const known=server.policy==="techma"?catalog.find(t=>t.name===remote.name):undefined;
+        // Techma tools are the published catalogue; generic MCP still requires an unchanged discovered schema.
+        if(server.policy!=="techma"&&permission.definition&&canonical(permission.definition)!==canonical(remote))continue;
         const definition=known??remote;
         const name=modelToolName(server,remote.name);
         if(bindings.has(name))throw new Problem(503,"UPSTREAM_UNAVAILABLE","Collision des noms MCP ; utiliser des connexions génériques distinctes.");
@@ -426,7 +467,7 @@ export class Agent {
         const { reply, blocks, preview } = await this.generateUsable(state, advertised);
         if (!reply) {
           await this.unanswered(conversation.id, input.id, administrationId, state.toolFailed ? "tool_failure" : blocks === UNAVAILABLE_BLOCKS ? "missing_source" : "invalid_reply");
-          await this.finish(conversation, input, blocks!, traceparent, false, state.assistantMessageId);
+          await this.finish(conversation, input, this.withSystem(state, blocks!), traceparent, false, state.assistantMessageId);
           return;
         }
         state.history.push({
@@ -438,8 +479,9 @@ export class Agent {
         if (!reply.calls.length) {
           if (blocks!.some(block => block.type === "text" && /Je n[’']ai pas trouvé de démarche validée|Aucune action disponible/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "missing_source");
           else if (state.toolFailed && blocks!.some(block => block.type === "text" && /L[’']outil n[’']a pas pu|Action refusée/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "tool_failure");
-          await this.emitVisibleDeltas(conversation.id, state.assistantMessageId, blocks!, preview ?? [], traceparent);
-          await this.finish(conversation, input, blocks!, traceparent, false, state.assistantMessageId);
+          const sent = this.withSystem(state, blocks!);
+          await this.emitVisibleDeltas(conversation.id, state.assistantMessageId, sent, preview ?? [], traceparent);
+          await this.finish(conversation, input, sent, traceparent, false, state.assistantMessageId);
           return;
         }
         if (
@@ -480,9 +522,12 @@ export class Agent {
             const current=(await this.pool.query("SELECT s.body,t.enabled,t.requires_mandate,t.definition FROM backend_mcp_servers s JOIN backend_mcp_tools t ON t.administration_id=s.administration_id AND t.server_id=s.id WHERE s.administration_id=$1 AND s.id=$2 AND t.name=$3",[administrationId,binding.server.id,binding.name])).rows[0];
             if(!current||!current.body.enabled||!current.enabled||canonical(current.body)!==canonical(binding.server)||(current.definition&&canonical(current.definition)!==canonical(binding.server.policy==="techma"?catalog.find(t=>t.name===binding.name)??binding.definition:binding.definition)))throw new Problem(403,"FORBIDDEN","Connexion ou action désactivée ou modifiée.");
             const requires = binding.requires || current.requires_mandate;
+            const requiresLogin = Boolean(binding.definition._meta?.["bj.techma/requiresLogin"]);
             let argumentsValue: Record<string,unknown>;
             try {argumentsValue=JSON.parse(call.arguments);} catch {throw new Problem(400,"INVALID_REQUEST","Arguments outil JSON invalides.");}
             if(!compileMcpSchema(binding.definition.inputSchema)(argumentsValue))throw new Problem(400,"INVALID_REQUEST","Arguments outil invalides.");
+            if (requiresLogin && !conversation.authenticated)
+              throw new Problem(401, "LOGIN_REQUIRED", "Connexion requise pour cette action.");
             if (
               requires &&
               (
@@ -523,7 +568,13 @@ export class Agent {
               binding.server.auth,
               binding.name,
               argumentsValue,
-              { ...context, external:binding.server.policy!=="techma", ...(mandate ? { mandateId: mandate.id } : {}) },
+              {
+                ...context,
+                channel: conversation.channel,
+                authenticated: conversation.authenticated,
+                external:binding.server.policy!=="techma",
+                ...(mandate ? { mandateId: mandate.id } : {}),
+              },
               operationKey,
               binding.definition,
             );
@@ -577,12 +628,22 @@ export class Agent {
             if (!state.successfulActions.some(action => action.fingerprint === fingerprint)) state.successfulActions.push({ fingerprint, operationKey });
           } catch { /* Invalid arguments have already produced a failed tool result. */ }
         }
-        if (result.isError) state.toolFailed = true;
+        if (result.isError) {
+          state.toolFailed = true;
+          const code = toolErrorCode(result);
+          if (code === "LOGIN_REQUIRED")
+            this.pushBlock(state, {
+              type: "loginRequired",
+              reason: "Connectez-vous pour préparer ou déposer cette démarche.",
+            });
+          else if (code === "MANDATE_MISSING")
+            await this.appendConsent(state, conversation, selected, call.arguments, operationKey, traceparent);
+        }
         const isTechma=selected?.server.policy==="techma"&&catalog.some(t=>t.name===selected.name);
         const output = (isTechma&&!result.isError?result.structuredContent:undefined) as any;
         for (const procedure of output?.items ??
-          (output?.source ? [output] : []))
-          if (procedure.filing) {
+          (output?.source || output?.filing !== undefined ? [output] : []))
+          if (procedure?.filing || procedure?.source) {
             try {
               validate("Procedure", procedure);
               if (procedure.source.procedureId !== procedure.id) continue;
@@ -591,14 +652,7 @@ export class Agent {
               state.procedures.push(procedure);
             } catch {}
           }
-        if (output?.status && output?.conversationId === conversation.id) {
-          try {
-            validate("Request", output);
-            state.requests = [...state.requests.filter(request => request.id !== output.id), output];
-            state.requestProcedures ??= {};
-            state.requestProcedures[output.id] = output.procedureId;
-          } catch {}
-        }
+        this.captureToolOutcome(state, conversation.id, selected?.name, output);
         const sanitized = modelData(
           result.isError
             ? {
@@ -623,22 +677,103 @@ export class Agent {
     await this.finish(
       conversation,
       input,
-      [
+      this.withSystem(state, [
         {
           type: "text",
           text: "La limite de traitement est atteinte. Veuillez préciser votre demande ; aucune réussite supplémentaire n’est présumée.",
           sources: [],
         },
-      ],
+      ]),
       traceparent,
       false,
       state.assistantMessageId,
     );
   }
+  private withSystem(state: State, blocks: Schemas["AgentMessage"]["blocks"]) {
+    return mergeSystemBlocks(blocks, state.systemBlocks ?? []);
+  }
+  private pushBlock(state: State, block: Schemas["AgentMessage"]["blocks"][number]) {
+    state.systemBlocks ??= [];
+    if (!state.systemBlocks.some((existing) => existing.type === block.type && JSON.stringify(existing) === JSON.stringify(block)))
+      state.systemBlocks.push(block);
+  }
+  private async appendConsent(
+    state: State,
+    conversation: OwnedConversation,
+    selected: { name: string; definition: ToolDefinition } | undefined,
+    rawArguments: string,
+    key: string,
+    _traceparent: string,
+  ) {
+    if (!this.consent) return;
+    let args: Record<string, unknown> = {};
+    try { args = JSON.parse(rawArguments); } catch { return; }
+    const procedureId =
+      typeof args.procedureId === "string"
+        ? args.procedureId
+        : typeof args.requestId === "string"
+          ? state.requestProcedures?.[args.requestId]
+          : undefined;
+    const scopes = selected?.definition._meta?.["bj.techma/scopes"];
+    const requiredScopes = Array.isArray(scopes) && scopes.every((scope) => typeof scope === "string")
+      ? (scopes as Schemas["Scope"][])
+      : [];
+    if (!procedureId || !requiredScopes.length) return;
+    try {
+      const challenge = await this.consent.challenge(
+        {
+          userRef: conversation.userRef,
+          channel: conversation.channel,
+          authenticated: conversation.authenticated,
+          expiresAt: Date.now() + 60000,
+          roles: new Set<string>(),
+        },
+        conversation.id,
+        { procedureId, scopes: requiredScopes },
+        key,
+      );
+      this.pushBlock(state, { type: "consent", challenge });
+    } catch {
+      /* A failed challenge still leaves the tool error for the model to explain. */
+    }
+  }
+  private captureToolOutcome(state: State, conversationId: string, toolName: string | undefined, output: any) {
+    if (!output || typeof output !== "object") return;
+    const request = output.request && typeof output.request === "object" ? output.request : output.status && output.conversationId === conversationId ? output : undefined;
+    if (request) {
+      try {
+        validate("Request", request);
+        state.requests = [...state.requests.filter((item) => item.id !== request.id), request];
+        state.requestProcedures ??= {};
+        state.requestProcedures[request.id] = request.procedureId;
+        this.pushBlock(state, { type: "requestCard", request });
+        const procedure = state.procedures?.find((item) => item.id === request.procedureId);
+        for (const document of request.documents ?? []) {
+          if (document.fileId) continue;
+          const spec = procedure?.filing?.requiredDocuments?.find((item: { documentType: string }) => item.documentType === document.documentType);
+          this.pushBlock(state, {
+            type: "fileRequest",
+            requestId: request.id,
+            documentType: document.documentType,
+            label: document.label ?? spec?.label ?? document.documentType,
+            acceptedMimeTypes: spec?.acceptedMimeTypes ?? ["application/pdf", "image/jpeg", "image/png"],
+            received: false,
+          });
+        }
+      } catch {}
+    }
+    const foundCase = output.case && typeof output.case === "object" ? output.case : output.reference && output.simulated === true ? output : undefined;
+    if (foundCase) {
+      try {
+        validate("Case", foundCase);
+        this.pushBlock(state, { type: "caseCard", case: foundCase });
+      } catch {}
+    }
+  }
   private async unanswered(conversationId: string, messageId: string, administrationId: string, reason: "missing_source" | "tool_failure" | "provider_failure" | "invalid_reply") {
     await this.pool.query(
       "INSERT INTO backend_unanswered(id,conversation_id,message_id,administration_id,reason) VALUES($1,$2,$3,$4,$5) ON CONFLICT(conversation_id,message_id,reason) DO NOTHING",
-      [identifier("una"), conversationId, messageId, administrationId, reason],
+      [identifier("unq"), conversationId, messageId, administrationId, reason],
     );
   }
   private async generateUsable(

@@ -64,10 +64,10 @@ test('Server-centric MCP: real discovery, auth, tenant isolation, dynamic routin
     await once(upstream, 'listening');
     const origin = 'http://127.0.0.1:' + upstream.address().port;
     const allowed = new Set(['/a', '/b', '/header', '/token'].map(p => origin + p));
-    const gateway = new McpGateway(allowed, async (ref) => ({ token: 'private-token', client: 'client-secret' })[ref] ?? Promise.reject(Error('missing secret')));
+    const gateway = new McpGateway(allowed, async (ref) => ({ TOKEN: 'private-token', token: 'private-token', client: 'client-secret' })[ref] ?? Promise.reject(Error('missing secret')));
     const keys = await generateKeyPair('RS256');
     const auth = { issuer: 'https://identity.example', audience: 'techma-backend', key: createLocalJWKSet({ keys: [{ ...await exportJWK(keys.publicKey), kid: 'test', alg: 'RS256' }] }) };
-    const jwt = async (admin = 'alpha', scope = 'admin:read admin:write') => new SignJWT({ administrationId: admin, scope }).setProtectedHeader({ alg: 'RS256', kid: 'test' }).setSubject('admin').setIssuer(auth.issuer).setAudience(auth.audience).setIssuedAt().setExpirationTime('5m').sign(keys.privateKey);
+    const jwt = async (admin = 'global', scope = 'operator admin:read admin:write') => new SignJWT({ administrationId: admin, scope }).setProtectedHeader({ alg: 'RS256', kid: 'test' }).setSubject('admin').setIssuer(auth.issuer).setAudience(auth.audience).setIssuedAt().setExpirationTime('5m').sign(keys.privateKey);
     const app = await createBackend({ pool, auth, allowedMcpUrls: allowed, mcpGateway: gateway });
     await app.listen(0, '127.0.0.1');
     const base = await app.getUrl();
@@ -75,12 +75,12 @@ test('Server-centric MCP: real discovery, auth, tenant isolation, dynamic routin
     let n = 0;
     t.after(async () => { await app.close(); upstream.closeAllConnections(); await new Promise(r => upstream.close(r)); await pool.end(); await pg.close(); });
     async function request(path, method = 'GET', body, credential = token, key = 'mcp-key-' + (++n)) {
-        const r = await fetch(base + '/v1/admin' + path, { method, headers: { Authorization: 'Bearer ' + credential, traceparent: tp, 'Idempotency-Key': key, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+        const r = await fetch(base + '/v1/operator' + path, { method, headers: { Authorization: 'Bearer ' + credential, traceparent: tp, ...(key === false ? {} : { 'Idempotency-Key': key }), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
         return { status: r.status, body: r.status === 204 ? null : await r.json() };
     }
-    const a = { id: 'a', name: 'First MCP', url: origin + '/a', enabled: true, transport: 'streamable-http', auth: { type: 'none' }, policy: 'generic' };
-    const b = { ...a, id: 'b', name: 'Second MCP', url: origin + '/b', auth: { type: 'bearer', secretRef: 'token' } };
-    const principal = { subject: 'admin', administrationId: 'alpha', scopes: new Set(['admin:read', 'admin:write']) };
+    const a = { id: 'a', name: 'First MCP', url: origin + '/a', enabled: true, auth: { type: 'none' } };
+    const b = { ...a, id: 'b', name: 'Second MCP', url: origin + '/b', auth: { type: 'bearer', secretRef: 'TOKEN' } };
+    const principal = { subject: 'admin', administrationId: 'global', scopes: new Set(['operator', 'admin:read', 'admin:write']) };
     const settings = new McpConnections(pool, allowed, gateway);
     await t.test('CRUD, references only, scope and administration boundaries', async () => {
         assert.equal((await request('/mcp-servers', 'POST', null)).status, 400);
@@ -92,21 +92,28 @@ test('Server-centric MCP: real discovery, auth, tenant isolation, dynamic routin
         assert.equal(listed.body.items.length, 1);
         assert.ok(listed.body.nextCursor);
         assert.equal((await request('/mcp-servers?limit=1&cursor=' + encodeURIComponent(listed.body.nextCursor))).body.items[0].id, 'b');
-        assert.equal((await request('/mcp-servers/a', 'GET', undefined, await jwt('beta'))).status, 404);
-        assert.equal((await request('/mcp-servers?cursor=' + encodeURIComponent(listed.body.nextCursor), 'GET', undefined, await jwt('beta'))).status, 400);
+        assert.equal((await request('/mcp-servers/a', 'GET', undefined, await jwt('beta'))).status, 200);
+        assert.equal((await request('/mcp-servers?cursor=' + encodeURIComponent(listed.body.nextCursor), 'GET', undefined, await jwt('beta'))).status, 200);
         assert.equal((await request('/mcp-servers', 'POST', { ...a, id: 'bad' }, await jwt('alpha', 'admin:read'))).status, 403);
         assert.equal((await request('/mcp-servers', 'POST', { ...a, id: 'bad', url: 'http://169.254.169.254/' })).status, 403);
         assert.equal((await request('/mcp-servers', 'POST', { ...a, id: 'bad', auth: { type: 'oauth-authorization-code' } })).status, 400);
         assert.equal((await request('/mcp-servers', 'POST', { ...a, id: 'bad', auth: { type: 'headers', headers: { 'X-User-Ref': 'token' } } })).status, 400);
         const detail = (await request('/mcp-servers/b')).body;
         assert.equal(JSON.stringify(detail).includes('private-token'), false);
-        assert.equal(detail.auth.secretRef, 'token');
+        assert.equal(detail.auth.secretRef, 'TOKEN');
+        const optional = { ...a, id: 'optional', name: 'Optional key' };
+        assert.equal((await request('/mcp-servers', 'POST', optional, token, false)).status, 201);
+        assert.equal((await request('/mcp-servers/optional', 'PUT', { ...optional, name: 'Renamed' }, token, false)).status, 200);
+        assert.equal((await request('/mcp-servers/optional', 'PUT', optional, token, 'x')).status, 400);
+        assert.equal((await request('/mcp-servers/optional/discover', 'POST', undefined, token, false)).status, 200);
+        assert.equal((await request('/mcp-servers/optional/tools/echo.same', 'PUT', { enabled: true, requiresMandate: false }, token, false)).status, 200);
+        assert.equal((await request('/mcp-servers/optional', 'DELETE', undefined, token, false)).status, 204);
     });
     await t.test('Real tools/list pagination and opt-in permissions, immutable remote names', async () => {
         for (const id of ['a', 'b']) {
             const r = await request('/mcp-servers/' + id + '/discover', 'POST');
             assert.equal(r.status, 200);
-            validate('McpToolPage', r.body);
+            validate('McpToolList', r.body);
             assert.equal(r.body.items.length, 2);
             assert.ok(r.body.items.every(t => !t.enabled && t.requiresMandate));
             assert.equal((await request('/mcp-servers/' + id + '/tools/echo.same', 'PUT', { enabled: true, requiresMandate: false })).status, 200);
@@ -116,9 +123,9 @@ test('Server-centric MCP: real discovery, auth, tenant isolation, dynamic routin
         assert.equal((await request('/mcp-servers/a/tools/invented', 'PUT', { enabled: true, requiresMandate: false })).status, 404);
     });
     const conversations = new Conversations(pool);
-    const user = { userRef: identifier('usr'), administrationId: 'alpha', channel: 'portal', expiresAt: Date.now() + 60000 };
-    await provision(pool, 'alpha', 'models', { id: 'model', provider: 'fixture', model: 'fixture', promptVersion: 'agent-v1', temperature: 0, active: true });
-    async function run(models) { const c = await conversations.create(user, { channel: 'web', locale: 'fr' }, 'create-' + (++n)); const msg = { id: identifier('msg'), content: { type: 'text', text: 'Use both services' }, sentAt: new Date().toISOString() }; await conversations.accept(user, c.id, msg, 'accept-' + (++n), tp); await new Agent(pool, conversations, models, gateway).process(c.id); return c; }
+    const user = { userRef: identifier('usr'), administrationId: 'global', channel: 'web', authenticated: true, expiresAt: Date.now() + 60000 };
+    await provision(pool, 'global', 'models', { id: 'model', label: 'Fixture', baseUrl: 'http://127.0.0.1:9/v1', protocol: 'chat-completions', model: 'fixture', apiKeyRef: 'TEST_KEY', temperature: 0, active: true });
+    async function run(models) { const c = await conversations.create(user, { locale: 'fr' }, 'create-' + (++n)); const msg = { id: identifier('msg'), content: { type: 'text', text: 'Use both services' }, sentAt: new Date().toISOString() }; await conversations.accept(user, c.id, msg, 'accept-' + (++n), tp); await new Agent(pool, conversations, models, gateway).process(c.id); return c; }
     await t.test('Unknown catalogue action on two MCPs, colliding remote names, text results reach model', async () => {
         let turn = 0;
         await run({ async generate(config, history, tools) {
@@ -150,7 +157,7 @@ test('Server-centric MCP: real discovery, auth, tenant isolation, dynamic routin
         removed = true;
         const found = await settings.discover(principal, 'a', tp);
         assert.equal(found.items.find(t => t.name === 'echo.same').enabled, false);
-        assert.equal(found.items.find(t => t.name === 'second').available, false);
+        assert.equal(found.items.find(t => t.name === 'second').enabled, false);
     });
     await t.test('Header and OAuth client credentials authentication are real, errors sanitized', async () => {
         const context = { conversationId: '', userRef: '', traceparent: tp, external: true };
@@ -164,12 +171,12 @@ test('Server-centric MCP: real discovery, auth, tenant isolation, dynamic routin
         await run({ async generate(config,history,tools) {assert.equal(tools.length,0);return {text:JSON.stringify({blocks:[{type:'text',text:'Aucune action disponible.',sources:[]}]}),calls:[]};}});
         const tools = (await request('/mcp-servers/b/tools')).body;
         assert.equal(tools.items.length, 2);
-        assert.equal((await request('/mcp-servers/b', 'PUT', { ...b, url: origin + '/header', auth: { type: 'headers', headers: { 'X-Api-Key': 'token' } } })).status, 200);
+        assert.equal((await request('/mcp-servers/b', 'PUT', { ...b, url: origin + '/a', auth: { type: 'bearer', secretRef: 'TOKEN' } })).status, 200);
         assert.equal((await request('/mcp-servers/b/tools')).body.items.length, 0);
         assert.equal((await request('/mcp-servers/b', 'DELETE', undefined, token, 'same-delete-key')).status, 204);
         assert.equal((await request('/mcp-servers/b', 'DELETE', undefined, token, 'same-delete-key')).status, 204);
         assert.equal((await request('/mcp-servers/b')).status, 404);
-        assert.equal((await pool.query("SELECT count(*)::int n FROM backend_mcp_tools WHERE administration_id='alpha' AND server_id='b'")).rows[0].n, 0);
+        assert.equal((await pool.query("SELECT count(*)::int n FROM backend_mcp_tools WHERE administration_id='global' AND server_id='b'")).rows[0].n, 0);
     });
 });
 
@@ -178,7 +185,7 @@ test('Migration des actions historiques : groupes par administration et identifi
  const pg=await isolatedDatabase(),pool=database(pg.connection);
  t.after(async()=>{await pool.end();await pg.close();});
  await migrate(pool);
- for(const admin of ['alpha','beta'])for(const tool of catalog)await provision(pool,admin,'tools',{name:tool.name,enabled:tool.name!=='request.update',serverUrl:'http://127.0.0.1:4030/mcp',secretRef:'backend-agent'});
+ for(const admin of ['alpha','beta'])for(const tool of catalog)await pool.query("INSERT INTO backend_configurations (administration_id, resource, resource_id, body) VALUES ($1,'tools',$2,$3) ON CONFLICT DO NOTHING",[admin,tool.name,{name:tool.name,enabled:tool.name!=='request.update',serverUrl:'http://127.0.0.1:4030/mcp',secretRef:'backend-agent'}]);
  // Reconstruct a database from before migration 006, retaining the historical rows.
  await pool.query('DROP TABLE backend_mcp_tools');await pool.query('DROP TABLE backend_mcp_servers');
  await pool.query("DELETE FROM backend_migrations WHERE name='006_mcp_servers.sql'");

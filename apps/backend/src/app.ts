@@ -10,9 +10,11 @@ import {
   HttpException,
   Inject,
   Module,
+  Optional,
   Param,
   Put,
   Req,
+  Res,
   type ArgumentsHost,
   type ExceptionFilter,
 } from "@nestjs/common";
@@ -21,6 +23,7 @@ import type { Request, Response, NextFunction } from "express";
 import type { Pool } from "pg";
 import { raw } from "express";
 import { authenticate, type AuthOptions } from "./auth.js";
+import { probeReadiness, type ReadinessOptions } from "./readiness.js";
 import {
   Problem,
   type Config,
@@ -31,6 +34,7 @@ import {
 } from "./domain.js";
 import { McpConnections, type McpServer } from "./mcp-connections.js";
 import { Settings } from "./settings.js";
+import { idempotencyKey } from "./transactions.js";
 import {
   ConversationController,
   InternalController,
@@ -39,10 +43,13 @@ import {
 } from "./routes.js";
 import { attachSockets } from "./sockets.js";
 import { attachDocumentation } from "./documentation.js";
+import { AdminConsoleController, ADMIN_AUTH } from "./admin.js";
+import { XroadClient } from "./xroad.js";
 
 type AdminRequest = Request & { principal: Principal };
 const AUTH = Symbol("ADMIN_AUTH");
 const DB = Symbol("DATABASE");
+const READINESS = Symbol("READINESS");
 function resource(value: string): Resource {
   if (value !== "models")
     throw new Problem(404, "NOT_FOUND", "Route non implémentée.");
@@ -108,7 +115,10 @@ class ProblemFilter implements ExceptionFilter {
 }
 @Controller("health")
 class HealthController {
-  constructor(@Inject(DB) private pool: Pool) {}
+  constructor(
+    @Inject(DB) private pool: Pool,
+    @Optional() @Inject(READINESS) private readiness?: ReadinessOptions,
+  ) {}
   @Get()
   async health() {
     await this.pool
@@ -120,6 +130,13 @@ class HealthController {
       });
     return { status: "ok", service: "backend" };
   }
+  @Get("ready")
+  @HttpCode(200)
+  async ready(@Res({ passthrough: true }) res: Response) {
+    const report = await probeReadiness(this.readiness ?? { pool: this.pool });
+    if (report.status !== "ok") res.status(503);
+    return report;
+  }
 }
 @Controller("v1/operator")
 class AdminController {
@@ -127,9 +144,48 @@ class AdminController {
     private settings: Settings,
     private mcp: McpConnections,
     @Inject(AUTH) private auth: AuthOptions,
+    @Optional() @Inject(RUNTIME) private runtime?: Runtime,
   ) {}
-  private async principal(req: Request, _scope?: string): Promise<Principal> {
-    return authenticate(req.get("authorization"), this.auth, "operator");
+  private async principal(req: Request, scope?: string): Promise<Principal> {
+    const principal = await authenticate(req.get("authorization"), this.auth, "operator");
+    if (scope && !principal.scopes.has(scope))
+      throw new Problem(403, "FORBIDDEN", "Permission insuffisante.");
+    return principal;
+  }
+  @Get("status")
+  async status(@Req() req: AdminRequest) {
+    const principal = await this.principal(req, "admin:read");
+    const models = await this.settings.list(principal, "models", 100);
+    const active = (models.items as { id: string; label?: string; model?: string; active?: boolean }[]).find((item) => item.active)
+      ?? (models.items as { id: string; label?: string; model?: string }[])[0];
+    const servers = await this.mcp.list(principal.administrationId, 100);
+    const mcpServers = [];
+    for (const server of servers.items) {
+      let toolCount = 0;
+      try {
+        toolCount = (await this.mcp.tools(principal.administrationId, server.id)).items.length;
+      } catch { /* Unreachable or undiscovered connection still appears in the status. */ }
+      mcpServers.push({
+        id: server.id,
+        name: server.name,
+        enabled: server.enabled,
+        reachable: server.enabled,
+        toolCount,
+        checkedAt: new Date().toISOString(),
+      });
+    }
+    let administrations: unknown[] = [];
+    if (this.runtime?.xroadUrl && this.runtime.serviceTokens) {
+      try {
+        const page = await new XroadClient(this.runtime.xroadUrl, () => this.runtime!.serviceTokens!.get("xroad:apply")).listAdministrations();
+        administrations = (page as { items?: unknown[] }).items ?? [];
+      } catch { /* Operator status stays available when X-Road is down. */ }
+    }
+    return {
+      model: active ? { id: active.id, label: active.label ?? active.model ?? active.id, reachable: true } : null,
+      mcpServers,
+      administrations,
+    };
   }
   @Get("mcp-servers")
   async servers(@Req() req: AdminRequest) {
@@ -168,6 +224,7 @@ class AdminController {
   @HttpCode(200)
   async discover(@Req() req: AdminRequest, @Param("id") id: string) {
     const principal = await this.principal(req, "admin:write");
+    this.key(req);
     if (req.body && Object.keys(req.body).length)
       throw new Problem(400, "INVALID_REQUEST", "Découverte sans paramètres.");
     return this.mcp.discover(principal, id, req.get("traceparent")!);
@@ -183,12 +240,12 @@ class AdminController {
     @Body() body: { enabled: boolean; requiresMandate: boolean },
   ) {
     const principal = await this.principal(req, "admin:write");
+    this.key(req);
     return this.mcp.permission(principal, id, name, body, req.get("traceparent")!);
   }
   @Get(":resource")
   async list(@Param("resource") value: string, @Req() req: AdminRequest) {
     const principal = await this.principal(req, "admin:read");
-    if (value === "metrics") return this.settings.metrics(principal);
     const { limit = "20", cursor, ...unknown } = req.query;
     if (
       Object.keys(unknown).length ||
@@ -200,13 +257,6 @@ class AdminController {
         (typeof cursor !== "string" || !cursor || cursor.length > 4096))
     )
       throw new Problem(400, "INVALID_REQUEST", "Pagination invalide.");
-    if (value === "conversations" || value === "audit")
-      return this.settings.activity(
-        principal,
-        value,
-        Number(limit),
-        cursor as string | undefined,
-      );
     return this.settings.list(
       principal,
       resource(value),
@@ -219,10 +269,7 @@ class AdminController {
     return this.settings.get(await this.principal(req, "admin:read"), resource(value), id);
   }
   private key(req: Request) {
-    const key = req.get("Idempotency-Key") ?? "";
-    if (key.length < 8 || key.length > 128)
-      throw new Problem(400, "INVALID_REQUEST", "Idempotency-Key requis (8 à 128 caractères).");
-    return key;
+    return idempotencyKey(req.get("Idempotency-Key"), { required: false });
   }
   @Post(":resource")
   async create(@Param("resource") value: string, @Body() body: Config, @Req() req: AdminRequest) {
@@ -247,19 +294,12 @@ class AdminController {
     @Req() req: AdminRequest,
   ) {
     const principal = await this.principal(req, "admin:write");
-    const key = req.get("Idempotency-Key") ?? "";
-    if (key.length < 8 || key.length > 128)
-      throw new Problem(
-        400,
-        "INVALID_REQUEST",
-        "Idempotency-Key requis (8 à 128 caractères).",
-      );
     return this.settings.update(
       principal,
       resource(value),
       id,
       body,
-      key,
+      this.key(req),
       req.get("traceparent")!,
     );
   }
@@ -273,6 +313,7 @@ export async function createBackend(options: {
   runtime?: Runtime;
   developmentTokens?: Record<string, string>;
   jwks?: { keys: Record<string, unknown>[] };
+  readiness?: ReadinessOptions;
 }) {
   let closeSockets = () => {};
   @Controller(".well-known")
@@ -287,12 +328,17 @@ export async function createBackend(options: {
       HealthController,
       JwksController,
       AdminController,
-      ...(options.runtime ? [ConversationController, InternalController] : []),
+      ...(options.runtime ? [ConversationController, InternalController, AdminConsoleController] : []),
     ],
     providers: [
       {provide:McpConnections,useValue:new McpConnections(options.pool,options.allowedMcpUrls,options.mcpGateway??options.runtime?.tooling)},
       { provide: DB, useValue: options.pool },
+      {
+        provide: READINESS,
+        useValue: options.readiness ?? { pool: options.pool },
+      },
       { provide: AUTH, useValue: options.auth },
+      { provide: ADMIN_AUTH, useValue: options.auth },
       {
         provide: Settings,
         useValue: new Settings(options.pool, options.allowedMcpUrls),
@@ -316,7 +362,7 @@ export async function createBackend(options: {
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
-    if (req.path === "/health" || req.method === "OPTIONS") return next();
+    if (req.path === "/health" || req.path === "/health/ready" || req.method === "OPTIONS") return next();
     const header = req.get("traceparent") ?? "";
     const match = /^00-([a-f0-9]{32})-([a-f0-9]{16})-0[01]$/.exec(header);
     const trace =
@@ -329,7 +375,7 @@ export async function createBackend(options: {
   });
   app.useGlobalFilters(new ProblemFilter());
   app.use(
-    ["/v1/files", "/internal/v1/requests"],
+    ["/v1/files", "/internal/v1/requests", "/v1/admin/me/avatar"],
     raw({ type: "application/octet-stream", limit: "10mb" }),
   );
   if (options.corsOrigins?.length) {

@@ -24,6 +24,7 @@ Le backend se lance avec [BACKEND.md](BACKEND.md) : copier `.env.example`, rense
 | `pnpm dev:reset` | Efface les données locales (bases, realm, fichiers) |
 | `pnpm check` | Contrats, types générés, typage et tests de toutes les applications |
 | `pnpm catalogue:import` | Réimporte le catalogue de service-public.bj |
+| `pnpm dev:check` | Diagnostique une pile déjà lancée (voir [BACKEND.md](BACKEND.md) « Brancher le front ») |
 
 Comptes de démo, mot de passe `demo-2026` :
 

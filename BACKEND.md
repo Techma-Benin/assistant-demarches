@@ -80,8 +80,19 @@ La transcription est active dès que `MODEL_API_KEY` est présente.
 | `pnpm dev:reset` | Efface les données locales du script |
 | `pnpm --filter @techma/backend typecheck` | Vérifie le typage |
 | `pnpm --filter @techma/backend test` | Lance les tests du backend |
+| `pnpm dev:check` | Diagnostique la pile déjà lancée (santé, `/health/ready`, parcours invité → message.sent) |
 
-`pnpm dev` sans argument tente aussi le tooling, le X-Road simulé et l'interface. Ces trois applications ne sont pas encore prêtes pour cette commande.
+`pnpm dev` sans argument tente aussi le tooling, le X-Road simulé et l'interface si le paquet est présent.
+
+## Brancher le front
+
+1. Copier `.env.example` → `.env` et renseigner `MODEL_API_KEY` (sans la coller ailleurs).
+2. `pnpm dev` — PostgreSQL, Keycloak, backend, tooling, xroad-sim ; l'interface seulement si `apps/interface/web` est dans cette branche.
+3. `pnpm dev:check` (options `--backend-url`, `--interface-url`).
+4. Comptes de démo, mot de passe `demo-2026` : `aminata.usager`, `agent.justice`, `operateur` (liste complète dans le README).
+5. Lire les ✘ : 404/405 = endpoint absent côté backend ; 401/403 = auth ; 503 = modèle/Tooling/X-Road ; timeout `message.sent` = agent bloqué (souvent pas de `MODEL_API_KEY`). Un échec sur `POST /v1/guest-sessions` est un problème backend, pas front.
+
+`GET /health` = processus + migrations. `GET /health/ready` = modèle, Tooling, MCP, X-Road, Keycloak/JWKS, base (aucun secret).
 
 ## Brancher une autre équipe
 

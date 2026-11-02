@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { importPKCS8 } from "jose";
 import type { Pool } from "pg";
 import type { AuthOptions } from "./auth.js";
 import { Identities } from "./identity.js";
@@ -42,7 +40,7 @@ export class ServiceTokens {
         grant_type: "client_credentials",
         client_id: required("OIDC_CLIENT_ID"),
         client_secret: required("OIDC_CLIENT_SECRET"),
-        scope,
+        ...(scope && scope !== "keycloak-admin" ? { scope } : {}),
       }),
       signal: AbortSignal.timeout(15000),
     });
@@ -73,7 +71,9 @@ export async function loadRuntime(
   pool: Pool,
   auth: AuthOptions,
   allowedMcpUrls: ReadonlySet<string>,
+  signingKey: CryptoKey,
 ) {
+  await pool.query("SELECT 1");
   const identities = new Identities(pool);
   const conversations = new Conversations(pool);
   const files = new Files(
@@ -88,10 +88,6 @@ export async function loadRuntime(
     reference === "backend"
       ? tokens.get("tools:call")
       : required(references[reference] ?? "MISSING_MCP_SECRET_REFERENCE"),
-  );
-  const signingKey = await importPKCS8(
-    await readFile(required("SIGNING_KEY_FILE"), "utf8"),
-    "RS256",
   );
   const signing = {
     key: signingKey,

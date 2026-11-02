@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { Problem, canonical, fingerprint } from "./domain.js";
 
@@ -18,8 +19,22 @@ export async function transaction<T>(
     client.release();
   }
 }
-export function idempotencyKey(value?: string): string {
-  if (!value || value.length < 8 || value.length > 128)
+/** When `required`, a missing header is 400. An invalid length is always 400. */
+export function idempotencyKey(
+  value?: string | null,
+  options: { required?: boolean } = {},
+): string {
+  const required = options.required !== false;
+  if (value == null) {
+    if (required)
+      throw new Problem(
+        400,
+        "INVALID_REQUEST",
+        "Idempotency-Key requis (8 à 128 caractères).",
+      );
+    return randomBytes(16).toString("hex");
+  }
+  if (value.length < 8 || value.length > 128)
     throw new Problem(
       400,
       "INVALID_REQUEST",

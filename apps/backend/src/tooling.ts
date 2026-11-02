@@ -4,11 +4,16 @@ import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { approvedMcpUrl, Problem } from "./domain.js";
+const domain = JSON.parse(readFileSync(new URL("./assets/domain.schema.json", import.meta.url), "utf8")) as { $id: string };
+function bindRefs(schema: Record<string, unknown>) {
+  return JSON.parse(JSON.stringify(schema).replaceAll('"#/$defs/', `"${domain.$id}#/$defs/`)) as Record<string, unknown>;
+}
 // Each remote schema has its own registry: two servers may legitimately reuse $id.
 export function compileMcpSchema(schema: Record<string, unknown>) {
   const validator = new Ajv2020({ strict: false, allErrors: true });
   (addFormats as unknown as (instance: Ajv2020) => void)(validator);
-  return validator.compile(schema);
+  validator.addSchema(domain);
+  return validator.compile(bindRefs(schema));
 }
 export type McpAuth = {
   type: "none";
@@ -31,6 +36,8 @@ export type ToolContext = {
   userRef: string;
   traceparent: string;
   mandateId?: string;
+  channel?: "web" | "whatsapp";
+  authenticated?: boolean;
   external?: boolean;
 };
 export type ToolDefinition = {
@@ -96,7 +103,13 @@ export class McpGateway implements ToolingPort {
         headers: {
           ...headers,
           traceparent: context.traceparent,
-          ...(!context.external ? { "X-Conversation-Id": context.conversationId, "X-User-Ref": context.userRef, ...(context.mandateId ? { "X-Mandate-Id": context.mandateId } : {}) } : {}),
+          ...(!context.external ? {
+            "X-Conversation-Id": context.conversationId,
+            "X-User-Ref": context.userRef,
+            ...(context.channel ? { "X-Channel": context.channel } : {}),
+            "X-Authenticated": context.authenticated ? "true" : "false",
+            ...(context.mandateId ? { "X-Mandate-Id": context.mandateId } : {}),
+          } : {}),
           ...(key ? { "Idempotency-Key": key } : {}),
         },
       },
@@ -110,7 +123,8 @@ export class McpGateway implements ToolingPort {
       await client.connect(transport);
       return await work(client);
     }
-    catch {
+    catch (error) {
+      console.error(error instanceof Error ? error.message : error);
       throw new Problem(503, "MCP_CONNECTION_FAILED", "Connexion ou réponse MCP indisponible ; vérifier les paramètres et l’authentification.");
     }
     finally {

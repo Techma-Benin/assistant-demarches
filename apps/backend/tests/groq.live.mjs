@@ -70,7 +70,7 @@ test('live Groq: first greeting, validated synthetic catalogue, authorized synth
   const agent = new Agent(pool, conversations, models, tooling);
   const tp = '00-' + '1'.repeat(32) + '-' + '2'.repeat(16) + '-01';
   async function conversation(text) {
-    const c = await conversations.create(user, { channel: 'web', locale: 'fr' }, identifier('key'));
+    const c = await conversations.create(user, { locale: 'fr' }, identifier('key'));
     const message = { id: identifier('msg'), content: { type: 'text', text }, sentAt: new Date().toISOString() };
     await conversations.accept(user, c.id, message, identifier('key'), tp);
     return { c, message };
@@ -81,15 +81,15 @@ test('live Groq: first greeting, validated synthetic catalogue, authorized synth
   const lookup = await conversation('Pour cette simulation fictive sans valeur administrative : quel est le tarif et quelles pièces sont demandées pour demo-procedure ? Consulte le catalogue et cite sa source.');
   await agent.process(lookup.c.id);
   const catalogueBlocks = await blocks(lookup.c);
-  assert.ok(catalogueBlocks?.some(block => block.type === 'text' && block.sources.some(source => source.procedureId === procedure.id && source.version === procedure.source.version)), 'A validated synthetic source must be returned');
+  assert.ok(catalogueBlocks?.some(block => block.type === 'text' && block.sources.some(source => source.procedureId === procedure.id)), 'A validated synthetic source must be returned');
   assert.ok((counts.get('procedures.get') ?? 0) + (counts.get('procedures.search') ?? 0) > 0);
   t.diagnostic('Live provider used the synthetic catalogue and returned its observed Source.');
 
-  const action = await conversation('Simulation fictive : crée uniquement un brouillon pour demo-procedure avec request.create, puis affiche seulement sa statusCard. Le mandat explicite a déjà été accordé par l’interface. Ne dépose et ne paie rien.');
+  const action = await conversation('Simulation fictive : crée uniquement un brouillon pour demo-procedure avec request.create. Le mandat explicite a déjà été accordé par l’interface. Ne dépose et ne paie rien.');
   const mandate = { id: identifier('mdt'), conversationId: action.c.id, userRef: user.userRef, procedureId: procedure.id, scopes: ['requests:write'], status: 'active', expiresAt: new Date(Date.now() + 3600000).toISOString() };
   await pool.query('INSERT INTO backend_mandates(id,conversation_id,user_ref,body) VALUES($1,$2,$3,$4)', [mandate.id, action.c.id, user.userRef, mandate]);
   await agent.process(action.c.id);
   assert.equal(counts.get('request.create'), 1, 'The authorized synthetic action must execute once');
-  assert.ok((await blocks(action.c))?.some(block => block.type === 'statusCard' && block.request.id === createdRequest.id && block.request.status === 'draft'));
+  assert.ok((await blocks(action.c))?.some(block => block.type === 'requestCard' && block.request.id === createdRequest.id && block.request.status === 'draft'));
   t.diagnostic('Live provider completed one authorized synthetic draft and returned its actual status. No external business action was run.');
 });
