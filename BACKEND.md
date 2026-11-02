@@ -23,7 +23,7 @@ La commande démarre un PostgreSQL et un Keycloak locaux, crée la clé de signa
 
 Le backend écoute sur <http://127.0.0.1:4010>. Les comptes de démo sont dans le [README](README.md).
 
-Si `DATABASE_URL` ou `OIDC_ISSUER` est déjà renseigné dans `.env`, le script ne démarre pas l'instance locale correspondante et ne remplace pas votre valeur.
+Une variable déjà présente dans `.env` est conservée. Le script ne remplit que les variables absentes. Si `DATABASE_URL` ou `OIDC_ISSUER` est renseigné, l'instance locale correspondante n'est pas démarrée.
 
 ## Sans le script
 

@@ -107,7 +107,7 @@ for (const name of names) {
   const defaults = Object.fromEntries(Object.entries(SERVICES[name].env).filter(([key]) => !process.env[key]));
   const child = spawn(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['run', 'dev'], {
     cwd: join(ROOT, directory),
-    env: { ...process.env, ...defaults, NODE_ENV: 'development' },
+    env: { ...process.env, ...defaults, ...(process.env.NODE_ENV ? {} : { NODE_ENV: 'development' }) },
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: process.platform === 'win32',
   });
