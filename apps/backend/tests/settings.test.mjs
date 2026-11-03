@@ -199,7 +199,43 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       assert.equal(
         (
           await request("/v1/operator/models", {
-            authToken: await token({ scope: "operator" }),
+            authToken: await token({
+              realm_access: { roles: ["operator"] },
+              scope: "",
+            }),
+          })
+        ).status,
+        200,
+      );
+      assert.equal(
+        (
+          await request("/v1/operator/status", {
+            authToken: await token({
+              realm_access: { roles: ["operator"] },
+              scope: "",
+            }),
+          })
+        ).status,
+        200,
+      );
+      assert.equal(
+        (
+          await request("/v1/operator/models", {
+            authToken: await token({
+              realm_access: { roles: ["citizen"] },
+              scope: "citizen",
+            }),
+          })
+        ).status,
+        403,
+      );
+      assert.equal(
+        (
+          await request("/v1/operator/status", {
+            authToken: await token({
+              realm_access: { roles: ["official"] },
+              scope: "",
+            }),
           })
         ).status,
         403,
