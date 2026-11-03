@@ -252,6 +252,21 @@ test('pivot agent retries, provenance, consent catalogue and audio work on isola
     assert.equal(calls.length, 0);
     assert.equal((await lastBlocks(c.id)).find(block => block.type === 'loginRequired')?.type, 'loginRequired');
   });
+  await t.test('catalogue question without a tool call retries then forces procedures.search', async () => {
+    const { c } = await queued({ type: 'text', text: 'Quels documents faut-il pour un casier judiciaire ?' });
+    calls = [];
+    response = { items: [procedure] };
+    const choices = [];
+    const model = { async generate(_config, _history, _tools, options) {
+      choices.push(options?.toolChoice);
+      return final('Pièces du catalogue fictif.', [procedure.source]);
+    } };
+    await new Agent(pool, conversations, model, tooling).process(c.id);
+    assert.equal(choices[0], undefined);
+    assert.equal(choices[1], 'required');
+    assert.equal(calls[0]?.name, 'procedures.search');
+    assert.deepEqual((await lastBlocks(c.id))[0].sources, [procedure.source]);
+  });
   await t.test('MANDATE_MISSING builds a consent block server-side', async () => {
     response = procedure;
     const { privateKey } = await generateKeyPair('RS256');

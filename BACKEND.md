@@ -63,11 +63,13 @@ Les migrations partent sur la `DATABASE_URL` indiquée. Le script local n'est pa
 |---|---|
 | `MODEL_API_KEY` | Toujours, pour que l'assistant réponde. |
 | `MODEL_PROVIDER` | `openai`, `openrouter`, `mistral`, `deepseek` ou `gemini`. Défaut `groq`. |
-| `MODEL_NAME` | Un autre modèle du même fournisseur. |
+| `MODEL_NAME` | Un autre modèle du même fournisseur. Défauts : Groq `qwen/qwen3.8-27b` (outils), Gemini `gemini-3.5-flash`. |
 | `MODEL_BASE_URL` | Une autre adresse compatible OpenAI. |
 | `MODEL_PROTOCOL` | `chat-completions` par défaut, `responses` si l'API l'exige. |
 | `TRANSCRIPTION_MODEL` | Modèle vocal. Défaut `whisper-large-v3-turbo`. |
 | `TRANSCRIPTION_ENDPOINT` | Adresse de transcription. Défaut : Groq. |
+
+Les schémas d’outils envoyés à Groq/Gemini inlinent les `$ref` et omettent `additionalProperties: false` (rejetés par ces hôtes). Un hôte OpenAI/Azure strict les conserve. `response_format` n’est demandé que sans outils. Gemini 3 n’accepte un rejeu `tool_calls` qu’avec `thought_signature` ; un appel forcé côté serveur est renvoyé comme donnée utilisateur.
 
 La transcription est active dès que `MODEL_API_KEY` est présente.
 

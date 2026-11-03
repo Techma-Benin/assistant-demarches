@@ -2,9 +2,63 @@ import { DiagnosticProblem, providerReason, safeProviderIdentifier } from "./dia
 import { readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { Problem, approvedMcpUrl, type ModelConfig } from "./domain.js";
-import type { ToolDefinition } from "./tooling.js";
+import { resolveMcpSchema, type ToolDefinition } from "./tooling.js";
 
-export type ModelCall = { id: string; name: string; arguments: string };
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function openaiStrictToolHost(baseUrl?: string): boolean {
+  if (!baseUrl) return false;
+  try {
+    const host = new URL(baseUrl).hostname;
+    return host === "api.openai.com" || host.endsWith(".openai.azure.com");
+  } catch {
+    return false;
+  }
+}
+
+function providerError(upstream: unknown): { code?: unknown; type?: unknown; status?: unknown; message?: unknown; status_code?: unknown } | undefined {
+  const record = Array.isArray(upstream) ? upstream[0] : upstream;
+  if (!isRecord(record)) return undefined;
+  const err = isRecord(record.error) ? record.error : record;
+  return isRecord(err) ? err : undefined;
+}
+
+function asToolArguments(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "{}";
+  try { return JSON.stringify(value); } catch { return "{}"; }
+}
+
+/** Inline $ref and drop JSON Schema features Groq/Gemini reject on function tools. OpenAI-compatible strict hosts keep additionalProperties:false. */
+export function providerToolParameters(schema: unknown, baseUrl?: string): Record<string, unknown> {
+  const resolved = resolveMcpSchema(isRecord(schema) ? schema : { type: "object" });
+  const keepClosedObjects = openaiStrictToolHost(baseUrl);
+  const walk = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(walk);
+    if (!isRecord(value)) return value;
+    const next: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value)) {
+      if (key === "$defs" || key === "$id" || key === "$schema" || key === "$ref") continue;
+      if (key === "additionalProperties" && nested === false && !keepClosedObjects) continue;
+      next[key] = walk(nested);
+    }
+    if (Array.isArray(next.type)) {
+      const types = (next.type as unknown[]).filter((item) => item !== "null");
+      if (types.length <= 1) next.type = types[0] ?? "string";
+      else {
+        next.anyOf = types.map((type) => ({ type }));
+        delete next.type;
+      }
+    }
+    return next;
+  };
+  const cleaned = walk(resolved);
+  return isRecord(cleaned) ? cleaned : { type: "object" };
+}
+
+export type ModelCall = { id: string; name: string; arguments: string; thoughtSignature?: string };
 export type Turn = {
   role: "user" | "assistant" | "tool";
   content: string;
@@ -24,6 +78,8 @@ export type GenerateOptions = {
   onToolCall?: () => void;
   /** Ask the provider for a JSON envelope when it supports response_format (degrades on 400). */
   structuredOutput?: boolean;
+  /** Force a tool turn. Never combine with response_format. */
+  toolChoice?: "auto" | "required" | { name: string };
 };
 
 const AGENT_BLOCKS_SCHEMA = {
@@ -118,12 +174,16 @@ export class HttpModels implements ModelPort {
     options?: GenerateOptions,
   ): Promise<ModelReply> {
     let emitted = false;
+    let dropStream = Boolean(
+      options?.onTextDelta
+      && tools.length
+      && (() => { try { return new URL(config.baseUrl).hostname === "generativelanguage.googleapis.com"; } catch { return false; } })(),
+    );
     let structuredKind: false | "json_schema" | "json_object" =
-      options?.structuredOutput && structuredOutputHost(config.baseUrl) ? "json_schema" : false;
+      options?.structuredOutput && !tools.length && structuredOutputHost(config.baseUrl) ? "json_schema" : false;
     for (let attempt = 0; ; ) {
       // A retry after a broken stream must not replay text the listener already got: it is requested without streaming.
-      const forwarded: GenerateOptions | undefined = !options?.onTextDelta ? options
-        : emitted ? { ...options, onTextDelta: undefined }
+      const forwarded: GenerateOptions | undefined = !options?.onTextDelta || emitted || dropStream ? { ...options, onTextDelta: undefined }
         : { ...options, onTextDelta: (delta) => { emitted = true; return options.onTextDelta!(delta); } };
       try { return await this.generateOnce(config, history, tools, forwarded, structuredKind); }
       catch (error) {
@@ -132,8 +192,15 @@ export class HttpModels implements ModelPort {
           structuredKind = structuredKind === "json_schema" ? "json_object" : false;
           continue;
         }
+        // Gemini (and some OpenAI-compat hosts) reject stream+tools with HTTP 400.
+        if (!dropStream && options?.onTextDelta && tools.length && diagnostic?.httpFailure && diagnostic?.upstreamStatus === 400) {
+          dropStream = true;
+          continue;
+        }
         const status = diagnostic?.upstreamStatus;
-        const transient = diagnostic?.reason === "provider_network_error" || diagnostic?.reason === "provider_response_invalid" || (typeof status === "number" && ([408, 425, 429].includes(status) || status >= 500));
+        if (status === 401 || status === 403 || status === 429 || diagnostic?.reason === "provider_rate_limit_or_quota" || diagnostic?.reason === "provider_authentication_failed" || diagnostic?.reason === "provider_access_forbidden")
+          throw error;
+        const transient = diagnostic?.reason === "provider_network_error" || diagnostic?.reason === "provider_response_invalid" || (typeof status === "number" && ([408, 425].includes(status) || status >= 500));
         if (!transient || attempt >= 2) throw error;
         // Only provider generation is retried; tool actions are handled by Agent.
         await delay(250 * 2 ** attempt);
@@ -201,7 +268,7 @@ export class HttpModels implements ModelPort {
           type: "function",
           name: wireName(tool.name),
           description: tool.description,
-          parameters: tool.inputSchema,
+          parameters: providerToolParameters(tool.inputSchema, provider.baseUrl),
           strict: false,
         })),
       };
@@ -211,45 +278,28 @@ export class HttpModels implements ModelPort {
         max_tokens: 2000,
         messages: [
           { role: "system", content: prompt },
-          ...history.map((turn) =>
-            turn.role === "tool"
-              ? {
-                  role: "tool",
-                  tool_call_id: turn.callId,
-                  content: turn.content,
-                }
-              : {
-                  role: turn.role,
-                  content: turn.content || null,
-                  ...(turn.calls?.length
-                    ? {
-                        tool_calls: turn.calls.map((call) => ({
-                          id: call.id,
-                          type: "function",
-                          function: {
-                            name: wireName(call.name),
-                            arguments: call.arguments,
-                          },
-                        })),
-                      }
-                    : {}),
-                },
-          ),
+          ...this.chatTurns(history, wireName, provider.baseUrl),
         ],
         tools: tools.map((tool) => ({
           type: "function",
           function: {
             name: wireName(tool.name),
             description: tool.description,
-            parameters: tool.inputSchema,
+            parameters: providerToolParameters(tool.inputSchema, provider.baseUrl),
           },
         })),
       };
     // Groq and several OpenAI-compatible services reject an empty tools array.
     if (!tools.length) delete body.tools;
-    if (structuredKind) {
+    // Mixing json_schema with tools makes Groq/Gemini skip or reject function calls.
+    if (structuredKind && !tools.length) {
       if (responses) body.text = { format: responsesTextFormat(structuredKind) };
       else body.response_format = chatResponseFormat(structuredKind);
+    }
+    if (tools.length && options?.toolChoice && options.toolChoice !== "auto") {
+      if (options.toolChoice === "required") body.tool_choice = "required";
+      else if (responses) body.tool_choice = { type: "function", name: wireName(options.toolChoice.name) };
+      else body.tool_choice = { type: "function", function: { name: wireName(options.toolChoice.name) } };
     }
     if (!responses && tools.length) {
       // Groq defaults this parameter to true, but its GPT-OSS models support
@@ -305,15 +355,17 @@ export class HttpModels implements ModelPort {
           } finally { await reader.cancel().catch(() => {}); }
         }
       } catch { /* HTTP status remains useful even for a non-JSON response. */ }
+      const err = providerError(upstream);
       throw new DiagnosticProblem("Appel au fournisseur IA refusé (HTTP " + res.status + ").", {
         stage: "model.response", provider: providerName, model: config.model,
         upstreamStatus: res.status,
-        upstreamCode: safeProviderIdentifier(upstream?.error?.code),
-        upstreamType: safeProviderIdentifier(upstream?.error?.type),
+        httpFailure: true,
+        upstreamCode: safeProviderIdentifier(err?.code ?? err?.status),
+        upstreamType: safeProviderIdentifier(err?.type ?? err?.status),
         upstreamRequestId: safeProviderIdentifier(res.headers.get("x-request-id") ?? res.headers.get("request-id")),
-        reason: res.status === 400 && new URL(provider.baseUrl).hostname === "api.groq.com" && upstream?.error?.code === "tool_use_failed"
+        reason: res.status === 400 && new URL(provider.baseUrl).hostname === "api.groq.com" && err?.code === "tool_use_failed"
           ? "provider_tool_generation_invalid"
-          : providerReason(res.status, upstream?.error?.message),
+          : providerReason(res.status, err?.message),
       });
     }
     if (onTextDelta) {
@@ -342,6 +394,10 @@ export class HttpModels implements ModelPort {
         stage: "model.response", provider: providerName, model: config.model,
         reason: "provider_response_invalid",
       });
+    }
+    const envelope = providerError(value);
+    if (envelope && (envelope.message || envelope.code || envelope.status) && !value?.choices && !value?.output) {
+      throw this.providerEnvelopeError(providerName, config.model, { ...envelope, status_code: typeof envelope.status === "number" ? envelope.status : 400 });
     }
     return responses
       ? this.replyFromResponses(value, toolNames, providerName, config.model)
@@ -385,21 +441,94 @@ export class HttpModels implements ModelPort {
       rawOutput: value.output,
     };
   }
+  private geminiHost(baseUrl: string): boolean {
+    try { return new URL(baseUrl).hostname === "generativelanguage.googleapis.com"; }
+    catch { return false; }
+  }
+  private thoughtSignature(call: any): string | undefined {
+    const extra = call?.extra_content?.google?.thought_signature ?? call?.thought_signature ?? call?.thoughtSignature;
+    return typeof extra === "string" && extra ? extra : undefined;
+  }
+  private chatTurns(history: Turn[], wireName: (name: string) => string, baseUrl: string): Record<string, unknown>[] {
+    const unsigned = new Set(
+      history.flatMap((turn) => turn.role === "assistant" ? (turn.calls ?? []).filter((call) => !call.thoughtSignature).map((call) => call.id) : []),
+    );
+    const flatten = this.geminiHost(baseUrl);
+    const out: Record<string, unknown>[] = [];
+    for (const turn of history) {
+      if (turn.role === "tool") {
+        if (flatten && turn.callId && unsigned.has(turn.callId))
+          out.push({ role: "user", content: turn.content });
+        else
+          out.push({ role: "tool", tool_call_id: turn.callId, content: turn.content });
+        continue;
+      }
+      const signed = (turn.calls ?? []).filter((call) => call.thoughtSignature);
+      const replay = flatten ? signed : (turn.calls ?? []);
+      if (flatten && turn.role === "assistant" && (turn.calls?.length ?? 0) && !replay.length && !turn.content?.trim())
+        continue;
+      out.push({
+        role: turn.role,
+        content: turn.content || null,
+        ...(replay.length
+          ? {
+              tool_calls: replay.map((call) => ({
+                id: call.id,
+                type: "function",
+                function: { name: wireName(call.name), arguments: call.arguments },
+                ...(call.thoughtSignature
+                  ? { extra_content: { google: { thought_signature: call.thoughtSignature } } }
+                  : {}),
+              })),
+            }
+          : {}),
+      });
+    }
+    return out;
+  }
   private replyFromChat(value: any, toolNames: Map<string, string>, providerName: string, model: string): ModelReply {
-    const message = value?.choices?.[0]?.message;
-    if (!message || typeof message !== "object" || (message.tool_calls != null && !Array.isArray(message.tool_calls)))
+    const choice = value?.choices?.[0];
+    const message = choice?.message && typeof choice.message === "object" ? choice.message
+      : choice?.delta && typeof choice.delta === "object" ? choice.delta
+      : undefined;
+    if (!message || typeof message !== "object")
+      throw this.invalidModelResponse(providerName, model);
+    if (message.tool_calls != null && !Array.isArray(message.tool_calls) && typeof message.tool_calls !== "object")
       throw this.invalidModelResponse(providerName, model);
     const content = message.content;
     const contentText = typeof content === "string" ? content : Array.isArray(content)
       ? content.map((part: unknown) => typeof part === "string" ? part : typeof (part as any)?.text === "string" ? (part as any).text : "").join("") : "";
     return {
       text: contentText,
-      calls: (message.tool_calls ?? []).map((call: any) => ({
-        id: call.id,
-        name: toolNames.get(call.function?.name) ?? call.function?.name,
-        arguments: call.function?.arguments,
-      })),
+      calls: this.callsFromMessage(message, toolNames),
     };
+  }
+  private callsFromMessage(message: any, toolNames: Map<string, string>): ModelCall[] {
+    const raw: any[] = [];
+    if (Array.isArray(message.tool_calls)) raw.push(...message.tool_calls);
+    else if (message.tool_calls && typeof message.tool_calls === "object") raw.push(...Object.values(message.tool_calls));
+    if (message.function_call) raw.push({ id: message.function_call.id, function: message.function_call });
+    if (message.functionCall) raw.push({
+      id: message.functionCall.id,
+      function: { name: message.functionCall.name, arguments: message.functionCall.args ?? message.functionCall.arguments },
+    });
+    if (Array.isArray(message.content)) {
+      for (const part of message.content) {
+        const fc = part?.functionCall ?? part?.function_call;
+        if (fc) raw.push({ id: part.id, function: { name: fc.name, arguments: fc.args ?? fc.arguments } });
+      }
+    }
+    return raw.map((call, index) => {
+      const fn = call?.function ?? call;
+      const name = typeof fn?.name === "string" ? (toolNames.get(fn.name) ?? fn.name) : "";
+      const thoughtSignature = this.thoughtSignature(call) ?? this.thoughtSignature(fn);
+      return {
+        id: typeof call?.id === "string" && call.id ? call.id : "call_" + (index + 1),
+        name,
+        arguments: asToolArguments(fn?.arguments ?? fn?.args),
+        ...(thoughtSignature ? { thoughtSignature } : {}),
+      };
+    }).filter((call) => call.name);
   }
   private async replyFromChatStream(
     res: Response,
@@ -412,7 +541,26 @@ export class HttpModels implements ModelPort {
     let text = "";
     const calls = new Map<number, { id: string; name: string; arguments: string }>();
     let sawChoice = false;
+    const absorb = (part: any, indexHint = 0) => {
+      if (!part || typeof part !== "object") return;
+      const list = Array.isArray(part.tool_calls) ? part.tool_calls
+        : part.tool_calls && typeof part.tool_calls === "object" ? Object.values(part.tool_calls)
+        : part.function_call || part.functionCall ? [part] : [];
+      for (const call of list) {
+        const fn = call?.function ?? call.function_call ?? call.functionCall ?? call;
+        const index = typeof call?.index === "number" ? call.index : indexHint;
+        const current = calls.get(index) ?? { id: "", name: "", arguments: "" };
+        if (typeof call?.id === "string") current.id += call.id;
+        if (typeof fn?.name === "string") current.name += fn.name;
+        if (typeof fn?.arguments === "string") current.arguments += fn.arguments;
+        else if (fn?.arguments && typeof fn.arguments === "object") current.arguments = asToolArguments(fn.arguments);
+        else if (fn?.args && typeof fn.args === "object") current.arguments = asToolArguments(fn.args);
+        calls.set(index, current);
+      }
+    };
     await this.forEachServerEvent(res, providerName, model, async (value) => {
+      const err = providerError(value);
+      if (err && (err.message || err.code) && !value?.choices) throw this.providerEnvelopeError(providerName, model, err);
       const choice = value?.choices?.[0];
       if (!choice || typeof choice !== "object") {
         if (value?.error) throw this.providerEnvelopeError(providerName, model, value.error);
@@ -420,16 +568,18 @@ export class HttpModels implements ModelPort {
       }
       sawChoice = true;
       const delta = choice.delta;
-      if (!delta || typeof delta !== "object") return;
-      if (delta.tool_calls != null && !Array.isArray(delta.tool_calls)) throw this.invalidModelResponse(providerName, model);
+      const snapshot = choice.message && typeof choice.message === "object" ? choice.message : undefined;
+      const part = delta && typeof delta === "object" ? delta : snapshot;
+      if (!part) return;
+      if (part.tool_calls != null && !Array.isArray(part.tool_calls) && typeof part.tool_calls !== "object") throw this.invalidModelResponse(providerName, model);
       // Before the text of this same chunk: a tool turn is never streamed as an answer.
-      if (delta.tool_calls?.length) onToolCall?.();
+      if ((Array.isArray(part.tool_calls) && part.tool_calls.length) || part.function_call || part.functionCall) onToolCall?.();
       const pieces: string[] = [];
-      if (typeof delta.content === "string") pieces.push(delta.content);
-      else if (Array.isArray(delta.content)) {
-        for (const part of delta.content) {
-          if (typeof part === "string") pieces.push(part);
-          else if (typeof part?.text === "string") pieces.push(part.text);
+      if (typeof part.content === "string") pieces.push(part.content);
+      else if (Array.isArray(part.content)) {
+        for (const item of part.content) {
+          if (typeof item === "string") pieces.push(item);
+          else if (typeof item?.text === "string") pieces.push(item.text);
         }
       }
       for (const piece of pieces) {
@@ -437,14 +587,7 @@ export class HttpModels implements ModelPort {
         text += piece;
         await onTextDelta(piece);
       }
-      for (const call of delta.tool_calls ?? []) {
-        const index = typeof call?.index === "number" ? call.index : 0;
-        const current = calls.get(index) ?? { id: "", name: "", arguments: "" };
-        if (typeof call?.id === "string") current.id += call.id;
-        if (typeof call?.function?.name === "string") current.name += call.function.name;
-        if (typeof call?.function?.arguments === "string") current.arguments += call.function.arguments;
-        calls.set(index, current);
-      }
+      absorb(part);
     });
     if (!sawChoice) throw this.invalidModelResponse(providerName, model);
     const tool_calls = [...calls.entries()].sort((a, b) => a[0] - b[0]).map(([, call]) => ({
@@ -568,7 +711,12 @@ export class HttpModels implements ModelPort {
           reason: "provider_response_invalid",
         });
       }
-      if (!value || typeof value !== "object" || Array.isArray(value)) throw this.invalidModelResponse(providerName, model);
+      if (Array.isArray(value)) {
+        const err = providerError(value);
+        if (err) throw this.providerEnvelopeError(providerName, model, { ...err, status_code: typeof err.status === "number" ? err.status : 400 });
+        throw this.invalidModelResponse(providerName, model);
+      }
+      if (!value || typeof value !== "object") throw this.invalidModelResponse(providerName, model);
       await onEvent(value, eventName);
     });
   }

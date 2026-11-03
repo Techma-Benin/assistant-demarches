@@ -159,6 +159,13 @@ export class LiveReply {
       onToolCall: () => { muted = true; },
       complete: (replyText) => {
         if (muted || !this.open || typeof replyText !== "string") return;
+        if (!looksLikeJsonEnvelope(replyText)) {
+          incoming = replyText;
+          raw = replyText;
+          if (!(hasStreamingAdminFact(replyText) && observed.length === 0)) stage(raw, true);
+          muted = true;
+          return;
+        }
         // The held tail is released only when the stream carried the whole reply (a broken stream retried elsewhere
         // may end in the middle of an e-mail).
         const whole = new TextDeltaExtractor().push(replyText);

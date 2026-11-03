@@ -316,3 +316,47 @@ test("durable history, live deltas and socket push", async (t) => {
   await once(ws, "close");
   conversations.page = originalPage;
 });
+
+test("accepted prose and fallback publish a delta before message.sent", async (t) => {
+  const pg = await isolatedDatabase();
+  const pool = database(pg.connection);
+  const conversations = new Conversations(pool);
+  t.after(async () => { await pool.end(); await pg.close(); });
+  await migrate(pool);
+  await provision(pool, "global", "models", {
+    id: "test", label: "Test", baseUrl: "https://api.groq.com/openai/v1",
+    protocol: "chat-completions", model: "synthetic", apiKeyRef: "GROQ_API_KEY", temperature: 0, active: true,
+  });
+  const user = { userRef: identifier("usr"), channel: "web", authenticated: true, expiresAt: Date.now() + 60000, roles: new Set() };
+  const tooling = { async discover() { return []; }, async call() { throw new Error("unused"); } };
+  let turn = 0;
+  const model = {
+    async generate(_config, _history, _tools, options) {
+      turn++;
+      if (turn === 1) {
+        const text = "Je suis l’assistant de démarches administratives.";
+        await options.onTextDelta(text);
+        return { text, calls: [] };
+      }
+      return { text: "", calls: [] };
+    },
+  };
+  const agent = new Agent(pool, conversations, model, tooling);
+  const first = await conversations.create(user, { locale: "fr" }, identifier("key"));
+  await conversations.accept(user, first.id, { id: identifier("msg"), content: { type: "text", text: "comment fonctionne l'assistant ?" }, sentAt: new Date().toISOString() }, identifier("key"), tp);
+  await agent.process(first.id);
+  const firstReceived = (await conversations.page(user.userRef, first.id)).items[0];
+  const firstLive = await conversations.page(user.userRef, first.id, firstReceived.id);
+  const firstKinds = firstLive.items.map((event) => event.data.kind);
+  assert.ok(firstKinds.includes("message.delta"));
+  assert.ok(firstKinds.indexOf("message.delta") < firstKinds.indexOf("message.sent"));
+
+  const second = await conversations.create(user, { locale: "fr" }, identifier("key"));
+  await conversations.accept(user, second.id, { id: identifier("msg"), content: { type: "text", text: "…" }, sentAt: new Date().toISOString() }, identifier("key"), tp);
+  await agent.process(second.id);
+  const secondReceived = (await conversations.page(user.userRef, second.id)).items[0];
+  const secondLive = await conversations.page(user.userRef, second.id, secondReceived.id);
+  const secondKinds = secondLive.items.map((event) => event.data.kind);
+  assert.ok(secondKinds.includes("message.delta"));
+  assert.ok(secondKinds.indexOf("message.delta") < secondKinds.indexOf("message.sent"));
+});

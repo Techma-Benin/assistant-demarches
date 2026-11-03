@@ -115,7 +115,6 @@ function parseOrWrap(replyText: string): unknown[] {
   const trimmed = replyText.trim();
   if (!trimmed) reject("empty_reply", "Réponse modèle vide ou hors contrat JSON.");
   if (!looksLikeJsonEnvelope(trimmed)) {
-    if (hasAdministrativeFact(trimmed)) reject("admin_fact_without_source", "Fait administratif sans source.");
     return [{ type: "text", text: trimmed, sources: [] }];
   }
   try {
@@ -135,8 +134,13 @@ export function presentModelReply(replyText: string, evidence: ReplyEvidence): S
       if (block.type === "text") {
         if (typeof block.text !== "string" || !block.text.trim() || !Array.isArray(block.sources))
           reject("invalid_text_block", "Texte modèle invalide.");
-        const sources = block.sources.map((source: unknown) => bindObservedSource(source, evidence.sources));
-        if (!sources.length && hasAdministrativeFact(block.text)) reject("admin_fact_without_source", "Fait administratif sans source.");
+        const cited = Array.isArray(block.sources) ? block.sources : [];
+        if (draftCitesOutside(block.text, evidence.sources)) reject("unobserved_source", "Source non observée.");
+        const sources = cited.length
+          ? cited.map((source: unknown) => bindObservedSource(source, evidence.sources))
+          : hasAdministrativeFact(block.text)
+            ? (evidence.sources.length ? evidence.sources : reject("admin_fact_without_source", "Fait administratif sans source."))
+            : [];
         return { ...block, text: redact(block.text), sources };
       }
       return block;
