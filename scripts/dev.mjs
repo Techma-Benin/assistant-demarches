@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { KEYCLOAK_VERSION, LOCAL, PORTS, ROOT, SERVICES, URLS } from './dev/local-config.mjs';
 import { startKeycloak } from './dev/keycloak.mjs';
 import { startPostgres } from './dev/postgres.mjs';
-import { serviceEnv } from './dev/service-env.mjs';
+import { dropStaleLocalEnv, serviceEnv } from './dev/service-env.mjs';
 
 const args = process.argv.slice(2);
 const colors = { postgres: 34, keycloak: 35, backend: 32, tooling: 33, xroad: 36, interface: 31 };
@@ -25,6 +25,12 @@ if (args.includes('--reset')) {
 }
 
 if (existsSync(join(ROOT, '.env'))) process.loadEnvFile(join(ROOT, '.env'));
+const staleEnv = dropStaleLocalEnv(process.env);
+if (staleEnv.length) {
+  console.warn(
+    `Avertissement : .env contient des URLs locales obsolètes (${staleEnv.join(', ')}). Elles sont ignorées ; la pile locale utilise PostgreSQL :${PORTS.postgres} et Tooling :${PORTS.tooling}. Corriger .env (voir .env.example) ou laisser ces lignes commentées.`,
+  );
+}
 
 mkdirSync(join(LOCAL, 'keys'), { recursive: true });
 const signingKey = join(LOCAL, 'keys', 'backend-signing.pem');

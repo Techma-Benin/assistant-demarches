@@ -12,7 +12,7 @@ L'usager fait sa démarche administrative dans une conversation (web ou WhatsApp
 
 Prérequis : Node.js 22 et pnpm 10.20.0 (`corepack enable`). Pas de Docker, pas de Java, pas de PostgreSQL à installer.
 
-Le backend se lance avec [BACKEND.md](BACKEND.md) : copier `.env.example`, renseigner `MODEL_API_KEY`, puis `pnpm dev backend`. La même clé active la transcription des vocaux (pas de `TRANSCRIPTION_ENABLED` ; décision produit de l'utilisateur Billux).
+Le backend se lance avec [BACKEND.md](BACKEND.md) : copier `.env.example`, renseigner `MODEL_API_KEY` (éventuellement `MODEL_PROVIDER`), laisser le reste commenté, puis `pnpm dev`. Un `.env` ancien (`DATABASE_URL` :5432, Tooling :4020) est ignoré avec un avertissement. La même clé active la transcription des vocaux.
 
 `pnpm dev` sans argument démarre aussi le tooling, le X-Road simulé et l'interface. Ces trois applications ne sont pas encore prêtes pour cette commande. Le détail est dans [BACKEND.md](BACKEND.md).
 
@@ -23,6 +23,7 @@ Le backend se lance avec [BACKEND.md](BACKEND.md) : copier `.env.example`, rense
 | `pnpm dev` | L'infrastructure et toutes les applications citées dans le script |
 | `pnpm dev:reset` | Efface les données locales (bases, realm, fichiers) |
 | `pnpm check` | Contrats, types générés, typage et tests de toutes les applications |
+| `pnpm --filter @techma/backend test` | Tests backend (`PG_BIN` optionnel : `@embedded-postgres/<plateforme>-<arch>/native/bin`) |
 | `pnpm catalogue:import` | Réimporte le catalogue de service-public.bj |
 | `pnpm dev:check` | Diagnostique une pile déjà lancée (voir [BACKEND.md](BACKEND.md) « Brancher le front ») |
 

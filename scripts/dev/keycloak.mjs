@@ -44,12 +44,22 @@ function findJavaHome(directory) {
 async function install(log) {
   const javaDir = `${LOCAL}java`;
   if (!installed(javaDir)) {
-    const os = windows ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux';
-    const arch = process.arch === 'arm64' ? 'aarch64' : 'x64';
-    const archive = `${LOCAL}java-download${windows ? '.zip' : '.tar.gz'}`;
-    await download(`https://api.adoptium.net/v3/binary/latest/${JAVA_VERSION}/ga/${os}/${arch}/jre/hotspot/normal/eclipse`, archive, log);
-    extract(archive, javaDir);
-    rmSync(archive);
+    let reuse = false;
+    try {
+      const home = findJavaHome(javaDir);
+      execFileSync(join(home, 'bin', windows ? 'java.exe' : 'java'), ['-version'], { stdio: 'ignore' });
+      writeFileSync(join(javaDir, INSTALLED), '');
+      reuse = true;
+      log('JRE déjà présent dans .local/java : marqueur .installed posé, téléchargement ignoré.');
+    } catch { /* missing or broken JRE: download below */ }
+    if (!reuse) {
+      const os = windows ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux';
+      const arch = process.arch === 'arm64' ? 'aarch64' : 'x64';
+      const archive = `${LOCAL}java-download${windows ? '.zip' : '.tar.gz'}`;
+      await download(`https://api.adoptium.net/v3/binary/latest/${JAVA_VERSION}/ga/${os}/${arch}/jre/hotspot/normal/eclipse`, archive, log);
+      extract(archive, javaDir);
+      rmSync(archive);
+    }
   }
   const keycloakDir = `${LOCAL}keycloak-${KEYCLOAK_VERSION}`;
   if (!installed(keycloakDir)) {
