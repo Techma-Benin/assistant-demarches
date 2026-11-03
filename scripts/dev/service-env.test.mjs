@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SERVICES } from './local-config.mjs';
-import { serviceEnv } from './service-env.mjs';
+import { dropStaleLocalEnv, serviceEnv, staleLocalKeys } from './service-env.mjs';
 
 const spilled = {
   PATH: '/usr/bin',
@@ -34,4 +34,33 @@ test('backend still receives unique `.env` overrides and its own defaults for sh
   assert.equal(backend.SIGNING_KEY_FILE, '/tmp/backend-signing.pem');
   assert.equal(backend.MODEL_API_KEY, 'groq-test');
   assert.equal(backend.NODE_ENV, 'development');
+});
+
+test('a stale .env on :5432 / :4020 is ignored in favour of local defaults', () => {
+  const stale = {
+    PATH: '/usr/bin',
+    MODEL_API_KEY: 'only-key',
+    DATABASE_URL: 'postgres://techma:techma@127.0.0.1:5432/backend',
+    TOOLING_URL: 'http://127.0.0.1:4020',
+    MCP_ALLOWED_URLS: 'http://127.0.0.1:4020/mcp',
+    TOOLING_MCP_URL: 'http://127.0.0.1:4020/mcp',
+  };
+  assert.deepEqual(staleLocalKeys(stale), ['DATABASE_URL', 'TOOLING_URL', 'TOOLING_MCP_URL', 'MCP_ALLOWED_URLS']);
+  const backend = serviceEnv('backend', stale, SERVICES);
+  assert.equal(backend.DATABASE_URL, SERVICES.backend.env.DATABASE_URL);
+  assert.equal(backend.TOOLING_URL, SERVICES.backend.env.TOOLING_URL);
+  assert.equal(backend.MCP_ALLOWED_URLS, SERVICES.backend.env.MCP_ALLOWED_URLS);
+  assert.equal(backend.MODEL_API_KEY, 'only-key');
+  const copy = { ...stale };
+  assert.deepEqual(dropStaleLocalEnv(copy), ['DATABASE_URL', 'TOOLING_URL', 'TOOLING_MCP_URL', 'MCP_ALLOWED_URLS']);
+  assert.equal(copy.DATABASE_URL, undefined);
+  assert.equal(copy.MODEL_API_KEY, 'only-key');
+});
+
+test('a remote DATABASE_URL is kept', () => {
+  const remote = {
+    DATABASE_URL: 'postgres://techma:techma@db.example.test:5432/backend',
+    MODEL_API_KEY: 'only-key',
+  };
+  assert.deepEqual(staleLocalKeys(remote), []);
 });
