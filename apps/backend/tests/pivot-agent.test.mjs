@@ -5,6 +5,7 @@ import { generateKeyPair } from 'jose';
 import { isolatedDatabase } from './helpers.mjs';
 import { database, migrate, provision } from '../dist/apps/backend/src/database.js';
 import { Conversations } from '../dist/apps/backend/src/conversations.js';
+import { transaction } from '../dist/apps/backend/src/transactions.js';
 import { Agent } from '../dist/apps/backend/src/agent.js';
 import { Consent, McpProcedureCatalog } from '../dist/apps/backend/src/consent.js';
 import { identifier } from '../dist/apps/backend/src/domain.js';
@@ -264,8 +265,62 @@ test('pivot agent retries, provenance, consent catalogue and audio work on isola
     await new Agent(pool, conversations, model, tooling).process(c.id);
     assert.equal(choices[0], undefined);
     assert.equal(choices[1], 'required');
-    assert.equal(calls[0]?.name, 'procedures.search');
+    assert.deepEqual(calls.map((call) => call.name), ['procedures.search', 'procedures.get']);
+    assert.equal(calls[1].args.procedureId, procedure.id);
     assert.deepEqual((await lastBlocks(c.id))[0].sources, [procedure.source]);
+  });
+  await t.test('rejected model reply after requestCard keeps the card instead of a generic refusal', async () => {
+    const { c } = await queued();
+    const mandate = { id: identifier('mdt'), conversationId: c.id, userRef: user.userRef, procedureId: procedure.id, scopes: ['requests:write'], status: 'active', expiresAt: new Date(Date.now() + 3600000).toISOString() };
+    await pool.query('INSERT INTO backend_mandates(id,conversation_id,user_ref,body) VALUES($1,$2,$3,$4)', [mandate.id, c.id, user.userRef, mandate]);
+    const draft = { ...fixtures.schemas.Request, id: identifier('req'), conversationId: c.id, documents: [{ documentType: 'extrait-acte-naissance', label: 'Extrait d’acte de naissance', fileId: null }] };
+    response = draft;
+    calls = [];
+    let count = 0;
+    const model = { async generate() { return count++ ? final('Le tarif est de 15000 FCFA.') : toolCall('request.create', { procedureId: procedure.id }); } };
+    await new Agent(pool, conversations, model, tooling).process(c.id);
+    const blocks = await lastBlocks(c.id);
+    assert.equal(blocks.find((block) => block.type === 'requestCard')?.request.id, draft.id);
+    assert.equal(blocks.some((block) => block.type === 'fileRequest' && block.documentType === 'extrait-acte-naissance'), true);
+    assert.match(blocks[0].text, /pièces|dossier/);
+    assert.equal(blocks[0].text.includes('source administrative validée'), false);
+    assert.equal((await pool.query('SELECT reason FROM backend_unanswered WHERE conversation_id=$1', [c.id])).rows.length, 0);
+    response = procedure;
+  });
+  await t.test('composer file without documentType binds to the pending fileRequest and attaches', async () => {
+    const c = await conversations.create(user, { locale: 'fr' }, identifier('key'));
+    const requestId = identifier('req');
+    const fileId = identifier('fil');
+    const file = { id: fileId, mimeType: 'application/pdf', sizeBytes: 12, expiresAt: new Date(Date.now() + 3600000).toISOString() };
+    await pool.query('INSERT INTO backend_files(id,user_ref,body,object_key,expires_at) VALUES($1,$2,$3,$4,$5)', [fileId, user.userRef, file, 'synthetic-pdf', file.expiresAt]);
+    await transaction(pool, (db) => conversations.complete(db, c.id, identifier('msg'), [
+      { type: 'fileRequest', requestId, documentType: 'extrait-acte-naissance', label: 'Extrait d’acte de naissance', acceptedMimeTypes: ['application/pdf'], received: false },
+    ], tp));
+    const attached = { ...fixtures.schemas.Request, id: requestId, conversationId: c.id, documents: [{ documentType: 'extrait-acte-naissance', label: 'Extrait d’acte de naissance', fileId }] };
+    const attachCalls = [];
+    const attachTooling = {
+      async discover() { return catalog; },
+      async call(_url, _auth, name, args, context, key) {
+        attachCalls.push({ name, args, context, key });
+        if (name === 'documents.attach') return { structuredContent: attached, content: [{ type: 'text', text: JSON.stringify(attached) }] };
+        return { structuredContent: procedure, content: [{ type: 'text', text: JSON.stringify(procedure) }] };
+      },
+    };
+    const mandate = { id: identifier('mdt'), conversationId: c.id, userRef: user.userRef, procedureId: procedure.id, scopes: ['documents:write'], status: 'active', expiresAt: new Date(Date.now() + 3600000).toISOString() };
+    await pool.query('INSERT INTO backend_mandates(id,conversation_id,user_ref,body) VALUES($1,$2,$3,$4)', [mandate.id, c.id, user.userRef, mandate]);
+    const message = { id: identifier('msg'), content: { type: 'file', fileId, documentType: null }, sentAt: new Date().toISOString() };
+    await conversations.accept(user, c.id, message, identifier('key'), tp);
+    let seen = '';
+    const model = { async generate(_config, history) {
+      seen = history.find((item) => item.role === 'user')?.content ?? '';
+      return final('Pièce rattachée.');
+    } };
+    await new Agent(pool, conversations, model, attachTooling).process(c.id);
+    assert.match(seen, new RegExp(requestId));
+    assert.match(seen, new RegExp(fileId));
+    assert.match(seen, /extrait-acte-naissance/);
+    assert.equal(attachCalls.some((call) => call.name === 'documents.attach' && call.args.fileId === fileId && call.args.documentType === 'extrait-acte-naissance' && call.args.requestId === requestId), true);
+    assert.equal((await lastBlocks(c.id)).some((block) => block.type === 'requestCard' && block.request.documents[0].fileId === fileId), true);
   });
   await t.test('MANDATE_MISSING builds a consent block server-side', async () => {
     response = procedure;

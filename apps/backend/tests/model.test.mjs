@@ -4,7 +4,7 @@ import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { HttpModels, providerToolParameters } from '../dist/apps/backend/src/model.js';
 import { catalog } from '../dist/apps/backend/src/tooling.js';
-import { presentModelReply, mergeSystemBlocks, SAFE_CONVERSATIONAL_TEXT } from '../dist/apps/backend/src/model-reply.js';
+import { presentModelReply, mergeSystemBlocks, SAFE_CONVERSATIONAL_TEXT, honestReplyFromSystemBlocks, bindUploadedFile, fileReceivedInstruction, parseReceivedPiece, isGenericRefusal, UNAVAILABLE_BLOCKS } from '../dist/apps/backend/src/model-reply.js';
 
 const fixture = JSON.parse(readFileSync(new URL('../../../contracts/v2/examples.json', import.meta.url)));
 const procedure = fixture.schemas.Procedure;
@@ -36,6 +36,15 @@ test('model may only emit text, buttons or form; backend merges system blocks', 
   assert.equal(merged[0].type, 'text');
   assert.equal(merged[1].type, 'requestCard');
   assert.equal(merged[1].request.id, request.id);
+  const honest = honestReplyFromSystemBlocks([{ type: 'requestCard', request }]);
+  assert.match(honest[0].text, /dossier/);
+  assert.equal(isGenericRefusal(honest), false);
+  assert.equal(isGenericRefusal(UNAVAILABLE_BLOCKS), true);
+  const pending = [{ requestId: request.id, documentType: 'extrait-acte-naissance' }];
+  assert.deepEqual(bindUploadedFile(pending, [], { documentType: null }), pending[0]);
+  assert.equal(bindUploadedFile(pending, [{ documentType: 'extrait-acte-naissance' }], { documentType: null }), undefined);
+  const instruction = fileReceivedInstruction(request.id, 'extrait-acte-naissance', fixture.schemas.Request.documents[0].fileId);
+  assert.deepEqual(parseReceivedPiece(instruction), { requestId: request.id, documentType: 'extrait-acte-naissance', fileId: fixture.schemas.Request.documents[0].fileId });
 });
 
 async function provider(t, respond) {
