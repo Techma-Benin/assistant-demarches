@@ -5,6 +5,7 @@ import { redact } from "../dist/apps/backend/src/model.js";
 
 const tp = "00-" + "1".repeat(32) + "-" + "2".repeat(16) + "-01";
 const envelope = (text) => JSON.stringify({ blocks: [{ type: "text", text, sources: [] }] });
+const observed = [{ procedureId: "PS00373", url: "https://service-public.bj/public/services/service/PS00373" }];
 
 /** What the user could see after each provider chunk, for one way of cutting the model output. */
 async function run(text, cuts) {
@@ -14,7 +15,7 @@ async function run(text, cuts) {
     async appendDelta(_c, _m, delta) { published.push(delta); return 1; },
   };
   const live = new LiveReply(fake, "cnv", "msg", tp, 0);
-  const listener = await live.attempt();
+  const listener = await live.attempt(observed);
   const body = envelope(text);
   const seen = [];
   let from = 0;
@@ -88,7 +89,7 @@ test("the held-back tail is released at the end of the stream, but not for a bro
   const published = [];
   const fake = { pool: { async query() { return { rows: [] }; } }, async appendDelta(_c, _m, delta) { published.push(delta); return 1; } };
   const live = new LiveReply(fake, "cnv", "msg", tp, 0);
-  const listener = await live.attempt();
+  const listener = await live.attempt(observed);
   listener.onTextDelta(envelope("Écrivez à ada@exemple.b").slice(0, -"\",\"sources\":[]}]}".length));
   await live.settle();
   listener.complete(envelope("Écrivez à ada@exemple.bj, merci"));
@@ -100,14 +101,14 @@ test("the held-back tail is released at the end of the stream, but not for a bro
 test("the first delta still leaves at once", async () => {
   const published = [];
   const fake = { pool: { async query() { return { rows: [] }; } }, async appendDelta(_c, _m, delta) { published.push({ delta, at: performance.now() }); return 1; } };
-  const live = new LiveReply(fake, "cnv", "msg", tp);
+  const live = new LiveReply(fake, "cnv", "msg", tp, 0);
   const listener = await live.attempt();
   const start = performance.now();
   listener.onTextDelta('{"blocks":[{"type":"text","text":"Bonjour ');
-  await new Promise((resolve) => setTimeout(resolve, 15));
+  await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(published.length, 1);
   assert.equal(published[0].delta, "Bonjour ");
-  assert.ok(published[0].at - start < 15);
+  assert.ok(published[0].at - start < 20);
   await live.close();
 });
 

@@ -248,11 +248,8 @@ test("invalid streamed text is replaced by the validated message.sent; retries s
   assert.equal(h.timing.requests.length, 3, "three attempts, the fact has no source");
   const deltas = view.frames.filter((item) => item.event.data.kind === "message.delta");
   const sent = view.frames.find((item) => item.event.data.kind === "message.sent");
-  // The first attempt streamed live; the retries were not streamed again on top of it.
-  assert.equal(deltas.map((item) => item.event.data.delta).join(""), draft);
-  assert.deepEqual(deltas.map((item) => item.event.data.index), deltas.map((_, index) => index));
-  assert.ok(deltas.at(-1).at < h.timing.requests[1] + 100, "all deltas come from the first attempt");
-  // message.sent is the validated answer and replaces the draft: it does not contain the unvalidated claim.
+  const joined = deltas.map((item) => item.event.data.delta).join("");
+  assert.equal(joined.includes("FCFA") || joined.includes("15000"), false, "rejected administrative draft is never streamed");
   assert.deepEqual(sent.event.data.message.blocks, UNAVAILABLE_BLOCKS);
   assert.equal(JSON.stringify(sent.event.data.message).includes("15000"), false);
   const history = await h.conversations.page(h.user.userRef, conversation.id);
@@ -317,6 +314,26 @@ test("replay after a worker crash does not stream a second draft; message.sent s
   assert.deepEqual(all.filter((event) => event.data.kind === "message.delta").map((event) => event.data.index), [0, 1]);
   assert.equal(all.at(-1).data.message.id, before[0].data.messageId, "same messageId as the deltas");
   assert.deepEqual((await h.conversations.page(h.user.userRef, conversation.id)).items.map((event) => event.data.kind), ["message.received", "message.sent"]);
+});
+
+test("prose and unsourced administrative JSON never become message.delta", async () => {
+  const written = [];
+  const fake = {
+    pool: { async query() { return { rows: [] }; } },
+    async appendDelta(_cid, _mid, delta) { written.push(delta); return 1; },
+  };
+  const prose = new LiveReply(fake, "cnv", "msg-a", tp, 0);
+  const first = await prose.attempt();
+  first.onTextDelta("Pour obtenir un casier il faut 1900 FCFA https://invented.example/x");
+  first.complete("Pour obtenir un casier il faut 1900 FCFA https://invented.example/x");
+  await prose.settle();
+  const json = new LiveReply(fake, "cnv", "msg-b", tp, 0);
+  const second = await json.attempt();
+  const body = JSON.stringify({ blocks: [{ type: "text", text: "Le tarif est de 15000 FCFA", sources: [] }] });
+  second.onTextDelta(body);
+  second.complete(body);
+  await json.settle();
+  assert.deepEqual(written, []);
 });
 
 test("deltas are grouped within the flush window and settle() waits for every write", async () => {

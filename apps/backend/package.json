@@ -12,6 +12,7 @@
     "seed": "node dist/apps/backend/src/cli.js seed",
     "test": "node scripts/build.mjs && node --test tests/*.test.mjs",
     "test:groq": "node scripts/build.mjs && GROQ_LIVE_TEST=true node --test tests/groq.live.mjs",
+    "test:live-model": "node scripts/build.mjs && RUN_LIVE_MODEL=1 node --test tests/live-model-replies.test.mjs",
     "dev": "node scripts/dev.mjs"
   },
   "dependencies": {
