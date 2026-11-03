@@ -147,15 +147,12 @@ class AdminController {
     @Inject(AUTH) private auth: AuthOptions,
     @Optional() @Inject(RUNTIME) private runtime?: Runtime,
   ) {}
-  private async principal(req: Request, scope?: string): Promise<Principal> {
-    const principal = await authenticate(req.get("authorization"), this.auth, "operator");
-    if (scope && !principal.scopes.has(scope))
-      throw new Problem(403, "FORBIDDEN", "Permission insuffisante.");
-    return principal;
+  private async principal(req: Request): Promise<Principal> {
+    return authenticate(req.get("authorization"), this.auth, "operator");
   }
   @Get("status")
   async status(@Req() req: AdminRequest) {
-    const principal = await this.principal(req, "admin:read");
+    const principal = await this.principal(req);
     const models = await this.settings.list(principal, "models", 100);
     const active = (models.items as { id: string; label?: string; model?: string; active?: boolean }[]).find((item) => item.active)
       ?? (models.items as { id: string; label?: string; model?: string }[])[0];
@@ -194,7 +191,7 @@ class AdminController {
   }
   @Get("mcp-servers")
   async servers(@Req() req: AdminRequest) {
-    const principal = await this.principal(req, "admin:read");
+    const principal = await this.principal(req);
     const { limit = "20", cursor, ...unknown } = req.query;
     if (Object.keys(unknown).length || typeof limit !== "string" ||
         !/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 100 ||
@@ -204,23 +201,23 @@ class AdminController {
   }
   @Post("mcp-servers")
   async addServer(@Req() req: AdminRequest, @Body() body: McpServer) {
-    const principal = await this.principal(req, "admin:write");
+    const principal = await this.principal(req);
     return this.mcp.mutate(principal, body?.id, body, "POST", this.key(req), req.get("traceparent")!);
   }
   @Get("mcp-servers/:id")
   async server(@Req() req: AdminRequest, @Param("id") id: string) {
-    const principal = await this.principal(req, "admin:read");
+    const principal = await this.principal(req);
     return this.mcp.get(principal.administrationId, id);
   }
   @Put("mcp-servers/:id")
   async putServer(@Req() req: AdminRequest, @Param("id") id: string, @Body() body: McpServer) {
-    const principal = await this.principal(req, "admin:write");
+    const principal = await this.principal(req);
     return this.mcp.mutate(principal, id, body, "PUT", this.key(req), req.get("traceparent")!);
   }
   @Delete("mcp-servers/:id")
   @HttpCode(204)
   async deleteServer(@Req() req: AdminRequest, @Param("id") id: string) {
-    const principal = await this.principal(req, "admin:write");
+    const principal = await this.principal(req);
     if (req.body !== undefined)
       throw new Problem(400, "INVALID_REQUEST", "DELETE sans corps.");
     await this.mcp.mutate(principal, id, null, "DELETE", this.key(req), req.get("traceparent")!);
@@ -228,7 +225,7 @@ class AdminController {
   @Post("mcp-servers/:id/discover")
   @HttpCode(200)
   async discover(@Req() req: AdminRequest, @Param("id") id: string) {
-    const principal = await this.principal(req, "admin:write");
+    const principal = await this.principal(req);
     this.key(req);
     if (req.body && Object.keys(req.body).length)
       throw new Problem(400, "INVALID_REQUEST", "Découverte sans paramètres.");
@@ -236,7 +233,7 @@ class AdminController {
   }
   @Get("mcp-servers/:id/tools")
   async serverTools(@Req() req: AdminRequest, @Param("id") id: string) {
-    const principal = await this.principal(req, "admin:read");
+    const principal = await this.principal(req);
     return this.mcp.tools(principal.administrationId, id);
   }
   @Put("mcp-servers/:id/tools/:name")
@@ -244,13 +241,13 @@ class AdminController {
     @Req() req: AdminRequest, @Param("id") id: string, @Param("name") name: string,
     @Body() body: { enabled: boolean; requiresMandate: boolean },
   ) {
-    const principal = await this.principal(req, "admin:write");
+    const principal = await this.principal(req);
     this.key(req);
     return this.mcp.permission(principal, id, name, body, req.get("traceparent")!);
   }
   @Get(":resource")
   async list(@Param("resource") value: string, @Req() req: AdminRequest) {
-    const principal = await this.principal(req, "admin:read");
+    const principal = await this.principal(req);
     const { limit = "20", cursor, ...unknown } = req.query;
     if (
       Object.keys(unknown).length ||
@@ -271,14 +268,14 @@ class AdminController {
   }
   @Get(":resource/:id")
   async get(@Param("resource") value: string, @Param("id") id: string, @Req() req: AdminRequest) {
-    return this.settings.get(await this.principal(req, "admin:read"), resource(value), id);
+    return this.settings.get(await this.principal(req), resource(value), id);
   }
   private key(req: Request) {
     return idempotencyKey(req.get("Idempotency-Key"), { required: false });
   }
   @Post(":resource")
   async create(@Param("resource") value: string, @Body() body: Config, @Req() req: AdminRequest) {
-    const principal = await this.principal(req, "admin:write");
+    const principal = await this.principal(req);
     const kind = resource(value);
     validate("ModelConfig", body);
     return this.settings.mutate(principal, kind, configId(body), body, this.key(req), req.get("traceparent")!, "POST");
@@ -286,7 +283,7 @@ class AdminController {
   @Delete(":resource/:id")
   @HttpCode(204)
   async remove(@Param("resource") value: string, @Param("id") id: string, @Req() req: AdminRequest) {
-    const principal = await this.principal(req, "admin:write");
+    const principal = await this.principal(req);
     if (req.body !== undefined)
       throw new Problem(400, "INVALID_REQUEST", "DELETE ne reçoit pas de corps.");
     await this.settings.mutate(principal, resource(value), id, null, this.key(req), req.get("traceparent")!, "DELETE");
@@ -298,7 +295,7 @@ class AdminController {
     @Body() body: Config,
     @Req() req: AdminRequest,
   ) {
-    const principal = await this.principal(req, "admin:write");
+    const principal = await this.principal(req);
     return this.settings.update(
       principal,
       resource(value),
