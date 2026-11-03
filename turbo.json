@@ -10,6 +10,11 @@
         ".next/**"
       ]
     },
+    "typecheck": {
+      "dependsOn": [
+        "^typecheck"
+      ]
+    },
     "test": {
       "cache": false,
       "passThroughEnv": [

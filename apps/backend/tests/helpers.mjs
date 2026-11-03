@@ -7,14 +7,45 @@ import {
   rmSync,
 } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { database } from "../dist/apps/backend/src/database.js";
+
+function embeddedPostgresBin() {
+  const platform = process.platform === "win32" ? "windows" : process.platform;
+  const arch =
+    process.arch === "arm64"
+      ? "arm64"
+      : process.arch === "arm"
+        ? "arm"
+        : process.arch === "ia32"
+          ? "ia32"
+          : process.arch === "ppc64"
+            ? "ppc64"
+            : "x64";
+  const id = `@embedded-postgres/${platform}-${arch}`;
+  const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+  const candidates = [join(repoRoot, "node_modules", id, "native", "bin")];
+  const pnpm = join(repoRoot, "node_modules", ".pnpm");
+  if (existsSync(pnpm)) {
+    for (const entry of readdirSync(pnpm)) {
+      if (
+        entry.startsWith("embedded-postgres@") ||
+        entry.startsWith("@embedded-postgres+")
+      )
+        candidates.push(join(pnpm, entry, "node_modules", id, "native", "bin"));
+    }
+  }
+  const initdb = process.platform === "win32" ? "initdb.exe" : "initdb";
+  return candidates.find((bin) => existsSync(join(bin, initdb)));
+}
 
 function postgres() {
   const base = "/usr/lib/postgresql";
   const candidates = [
     process.env.PG_BIN,
+    embeddedPostgresBin(),
     ...(existsSync(base)
       ? readdirSync(base)
           .sort((a, b) => Number(b) - Number(a))
@@ -24,7 +55,7 @@ function postgres() {
   const bin = candidates.find((p) => existsSync(join(p, "initdb")));
   if (!bin)
     throw new Error(
-      "PostgreSQL binaries required; set PG_BIN to the directory containing initdb and pg_ctl.",
+      "PostgreSQL binaries required; set PG_BIN to the directory containing initdb and pg_ctl (by default the tests use @embedded-postgres/<platform>-<arch>/native/bin).",
     );
   const root = mkdtempSync(join(tmpdir(), "techma-backend-test-"));
   const data = join(root, "data");

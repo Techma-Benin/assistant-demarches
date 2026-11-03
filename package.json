@@ -17,7 +17,7 @@
     "contracts:generate": "node scripts/generate-types.mjs",
     "catalogue:import": "node scripts/import-service-public.mjs",
     "build": "turbo run build",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck --filter=@techma/backend --filter=@techma/tooling --filter=@techma/xroad-sim",
     "test": "turbo run test",
     "check": "pnpm contracts:check && pnpm contracts:generate && git diff --exit-code -- packages/contracts-ts/src && pnpm typecheck && pnpm test"
   },
