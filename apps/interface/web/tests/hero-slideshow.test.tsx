@@ -1,0 +1,73 @@
+import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { HERO_PHOTOS, HeroSlideshow } from '@/components/home/HeroSlideshow';
+
+const visible = () => screen.getAllByRole('img').filter((img) => img.getAttribute('aria-hidden') !== 'true');
+const all = () => Array.from(document.querySelectorAll('img'));
+
+function mockMotion(reduce: boolean) {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: reduce && query.includes('reduce'),
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+}
+
+describe('HeroSlideshow', () => {
+  beforeEach(() => mockMotion(false));
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('renders every photo, only the first one exposed', () => {
+    render(<HeroSlideshow />);
+    expect(all()).toHaveLength(HERO_PHOTOS.length);
+    HERO_PHOTOS.forEach((p, i) => expect(all()[i]).toHaveAttribute('alt', p.alt));
+    expect(visible()).toHaveLength(1);
+    expect(visible()[0]).toHaveAttribute('alt', HERO_PHOTOS[0]!.alt);
+    expect(all()[0]).toHaveClass('opacity-100');
+    expect(all()[1]).toHaveClass('opacity-0');
+  });
+
+  it('next and previous change the active photo and wrap around', async () => {
+    render(<HeroSlideshow />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Photo précédente' }));
+    expect(visible()[0]).toHaveAttribute('alt', HERO_PHOTOS[HERO_PHOTOS.length - 1]!.alt);
+    await user.click(screen.getByRole('button', { name: 'Photo suivante' }));
+    expect(visible()[0]).toHaveAttribute('alt', HERO_PHOTOS[0]!.alt);
+    await user.click(screen.getByRole('button', { name: 'Photo suivante' }));
+    expect(visible()[0]).toHaveAttribute('alt', HERO_PHOTOS[1]!.alt);
+  });
+
+  it('the pause button toggles its label', async () => {
+    render(<HeroSlideshow />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Mettre le diaporama en pause' }));
+    expect(screen.getByRole('button', { name: 'Lire le diaporama' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Lire le diaporama' }));
+    expect(screen.getByRole('button', { name: 'Mettre le diaporama en pause' })).toBeInTheDocument();
+  });
+
+  it('advances every 6 seconds, and not while paused', () => {
+    vi.useFakeTimers();
+    render(<HeroSlideshow />);
+    act(() => void vi.advanceTimersByTime(6000));
+    expect(visible()[0]).toHaveAttribute('alt', HERO_PHOTOS[1]!.alt);
+    act(() => screen.getByRole('button', { name: 'Mettre le diaporama en pause' }).click());
+    act(() => void vi.advanceTimersByTime(20000));
+    expect(visible()[0]).toHaveAttribute('alt', HERO_PHOTOS[1]!.alt);
+  });
+
+  it('starts paused under reduced motion', () => {
+    mockMotion(true);
+    vi.useFakeTimers();
+    render(<HeroSlideshow />);
+    expect(screen.getByRole('button', { name: 'Lire le diaporama' })).toBeInTheDocument();
+    act(() => void vi.advanceTimersByTime(20000));
+    expect(visible()[0]).toHaveAttribute('alt', HERO_PHOTOS[0]!.alt);
+  });
+});
