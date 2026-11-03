@@ -1,4 +1,6 @@
 import type { Conversations } from "./conversations.js";
+import type { Schemas } from "./domain.js";
+import { draftCitesOutside, hasStreamingAdminFact, looksLikeJsonEnvelope } from "./model-reply.js";
 import { redact } from "./model.js";
 import { TextDeltaExtractor } from "./text-deltas.js";
 
@@ -12,6 +14,8 @@ export type LiveAttempt = {
   onToolCall(): void;
   /** The generation returned `replyText`: releases the held-back tail when the stream carried all of it. */
   complete(replyText: unknown): void;
+  /** Drop this attempt without publishing (format/source rejection). */
+  reject(): void;
 };
 
 const KEYWORDS = ["npi", "otp", "code sms", "mot de passe"];
@@ -68,6 +72,8 @@ function openSuffix(text: string, numbers: boolean): number {
  * Rules, all chosen so that `message.sent` can always replace what was shown:
  * - only the JSON string values of `"text"` keys of the model envelope are streamed (never buttons, forms, sources);
  * - a turn that starts a tool call is never streamed (text before the call in that chunk is dropped, later text too);
+ * - free prose and drafts that cite unknown sources or administrative facts without an observed source stay buffered
+ *   and are never written; only an attempt that can be accepted is flushed (or published after validation);
  * - one reply streams at most once: if a delta already exists for this messageId (retry of an invalid reply, an
  *   earlier turn, a replay after a crash) the next attempts stay silent, so the bubble is never fed two drafts;
  * - indexes are 0-based and strictly increasing; pieces are grouped within DELTA_FLUSH_MS;
@@ -95,7 +101,7 @@ export class LiveReply {
   ) {}
 
   /** Listener for one model generation. Silent when this reply already streamed (or was streamed before a restart). */
-  async attempt(): Promise<LiveAttempt> {
+  async attempt(observedSources: readonly Pick<Schemas["Source"], "procedureId" | "url">[] = []): Promise<LiveAttempt> {
     let unknown = false;
     if (!this.checked) {
       try {
@@ -113,7 +119,10 @@ export class LiveReply {
     const mine = !this.started && !unknown;
     const extractor = new TextDeltaExtractor();
     let raw = "";
+    let incoming = "";
+    let fed = 0;
     let muted = !mine;
+    const observed = [...observedSources];
     const stage = (visible: string, final: boolean) => {
       // Only masked text leaves, and only the part no later character can turn into a sensitive value.
       const masked = redact(final ? visible : visible.slice(0, stableEnd(visible)));
@@ -123,13 +132,29 @@ export class LiveReply {
       this.started = true;
       this.schedule();
     };
+    const gated = () => {
+      if (muted || !looksLikeJsonEnvelope(incoming)) return true;
+      if (draftCitesOutside(incoming, observed)) {
+        muted = true;
+        return true;
+      }
+      return hasStreamingAdminFact(raw) && observed.length === 0;
+    };
+    const ingest = (piece: string) => {
+      const visible = extractor.push(piece);
+      if (!visible) return;
+      raw += visible;
+      if (gated()) return;
+      stage(raw, false);
+    };
     return {
       onTextDelta: (delta) => {
         if (muted || !this.open || typeof delta !== "string" || !delta) return;
-        const visible = extractor.push(delta);
-        if (!visible) return;
-        raw += visible;
-        stage(raw, false);
+        incoming += delta;
+        if (!looksLikeJsonEnvelope(incoming)) return;
+        const fresh = incoming.slice(fed);
+        fed = incoming.length;
+        ingest(fresh);
       },
       onToolCall: () => { muted = true; },
       complete: (replyText) => {
@@ -137,10 +162,22 @@ export class LiveReply {
         // The held tail is released only when the stream carried the whole reply (a broken stream retried elsewhere
         // may end in the middle of an e-mail).
         const whole = new TextDeltaExtractor().push(replyText);
-        if (whole === raw) stage(raw, true);
+        if (whole === raw && !gated()) stage(raw, true);
         muted = true;
       },
+      reject: () => { muted = true; },
     };
+  }
+
+  /** After validation: publish accepted visible text when this attempt was held (plain text wrap, etc.). */
+  publishVisible(text: string) {
+    if (this.started || !this.open || !text) return;
+    const masked = redact(text);
+    if (!masked) return;
+    this.pending += masked;
+    this.staged = masked;
+    this.started = true;
+    this.schedule();
   }
 
   private schedule() {

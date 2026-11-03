@@ -27,9 +27,10 @@ import {
 } from "./tooling.js";
 import { redact, type ModelPort, type ModelReply, type Turn } from "./model.js";
 import type { Consent } from "./consent.js";
-import { presentModelReply, mergeSystemBlocks, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS } from "./model-reply.js";
+import { presentModelReply, mergeSystemBlocks, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS, FORMAT_REMINDER, ModelReplyError, logRejectedReply } from "./model-reply.js";
 import type { TranscriptionPort } from "./transcription.js";
 import { LiveReply } from "./live-reply.js";
+import { visibleText } from "./text-deltas.js";
 
 const MODEL_REPLY_ATTEMPTS = 3;
 function interactionPrompt(content: { actionId: string; value?: string | null }): string {
@@ -830,30 +831,51 @@ export class Agent {
       // stay in the history, including after a worker restart.
       const history: Turn[] = attempt === 0 ? state.history : [
         ...state.history,
-        { role: "user", content: "Rappel technique : appelle uniquement les outils annoncés avec leur nom exact, ou fournis l’objet JSON {\"blocks\":[...]} dans le contenu texte assistant, sans appeler d’outil json ou final. Pour un texte sans source, reprends exactement une phrase autorisée du prompt. Ne répète pas une action dont le résultat est déjà présent." },
+        { role: "user", content: FORMAT_REMINDER },
       ];
-      const listener = await live.attempt();
+      const listener = await live.attempt(state.sources);
+      const structuredOutput = !tools.length || history.some((turn) => turn.role === "tool");
       let reply: ModelReply;
       try {
-        reply = await this.models.generate(state.config, history, tools, listener);
-        listener.complete(reply?.text);
+        reply = await this.models.generate(state.config, history, tools, {
+          onTextDelta: listener.onTextDelta,
+          onToolCall: listener.onToolCall,
+          structuredOutput,
+        });
       }
       catch (error) {
+        listener.reject();
         // Groq rejects malformed/hallucinated tool generations before any local
         // tool executes. Retry only this classified error within the same reply
         // budget; never parse or execute its untrusted failed_generation body.
         if (error instanceof DiagnosticProblem && error.diagnostic.reason === "provider_tool_generation_invalid") continue;
         throw error;
       }
-      if (!Array.isArray(reply.calls)) continue;
-      if (reply.calls.length) {
-        if (reply.calls.length <= 8 && new Set(reply.calls.map(call => call.id)).size === reply.calls.length && reply.calls.every(call => typeof call.id === "string" && call.id.length > 0 && typeof call.name === "string" && call.name.length > 0 && typeof call.arguments === "string")) return { reply };
+      if (!Array.isArray(reply.calls)) {
+        listener.reject();
+        logRejectedReply("invalid_calls", { attempt });
         continue;
       }
-      if (typeof reply.text !== "string" || !reply.text.trim()) continue;
-      try { return { reply, blocks: presentModelReply(reply.text, state) }; }
+      if (reply.calls.length) {
+        listener.reject();
+        if (reply.calls.length <= 8 && new Set(reply.calls.map(call => call.id)).size === reply.calls.length && reply.calls.every(call => typeof call.id === "string" && call.id.length > 0 && typeof call.name === "string" && call.name.length > 0 && typeof call.arguments === "string")) return { reply };
+        logRejectedReply("invalid_calls", { attempt, callCount: reply.calls.length });
+        continue;
+      }
+      if (typeof reply.text !== "string" || !reply.text.trim()) {
+        listener.reject();
+        logRejectedReply("empty_reply", { attempt });
+        continue;
+      }
+      try {
+        const blocks = presentModelReply(reply.text, state);
+        listener.complete(reply.text);
+        live.publishVisible(visibleText(blocks));
+        return { reply, blocks };
+      }
       catch (error) {
-        if (!(error instanceof SyntaxError)) fallback = UNAVAILABLE_BLOCKS;
+        listener.reject();
+        if (!(error instanceof ModelReplyError) || error.reason !== "invalid_json") fallback = UNAVAILABLE_BLOCKS;
       }
     }
     return { blocks: fallback };

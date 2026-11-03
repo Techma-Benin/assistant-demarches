@@ -22,7 +22,66 @@ export type GenerateOptions = {
   onTextDelta?: (delta: string) => void | Promise<void>;
   /** Called once, as soon as the provider starts a tool call in this turn: the turn is a tool turn, not a final answer. */
   onToolCall?: () => void;
+  /** Ask the provider for a JSON envelope when it supports response_format (degrades on 400). */
+  structuredOutput?: boolean;
 };
+
+const AGENT_BLOCKS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    blocks: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "object",
+        additionalProperties: true,
+        properties: {
+          type: { type: "string", enum: ["text", "buttons", "form"] },
+          text: { type: "string" },
+          sources: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: true,
+              properties: {
+                procedureId: { type: "string" },
+                url: { type: "string" },
+              },
+              required: ["procedureId", "url"],
+            },
+          },
+          items: { type: "array" },
+          id: { type: "string" },
+          fields: { type: "array" },
+        },
+        required: ["type"],
+      },
+    },
+  },
+  required: ["blocks"],
+} as const;
+
+function structuredOutputHost(baseUrl: string): boolean {
+  const host = new URL(baseUrl).hostname;
+  return host === "api.groq.com"
+    || host === "api.openai.com"
+    || host === "generativelanguage.googleapis.com"
+    || host.endsWith(".openai.azure.com");
+}
+
+function chatResponseFormat(kind: "json_schema" | "json_object") {
+  if (kind === "json_object") return { type: "json_object" };
+  return {
+    type: "json_schema",
+    json_schema: { name: "agent_blocks", strict: false, schema: AGENT_BLOCKS_SCHEMA },
+  };
+}
+
+function responsesTextFormat(kind: "json_schema" | "json_object") {
+  if (kind === "json_object") return { type: "json_object" };
+  return { type: "json_schema", name: "agent_blocks", strict: false, schema: AGENT_BLOCKS_SCHEMA };
+}
 export interface ModelPort {
   generate(
     config: ModelConfig,
@@ -59,19 +118,26 @@ export class HttpModels implements ModelPort {
     options?: GenerateOptions,
   ): Promise<ModelReply> {
     let emitted = false;
-    for (let attempt = 0; ; attempt++) {
+    let structuredKind: false | "json_schema" | "json_object" =
+      options?.structuredOutput && structuredOutputHost(config.baseUrl) ? "json_schema" : false;
+    for (let attempt = 0; ; ) {
       // A retry after a broken stream must not replay text the listener already got: it is requested without streaming.
       const forwarded: GenerateOptions | undefined = !options?.onTextDelta ? options
         : emitted ? { ...options, onTextDelta: undefined }
         : { ...options, onTextDelta: (delta) => { emitted = true; return options.onTextDelta!(delta); } };
-      try { return await this.generateOnce(config, history, tools, forwarded); }
+      try { return await this.generateOnce(config, history, tools, forwarded, structuredKind); }
       catch (error) {
         const diagnostic = error instanceof DiagnosticProblem ? error.diagnostic : undefined;
+        if (structuredKind && diagnostic?.reason === "provider_request_rejected" && diagnostic.upstreamStatus === 400) {
+          structuredKind = structuredKind === "json_schema" ? "json_object" : false;
+          continue;
+        }
         const status = diagnostic?.upstreamStatus;
         const transient = diagnostic?.reason === "provider_network_error" || diagnostic?.reason === "provider_response_invalid" || (typeof status === "number" && ([408, 425, 429].includes(status) || status >= 500));
         if (!transient || attempt >= 2) throw error;
         // Only provider generation is retried; tool actions are handled by Agent.
         await delay(250 * 2 ** attempt);
+        attempt++;
       }
     }
   }
@@ -80,6 +146,7 @@ export class HttpModels implements ModelPort {
     history: Turn[],
     tools: ToolDefinition[],
     options?: GenerateOptions,
+    structuredKind: false | "json_schema" | "json_object" = false,
   ): Promise<ModelReply> {
     const wireName = (name: string) => name.replaceAll(".", "_");
     const toolNames = new Map(
@@ -180,6 +247,10 @@ export class HttpModels implements ModelPort {
       };
     // Groq and several OpenAI-compatible services reject an empty tools array.
     if (!tools.length) delete body.tools;
+    if (structuredKind) {
+      if (responses) body.text = { format: responsesTextFormat(structuredKind) };
+      else body.response_format = chatResponseFormat(structuredKind);
+    }
     if (!responses && tools.length) {
       // Groq defaults this parameter to true, but its GPT-OSS models support
       // sequential tool use only. Leave other providers/models untouched.
@@ -282,6 +353,18 @@ export class HttpModels implements ModelPort {
       reason: "provider_response_invalid",
     });
   }
+  private providerEnvelopeError(providerName: string, model: string, upstream: any) {
+    const status = typeof upstream?.status_code === "number" ? upstream.status_code : 400;
+    return new DiagnosticProblem("Appel au fournisseur IA refusé (HTTP " + status + ").", {
+      stage: "model.response", provider: providerName, model,
+      upstreamStatus: status,
+      upstreamCode: safeProviderIdentifier(upstream?.code),
+      upstreamType: safeProviderIdentifier(upstream?.type),
+      reason: status === 400 && providerName === "api.groq.com" && upstream?.code === "tool_use_failed"
+        ? "provider_tool_generation_invalid"
+        : providerReason(status, upstream?.message),
+    });
+  }
   private replyFromResponses(value: any, toolNames: Map<string, string>, providerName: string, model: string): ModelReply {
     if (!Array.isArray(value?.output) || value.output.some((item: unknown) => !item || typeof item !== "object"))
       throw this.invalidModelResponse(providerName, model);
@@ -332,7 +415,7 @@ export class HttpModels implements ModelPort {
     await this.forEachServerEvent(res, providerName, model, async (value) => {
       const choice = value?.choices?.[0];
       if (!choice || typeof choice !== "object") {
-        if (value?.error) throw this.invalidModelResponse(providerName, model);
+        if (value?.error) throw this.providerEnvelopeError(providerName, model, value.error);
         return;
       }
       sawChoice = true;

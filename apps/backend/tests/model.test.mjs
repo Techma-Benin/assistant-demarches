@@ -17,6 +17,10 @@ test('model reply keeps exact validated provenance and safe conversation copy', 
   assert.throws(() => presentModelReply(text('Données fictives.', [{ ...procedure.source, url: 'https://invented.example/x' }]), evidence));
   assert.throws(() => presentModelReply('{"blocks":[]}', evidence));
   assert.throws(() => presentModelReply('{"blocks":[{"type":"text","text":"","sources":[]}]}', evidence));
+  const incomplete = { procedureId: procedure.source.procedureId, url: procedure.source.url };
+  const bound = presentModelReply(text('Pièces indiquées sur la fiche.', [incomplete]), evidence);
+  assert.deepEqual(bound[0].sources, [procedure.source]);
+  assert.match(presentModelReply('Je suis l’assistant de démarches : je m’appuie sur le catalogue officiel.', { sources: [], requests: [] })[0].text, /assistant/);
 });
 
 test('model may only emit text, buttons or form; backend merges system blocks', () => {
@@ -137,4 +141,34 @@ test('Groq GPT-OSS sends sequential tool use while other provider capabilities r
   assert.equal(Object.hasOwn(bodies.at(-1), 'parallel_tool_calls'), false);
   await models.generate(asConfig('https://provider.example.test/v1', 'openai/gpt-oss-20b'), [{ role: 'user', content: 'Synthetic test' }], tools);
   assert.equal(Object.hasOwn(bodies.at(-1), 'parallel_tool_calls'), false);
+});
+
+test('Groq streamed tool_use_failed is classified without treating the SSE as an invalid envelope', async t => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(
+    'data: {"choices":[{"delta":{"role":"assistant","content":""}}]}\n\ndata: {"error":{"code":"tool_use_failed","type":"invalid_request_error","message":"private","failed_generation":"secret"}}\n\n',
+    { headers: { 'content-type': 'text/event-stream' } },
+  ));
+  const models = new HttpModels({ groq: { baseUrl: 'https://api.groq.com/openai/v1/', protocol: 'chat-completions' } }, { TEST_KEY: 'k' });
+  const config = { id: 'model', label: 'Fixture', baseUrl: 'https://api.groq.com/openai/v1', protocol: 'chat-completions', model: 'openai/gpt-oss-20b', apiKeyRef: 'TEST_KEY', temperature: 0, active: true };
+  await assert.rejects(models.generate(config, [{ role: 'user', content: 'Synthetic test' }], [{ name: 'fixture.read', inputSchema: { type: 'object' } }], { onTextDelta() {} }), error => {
+    assert.equal(error.diagnostic.reason, 'provider_tool_generation_invalid');
+    assert.equal(JSON.stringify(error).includes('secret'), false);
+    return true;
+  });
+});
+
+test('structured output is requested on Groq then dropped after a 400', async t => {
+  const bodies = [];
+  const statuses = [400, 200];
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    bodies.push(JSON.parse(init.body));
+    const status = statuses.shift() ?? 200;
+    if (status !== 200) return new Response(JSON.stringify({ error: { code: 'invalid_request', message: 'schema' } }), { status });
+    return new Response(JSON.stringify(answer), { headers: { 'content-type': 'application/json' } });
+  });
+  const models = new HttpModels({ groq: { baseUrl: 'https://api.groq.com/openai/v1/', protocol: 'chat-completions' } }, { TEST_KEY: 'k' });
+  const config = { id: 'model', label: 'Fixture', baseUrl: 'https://api.groq.com/openai/v1', protocol: 'chat-completions', model: 'llama-3.3-70b-versatile', apiKeyRef: 'TEST_KEY', temperature: 0, active: true };
+  await models.generate(config, [{ role: 'user', content: 'Bonjour' }], [], { structuredOutput: true });
+  assert.equal(bodies[0].response_format?.type, 'json_schema');
+  assert.equal(bodies[1].response_format?.type, 'json_object');
 });
