@@ -33,6 +33,23 @@ import { LiveReply } from "./live-reply.js";
 import { visibleText } from "./text-deltas.js";
 
 const MODEL_REPLY_ATTEMPTS = 3;
+const CATALOGUE_LOOKUP = /casier|passeport|carte\s+d['’]?identit|extrait(?:\s+d['’]acte)?|quels?\s+documents|comment\s+faire|je\s+veux\s+(?:demander|faire|obtenir|déposer)|pièces\s+(?:pour|à|demand)/i;
+
+export function needsCatalogueLookup(text: string): boolean {
+  return CATALOGUE_LOOKUP.test(text);
+}
+
+function catalogueSearchName(tools: ToolDefinition[]): string | undefined {
+  return tools.find((tool) => tool.name === "procedures.search" || tool.name.endsWith(".procedures.search"))?.name;
+}
+
+function requestCreateName(tools: ToolDefinition[]): string | undefined {
+  return tools.find((tool) => tool.name === "request.create" || tool.name.endsWith(".request.create"))?.name;
+}
+
+function wantsFiling(text: string): boolean {
+  return /je\s+veux\s+(?:demander|faire|obtenir|déposer)|demander\s+mon|déposer\s+(?:un|mon|une)/i.test(text);
+}
 function interactionPrompt(content: { actionId: string; value?: string | null }): string {
   const submitted = content.value?.trim();
   return submitted
@@ -506,7 +523,7 @@ export class Agent {
     try {
     while (state.step < 8) {
       if (!state.pending) {
-        const { reply, blocks } = await this.generateUsable(state, advertised, live);
+        const { reply, blocks } = await this.generateUsable(state, advertised, live, conversation);
         await live.settle();
         if (!reply) {
           await this.unanswered(conversation.id, input.id, administrationId, state.toolFailed ? "tool_failure" : blocks === UNAVAILABLE_BLOCKS ? "missing_source" : "invalid_reply");
@@ -824,8 +841,18 @@ export class Agent {
     state: State,
     tools: ToolDefinition[],
     live: LiveReply,
+    conversation: OwnedConversation,
   ): Promise<{ reply?: ModelReply; blocks?: Schemas["AgentMessage"]["blocks"] }> {
     let fallback = MODEL_UNAVAILABLE_BLOCKS;
+    const question = [...state.history].reverse().find((turn) => turn.role === "user")?.content ?? "";
+    const searchName = catalogueSearchName(tools);
+    const createName = requestCreateName(tools);
+    const needsCatalogue = Boolean(searchName) && needsCatalogueLookup(question) && !state.history.some((turn) => turn.role === "tool");
+    const forcedSearch = (): ModelReply => ({
+      text: "",
+      calls: [{ id: identifier("call"), name: searchName!, arguments: JSON.stringify({ query: question.slice(0, 500) || "démarche" }) }],
+    });
+    let requireTool = false;
     for (let attempt = 0; attempt < MODEL_REPLY_ATTEMPTS; attempt++) {
       // No tool is run in this retry loop. Successfully checkpointed tool results
       // stay in the history, including after a worker restart.
@@ -834,13 +861,15 @@ export class Agent {
         { role: "user", content: FORMAT_REMINDER },
       ];
       const listener = await live.attempt(state.sources);
-      const structuredOutput = !tools.length || history.some((turn) => turn.role === "tool");
+      // json_schema + tools makes Groq/Gemini skip or reject function calls (400 / prose without tools).
+      const structuredOutput = !tools.length;
       let reply: ModelReply;
       try {
         reply = await this.models.generate(state.config, history, tools, {
           onTextDelta: listener.onTextDelta,
           onToolCall: listener.onToolCall,
           structuredOutput,
+          ...(requireTool && searchName ? { toolChoice: "required" } : {}),
         });
       }
       catch (error) {
@@ -849,6 +878,12 @@ export class Agent {
         // tool executes. Retry only this classified error within the same reply
         // budget; never parse or execute its untrusted failed_generation body.
         if (error instanceof DiagnosticProblem && error.diagnostic.reason === "provider_tool_generation_invalid") continue;
+        if (
+          needsCatalogue
+          && searchName
+          && error instanceof DiagnosticProblem
+          && error.diagnostic.reason === "provider_request_rejected"
+        ) return { reply: forcedSearch() };
         throw error;
       }
       if (!Array.isArray(reply.calls)) {
@@ -862,22 +897,62 @@ export class Agent {
         logRejectedReply("invalid_calls", { attempt, callCount: reply.calls.length });
         continue;
       }
+      const missCatalogue = (): "retry" | ModelReply | undefined => {
+        if (!needsCatalogue || !searchName) return undefined;
+        // Gemini OpenAI-compat often 400s on tool_choice; force the catalogue tool instead.
+        if (requireTool || /generativelanguage\.googleapis\.com/i.test(state.config.baseUrl)) return forcedSearch();
+        requireTool = true;
+        return "retry";
+      };
       if (typeof reply.text !== "string" || !reply.text.trim()) {
         listener.reject();
+        const forced = missCatalogue();
+        if (forced === "retry") continue;
+        if (forced) return { reply: forced };
         logRejectedReply("empty_reply", { attempt });
         continue;
       }
       try {
         const blocks = presentModelReply(reply.text, state);
+        const procedure = state.procedures?.find((item) => item.filing) ?? state.procedures?.[0];
+        if (
+          !conversation.authenticated
+          && createName
+          && procedure
+          && wantsFiling(question)
+          && !state.history.some((turn) => turn.role === "assistant" && turn.calls?.some((call) => call.name === createName))
+        ) {
+          listener.reject();
+          return {
+            reply: {
+              text: "",
+              calls: [{ id: identifier("call"), name: createName, arguments: JSON.stringify({ procedureId: procedure.id }) }],
+            },
+          };
+        }
+        const forced = missCatalogue();
+        if (forced === "retry") {
+          listener.reject();
+          continue;
+        }
+        if (forced) {
+          listener.reject();
+          return { reply: forced };
+        }
         listener.complete(reply.text);
         live.publishVisible(visibleText(blocks));
         return { reply, blocks };
       }
       catch (error) {
         listener.reject();
+        const forced = missCatalogue();
+        if (forced === "retry") continue;
+        if (forced) return { reply: forced };
         if (!(error instanceof ModelReplyError) || error.reason !== "invalid_json") fallback = UNAVAILABLE_BLOCKS;
       }
     }
+    if (needsCatalogue && searchName) return { reply: forcedSearch() };
+    live.publishVisible(visibleText(fallback));
     return { blocks: fallback };
   }
   private save(cid: string, messageId: string, state: State) {

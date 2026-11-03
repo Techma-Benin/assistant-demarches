@@ -23,12 +23,12 @@ type Preset = { label: string; baseUrl: string; model: string };
 
 /** Defaults used when MODEL_PROVIDER is set and the URL or model name is left empty. */
 const PRESETS: Record<string, Preset> = {
-  groq: { label: "Groq", baseUrl: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile" },
+  groq: { label: "Groq", baseUrl: "https://api.groq.com/openai/v1", model: "qwen/qwen3.8-27b" },
   openai: { label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
   openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openai/gpt-4o-mini" },
   mistral: { label: "Mistral", baseUrl: "https://api.mistral.ai/v1", model: "mistral-small-latest" },
   deepseek: { label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
-  gemini: { label: "Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
+  gemini: { label: "Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-3.5-flash" },
 };
 
 function filled(value: string | undefined): string | undefined {
