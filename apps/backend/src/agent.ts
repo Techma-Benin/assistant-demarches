@@ -27,24 +27,41 @@ import {
 } from "./tooling.js";
 import { redact, type ModelPort, type ModelReply, type Turn } from "./model.js";
 import type { Consent } from "./consent.js";
-import { presentModelReply, mergeSystemBlocks, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS, FORMAT_REMINDER, ModelReplyError, logRejectedReply } from "./model-reply.js";
+import { presentModelReply, mergeSystemBlocks, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS, FORMAT_REMINDER, ModelReplyError, logRejectedReply, hasActionSystemBlocks, isGenericRefusal, honestReplyFromSystemBlocks, bindUploadedFile, fileReceivedInstruction, parseReceivedPiece } from "./model-reply.js";
 import type { TranscriptionPort } from "./transcription.js";
 import { LiveReply } from "./live-reply.js";
 import { visibleText } from "./text-deltas.js";
 
 const MODEL_REPLY_ATTEMPTS = 3;
-const CATALOGUE_LOOKUP = /casier|passeport|carte\s+d['’]?identit|extrait(?:\s+d['’]acte)?|quels?\s+documents|comment\s+faire|je\s+veux\s+(?:demander|faire|obtenir|déposer)|pièces\s+(?:pour|à|demand)/i;
+const CATALOGUE_LOOKUP = /casier|passeport|carte\s+d['’]?identit|extrait(?:\s+d['’]acte)?|quels?\s+documents|documents?\s+requis|comment\s+faire|je\s+veux\s+(?:demander|faire|obtenir|déposer)|pièces\s+(?:pour|à|demand)/i;
+const PROCEDURE_DETAILS = /documents?\s+requis|quels?\s+documents|comment\s+faire|pièces|tarif|délai/i;
 
 export function needsCatalogueLookup(text: string): boolean {
   return CATALOGUE_LOOKUP.test(text);
+}
+
+export function needsProcedureDetails(text: string): boolean {
+  return PROCEDURE_DETAILS.test(text);
 }
 
 function catalogueSearchName(tools: ToolDefinition[]): string | undefined {
   return tools.find((tool) => tool.name === "procedures.search" || tool.name.endsWith(".procedures.search"))?.name;
 }
 
+function catalogueGetName(tools: ToolDefinition[]): string | undefined {
+  return tools.find((tool) => tool.name === "procedures.get" || tool.name.endsWith(".procedures.get"))?.name;
+}
+
+function documentsAttachName(tools: ToolDefinition[]): string | undefined {
+  return tools.find((tool) => tool.name === "documents.attach" || tool.name.endsWith(".documents.attach"))?.name;
+}
+
 function requestCreateName(tools: ToolDefinition[]): string | undefined {
   return tools.find((tool) => tool.name === "request.create" || tool.name.endsWith(".request.create"))?.name;
+}
+
+function calledTool(state: State, name: string | undefined): boolean {
+  return Boolean(name && state.history.some((turn) => turn.role === "assistant" && turn.calls?.some((call) => call.name === name || call.name.endsWith("." + name))));
 }
 
 function wantsFiling(text: string): boolean {
@@ -393,24 +410,15 @@ export class Agent {
         content: { type: "text", text: interactionPrompt(input.content) },
       };
     }
-    if (input.content.type === "file" && input.content.documentType) {
-      // Answer to a `fileRequest` block: the model only sees opaque references, never the document itself.
-      const pending = (
-        await this.pool.query(
-          `SELECT b->>'requestId' AS request_id
-             FROM backend_conversation_events e, jsonb_array_elements(e.body->'data'->'message'->'blocks') b
-            WHERE e.conversation_id=$1 AND e.body->'data'->>'kind'='message.sent'
-              AND b->>'type'='fileRequest' AND b->>'documentType'=$2
-            ORDER BY e.seq DESC LIMIT 1`,
-          [conversation.id, input.content.documentType],
-        )
-      ).rows[0];
-      if (pending?.request_id)
+    if (input.content.type === "file") {
+      // Composer often sends documentType null; bind to the oldest unmet fileRequest when one is pending.
+      const bound = await this.bindFileUpload(conversation.id, input.id, input.content.documentType ?? null);
+      if (bound)
         input = {
           ...input,
           content: {
             type: "text",
-            text: `Pièce reçue pour la demande ${pending.request_id} : type de pièce « ${input.content.documentType} », fichier ${input.content.fileId}. Rattache-la au brouillon avec l’outil de rattachement de pièces (requestId, documentType, fileId ci-dessus).`,
+            text: fileReceivedInstruction(bound.requestId, bound.documentType, input.content.fileId),
           },
         };
     }
@@ -526,7 +534,8 @@ export class Agent {
         const { reply, blocks } = await this.generateUsable(state, advertised, live, conversation);
         await live.settle();
         if (!reply) {
-          await this.unanswered(conversation.id, input.id, administrationId, state.toolFailed ? "tool_failure" : blocks === UNAVAILABLE_BLOCKS ? "missing_source" : "invalid_reply");
+          if (isGenericRefusal(blocks))
+            await this.unanswered(conversation.id, input.id, administrationId, state.toolFailed ? "tool_failure" : blocks === UNAVAILABLE_BLOCKS ? "missing_source" : "invalid_reply");
           await this.finish(conversation, input, this.withSystem(state, blocks!), traceparent, false, state.assistantMessageId);
           return;
         }
@@ -846,12 +855,28 @@ export class Agent {
     let fallback = MODEL_UNAVAILABLE_BLOCKS;
     const question = [...state.history].reverse().find((turn) => turn.role === "user")?.content ?? "";
     const searchName = catalogueSearchName(tools);
+    const getName = catalogueGetName(tools);
+    const attachName = documentsAttachName(tools);
     const createName = requestCreateName(tools);
     const needsCatalogue = Boolean(searchName) && needsCatalogueLookup(question) && !state.history.some((turn) => turn.role === "tool");
+    const piece = parseReceivedPiece(question);
+    if (piece && attachName && !calledTool(state, attachName)) {
+      return {
+        reply: {
+          text: "",
+          calls: [{ id: identifier("call"), name: attachName, arguments: JSON.stringify({ requestId: piece.requestId, documentType: piece.documentType, fileId: piece.fileId }) }],
+        },
+      };
+    }
     const forcedSearch = (): ModelReply => ({
       text: "",
       calls: [{ id: identifier("call"), name: searchName!, arguments: JSON.stringify({ query: question.slice(0, 500) || "démarche" }) }],
     });
+    const forcedGet = (): ModelReply | undefined => {
+      if (!getName || !needsProcedureDetails(question) || !state.procedures?.length || calledTool(state, getName)) return undefined;
+      const procedureId = (state.procedures.find((item) => item.filing) ?? state.procedures[0]).id;
+      return { text: "", calls: [{ id: identifier("call"), name: getName, arguments: JSON.stringify({ procedureId }) }] };
+    };
     let requireTool = false;
     for (let attempt = 0; attempt < MODEL_REPLY_ATTEMPTS; attempt++) {
       // No tool is run in this retry loop. Successfully checkpointed tool results
@@ -939,6 +964,11 @@ export class Agent {
           listener.reject();
           return { reply: forced };
         }
+        const details = forcedGet();
+        if (details) {
+          listener.reject();
+          return { reply: details };
+        }
         listener.complete(reply.text);
         live.publishVisible(visibleText(blocks));
         return { reply, blocks };
@@ -952,8 +982,45 @@ export class Agent {
       }
     }
     if (needsCatalogue && searchName) return { reply: forcedSearch() };
+    const details = forcedGet();
+    if (details) return { reply: details };
+    const honest = this.honestFallback(state);
+    if (honest) fallback = honest;
     live.publishVisible(visibleText(fallback));
     return { blocks: fallback };
+  }
+  private honestFallback(state: State): Schemas["AgentMessage"]["blocks"] | undefined {
+    const system = state.systemBlocks ?? [];
+    const evidence = state.sources.length > 0 || state.requests.length > 0 || state.history.some((turn) => turn.role === "tool");
+    if (!hasActionSystemBlocks(system) || !evidence) return undefined;
+    return honestReplyFromSystemBlocks(system);
+  }
+  private async bindFileUpload(conversationId: string, messageId: string, documentType: string | null) {
+    const requests = (
+      await this.pool.query(
+        `SELECT e.seq, b->>'requestId' AS request_id, b->>'documentType' AS document_type, COALESCE((b->>'received')::boolean, false) AS received
+           FROM backend_conversation_events e, jsonb_array_elements(e.body->'data'->'message'->'blocks') b
+          WHERE e.conversation_id=$1 AND e.body->'data'->>'kind'='message.sent' AND b->>'type'='fileRequest'
+          ORDER BY e.seq ASC`,
+        [conversationId],
+      )
+    ).rows;
+    const latest = new Map<string, { requestId: string; received: boolean; seq: number }>();
+    for (const row of requests) latest.set(row.document_type, { requestId: row.request_id, received: row.received, seq: Number(row.seq) });
+    const pending = [...latest.entries()]
+      .filter(([, item]) => !item.received)
+      .sort((left, right) => left[1].seq - right[1].seq)
+      .map(([type, item]) => ({ requestId: item.requestId, documentType: type }));
+    const previous = (
+      await this.pool.query(
+        `SELECT id, body->'content'->>'documentType' AS document_type
+           FROM backend_messages
+          WHERE conversation_id=$1 AND id<>$2 AND body->'content'->>'type'='file'
+          ORDER BY body->>'sentAt' ASC, id ASC`,
+        [conversationId, messageId],
+      )
+    ).rows.map((row) => ({ documentType: row.document_type ?? null }));
+    return bindUploadedFile(pending, previous, { documentType });
   }
   private save(cid: string, messageId: string, state: State) {
     return this.pool.query(

@@ -476,6 +476,24 @@ test("a file answering a fileRequest block reaches the agent as an opaque attach
   assert.equal(h.modelCalls.length, calls);
 });
 
+test("a composer file with documentType null binds to the oldest pending fileRequest", async (t) => {
+  const h = await harness(t);
+  const guest = await (await fetch(h.base + "/v1/guest-sessions", { method: "POST" })).json();
+  const api = client(h.base, guest.token);
+  const conversationId = (await api.createConversation()).json.id;
+  const requestId = identifier("req");
+  await transaction(h.pool, (db) => h.conversations.complete(db, conversationId, identifier("msg"), [
+    { type: "fileRequest", requestId, documentType: "extrait-acte-naissance", label: "Extrait d’acte de naissance", acceptedMimeTypes: ["application/pdf"], received: false },
+  ], traceparent()));
+  const uploaded = await api.uploadFile(Buffer.from("%PDF-1.4 composer"), "application/pdf");
+  const input = { id: identifier("msg"), content: { type: "file", fileId: uploaded.json.id, documentType: null }, sentAt: new Date().toISOString() };
+  assert.equal((await api.sendMessage(conversationId, input)).status, 202);
+  h.behaviour.model = () => "Pièce reçue depuis le composeur.";
+  await h.agent.process(conversationId);
+  const prompt = h.modelCalls.at(-1).messages.at(-1).content;
+  assert.ok(prompt.includes(requestId) && prompt.includes(uploaded.json.id) && prompt.includes("extrait-acte-naissance"), prompt);
+});
+
 test("issued document downloads carry a filename for the browser", () => {
   const documents = [{ id: "doc_01JD0000000000000000000002", kind: "issued", documentType: "casier-b3", name: "Extrait B3 du casier judiciaire", mimeType: "application/pdf", sizeBytes: 10, createdAt: "2026-11-02T10:00:00Z" }];
   const header = documentDisposition(documents, "doc_01JD0000000000000000000002", "application/pdf");

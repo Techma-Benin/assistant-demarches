@@ -1,15 +1,17 @@
 import { canonical, validate, type Schemas } from "./domain.js";
 import { redact } from "./model.js";
 
+export const UNAVAILABLE_TEXT = "Je ne dispose pas d’une source administrative validée pour répondre à cette demande. Veuillez préciser la démarche ou consulter le portail officiel.";
+export const MODEL_UNAVAILABLE_TEXT = "La réponse n’a pas pu être produite. Veuillez réessayer ; vérifiez le statut de votre demande avant de relancer une action.";
 export const UNAVAILABLE_BLOCKS: Schemas["AgentMessage"]["blocks"] = [{
   type: "text",
-  text: "Je ne dispose pas d’une source administrative validée pour répondre à cette demande. Veuillez préciser la démarche ou consulter le portail officiel.",
+  text: UNAVAILABLE_TEXT,
   sources: [],
 }];
 export const MODEL_UNAVAILABLE_BLOCKS: Schemas["AgentMessage"]["blocks"] = [{
-  type: "text",
-  text: "La réponse n’a pas pu être produite. Veuillez réessayer ; vérifiez le statut de votre demande avant de relancer une action.",
-  sources: [],
+    type: "text",
+    text: MODEL_UNAVAILABLE_TEXT,
+    sources: [],
 }];
 
 /** @deprecated The model may use natural sentences. Administrative facts still need a real source. */
@@ -151,6 +153,57 @@ export function presentModelReply(replyText: string, evidence: ReplyEvidence): S
     logRejectedReply(reason, { observedSourceCount: evidence.sources.length });
     throw error;
   }
+}
+
+const ACTION_SYSTEM_TYPES = new Set(["requestCard", "fileRequest", "consent", "loginRequired", "caseCard"]);
+
+export function hasActionSystemBlocks(blocks: Schemas["AgentMessage"]["blocks"] = []): boolean {
+  return blocks.some((block) => ACTION_SYSTEM_TYPES.has(block.type));
+}
+
+export function isGenericRefusal(blocks: Schemas["AgentMessage"]["blocks"] | undefined): boolean {
+  const block = blocks?.length === 1 ? blocks[0] : undefined;
+  return block?.type === "text" && (block.text === UNAVAILABLE_TEXT || block.text === MODEL_UNAVAILABLE_TEXT);
+}
+
+/** Short conversational copy when the model reply is rejected but the Backend already has actionable blocks. */
+export function honestReplyFromSystemBlocks(systemBlocks: Schemas["AgentMessage"]["blocks"] = []): Schemas["AgentMessage"]["blocks"] {
+  const kinds = new Set(systemBlocks.map((block) => block.type));
+  let text = "Voici la suite de votre démarche.";
+  if (kinds.has("loginRequired")) text = "Une connexion est nécessaire pour continuer.";
+  else if (kinds.has("consent")) text = "Une autorisation est requise pour continuer. Confirmez avec le bouton présenté par l’interface.";
+  else if (kinds.has("fileRequest")) text = "Votre dossier est prêt à recevoir les pièces demandées. Ajoutez-les via le bouton prévu.";
+  else if (kinds.has("requestCard")) text = "Votre dossier a été préparé. Vérifiez la carte ci-dessous.";
+  else if (kinds.has("caseCard")) text = "Le statut de votre dossier a été mis à jour.";
+  return [{ type: "text", text, sources: [] }];
+}
+
+export type PendingFileRequirement = { requestId: string; documentType: string };
+
+/** Oldest unmet fileRequest still open after previous uploads (explicit documentType first, then composer nulls). */
+export function bindUploadedFile(
+  pending: PendingFileRequirement[],
+  previousFiles: { documentType: string | null }[],
+  current: { documentType: string | null },
+): PendingFileRequirement | undefined {
+  const remaining = [...pending];
+  for (const file of previousFiles) {
+    if (file.documentType) {
+      const index = remaining.findIndex((item) => item.documentType === file.documentType);
+      if (index >= 0) remaining.splice(index, 1);
+    } else if (remaining.length) remaining.shift();
+  }
+  if (current.documentType) return remaining.find((item) => item.documentType === current.documentType);
+  return remaining[0];
+}
+
+export function fileReceivedInstruction(requestId: string, documentType: string, fileId: string): string {
+  return `Pièce reçue pour la demande ${requestId} : type de pièce « ${documentType} », fichier ${fileId}. Rattache-la au brouillon avec l’outil de rattachement de pièces (requestId, documentType, fileId ci-dessus). Si toutes les pièces exigées sont présentes, dépose le dossier avec l’outil de dépôt.`;
+}
+
+export function parseReceivedPiece(text: string): { requestId: string; documentType: string; fileId: string } | undefined {
+  const match = text.match(/Pièce reçue pour la demande (req_[0-9A-HJKMNP-TV-Z]{26}) : type de pièce « ([a-z][a-z0-9-]{1,62}) », fichier (fil_[0-9A-HJKMNP-TV-Z]{26})\./);
+  return match ? { requestId: match[1], documentType: match[2], fileId: match[3] } : undefined;
 }
 
 /** Appends Backend-built blocks (loginRequired, consent, requestCard, fileRequest, caseCard) after the model reply. */
