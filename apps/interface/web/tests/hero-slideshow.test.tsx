@@ -22,6 +22,10 @@ describe('HeroSlideshow', () => {
     vi.useRealTimers();
   });
 
+  it('has four photos', () => {
+    expect(HERO_PHOTOS).toHaveLength(4);
+  });
+
   it('renders every photo, only the first one exposed', () => {
     render(<HeroSlideshow />);
     expect(all()).toHaveLength(HERO_PHOTOS.length);

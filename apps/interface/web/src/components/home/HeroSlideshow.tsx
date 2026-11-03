@@ -50,23 +50,18 @@ export const HERO_PHOTOS: HeroPhoto[] = [
     licence: 'CC BY-SA 4.0',
     page: 'https://commons.wikimedia.org/wiki/File:Un_vieux_pont_%C3%A0_Grand-Popo_au_B%C3%A9nin.jpg',
   },
-  {
-    src: '/photos/porte-non-retour-ouidah-nuit.jpg',
-    alt: 'La Porte du non-retour à Ouidah, illuminée la nuit',
-    title: 'Vue de nuit la porte du non retour a Ouidah 01',
-    author: 'Chiemelacebelae',
-    licence: 'CC0',
-    page: 'https://commons.wikimedia.org/wiki/File:Vue_de_nuit_la_porte_du_non_retour_a_Ouidah_01.jpg',
-  },
 ];
 
 const SLIDE_MS = 6000;
 
 const controlClass =
-  'ui-press inline-flex size-11 items-center justify-center rounded-full bg-sunken text-ink hover:bg-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink';
+  'ui-press inline-flex size-11 items-center justify-center rounded-full bg-sunken text-ink hover:bg-line lg:bg-canvas/80 lg:backdrop-blur lg:hover:bg-canvas focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink';
 
-/** The photo card of the hero and its three round controls (previous, play/pause, next). */
-export function HeroSlideshow({ photos = HERO_PHOTOS }: { photos?: HeroPhoto[] }) {
+/**
+ * The photo card of the hero and its three round controls (previous, play/pause, next).
+ * From lg the card fills the height of its parent (`className` sizes the root) and the controls sit on the photo.
+ */
+export function HeroSlideshow({ photos = HERO_PHOTOS, className }: { photos?: HeroPhoto[]; className?: string }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [hidden, setHidden] = useState(false);
@@ -94,9 +89,9 @@ export function HeroSlideshow({ photos = HERO_PHOTOS }: { photos?: HeroPhoto[] }
   const go = (step: number) => setIndex((i) => (i + step + count) % count);
 
   return (
-    <>
-      <div className="mx-auto w-full max-w-[1200px] px-3 md:px-6">
-        <div className="relative aspect-[4/5] overflow-hidden rounded-[24px] bg-line sm:aspect-[16/10] md:rounded-[32px] lg:aspect-[16/8]">
+    <div className={cn('relative', className)}>
+      <div className="mx-auto w-full max-w-[1200px] px-3 md:px-6 lg:h-full lg:max-w-none lg:px-0">
+        <div className="relative aspect-[4/5] overflow-hidden rounded-[24px] bg-line sm:aspect-[16/10] md:rounded-[32px] lg:aspect-auto lg:h-full">
           {photos.map((photo, i) => {
             const active = i === index;
             return (
@@ -105,8 +100,8 @@ export function HeroSlideshow({ photos = HERO_PHOTOS }: { photos?: HeroPhoto[] }
                 src={photo.src}
                 alt={photo.alt}
                 fill
-                // The card is at most 1152px wide (1200px minus its padding); full width below that.
-                sizes="(min-width: 1200px) 1152px, 100vw"
+                // Half the page from lg up (the card is at most 660px wide), full width below that.
+                sizes="(min-width: 1320px) 660px, (min-width: 1024px) 50vw, 100vw"
                 quality={85}
                 priority={i === 0}
                 aria-hidden={active ? undefined : true}
@@ -126,7 +121,7 @@ export function HeroSlideshow({ photos = HERO_PHOTOS }: { photos?: HeroPhoto[] }
           </div>
         </div>
       </div>
-      <div className="mt-5 flex items-center justify-center gap-2">
+      <div className="mt-5 flex items-center justify-center gap-2 lg:absolute lg:bottom-6 lg:right-5 lg:mt-0">
         <button type="button" aria-label="Photo précédente" onClick={() => go(-1)} className={controlClass}>
           <ChevronLeft aria-hidden="true" className="size-5" />
         </button>
@@ -142,6 +137,6 @@ export function HeroSlideshow({ photos = HERO_PHOTOS }: { photos?: HeroPhoto[] }
           <ChevronRight aria-hidden="true" className="size-5" />
         </button>
       </div>
-    </>
+    </div>
   );
 }

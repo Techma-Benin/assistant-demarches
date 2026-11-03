@@ -16,13 +16,13 @@ type Scene = {
   stamp: StampKind;
 };
 
-// The NPI never goes through the chat or the model (CONTRACTS.md §6-7); the service still knows who you are from your sign-in.
+// The NPI never goes through the chat or the model (CONTRACTS.md §6-7): it is entered in a separate secure step that only the Backend reads.
 const SCENES: Scene[] = [
   {
-    title: 'Vous demander votre NPI dans la conversation',
-    note: 'Votre identité vient de votre connexion, jamais du chat.',
+    title: 'Voir votre NPI',
+    note: 'Votre NPI passe par un espace confidentiel, à part de la conversation. Même l’assistant n’y a pas accès.',
     user: 'Je vous donne mon NPI pour aller plus vite ?',
-    agent: 'Non, gardez-le. Je n’en ai pas besoin : votre identité vient de votre connexion.',
+    agent: 'Pas ici. Vous le saisirez dans un espace sécurisé qui l’envoie directement au service : je ne le vois jamais.',
     stamp: 'never',
   },
   {
