@@ -1,139 +1,199 @@
-# Contrats d'intégration v1.0.0
+# Contrat d'intégration v2.1.0
 
-Statut : base d'implémentation exécutable, proposée à la revue des trois groupes. Les équipes peuvent commencer leurs adaptateurs, leurs modules et leurs tests sur cette base ; aucun accord collectif fictif n'est présumé. Les évolutions passent par PR avant changement d'une frontière. Pas de promesse d'intégration sans tests : chaque vrai service doit passer la même suite sur ses URL.
+Ce document et les fichiers de `contracts/v2/` sont la seule référence entre les équipes. Ils découlent de la [spécification fonctionnelle](docs/spec.md). Tout ce qui n'y figure pas n'existe pas.
 
-## 1. Sources de vérité
+## 1. Principes
 
-| Contrat | Source machine | Producteur → consommateur |
+1. **Rien en dur.** Une interface n'affiche que ce qu'une API lui donne. Pas de jeton, session, réponse, chiffre ou liste codés dans le front.
+2. **Réel ou simulé, jamais faux.** Le catalogue vient de service-public.bj. Dépôt, paiement, décision et document délivré passent par le X-Road simulé et portent `simulated: true` et une référence `SIM-…`, affichés comme tels.
+3. **Une seule source par donnée** (§3). Aucune copie locale qui peut diverger.
+4. **Pas de mocks dans l'application.** Les tests unitaires peuvent simuler une dépendance ; la démo et les tests d'intégration tournent sur les vrais services.
+5. **Une fonctionnalité listée marche de bout en bout**, sinon elle est retirée du contrat.
+6. **Confidentialité.** Le modèle ne lit jamais le contenu d'une pièce. La console ne montre jamais le texte des conversations.
+
+## 2. Services
+
+| Service | Dossier | Port local | Équipe | Rôle |
+|---|---|---|---|---|
+| Interface | `apps/interface/web` (cible) | 3000 | Interface | Site usager `/`, chat intégrable `/embed`, console `/admin`, écran opérateur `/operateur` |
+| Backend | `apps/backend` | 4010 | Backend | Conversations, agent IA, pièces, consentement, API console et opérateur, canal WhatsApp |
+| Tooling | `apps/tooling` | 4030 | Tooling | Serveur MCP : brouillons, mandats, dépôt et suivi des dossiers |
+| X-Road simulé | `apps/xroad-sim` | 4040 | Tooling | Administrations, catalogue officiel, dossiers, annuaire des agents, indicateurs |
+| Keycloak | `infra/keycloak` | 8080 | Commun | Connexion des personnes et identités de service |
+| PostgreSQL | lancé par `pnpm dev` | 54329 | Commun | Une instance, une base par service : `backend`, `tooling`, `xroad` |
+
+Pas de Redis, pas de worker séparé, pas de mocks. `pnpm dev` lance tout sans Docker (voir [README](README.md)).
+
+## 3. Qui détient quoi
+
+| Donnée | Source unique | Accès des autres |
 |---|---|---|
-| C1 Conversation | `contracts/v1/conversation.openapi.json` | Backend → Interface |
-| C2 outils | `contracts/v1/mcp.tools.json` | Tooling → Backend |
-| C2 contrôle mandat | `contracts/v1/tooling-internal.openapi.json` | Tooling → code de consentement du Backend |
-| C3 Administration | `contracts/v1/admin.openapi.json` | Backend → console Interface |
-| C4 événements | schéma `Event` dans `domain.schema.json`, `events.openapi.json` | Tooling → Backend → canaux |
-| Données communes | `contracts/v1/domain.schema.json` | Tous |
+| Identité, connexion, mots de passe | Keycloak | Jetons OIDC |
+| Administrations, agents, rôles, affectations, profils | X-Road simulé | Backend via `xroad.openapi.json` |
+| Catalogue des démarches | X-Road simulé (import `content/service-public/catalogue.json`) | Tooling via MCP → Backend |
+| Dossiers, statuts, décisions, paiements, documents délivrés, journal | X-Road simulé | Tooling (côté usager), Backend (console et « Mes démarches ») |
+| Conversations, messages, pièces de l'usager, consentements présentés, questions sans réponse | Backend | Tooling lit les pièces par `backend-internal` |
+| Brouillons (`Request`), mandats, journal des appels d'outils | Tooling | Backend via MCP et événements |
+| Modèles d'IA, connexions MCP | Backend | Écran opérateur |
 
-Les fichiers OpenAPI sont du JSON valide en version 3.1 ; tous les corps, codes de succès et types sont décrits. Les schémas MCP sont embarqués sans référence externe pour être directement utilisables. Les types C1/C3/C2-interne/C4 se génèrent depuis OpenAPI. Toute modification des schémas communs doit être répercutée dans les documents embarqués ; `contracts:check` contrôle leur cohérence.
+Le Backend ne stocke aucun dossier ni aucun agent. Le Tooling ne stocke aucune décision administrative.
 
-## 2. Règles communes
+## 4. Identités (Keycloak, realm `techma`)
 
-- Champs et code en anglais, messages d'interface en français. Aucun champ inconnu dans les objets fermés.
-- Identifiants préfixés suivis de 26 caractères Crockford ULID ; générés par le propriétaire. Dates ISO 8601 UTC. Montants FCFA entiers. `fr`, `fon`, `yo` sont les locales acceptées ; disponibilité effective du vocal français à démontrer, autres langues en phase ultérieure.
-- `traceparent` W3C obligatoire sur tout appel, y compris MCP ; format v00. Ne jamais accepter trace/span entièrement nuls en production. `traceId` = ses 32 caractères de trace.
-- `Authorization: Bearer …` sur chaque frontière. HTTPS obligatoire hors localhost. CORS limité aux origines du portail/configuration ; pas de `*` avec credentials.
-- `Idempotency-Key` de 8 à 128 caractères sur POST/PUT, y compris révocation et appel MCP d'action. Conservation minimale 24 h. Portée = identité authentifiée + méthode + route + clé. Même payload → même statut/corps ; autre payload → 409. Les traitements concurrents doivent partager la même promesse/réservation atomique. Pas de nouvel effet sur rejeu, même si le statut du mandat a évolué.
-- `message.id` assure aussi la déduplication des webhooks. Même ID avec contenu différent → 409 ; pas de nouveau message agent pour le même message entrant.
-- Réponse synchrone HTTP confirmant seulement l'acceptation : 202. L'agent répond par événements. Aucun navigateur ni adaptateur WhatsApp ne contient de logique IA.
-- Un service est seul propriétaire de ses tables ; aucun accès SQL croisé. Les données de pièces sont référencées par `fileId`, jamais incluses dans le contexte du modèle.
+Realm exporté dans `infra/keycloak/realm-techma.json`, importé au démarrage avec les comptes de démo.
 
-## 3. Identités et permissions
-
-Profil de production commun : JWT RS256, issuer = realm Keycloak du déploiement, JWKS configuré par variable d'environnement. Vérifier signature, algorithme, issuer, audience, `exp`, `nbf` avec 30 s de tolérance maximum. Audience Backend = `techma-backend`, audience Tooling = `techma-tooling`. Environnements isolés ; aucun jeton statique des mocks hors localhost.
-
-| Identité | Droits |
-|---|---|
-| Usager portail | `sub` lié côté serveur à `userRef` ; accède uniquement à ses conversations, fichiers, demandes et mandats |
-| Adaptateur WhatsApp | client service `whatsapp-adapter`, droit `conversation:relay` ; Backend résout l'usager à partir du numéro normalisé et vérifié par la signature Meta. Le numéro est transporté en claim signé `channel_subject` dans un jeton d'échange, jamais en argument modèle. |
-| Administrateur | `admin:read` ou `admin:write`, claim `administrationId` ; accès aux seules fiches/conversations de cette administration, filtrage serveur |
-| Agent Backend | client `backend-agent` vers `/mcp`, scope `tools:call` ; **aucun** accès au contrôle mandat |
-| Contrôle Backend | client `backend-mandates`, scope `mandates:grant`, seul accès aux routes internes de mandat |
-| Événements Tooling | client `tooling-events`, scope `events:publish`, seul accès à l'ingestion C4 |
-
-Le Backend ne fait jamais confiance à un `userRef` fourni par le navigateur ou par le modèle. Les endpoints C1 ne le prennent donc pas en entrée. Au niveau Tooling, les en-têtes de contexte ne sont acceptés que d'un client `backend-agent` authentifié ; ils sont construits par du code applicatif hors modèle. Vérifier aussi la propriété des ressources, la conversation et la portée du mandat côté Tooling.
-
-Session du widget : le portail échange sa session signée auprès du Backend / fournisseur OIDC pour un jeton usager à durée courte. Ce provisioning OIDC est de l'infrastructure, pas une nouvelle méthode d'authentification inventée par le widget. WhatsApp : l'adaptateur vérifie Meta, déduplique et acquitte rapidement ; le traitement long est mis en file.
-
-## 4. C1 : début de conversation et messages
-
-1. `POST /v1/conversations` avec `channel`, `locale` → 201 `Conversation` ; l'usager vient du jeton.
-2. `POST /v1/files` si nécessaire : corps binaire `application/octet-stream`, `X-File-Mime-Type` obligatoire, 10 Mio maximum, pas de multipart en v1. Retour 201 `File` sans URL publique. Scan `pending` → pièce inutilisable jusqu'à `clean`. Durée de conservation par défaut 24 h dans la démo ; politique pilote à faire valider.
-3. `POST /v1/conversations/{conversationId}/messages` avec `MessageInput` → 202 `MessageAccepted`.
-4. Réception `message.sent` contenant `AgentMessage.blocks` : `text`, `buttons`, `form`, `fileRequest`, `statusCard`. Les canaux rendent ces mêmes blocs selon leurs possibilités ; un formulaire WhatsApp se déroule en échanges successifs.
-5. `GET /v1/requests/{requestId}` renvoie le dernier statut connu, en contrôlant l'usager.
-
-`sentAt` vient du canal ; le serveur conserve aussi son heure de réception. Un `fileId` appartient à l'usager et doit être scanné. L'agent ne voit qu'une transcription/analyse anonymisée produite par le Backend.
-
-Toute affirmation administrative dans un bloc texte porte au moins une `Source` (URL, identifiant, version et date). Une explication de fonctionnement, un refus ou un message conversationnel peuvent avoir `sources: []`. Le modèle refuse de donner une information administrative sans source ; le schéma seul ne peut pas juger cela, les évaluations le doivent.
-
-## 5. Retour asynchrone : web et WhatsApp
-
-Le journal d'événements de conversation est la référence pour la reprise. Livraison au moins une fois ; tous les consommateurs dédupliquent `Event.id`. Ordre conservé **par conversation**, pas d'ordre global. Rétention/rejeu au moins 24 h. `cursor` est l'ID du dernier événement traité ; 410 `REPLAY_EXPIRED` s'il est inconnu/expiré.
-
-- Web/mobile : `POST /v1/conversations/{id}/socket-ticket` → ticket à usage unique, durée 60 s, URL WS. Connexion sur cette URL avec `&cursor=evt_…` si reprise. Après ouverture, le serveur pousse un objet `Event` JSON par frame texte, puis les nouveaux événements. Pas de token usager dans l'URL, ne jamais journaliser le ticket. Ping/pong toutes les 30 s ; reconnexion avec délai 1/2/4/…/30 s et nouveau ticket. Les tickets n'étendent pas la durée du jeton usager. Origin du portail vérifiée à l'upgrade en production.
-- Repli et tests : `GET /v1/conversations/{id}/events?cursor=…` → `EventPage`, au plus 100 événements. `nextCursor` = dernier retourné, ou curseur d'entrée si aucune nouveauté. Répéter après 1 s en absence de socket. Aucun double affichage après reprise.
-- WhatsApp : rappel HTTP `POST` vers **une URL configurée et autorisée au déploiement**, jamais fournie par l'usager ou le modèle. Corps = même `Event` C4, événement `message.sent` seulement. Auth service `backend-delivery`, audience `whatsapp-adapter`, scope `messages:deliver`, plus `traceparent`. L'adaptateur stocke l'ID et répond 204 avant l'envoi Meta en file ; les doublons répondent aussi 204. Le Backend réessaie après 1/2/4/…/60 s pendant 24 h puis file d'échec ; 401/403 déclenchent une alerte et une correction de configuration.
-
-Le rappel WhatsApp est spécifié dans `contracts/v1/whatsapp-callback.openapi.json`. Le serveur mock Backend expose le flux WS et le polling ; le récepteur de rappel fait partie de l'adaptateur Interface à construire et possède son test dédié dans la suite.
-
-## 6. Consentement et mandat
-
-1. Backend présente les scopes, la démarche, la durée et le texte de consentement via `POST …/mandate-challenges` → `Challenge` valable 5 minutes, à usage unique.
-2. L'Interface affiche **le texte du serveur** et relie le bouton à `challenge.id`. Un message libre « oui » ou une interaction `mandate.accept` ne suffit pas à lui seul ; le Backend vérifie la session, le challenge et l'interaction attendue.
-3. Le clic déclenche `POST …/mandates` avec `{challengeId, accepted:true}` ; jamais un appel modèle. Backend transmet la preuve serveur au contrôle interne Tooling : `MandateGrant`, vérifié sous identité `backend-mandates`. Le Tooling valide la cohérence, la durée et l'unicité du challenge signé / enregistré ; le Backend conserve la preuve d'interaction liée au `evidenceRef`. Hors mocks, le JWT `challenge.proofToken` est signé par le Backend et vérifié par le Tooling (RS256, JWKS dédié, audience `techma-mandate`, `jti=challenge.id`, `sub=userRef`, `conversationId`, `procedureId`, `scopes`, `exp=challenge.expiresAt`). Le Tooling compare les claims signés à l’objet transmis et consomme atomiquement le jti. Le token seul ne vaut pas consentement ; le client de contrôle et la preuve d’interaction restent requis.
-4. Tooling détient le mandat autoritatif : sujet + conversation + démarche + scopes, expiration 1 h pour la démo. Le modèle reçoit uniquement `mandateId` dans un contexte injecté hors arguments.
-5. STOP / bouton de révocation → `POST …/mandates/{id}/revoke`. Backend traduit vers le contrôle Tooling ; effet immédiat sur les nouvelles actions, journalisé. HISTORIQUE expose les propres actions de l'usager via une réponse Backend filtrée, jamais le journal global Admin.
-
-Un challenge signé suffit seulement s'il est appelé par le client contrôle dédié avec preuve d'accord conservée. Une action autorisée ne peut pas élargir les scopes ou renouveler le mandat. Pas de NPI, OTP ou pièces brutes dans les prompts. Le code SMS reste sur le portail officiel.
-
-## 7. C2 : MCP
-
-Transport SDK officiel **Streamable HTTP**, chemin `/mcp`, initialisation MCP standard, version négociée par le SDK. Pas d'endpoint REST `/tools/call` personnalisé.
-
-Chaque requête transporte : `Authorization` agent, `traceparent`, `X-Conversation-Id`, `X-User-Ref`, et `X-Mandate-Id` pour une action. `Idempotency-Key` requis pour chaque `tools/call` d'action. La clé est stable pour la même tentative métier, différente pour chaque opération. Contexte absent du JSON `arguments` et inaccessible au modèle.
-
-Le catalogue garde les annotations MCP standard (`readOnlyHint` etc.). Les règles métier sont dans `_meta` avec clés `bj.techma/kind`, `bj.techma/requiresMandate`, `bj.techma/scopes` ; elles ne sont pas des autorisations : la passerelle les vérifie elle-même.
-
-| Outil | Mandat / scope | Résultat |
+| Qui | Comment | Vérifié par |
 |---|---|---|
-| `procedures.search` | lecture | liste de fiches |
-| `procedures.get` | lecture | fiche complète |
-| `request.create` | `requests:write` | demande `draft` |
-| `request.update` | `requests:write` | demande actualisée |
-| `request.submit` | `requests:submit` | v1 : `awaiting_user_validation` + lien |
-| `request.status` | lecture avec contrôle de propriété | demande |
-| `documents.attach` | `documents:write` | demande + référence pièce |
-| `documents.verify` | lecture, propriété demande et pièce | vérification technique, aucune certification administrative |
+| Visiteur web non connecté | Jeton invité signé par le Backend (`POST /v1/guest-sessions`, 24 h) | Backend |
+| Usager connecté | Keycloak, client `interface`, rôle realm `citizen`, audience `techma-backend` | Backend |
+| Usager WhatsApp | Numéro vérifié par la signature Meta, dans le module WhatsApp du Backend. Compte comme connecté. | Backend |
+| Agent, admin, super admin | Keycloak, client `interface`, rôle realm `official`. Rôle et administration lus dans le X-Road simulé par le `sub`. | Backend puis X-Road simulé |
+| Opérateur | Keycloak, client `interface`, rôle realm `operator` | Backend |
+| Service Backend | Client `backend` (client_credentials), scopes `tools:call`, `mandates:grant`, `xroad:apply`, `xroad:administer`, et gestion des utilisateurs du realm | Tooling, X-Road simulé, Keycloak |
+| Service Tooling | Client `tooling` (client_credentials), scopes `events:publish`, `files:read`, `xroad:apply` | Backend, X-Road simulé |
 
-Sortie réussie = `structuredContent` conforme à `outputSchema` et bloc texte JSON de même contenu. Erreur métier = `isError: true`, bloc texte JSON `{code, detail, traceId}`. Erreurs de protocole = JSON-RPC MCP standard. HTTP 401/403 pour authentification du transport. Aucun échec d'outil ne doit devenir une réponse réussie fabriquée par le modèle.
+Règles :
+- JWT RS256, issuer `http://127.0.0.1:8080/realms/techma` en local, vérifié par JWKS ; audiences `techma-backend`, `techma-tooling`, `techma-xroad`.
+- Le Backend publie ses propres clés (jetons invités et preuves de consentement) sur `GET /.well-known/jwks.json`.
+- `userRef` (`usr_…`) est attribué par le Backend à partir du `sub` Keycloak ou du numéro WhatsApp. Il n'est jamais accepté depuis le navigateur ni depuis le modèle.
+- Le Backend transmet au Tooling `X-User-Ref`, `X-Conversation-Id`, `X-Channel`, `X-Mandate-Id`, et au X-Road `X-Applicant-Ref` (vue usager) ou `X-Official-Subject` (vue agent). Ces en-têtes ne viennent que du code, jamais du modèle.
+- Aucun jeton statique, aucun `mock-*`, aucun mode d'authentification de développement dans le code.
 
-`request.update.fields` suit `Procedure.formSchema`, au format JSON Schema 2020-12, sans champs inconnus. Les champs obligatoires peuvent manquer en brouillon mais sont contrôlés avant préparation finale. Pas de données d'identité sensibles dans ces champs v1. Les pièces sont des références opaques ; Tooling valide la propriété, le scan et la péremption via `GET /internal/v1/files/{fileId}` avec `X-User-Ref`, identité `tooling-resources`, audience Backend et scope `resources:read`. Réponse `FileAccess` sans contenu brut ni URL publique ; 404 si propriété incompatible. Les fiches sont accessibles via `GET /internal/v1/procedures?query=…` et `GET /internal/v1/procedures/{procedureId}`, même identité. Contrat : `backend-resources.openapi.json`. Seules les fiches validées sont exposées en production ; la simulation utilise une fiche explicitement fictive en brouillon. Dans la démo, fichiers synthétiques uniquement.
+## 5. Contrats machine (`contracts/v2/`)
 
-Machine d'état : `draft` → `ready` quand champs et pièces requis sont présents → `awaiting_user_validation` en v1. `draft`/`ready` modifiables ; après préparation finale, modification refusée 409. L'absence d'un élément requis donne `REQUEST_INCOMPLETE`. Les états `submitted` → `processing` → `completed` / `rejected` et `cancelled` sont réservés aux connecteurs réels et ne doivent pas être inventés dans la démo. Le connecteur doit fournir une preuve d'accusé de réception avant passage à `submitted`.
-
-## 8. C3 : administration
-
-Collections `GET /v1/admin/{models,tools,procedures,conversations,audit}` ; métriques par `GET /v1/admin/metrics`. Pagination `cursor`, `limit` (1–100, défaut 20), `nextCursor: null` en fin. Curseurs opaques côté consommateur. Mises à jour complètes `PUT /v1/admin/{models,tools,procedures}/{id}` de ressources existantes ; ID corps = ID route. 404 si absent ; 409 si conflit de mise à jour. Pas de PATCH implicite.
-
-Changement de modèle sans redéploiement. Fiches en brouillon tant que non validées par une administration. La configuration d'outils n'accepte que les serveurs MCP autorisés côté déploiement : `serverUrl` ne permet jamais de contacter une adresse arbitraire. Seules des références aux secrets sont renvoyées. Revue sécurité et événement `configuration.changed` à chaque écriture. Avant pilote, ajouter contrôle de concurrence (ETag/If-Match) avec une évolution documentée ; pour la démo, un administrateur à la fois.
-
-## 9. C4 : événements
-
-CloudEvents 1.0 structuré JSON : schéma commun `Event`. `type` doit correspondre à `data.kind` : `bj.techma.{kind}.v1`. Validation supplémentaire dans `validateEvent` et tests. Source fixe selon service : `urn:techma:backend`, `urn:techma:tooling`, `urn:techma:interface`. `id` stable sur les reprises, `time` = heure de production, trace de la requête d'origine.
-
-Tooling publie vers `POST /internal/v1/events`, sous identité `tooling-events` ; 202 après persistance durable et déduplication de l'ID. Le Backend republie aux canaux autorisés. Transaction + outbox côté producteur ; pas de modification du statut sans événement durable. BullMQ/Redis sert à la livraison/reprise, pas à remplacer la source métier persistée. Même stratégie de reprise que le rappel WhatsApp.
-
-Événements v1 : `message.received`, `message.sent`, `request.created`, `request.status_changed`, `mandate.granted`, `mandate.revoked`, `tool.called`, `configuration.changed`. L’événement `message.received` ne transporte que `messageId` et `conversationId`, sans texte entrant brut. Les données d'événement ne contiennent ni numéro de téléphone, ni NPI, ni pièce, ni texte brut de pièce. Journal d'audit de sécurité séparé, ajout seul, accès Tooling restreint.
-
-## 10. Erreurs HTTP
-
-`application/problem+json` conforme au schéma `Problem` : `type`, `title`, `status`, `detail`, `code`, `traceId`. Pas de stack, secret ou donnée sensible dans `detail`.
-
-| HTTP | Codes |
+| Fichier | Producteur → consommateur |
 |---|---|
-| 400 | `INVALID_REQUEST` |
-| 401 | `UNAUTHORIZED` |
-| 403 | `FORBIDDEN`, `MANDATE_MISSING`, `MANDATE_EXPIRED`, `MANDATE_REVOKED`, `MANDATE_SCOPE_DENIED` |
-| 404 | `NOT_FOUND` (également ressource d'un autre usager) |
-| 409 | `IDEMPOTENCY_CONFLICT`, `REQUEST_INCOMPLETE`, `INVALID_TRANSITION` |
-| 410 | `REPLAY_EXPIRED` |
-| 413 / 415 | `FILE_TOO_LARGE` / `UNSUPPORTED_MEDIA_TYPE` |
-| 429 | `RATE_LIMITED`, avec `Retry-After` |
-| 503 | `UPSTREAM_UNAVAILABLE`, avec `Retry-After` |
+| `domain.schema.json` | Schémas partagés par tous |
+| `conversation.openapi.json` | Backend → Interface (site usager, chat intégrable) |
+| `admin.openapi.json` | Backend → Interface (console d'administration) |
+| `operator.openapi.json` | Backend → Interface (écran opérateur) |
+| `mcp.tools.json` | Tooling → Backend (outils MCP) |
+| `tooling-internal.openapi.json` | Tooling → Backend (enregistrement des mandats) |
+| `backend-internal.openapi.json` | Backend → Tooling (événements, lecture des pièces) |
+| `xroad.openapi.json` | X-Road simulé → Tooling et Backend |
+| `examples.json` | Exemples réels validés |
 
-## 11. Compatibilité et validation
+Commandes :
+- `pnpm contracts:sync` recopie dans chaque contrat les schémas partagés qu'il utilise. On ne modifie que `domain.schema.json` et la partie `paths`/`tools`.
+- `pnpm contracts:check` valide tout.
+- `pnpm contracts:generate` produit `packages/contracts-ts` : `Schemas` (tous les schémas) et `ConversationPaths`, `AdminPaths`, `OperatorPaths`, `BackendInternalPaths`, `ToolingInternalPaths`, `XroadPaths`. Ne jamais modifier ces fichiers à la main.
 
-Les schémas existants ne se rétrécissent pas en v1 : ne pas retirer une opération/un champ, rendre un champ requis, changer son type ou retirer un état. Ajouts compatibles en version mineure ; rupture = v2 coexistante, migration annoncée. Les mocks et fixtures évoluent dans la même PR. Les consommateurs doivent tolérer les futurs champs de sortie lorsqu'ils désérialisent ; les producteurs continuent à valider strictement leurs sorties pour leur propre version.
+## 6. Règles HTTP communes
 
-CI : validation OpenAPI / JSON Schema, concordance des schémas embarqués, tests positifs/négatifs, types régénérés sans diff et comparaison des contrats avec la branche cible. Une modification v1 détectée exige une revue explicite et une nouvelle version du manifeste ; la CI ne remplace pas l'analyse humaine de compatibilité.
+- JSON en `camelCase` anglais, textes d'interface en français. Objets fermés (`additionalProperties: false`).
+- Identifiants `préfixe_` + ULID (26 caractères Crockford), générés par le propriétaire de la donnée. Dates ISO 8601 UTC. Montants en FCFA entiers.
+- Erreurs : `application/problem+json`, schéma `Problem`. Codes HTTP : 400 `INVALID_REQUEST` ; 401 `UNAUTHORIZED`, `LOGIN_REQUIRED` ; 403 `FORBIDDEN`, `MANDATE_*` ; 404 `NOT_FOUND` (y compris une ressource hors de portée) ; 409 `CONFLICT`, `INVALID_TRANSITION`, `REQUEST_INCOMPLETE`, `NOT_ASSISTED`, `IDEMPOTENCY_CONFLICT` ; 413/415 fichiers ; 429 `RATE_LIMITED` ; 503 `UPSTREAM_UNAVAILABLE` et `MCP_*` avec `Retry-After`.
+- `traceparent` facultatif : le serveur en crée un s'il manque et le propage.
+- `Idempotency-Key` obligatoire seulement là où le contrat l'exige : actions MCP, dépôt, paiement, réponse et action sur un dossier X-Road, mandats, action d'un agent dans la console. Même clé + même corps = même réponse pendant 24 h.
+- Pagination : `cursor` opaque, `limit` 1–100 (défaut 20), `nextCursor: null` en fin de liste.
+- HTTPS obligatoire hors poste local.
 
-`CODEOWNERS` désigne actuellement le responsable GitHub connu. Les responsables des trois groupes doivent être renseignés dès que leurs comptes/équipes sont connus ; GitHub n'exige pas une approbation de **chaque** propriétaire d'une même ligne. La règle de revue par chaque groupe concerné est donc également inscrite dans le modèle de PR. Les restrictions effectivement activées sur GitHub sont consignées dans `docs/readiness.md`.
+## 7. Parcours usager
+
+### 7.1 Conversation
+
+0. L'accueil affiche `GET /v1/home` (sans authentification) : thèmes des administrations connectées et suggestions de démarches réelles.
+1. L'Interface obtient un jeton invité (ou utilise la session Keycloak si l'usager est déjà connecté), puis `POST /v1/conversations`.
+2. Messages : `POST …/messages` (dédupliqué par `message.id`). Réponse par le flux d'événements : WebSocket via `socket-ticket`, ou `GET …/events` en repli.
+3. `GET …/events` sans curseur restitue l'historique des **messages complets** (`message.received` et `message.sent`). `message.received` porte le contenu et la transcription d'un vocal. Le rechargement n'est pas un déluge de jetons : **`message.delta` n'y figure pas**.
+4. `message.delta` est une livraison **live uniquement** : trames WebSocket et/ou `GET …/events` **avec curseur** après abonnement. Chaque événement est un Event CloudEvents 1.0 (`type = bj.techma.message.delta.v2`). `data` (objet fermé) : `kind`, `conversationId`, `messageId` (le même que le `message.sent` à venir), `delta` (morceau de texte), `index` facultatif (ordre 0-based). `delta` vide seulement si un signal terminal est indispensable ; le contrat n'exige pas ce delta terminal.
+5. Pendant la génération, le Backend **peut** émettre zéro, un ou plusieurs `message.delta`. Ils portent uniquement le texte du futur bloc `text` — jamais les blocs structurés (`buttons`, `form`, `fileRequest`, `loginRequired`, `consent`, `requestCard`, `caseCard`) ni les `sources`.
+6. La clôture reste `message.sent` : `AgentMessage` complet, `blocks` définitifs. L'Interface remplace / finalise la bulle en cours par cet événement. Sources, boutons, formulaire, `fileRequest` et les autres blocs n'apparaissent que sur `message.sent`. Le modèle ne produit toujours que `text` / `buttons` / `form` ; les autres blocs restent construits par le Backend.
+7. `message.delta` n'est **pas** émis : dans `GET …/events` sans curseur ; après le `message.sent` du même `messageId` ; pour une réponse sans texte (pas de bloc `text` à venir) ; par le Tooling (`POST /internal/v1/events`).
+8. Vocal : `POST /v1/files` (audio), puis message `{type: audio, fileId}`. Le Backend transcrit, et la transcription apparaît dans `message.received`.
+
+### 7.2 Réponses de l'assistant (`AgentMessage.blocks`)
+
+| Bloc | Sens | Ce que fait l'Interface |
+|---|---|---|
+| `text` | Réponse. Toute information administrative cite au moins une `Source` (fiche service-public.bj). Un texte de conversation (salutation, clarification) peut avoir `sources: []`, en phrases naturelles. | Affiche le texte et ses sources cliquables |
+| `buttons` | Choix rapides | Envoie `{type: interaction, actionId}` |
+| `form` | Questions groupées | Envoie les réponses en `interaction` |
+| `fileRequest` | Pièce attendue pour un brouillon | Bouton d'ajout sur la ligne. Upload `POST /v1/files`, puis message `{type: file, fileId, documentType}` |
+| `loginRequired` | L'action demande une connexion | Lance la connexion Keycloak, puis `POST …/attach` avec le jeton invité |
+| `consent` | Consentement préparé par le Backend (texte serveur) | Affiche `consentText` tel quel ; le clic appelle `POST …/mandates` |
+| `requestCard` | État du brouillon | Met à jour le panneau « vos informations » (champs avec provenance, pièces, manques) |
+| `caseCard` | État d'un dossier déposé | Affiche statut, référence SIM, paiement, complément demandé, documents délivrés |
+
+Le modèle ne produit que `text`, `buttons` et `form`. Les blocs `fileRequest`, `loginRequired`, `consent`, `requestCard` et `caseCard` sont construits par le code du Backend à partir des résultats d'outils et des événements, jamais inventés par le modèle. Un `message.delta` n'ajoute jamais un bloc : il n'apporte que du texte pour le futur bloc `text` (§7.1).
+
+### 7.3 Démarche déposable
+
+1. `procedures.search` / `procedures.get` : la fiche indique `filing` (déposable) ou `null` (information et lien officiel seulement).
+2. `request.create` exige un usager connecté. Avec un jeton invité, le Backend renvoie un bloc `loginRequired`. Après `attach`, la conversation continue au même endroit.
+3. Une action sans mandat actif renvoie `MANDATE_MISSING`. Un mandat périmé (1 h) renvoie `MANDATE_EXPIRED` : le Backend le traite comme `MANDATE_MISSING` (nouveau challenge, bloc `consent`, reprise après accord). Le clic de l'usager accorde le mandat, et l'action est rejouée.
+4. `request.update` et `documents.attach` remplissent le brouillon ; chaque résultat produit un `requestCard`.
+5. `request.submit` : le Tooling lit les pièces (`backend-internal`), les transmet au X-Road (`/v1/uploads`) et dépose le dossier (`POST /v1/cases`). Il renvoie un `caseCard`.
+6. `request.pay` si `status = awaiting_payment`.
+7. Le Tooling suit les dossiers déposés et publie `case.updated` à chaque changement. Le Backend en fait un `caseCard` dans la conversation et une notification WhatsApp.
+8. Complément : `information_requested` arrive par `case.updated` avec `informationRequest.note`. L'assistant le présente ; la réponse de l'usager part par `case.respond`.
+9. Documents délivrés : `Case.documents` (`kind: issued`), téléchargés par `GET /v1/cases/{caseId}/documents/{documentId}`.
+
+### 7.4 Brouillon (Tooling)
+
+`draft` → `ready` (plus rien dans `missing`) → `submitted` (avec `caseId`), ou `cancelled`. Après `submitted`, le brouillon n'est plus modifiable ; l'état fait foi dans le dossier X-Road.
+
+## 8. Dossier (X-Road simulé)
+
+```text
+POST /v1/cases ─┬─ frais > 0 → awaiting_payment ─ paiement ─┐
+                └─ sans frais ──────────────────────────────┴→ received
+received ─ règle de la démarche ─┬→ completed (completedBy: assistant, document délivré)
+                                 └→ in_review (étape bloquée : vérification par un agent)
+in_review ─ claim ─→ in_review (claimedBy)
+in_review ─ request_information ─→ information_requested ─ réponse de l'usager ─→ in_review
+in_review ─ approve ─→ completed (completedBy: administration, document délivré)
+in_review | information_requested ─ reject ─→ rejected
+```
+
+- Démarches déposables : PS00373 casier judiciaire (Justice, vérifié par un agent), PS00393 acte de naissance sécurisé (ANIP, complété par l'assistant), PS00392 certificat d'identification personnelle (ANIP, complété par l'assistant), PS00254 authentification de diplôme (Enseignement, complété par l'assistant). Leurs champs, pièces et frais suivent la fiche officielle et sont vérifiés par test.
+- Console : **En attente** = `received`, `in_review`, `information_requested` ; **Complété** = `completed` ; **Rejeté** = `rejected`.
+- `steps` décrit ce que l'assistant a fait et ce qui demande une intervention ; c'est ce que la console affiche.
+- Toute transition produit une entrée de journal (`ActivityEntry`).
+
+## 9. Console d'administration
+
+- Le Backend vérifie le jeton Keycloak (rôle `official`), puis appelle le X-Road avec `X-Official-Subject`. Le X-Road applique le cloisonnement : un agent ne voit que son administration, et un dossier d'une autre administration répond 404.
+- `GET /v1/admin/me` donne le profil, l'administration et les permissions. L'Interface masque ce qui n'est pas permis ; le serveur refuse quand même.
+- Un super admin choisit l'administration (`administrationId`) et voit les administrations non connectées comme telles.
+- `POST /v1/admin/officials` : le Backend crée le compte Keycloak (mot de passe temporaire à changer) puis inscrit le `sub` dans le X-Road.
+- Questions sans réponse : le Backend enregistre le thème et le motif, jamais le texte de la question.
+- Aucun texte de conversation, aucun modèle, aucun MCP dans la console.
+
+## 10. Écran opérateur
+
+- Rôle `operator` uniquement. Configuration globale.
+- Modèles : `baseUrl` compatible OpenAI, `protocol`, `model`, `apiKeyRef` (nom de la variable d'environnement), `temperature`, un seul `active`. L'agent utilise le modèle actif sans redémarrage.
+- Connexions MCP : URL autorisée par `MCP_ALLOWED_URLS` ; découverte réelle (`tools/list`) ; outils désactivés et avec consentement par défaut ; une définition changée est désactivée à la redécouverte. Le serveur Techma (Tooling) est provisionné au démarrage.
+
+## 11. MCP (Tooling)
+
+- Transport Streamable HTTP, `POST /mcp`, SDK officiel. Pas de route REST d'outils.
+- `initialize` et `tools/list` sont permis sans contexte. `tools/call` exige `X-Conversation-Id` et `X-User-Ref` ; les actions exigent aussi `X-Mandate-Id` et `Idempotency-Key` ; `request.submit` exige `X-Channel`.
+- Résultat : `structuredContent` conforme à `outputSchema` et le même JSON en bloc texte. Erreur métier : `isError: true` et `{code, detail, traceId}`.
+- `_meta.bj.techma/requiresMandate` et `bj.techma/requiresLogin` décrivent la règle ; le Tooling la vérifie lui-même.
+
+## 12. Événements Tooling → Backend
+
+CloudEvents 1.0 en JSON (`Event`), `type = bj.techma.{kind}.v2`, `POST /internal/v1/events`, 202 après persistance, rejeu sans effet sur un même `id`.
+
+| `kind` | Émis quand | Effet côté Backend |
+|---|---|---|
+| `case.updated` | Le suivi voit un changement de dossier | `caseCard` dans la conversation, notification WhatsApp |
+| `tool.called` | Chaque appel d'outil | Journal technique (opérateur), jamais affiché à l'usager |
+| `mandate.granted`, `mandate.revoked` | Mandat créé ou retiré | Mise à jour de l'état de consentement |
+
+Le flux de conversation vers l'Interface contient `message.received`, `message.delta` et `message.sent`. `message.delta` est live uniquement (§7.1) ; `message.sent` reste la source de vérité de la réponse.
+
+## 13. Pièces et documents
+
+- Pièces usager : `POST /v1/files`, PDF/JPEG/PNG (et audio pour les vocaux), 10 Mio. Conservées 24 h si elles ne sont rattachées à aucun dossier. Pas d'analyse du contenu, pas d'antivirus.
+- Au dépôt, le Tooling transmet les pièces au X-Road, qui les conserve avec le dossier.
+- Documents délivrés : PDF générés par le X-Road, marqués « SIMULATION ».
+
+## 14. Faire évoluer le contrat
+
+1. Une équipe qui bute sur le contrat ouvre une PR qui modifie `contracts/v2/` **et** ce document, avec la raison.
+2. La version du manifeste et des `info.version` augmente : mineure pour un ajout compatible, majeure sinon. La CI le vérifie.
+3. La PR est relue par les trois équipes avant fusion dans `dev`. Pas de changement de frontière sans cette PR.
+4. Les implémentations suivent dans des PR séparées, une fois le contrat fusionné.

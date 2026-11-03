@@ -1,14 +1,16 @@
+// Généré par pnpm contracts:generate depuis contracts/v2. Ne pas modifier.
 export interface paths {
-    "/v1/admin/models": {
+    "/v1/admin/me": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** listAdminModels */
-        get: operations["listAdminModels"];
-        put?: never;
+        /** Profil, administration et permissions */
+        get: operations["getMe"];
+        /** Modifier son nom et sa fonction */
+        put: operations["updateMe"];
         post?: never;
         delete?: never;
         options?: never;
@@ -16,7 +18,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/models/{id}": {
+    "/v1/admin/me/avatar": {
         parameters: {
             query?: never;
             header?: never;
@@ -24,8 +26,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** updateAdminModels */
-        put: operations["updateAdminModels"];
+        /**
+         * Changer sa photo
+         * @description JPEG ou PNG, 2 Mio maximum. Le Backend stocke l’image et met à jour avatarUrl.
+         */
+        put: operations["updateMyAvatar"];
         post?: never;
         delete?: never;
         options?: never;
@@ -33,15 +38,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/tools": {
+    "/v1/admin/avatars/{officialId}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** listAdminTools */
-        get: operations["listAdminTools"];
+        /** Photo d’un agent */
+        get: operations["getAvatar"];
         put?: never;
         post?: never;
         delete?: never;
@@ -50,7 +55,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/tools/{id}": {
+    "/v1/admin/administrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Administrations visibles
+         * @description Toutes pour un super_admin (y compris non connectées), sinon la sienne.
+         */
+        get: operations["listAdministrations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/officials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agents visibles */
+        get: operations["listOfficials"];
+        put?: never;
+        /**
+         * Créer un agent (compte Keycloak + affectation)
+         * @description super_admin uniquement.
+         */
+        post: operations["createOfficial"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/officials/{officialId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -58,8 +104,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** updateAdminTools */
-        put: operations["updateAdminTools"];
+        /**
+         * Changer l’affectation, le rôle ou désactiver
+         * @description super_admin pour tout agent ; admin pour les agents de son administration, sans pouvoir élargir ses propres droits.
+         */
+        put: operations["updateOfficial"];
         post?: never;
         delete?: never;
         options?: never;
@@ -67,15 +116,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/procedures": {
+    "/v1/admin/cases": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** listAdminProcedures */
-        get: operations["listAdminProcedures"];
+        /** Dossiers (En attente, Complété, Rejeté) */
+        get: operations["listCases"];
         put?: never;
         post?: never;
         delete?: never;
@@ -84,7 +133,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/procedures/{id}": {
+    "/v1/admin/cases/{caseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Détail d’un dossier */
+        get: operations["getCase"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/cases/{caseId}/actions": {
         parameters: {
             query?: never;
             header?: never;
@@ -92,24 +158,27 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** updateAdminProcedures */
-        put: operations["updateAdminProcedures"];
-        post?: never;
+        put?: never;
+        /**
+         * Prendre en charge, demander un complément, approuver, rejeter
+         * @description Transitions : claim (received|in_review → in_review), request_information (in_review → information_requested, note obligatoire), approve (in_review → completed, document délivré), reject (in_review|information_requested → rejected, note obligatoire).
+         */
+        post: operations["actOnCase"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/conversations": {
+    "/v1/admin/cases/{caseId}/documents/{documentId}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** listAdminConversations */
-        get: operations["listAdminConversations"];
+        /** Télécharger une pièce ou un document délivré */
+        get: operations["downloadCaseDocument"];
         put?: never;
         post?: never;
         delete?: never;
@@ -118,15 +187,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/audit": {
+    "/v1/admin/dashboard": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** listAdminAudit */
-        get: operations["listAdminAudit"];
+        /** Vue d’ensemble d’une administration */
+        get: operations["getDashboard"];
         put?: never;
         post?: never;
         delete?: never;
@@ -135,17 +204,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/metrics": {
+    "/v1/admin/activity": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** getAdminMetrics */
-        get: operations["getAdminMetrics"];
+        /** Journal des actions sur les dossiers */
+        get: operations["listActivity"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/unanswered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Questions sans réponse (thème et motif, sans texte) */
+        get: operations["listUnanswered"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/unanswered/{unansweredId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Marquer comme résolu */
+        post: operations["resolveUnanswered"];
         delete?: never;
         options?: never;
         head?: never;
@@ -156,332 +259,253 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        ConversationId: string;
-        UserRef: string;
-        MessageId: string;
-        RequestId: string;
-        FileId: string;
-        MandateId: string;
-        ChallengeId: string;
-        EventId: string;
-        /** @enum {string} */
-        Locale: "fr" | "fon" | "yo";
-        Problem: {
-            /** Format: uri */
-            type: string;
-            title: string;
-            status: number;
-            detail: string;
+        ActivityEntry: {
+            id: components["schemas"]["ActivityId"];
+            caseId: components["schemas"]["CaseId"];
+            caseReference: string;
+            administrationId: components["schemas"]["AdministrationId"];
             /** @enum {string} */
-            code: "INVALID_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "IDEMPOTENCY_CONFLICT" | "MANDATE_MISSING" | "MANDATE_EXPIRED" | "MANDATE_REVOKED" | "MANDATE_SCOPE_DENIED" | "REQUEST_INCOMPLETE" | "INVALID_TRANSITION" | "UPSTREAM_UNAVAILABLE" | "RATE_LIMITED" | "UNSUPPORTED_MEDIA_TYPE" | "FILE_TOO_LARGE" | "REPLAY_EXPIRED";
-            traceId: string;
-        };
-        Source: {
-            procedureId: string;
-            /** Format: uri */
-            url: string;
+            actor: "assistant" | "applicant" | "administration";
+            officialId: components["schemas"]["OfficialId"] | null;
+            /** @enum {string} */
+            action: "case.created" | "case.paid" | "step.completed" | "case.claimed" | "information.requested" | "information.provided" | "case.approved" | "case.rejected" | "document.issued";
+            note: string | null;
             /** Format: date-time */
-            retrievedAt: string;
-            version: string;
+            at: string;
         };
-        /** @enum {string} */
-        RequestStatus: "draft" | "ready" | "awaiting_user_validation" | "submitted" | "processing" | "completed" | "rejected" | "cancelled";
-        Request: {
-            id: components["schemas"]["RequestId"];
-            conversationId: components["schemas"]["ConversationId"];
-            userRef: components["schemas"]["UserRef"];
-            procedureId: string;
-            status: components["schemas"]["RequestStatus"];
+        ActivityId: string;
+        ActivityPage: {
+            items: components["schemas"]["ActivityEntry"][];
+            /** @description Curseur opaque de la page suivante ; null en fin de liste. */
+            nextCursor: string | null;
+        };
+        Administration: {
+            id: components["schemas"]["AdministrationId"];
+            name: string;
+            shortName: string;
+            /** @description Thèmes affichés à l’accueil usager. */
+            themes: string[];
+            connection: {
+                /** @enum {string} */
+                status: "connected" | "not_connected";
+                /** Format: date-time */
+                since: string | null;
+            };
+        };
+        /** @description Identifiant stable d’une administration du X-Road simulé (ex. justice, anip). */
+        AdministrationId: string;
+        AdministrationList: {
+            items: components["schemas"]["Administration"][];
+        };
+        Case: {
+            id: components["schemas"]["CaseId"];
+            reference: string;
+            /** @constant */
+            simulated: true;
+            procedureId: components["schemas"]["ProcedureId"];
+            title: string;
+            administrationId: components["schemas"]["AdministrationId"];
+            applicantRef: components["schemas"]["UserRef"];
+            requestId: components["schemas"]["RequestId"];
+            channel: components["schemas"]["Channel"];
+            status: components["schemas"]["CaseStatus"];
+            /** @description Valeurs du formulaire de la démarche, conformes à Procedure.filing.formSchema. */
             fields: {
                 [key: string]: string | number | boolean | null;
             };
-            fileIds: components["schemas"]["FileId"][];
-            /** Format: uri */
-            officialLink: string | null;
+            documents: components["schemas"]["CaseDocument"][];
+            payment: components["schemas"]["CasePayment"];
+            steps: components["schemas"]["CaseStep"][];
+            /** @description Renseigné tant que status = information_requested. */
+            informationRequest: components["schemas"]["InformationRequest"] | null;
+            claimedBy: components["schemas"]["OfficialId"] | null;
+            /** @enum {string|null} */
+            completedBy: "assistant" | "administration" | null;
+            decisionNote: string | null;
+            /** Format: date-time */
+            createdAt: string;
             /** Format: date-time */
             updatedAt: string;
         };
-        File: {
-            id: components["schemas"]["FileId"];
+        CaseActionInput: {
             /** @enum {string} */
-            mimeType: "application/pdf" | "image/jpeg" | "image/png" | "audio/ogg" | "audio/mpeg" | "audio/mp4";
-            sizeBytes: number;
-            /** @enum {string} */
-            scanStatus: "pending" | "clean" | "rejected";
-            /** Format: date-time */
-            expiresAt: string;
+            action: "claim" | "request_information" | "approve" | "reject";
+            /** @description Obligatoire pour request_information et reject. */
+            note: string | null;
         };
-        Procedure: {
-            id: string;
-            title: string;
-            administrationId: string;
-            summary: string;
-            requiredDocuments: string[];
-            feeFcfa: number;
-            processingDays: number;
-            source: components["schemas"]["Source"];
+        CaseDocument: {
+            id: components["schemas"]["DocumentId"];
+            /**
+             * @description submitted = pièce de l’usager ; issued = document délivré par l’administration (simulation).
+             * @enum {string}
+             */
+            kind: "submitted" | "issued";
+            documentType: string;
+            name: string;
             /** @enum {string} */
-            validationStatus: "draft" | "validated";
-            formSchema: {
-                [key: string]: unknown;
-            };
+            mimeType: "application/pdf" | "image/jpeg" | "image/png";
+            sizeBytes: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CaseId: string;
+        CasePage: {
+            items: components["schemas"]["Case"][];
+            /** @description Curseur opaque de la page suivante ; null en fin de liste. */
+            nextCursor: string | null;
+        };
+        CasePayment: {
+            amountFcfa: number;
+            /** @enum {string} */
+            status: "not_required" | "pending" | "paid";
+            reference: string | null;
+            /** Format: date-time */
+            paidAt: string | null;
+            /** @constant */
+            simulated: true;
         };
         /** @enum {string} */
-        Scope: "requests:write" | "documents:write" | "requests:submit";
-        Mandate: {
-            id: components["schemas"]["MandateId"];
-            conversationId: components["schemas"]["ConversationId"];
-            userRef: components["schemas"]["UserRef"];
-            procedureId: string;
-            scopes: components["schemas"]["Scope"][];
-            /** @enum {string} */
-            status: "active" | "revoked" | "expired";
-            /** Format: date-time */
-            expiresAt: string;
-        };
-        ChallengeInput: {
-            procedureId: string;
-            scopes: components["schemas"]["Scope"][];
-        };
-        Challenge: {
-            id: components["schemas"]["ChallengeId"];
-            conversationId: components["schemas"]["ConversationId"];
-            userRef: components["schemas"]["UserRef"];
-            procedureId: string;
-            scopes: components["schemas"]["Scope"][];
-            consentText: string;
-            /** Format: date-time */
-            expiresAt: string;
-            /** @description JWT signé du challenge en production ; opaque pour Interface et le modèle. */
-            proofToken: string;
-        };
-        Consent: {
-            challengeId: components["schemas"]["ChallengeId"];
-            /** @constant */
-            accepted: true;
-        };
-        ConversationInput: {
-            /** @enum {string} */
-            channel: "whatsapp" | "web" | "mobile";
-            locale: components["schemas"]["Locale"];
-        };
-        Conversation: {
-            id: components["schemas"]["ConversationId"];
-            userRef: components["schemas"]["UserRef"];
-            /** @enum {string} */
-            channel: "whatsapp" | "web" | "mobile";
-            locale: components["schemas"]["Locale"];
-            /** Format: date-time */
-            createdAt: string;
-        };
-        Content: {
-            /** @constant */
-            type: "text";
-            text: string;
-        } | {
-            /** @enum {string} */
-            type: "audio" | "image" | "file";
-            fileId: components["schemas"]["FileId"];
-        } | {
-            /** @constant */
-            type: "interaction";
-            actionId: string;
-            value?: string;
-        };
-        MessageInput: {
-            id: components["schemas"]["MessageId"];
-            content: components["schemas"]["Content"];
-            /** Format: date-time */
-            sentAt: string;
-        };
-        MessageAccepted: {
-            messageId: components["schemas"]["MessageId"];
-            conversationId: components["schemas"]["ConversationId"];
-            /** @constant */
-            status: "accepted";
-        };
-        Block: {
-            /** @constant */
-            type: "text";
-            text: string;
-            sources: components["schemas"]["Source"][];
-        } | {
-            /** @constant */
-            type: "buttons";
-            items: {
-                id: string;
-                label: string;
-            }[];
-        } | {
-            /** @constant */
-            type: "form";
+        CaseStatus: "awaiting_payment" | "received" | "in_review" | "information_requested" | "completed" | "rejected";
+        CaseStep: {
             id: string;
-            fields: {
-                name: string;
-                label: string;
-                required: boolean;
-                /** @enum {string} */
-                type: "text" | "number" | "date";
-            }[];
-        } | {
-            /** @constant */
-            type: "fileRequest";
-            documentType: string;
             label: string;
-            acceptedMimeTypes: string[];
-        } | {
-            /** @constant */
-            type: "statusCard";
-            request: components["schemas"]["Request"];
-        };
-        AgentMessage: {
-            id: components["schemas"]["MessageId"];
-            conversationId: components["schemas"]["ConversationId"];
-            blocks: components["schemas"]["Block"][];
+            /** @enum {string} */
+            state: "done" | "blocked" | "pending";
+            /** @enum {string} */
+            actor: "assistant" | "applicant" | "administration";
+            note: string | null;
             /** Format: date-time */
-            createdAt: string;
+            at: string | null;
         };
-        ToolContext: {
-            conversationId: components["schemas"]["ConversationId"];
-            userRef: components["schemas"]["UserRef"];
-            mandateId?: components["schemas"]["MandateId"];
-            traceId: string;
+        /**
+         * @description pending = received, in_review, information_requested.
+         * @enum {string}
+         */
+        CaseView: "pending" | "completed" | "rejected" | "all";
+        /** @enum {string} */
+        Channel: "web" | "whatsapp";
+        Dashboard: {
+            metrics: components["schemas"]["Metrics"];
+            unansweredOpen: number;
         };
-        ModelConfig: {
-            id: string;
-            provider: string;
-            model: string;
-            promptVersion: string;
-            temperature: number;
-            active: boolean;
+        DocumentId: string;
+        InformationRequest: {
+            note: string;
+            /** Format: date-time */
+            requestedAt: string;
+            requestedBy: components["schemas"]["OfficialId"];
         };
-        ToolConfig: {
-            name: string;
-            enabled: boolean;
-            /** Format: uri */
-            serverUrl: string;
-            secretRef: string;
+        Me: {
+            official: components["schemas"]["Official"];
+            administration: components["schemas"]["Administration"] | null;
+            permissions: components["schemas"]["Permission"][];
         };
         Metrics: {
-            conversationCount: number;
-            p95LatencyMs: number;
-            sourcedAnswerRate: number;
-            errorCount: number;
+            administrationId: components["schemas"]["AdministrationId"] | null;
+            period: {
+                /** Format: date-time */
+                from: string;
+                /** Format: date-time */
+                to: string;
+            };
+            received: number;
+            pending: number;
+            informationRequested: number;
+            completed: number;
+            completedByAssistant: number;
+            rejected: number;
+            medianProcessingHours: number | null;
+            byChannel: {
+                channel: components["schemas"]["Channel"];
+                count: number;
+            }[];
+            topProcedures: {
+                procedureId: components["schemas"]["ProcedureId"];
+                title: string;
+                count: number;
+            }[];
         };
-        AuditEntry: {
-            id: string;
-            actorRef: string;
-            action: string;
-            resourceId: string;
-            /** Format: date-time */
-            at: string;
+        Official: {
+            id: components["schemas"]["OfficialId"];
+            /** @description Identifiant Keycloak (claim sub) de la personne. */
+            subject: string;
+            /** Format: email */
+            email: string;
+            displayName: string;
+            jobTitle: string;
+            /** @description null pour un super_admin. */
+            administrationId: components["schemas"]["AdministrationId"] | null;
+            role: components["schemas"]["OfficialRole"];
+            /** Format: uri */
+            avatarUrl: string | null;
+            active: boolean;
+        };
+        OfficialCreated: {
+            official: components["schemas"]["Official"];
+            /** @description Mot de passe Keycloak à changer à la première connexion. Retourné une seule fois. */
+            temporaryPassword: string;
+        };
+        OfficialId: string;
+        OfficialInput: {
+            /** Format: email */
+            email: string;
+            displayName: string;
+            jobTitle: string;
+            administrationId: components["schemas"]["AdministrationId"] | null;
+            role: components["schemas"]["OfficialRole"];
+        };
+        OfficialPage: {
+            items: components["schemas"]["Official"][];
+            /** @description Curseur opaque de la page suivante ; null en fin de liste. */
+            nextCursor: string | null;
+        };
+        /** @enum {string} */
+        OfficialRole: "agent" | "admin" | "super_admin";
+        OfficialUpdate: {
+            administrationId: components["schemas"]["AdministrationId"] | null;
+            role: components["schemas"]["OfficialRole"];
+            active: boolean;
+        };
+        /** @enum {string} */
+        Permission: "cases:read" | "cases:act" | "officials:read" | "officials:manage" | "administrations:all";
+        Problem: {
+            type: string;
+            title: string;
+            status: number;
+            /** @enum {string} */
+            code: "INVALID_REQUEST" | "UNAUTHORIZED" | "LOGIN_REQUIRED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATE_MISSING" | "MANDATE_EXPIRED" | "MANDATE_REVOKED" | "MANDATE_SCOPE_DENIED" | "REQUEST_INCOMPLETE" | "INVALID_TRANSITION" | "NOT_ASSISTED" | "REPLAY_EXPIRED" | "UNSUPPORTED_MEDIA_TYPE" | "FILE_TOO_LARGE" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "MCP_AUTH_FAILED" | "MCP_CONNECTION_FAILED" | "MCP_DISCOVERY_FAILED";
+            detail: string;
             traceId: string;
         };
-        EventData: {
-            /** @constant */
-            kind: "message.received";
-            conversationId: components["schemas"]["ConversationId"];
-            messageId: components["schemas"]["MessageId"];
-        } | {
-            /** @constant */
-            kind: "message.sent";
-            conversationId: components["schemas"]["ConversationId"];
-            message: components["schemas"]["AgentMessage"];
-        } | {
-            /** @constant */
-            kind: "request.created";
-            request: components["schemas"]["Request"];
-        } | {
-            /** @constant */
-            kind: "request.status_changed";
-            requestId: components["schemas"]["RequestId"];
-            conversationId: components["schemas"]["ConversationId"];
-            from: components["schemas"]["RequestStatus"];
-            to: components["schemas"]["RequestStatus"];
+        /** @description Identifiant officiel de la fiche sur service-public.bj. */
+        ProcedureId: string;
+        ProfileUpdate: {
+            displayName: string;
+            jobTitle: string;
+        };
+        RequestId: string;
+        UnansweredEntry: {
+            id: components["schemas"]["UnansweredId"];
+            /** @description null si aucune administration n’a pu être rattachée (visible du super admin seulement). */
+            administrationId: components["schemas"]["AdministrationId"] | null;
+            theme: string | null;
+            /** @enum {string} */
+            reason: "no_procedure_found" | "no_source" | "model_unavailable" | "tool_failed";
+            /** @enum {string} */
+            status: "open" | "resolved";
             /** Format: date-time */
-            at: string;
-        } | {
-            /** @enum {string} */
-            kind: "mandate.granted" | "mandate.revoked";
-            mandate: components["schemas"]["Mandate"];
-        } | {
-            /** @constant */
-            kind: "tool.called";
-            toolName: string;
-            conversationId: components["schemas"]["ConversationId"];
-            /** @enum {string} */
-            outcome: "success" | "error";
-            code: string;
-        } | {
-            /** @constant */
-            kind: "configuration.changed";
-            /** @enum {string} */
-            resource: "models" | "tools" | "procedures";
-            resourceId: string;
-            actorRef: string;
-        };
-        Event: {
-            /** @constant */
-            specversion: "1.0";
-            id: components["schemas"]["EventId"];
-            /** @enum {string} */
-            source: "urn:techma:backend" | "urn:techma:tooling" | "urn:techma:interface";
-            /** @enum {string} */
-            type: "bj.techma.message.received.v1" | "bj.techma.message.sent.v1" | "bj.techma.request.created.v1" | "bj.techma.request.status_changed.v1" | "bj.techma.mandate.granted.v1" | "bj.techma.mandate.revoked.v1" | "bj.techma.tool.called.v1" | "bj.techma.configuration.changed.v1";
+            createdAt: string;
             /** Format: date-time */
-            time: string;
-            /** @constant */
-            datacontenttype: "application/json";
-            traceparent: string;
-            data: components["schemas"]["EventData"];
+            resolvedAt: string | null;
         };
-        EventPage: {
-            items: components["schemas"]["Event"][];
+        UnansweredId: string;
+        UnansweredPage: {
+            items: components["schemas"]["UnansweredEntry"][];
+            /** @description Curseur opaque de la page suivante ; null en fin de liste. */
             nextCursor: string | null;
         };
-        SocketTicket: {
-            ticket: string;
-            /** Format: date-time */
-            expiresAt: string;
-            /** Format: uri */
-            url: string;
-        };
-        MandateGrant: {
-            challenge: components["schemas"]["Challenge"];
-            /** Format: date-time */
-            acceptedAt: string;
-            evidenceRef: string;
-        };
-        Verification: {
-            fileId: components["schemas"]["FileId"];
-            /** @enum {string} */
-            status: "pending" | "valid" | "invalid";
-            reasons: string[];
-        };
-        ModelConfigPage: {
-            items: components["schemas"]["ModelConfig"][];
-            nextCursor: string | null;
-        };
-        ToolConfigPage: {
-            items: components["schemas"]["ToolConfig"][];
-            nextCursor: string | null;
-        };
-        ProcedurePage: {
-            items: components["schemas"]["Procedure"][];
-            nextCursor: string | null;
-        };
-        ConversationPage: {
-            items: components["schemas"]["Conversation"][];
-            nextCursor: string | null;
-        };
-        AuditEntryPage: {
-            items: components["schemas"]["AuditEntry"][];
-            nextCursor: string | null;
-        };
-        FileAccess: {
-            file: components["schemas"]["File"];
-            userRef: components["schemas"]["UserRef"];
-        };
+        /** @description Référence opaque de l’usager, attribuée par le Backend. Jamais fournie par le navigateur ni par le modèle. */
+        UserRef: string;
     };
     responses: never;
     parameters: never;
@@ -491,31 +515,47 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    listAdminModels: {
+    getMe: {
         parameters: {
-            query?: {
-                cursor?: string;
-                limit?: number;
-            };
-            header: {
-                traceparent: string;
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ModelConfigPage"];
+                    "application/json": components["schemas"]["Me"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -525,35 +565,449 @@ export interface operations {
             };
         };
     };
-    updateAdminModels: {
+    updateMe: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Official"];
+                };
+            };
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateMyAvatar: {
         parameters: {
             query?: never;
             header: {
-                traceparent: string;
-                "Idempotency-Key": string;
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+                /** @description image/jpeg ou image/png */
+                "X-File-Mime-Type": "image/jpeg" | "image/png";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Official"];
+                };
+            };
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getAvatar: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path: {
-                id: string;
+                officialId: components["schemas"]["OfficialId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listAdministrations: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdministrationList"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listOfficials: {
+        parameters: {
+            query?: {
+                /** @description Obligatoire pour un super_admin ; ignoré (forcé) pour un agent ou admin rattaché. */
+                administrationId?: components["schemas"]["AdministrationId"];
+                /** @description Curseur opaque retourné par la page précédente. */
+                cursor?: string;
+                /** @description Taille de page. */
+                limit?: number;
+            };
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficialPage"];
+                };
+            };
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createOfficial: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfficialInput"];
+            };
+        };
+        responses: {
+            /** @description Succès. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficialCreated"];
+                };
+            };
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateOfficial: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path: {
+                officialId: components["schemas"]["OfficialId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ModelConfig"];
+                "application/json": components["schemas"]["OfficialUpdate"];
             };
         };
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ModelConfig"];
+                    "application/json": components["schemas"]["Official"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -563,31 +1017,65 @@ export interface operations {
             };
         };
     };
-    listAdminTools: {
+    listCases: {
         parameters: {
-            query?: {
+            query: {
+                /** @description Obligatoire pour un super_admin ; ignoré (forcé) pour un agent ou admin rattaché. */
+                administrationId?: components["schemas"]["AdministrationId"];
+                /** @description Filtre. */
+                view: components["schemas"]["CaseView"];
+                /** @description Curseur opaque retourné par la page précédente. */
                 cursor?: string;
+                /** @description Taille de page. */
                 limit?: number;
             };
-            header: {
-                traceparent: string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ToolConfigPage"];
+                    "application/json": components["schemas"]["CasePage"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -597,35 +1085,143 @@ export interface operations {
             };
         };
     };
-    updateAdminTools: {
+    getCase: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path: {
+                caseId: components["schemas"]["CaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Case"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    actOnCase: {
         parameters: {
             query?: never;
             header: {
-                traceparent: string;
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+                /** @description Clé de 8 à 128 caractères. Même clé + même corps = même réponse pendant 24 h ; corps différent = 409 IDEMPOTENCY_CONFLICT. */
                 "Idempotency-Key": string;
             };
             path: {
-                id: string;
+                caseId: components["schemas"]["CaseId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ToolConfig"];
+                "application/json": components["schemas"]["CaseActionInput"];
             };
         };
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ToolConfig"];
+                    "application/json": components["schemas"]["Case"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -635,69 +1231,61 @@ export interface operations {
             };
         };
     };
-    listAdminProcedures: {
-        parameters: {
-            query?: {
-                cursor?: string;
-                limit?: number;
-            };
-            header: {
-                traceparent: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Succès */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProcedurePage"];
-                };
-            };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    updateAdminProcedures: {
+    downloadCaseDocument: {
         parameters: {
             query?: never;
-            header: {
-                traceparent: string;
-                "Idempotency-Key": string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path: {
-                id: string;
+                caseId: components["schemas"]["CaseId"];
+                documentId: components["schemas"]["DocumentId"];
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Procedure"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Procedure"];
+                    "application/pdf": string;
+                    "image/jpeg": string;
+                    "image/png": string;
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -707,31 +1295,63 @@ export interface operations {
             };
         };
     };
-    listAdminConversations: {
+    getDashboard: {
         parameters: {
             query?: {
-                cursor?: string;
-                limit?: number;
+                /** @description Obligatoire pour un super_admin ; ignoré (forcé) pour un agent ou admin rattaché. */
+                administrationId?: components["schemas"]["AdministrationId"];
+                /** @description Début (inclus), défaut : il y a 30 jours. */
+                from?: string;
+                /** @description Fin (exclue), défaut : maintenant. */
+                to?: string;
             };
-            header: {
-                traceparent: string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConversationPage"];
+                    "application/json": components["schemas"]["Dashboard"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -741,31 +1361,65 @@ export interface operations {
             };
         };
     };
-    listAdminAudit: {
+    listActivity: {
         parameters: {
             query?: {
+                /** @description Obligatoire pour un super_admin ; ignoré (forcé) pour un agent ou admin rattaché. */
+                administrationId?: components["schemas"]["AdministrationId"];
+                /** @description Limiter à un dossier. */
+                caseId?: components["schemas"]["CaseId"];
+                /** @description Curseur opaque retourné par la page précédente. */
                 cursor?: string;
+                /** @description Taille de page. */
                 limit?: number;
             };
-            header: {
-                traceparent: string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AuditEntryPage"];
+                    "application/json": components["schemas"]["ActivityPage"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -775,28 +1429,135 @@ export interface operations {
             };
         };
     };
-    getAdminMetrics: {
+    listUnanswered: {
+        parameters: {
+            query?: {
+                /** @description Obligatoire pour un super_admin ; ignoré (forcé) pour un agent ou admin rattaché. */
+                administrationId?: components["schemas"]["AdministrationId"];
+                /** @description Filtre. */
+                status?: "open" | "resolved";
+                /** @description Curseur opaque retourné par la page précédente. */
+                cursor?: string;
+                /** @description Taille de page. */
+                limit?: number;
+            };
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnansweredPage"];
+                };
+            };
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resolveUnanswered: {
         parameters: {
             query?: never;
-            header: {
-                traceparent: string;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
             };
-            path?: never;
+            path: {
+                unansweredId: components["schemas"]["UnansweredId"];
+            };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Succès */
+            /** @description Succès. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Metrics"];
+                    "application/json": components["schemas"]["UnansweredEntry"];
                 };
             };
-            /** @description Erreur RFC 9457 ; voir CONTRACTS.md pour les codes HTTP */
-            default: {
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Droit insuffisant (FORBIDDEN). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Ressource absente ou hors de portée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

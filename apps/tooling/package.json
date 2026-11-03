@@ -2,5 +2,35 @@
   "name": "@techma/tooling",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "files": [
+    "dist/src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/src/main.js",
+    "dev": "tsc -p tsconfig.json && node --enable-source-maps dist/src/main.js",
+    "test": "tsc -p ../xroad-sim/tsconfig.json && tsc -p tsconfig.json && node --test --test-concurrency=1 --enable-source-maps \"dist/test/**/*.test.js\""
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@nestjs/common": "12.1.2",
+    "@nestjs/core": "12.1.2",
+    "@nestjs/platform-express": "12.1.2",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "jose": "6.2.13",
+    "pg": "8.23.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "12.1.2",
+    "@types/express": "5.0.6",
+    "@types/node": "22.20.5",
+    "@types/pg": "8.18.0",
+    "typescript": "5.9.3"
+  }
 }

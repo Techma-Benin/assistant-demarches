@@ -1,0 +1,130 @@
+'use client';
+
+import { Button, InlineAlert, TextField } from '@techma/ui';
+import { useState, type FormEvent } from 'react';
+import { describeError, operatorApi, type ModelConfig } from '@/lib/operator/api';
+import {
+  emptyModelForm,
+  makeId,
+  modelToForm,
+  validateModelForm,
+  type ModelFormErrors,
+  type ModelFormValues,
+} from '@/lib/operator/forms';
+import { SelectField } from '../ui';
+
+const PROTOCOLS = [
+  { value: 'chat-completions', label: 'Chat Completions' },
+  { value: 'responses', label: 'Responses' },
+] as const;
+
+export function ModelForm({
+  model,
+  existingIds,
+  onSaved,
+  onCancel,
+}: {
+  /** Absent: creation. */
+  model?: ModelConfig;
+  existingIds: readonly string[];
+  onSaved: (saved: ModelConfig) => void;
+  onCancel: () => void;
+}) {
+  const [values, setValues] = useState<ModelFormValues>(model ? modelToForm(model) : emptyModelForm);
+  const [errors, setErrors] = useState<ModelFormErrors>({});
+  const [failure, setFailure] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const set = <K extends keyof ModelFormValues>(key: K) => (value: ModelFormValues[K]) =>
+    setValues((current) => ({ ...current, [key]: value }));
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setFailure(null);
+    const base = model ?? { id: makeId(values.label, existingIds), active: false };
+    const result = validateModelForm(values, base);
+    setErrors(result.errors);
+    if (!result.model) return;
+    setSaving(true);
+    try {
+      const saved = model ? await operatorApi.updateModel(result.model) : await operatorApi.createModel(result.model);
+      onSaved(saved);
+    } catch (error) {
+      setFailure(describeError(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const title = model ? `Modifier ${model.label}` : 'Ajouter un modèle';
+  return (
+    <form
+      onSubmit={submit}
+      noValidate
+      aria-label={title}
+      className="flex flex-col gap-4 rounded-card border border-line bg-surface p-4 md:p-6"
+    >
+      <h2 className="font-display text-xl font-extrabold">{title}</h2>
+      {failure ? <InlineAlert>{failure}</InlineAlert> : null}
+      <TextField label="Nom" required value={values.label} error={errors.label} onChange={(e) => set('label')(e.target.value)} />
+      <TextField
+        label="Adresse du service (baseUrl)"
+        required
+        type="url"
+        inputMode="url"
+        autoComplete="off"
+        hint="Point d’accès compatible OpenAI, par exemple https://api.groq.com/openai/v1."
+        value={values.baseUrl}
+        error={errors.baseUrl}
+        onChange={(e) => set('baseUrl')(e.target.value)}
+      />
+      <SelectField
+        label="Protocole"
+        required
+        value={values.protocol}
+        options={PROTOCOLS}
+        onChange={(e) => set('protocol')(e.target.value as ModelFormValues['protocol'])}
+      />
+      <TextField
+        label="Modèle"
+        required
+        autoComplete="off"
+        value={values.model}
+        error={errors.model}
+        onChange={(e) => set('model')(e.target.value)}
+      />
+      <TextField
+        label="Clé d’accès (apiKeyRef)"
+        required
+        type="text"
+        autoComplete="off"
+        spellCheck={false}
+        hint="Nom de la variable d’environnement qui contient la clé, jamais la clé elle-même."
+        value={values.apiKeyRef}
+        error={errors.apiKeyRef}
+        onChange={(e) => set('apiKeyRef')(e.target.value)}
+      />
+      <TextField
+        label="Température"
+        required
+        type="number"
+        inputMode="decimal"
+        min={0}
+        max={2}
+        step={0.1}
+        hint="Entre 0 (précis) et 2 (créatif)."
+        value={values.temperature}
+        error={errors.temperature}
+        onChange={(e) => set('temperature')(e.target.value)}
+      />
+      <div className="flex flex-wrap gap-3">
+        <Button type="submit" disabled={saving}>
+          {saving ? 'Enregistrement…' : 'Enregistrer'}
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Annuler
+        </Button>
+      </div>
+    </form>
+  );
+}

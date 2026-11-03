@@ -9,6 +9,23 @@
         "dist/**",
         ".next/**"
       ]
+    },
+    "typecheck": {
+      "dependsOn": [
+        "^typecheck"
+      ]
+    },
+    "test": {
+      "cache": false,
+      "passThroughEnv": [
+        "TEST_DATABASE_URL",
+        "BACKEND_TEST_DATABASE_URL",
+        "REDIS_TEST_URL",
+        "REDIS_TEST_BINARY",
+        "PG_BIN",
+        "LD_LIBRARY_PATH",
+        "DYLD_LIBRARY_PATH"
+      ]
     }
   }
 }

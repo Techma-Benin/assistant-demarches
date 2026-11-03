@@ -1,0 +1,1752 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Écran opérateur — Backend → Interface",
+    "version": "2.1.0",
+    "description": "Jeton Keycloak avec le rôle realm operator. Configuration globale du modèle et des serveurs MCP ; aucune donnée de dossier."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:4010",
+      "description": "Poste local (pnpm dev)"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/v1/operator/models": {
+      "get": {
+        "operationId": "listModels",
+        "summary": "Lister les modèles",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Curseur opaque retourné par la page précédente.",
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Taille de page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConfigPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createModel",
+        "summary": "Créer",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/models/{id}": {
+      "get": {
+        "operationId": "getModel",
+        "summary": "Lire",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConfig"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateModel",
+        "summary": "Remplacer",
+        "description": "L’identifiant du corps doit être celui de la route.",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteModel",
+        "summary": "Supprimer",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Supprimé."
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/mcp-servers": {
+      "get": {
+        "operationId": "listMcpServers",
+        "summary": "Lister les serveurs MCP",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Curseur opaque retourné par la page précédente.",
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Taille de page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createMcpServer",
+        "summary": "Créer",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/mcp-servers/{id}": {
+      "get": {
+        "operationId": "getMcpServer",
+        "summary": "Lire",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServer"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateMcpServer",
+        "summary": "Remplacer",
+        "description": "L’identifiant du corps doit être celui de la route.",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMcpServer",
+        "summary": "Supprimer",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Supprimé."
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/mcp-servers/{id}/discover": {
+      "post": {
+        "operationId": "discoverMcpTools",
+        "summary": "Découvrir les outils (vrai tools/list)",
+        "description": "Les nouveaux outils sont désactivés et exigent un consentement par défaut. Un outil dont la définition a changé est désactivé.",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpToolList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/mcp-servers/{id}/tools": {
+      "get": {
+        "operationId": "listMcpTools",
+        "summary": "Outils découverts",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpToolList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/mcp-servers/{id}/tools/{toolName}": {
+      "put": {
+        "operationId": "setMcpToolPermission",
+        "summary": "Activer un outil et choisir si un consentement est requis",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "toolName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpToolPermission"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpTool"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/status": {
+      "get": {
+        "operationId": "getOperatorStatus",
+        "summary": "État du modèle, des MCP et des administrations connectées",
+        "tags": [
+          "Opérateur"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Administration": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/AdministrationId"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "shortName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "themes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "description": "Thèmes affichés à l’accueil usager."
+          },
+          "connection": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "not_connected"
+                ]
+              },
+              "since": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "status",
+              "since"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "shortName",
+          "themes",
+          "connection"
+        ]
+      },
+      "AdministrationId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{1,62}$",
+        "description": "Identifiant stable d’une administration du X-Road simulé (ex. justice, anip)."
+      },
+      "McpAuth": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "bearer"
+              },
+              "secretRef": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]{1,100}$"
+              }
+            },
+            "required": [
+              "type",
+              "secretRef"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "oauth-client-credentials"
+              },
+              "tokenUrl": {
+                "type": "string",
+                "format": "uri"
+              },
+              "clientId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "clientSecretRef": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]{1,100}$"
+              },
+              "scope": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "type",
+              "tokenUrl",
+              "clientId",
+              "clientSecretRef",
+              "scope"
+            ]
+          }
+        ]
+      },
+      "McpServer": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "auth": {
+            "$ref": "#/components/schemas/McpAuth"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "url",
+          "enabled",
+          "auth"
+        ]
+      },
+      "McpServerPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpServer"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Curseur opaque de la page suivante ; null en fin de liste."
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "McpTool": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "serverId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "inputSchema": {
+            "type": "object"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Désactivé par défaut après découverte."
+          },
+          "requiresMandate": {
+            "type": "boolean",
+            "description": "Consentement requis ; vrai par défaut après découverte."
+          }
+        },
+        "required": [
+          "serverId",
+          "name",
+          "description",
+          "inputSchema",
+          "enabled",
+          "requiresMandate"
+        ]
+      },
+      "McpToolList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpTool"
+            }
+          },
+          "discoveredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "items",
+          "discoveredAt"
+        ]
+      },
+      "McpToolPermission": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "requiresMandate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "requiresMandate"
+        ]
+      },
+      "ModelConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "baseUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Point d’accès compatible OpenAI (ex. https://api.groq.com/openai/v1)."
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "chat-completions",
+              "responses"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "apiKeyRef": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{1,100}$",
+            "description": "Nom de la variable d’environnement qui contient la clé. La clé ne transite jamais par l’API."
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Un seul modèle actif à la fois."
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "baseUrl",
+          "protocol",
+          "model",
+          "apiKeyRef",
+          "temperature",
+          "active"
+        ]
+      },
+      "ModelConfigPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelConfig"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Curseur opaque de la page suivante ; null en fin de liste."
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "OperatorStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "reachable": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id",
+                  "label",
+                  "reachable"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mcpServers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "reachable": {
+                  "type": "boolean"
+                },
+                "toolCount": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "checkedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "enabled",
+                "reachable",
+                "toolCount",
+                "checkedAt"
+              ]
+            }
+          },
+          "administrations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Administration"
+            }
+          }
+        },
+        "required": [
+          "model",
+          "mcpServers",
+          "administrations"
+        ]
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "INVALID_REQUEST",
+              "UNAUTHORIZED",
+              "LOGIN_REQUIRED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "CONFLICT",
+              "IDEMPOTENCY_CONFLICT",
+              "MANDATE_MISSING",
+              "MANDATE_EXPIRED",
+              "MANDATE_REVOKED",
+              "MANDATE_SCOPE_DENIED",
+              "REQUEST_INCOMPLETE",
+              "INVALID_TRANSITION",
+              "NOT_ASSISTED",
+              "REPLAY_EXPIRED",
+              "UNSUPPORTED_MEDIA_TYPE",
+              "FILE_TOO_LARGE",
+              "RATE_LIMITED",
+              "UPSTREAM_UNAVAILABLE",
+              "MCP_AUTH_FAILED",
+              "MCP_CONNECTION_FAILED",
+              "MCP_DISCOVERY_FAILED"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "traceId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "detail",
+          "traceId"
+        ]
+      }
+    }
+  }
+}

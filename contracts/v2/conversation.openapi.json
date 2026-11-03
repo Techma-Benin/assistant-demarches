@@ -1,0 +1,2838 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Conversation — Backend → Interface usager",
+    "version": "2.1.0",
+    "description": "Jeton Bearer : jeton invité (POST /v1/guest-sessions) ou jeton usager Keycloak (rôle citizen, audience techma-backend). Les routes marquées « connexion requise » renvoient 401 LOGIN_REQUIRED avec un jeton invité."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:4010",
+      "description": "Poste local (pnpm dev)"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/v1/home": {
+      "get": {
+        "operationId": "getHome",
+        "summary": "Contenu de l’accueil (thèmes et suggestions)",
+        "description": "Sans authentification. Calculé depuis le X-Road simulé : thèmes des administrations connectées, démarches déposables et les plus demandées.",
+        "tags": [
+          "Conversation"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeContent"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/guest-sessions": {
+      "post": {
+        "operationId": "createGuestSession",
+        "summary": "Ouvrir une session invitée",
+        "description": "Sans authentification. Limité par adresse IP. Le jeton dure 24 h.",
+        "tags": [
+          "Conversation"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations": {
+      "get": {
+        "operationId": "listConversations",
+        "summary": "Conversations de la personne courante",
+        "tags": [
+          "Conversation"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Curseur opaque retourné par la page précédente.",
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Taille de page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createConversation",
+        "summary": "Démarrer une conversation web",
+        "tags": [
+          "Conversation"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations/{conversationId}/attach": {
+      "post": {
+        "operationId": "attachConversation",
+        "summary": "Rattacher les conversations invitées au compte connecté",
+        "description": "Connexion requise. Transfère au compte Keycloak les conversations et pièces du jeton invité fourni, sans perte d’historique. Rejouable.",
+        "tags": [
+          "Conversation"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ConversationId"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droit insuffisant (FORBIDDEN).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations/{conversationId}/messages": {
+      "post": {
+        "operationId": "sendMessage",
+        "summary": "Envoyer un message",
+        "description": "Dédupliqué par message.id. La réponse arrive par le flux : éventuellement des message.delta (texte live), puis message.sent (AgentMessage complet).",
+        "tags": [
+          "Conversation"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ConversationId"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations/{conversationId}/events": {
+      "get": {
+        "operationId": "listEvents",
+        "summary": "Historique et reprise (repli du WebSocket)",
+        "description": "Sans curseur : historique des messages complets (message.received et message.sent) ; pas de message.delta (évite un déluge de jetons au rechargement). Avec curseur, après abonnement : les événements suivants, y compris les message.delta live. Au plus 100 par page.",
+        "tags": [
+          "Conversation"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ConversationId"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Identifiant du dernier événement reçu.",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations/{conversationId}/socket-ticket": {
+      "post": {
+        "operationId": "createSocketTicket",
+        "summary": "Ticket WebSocket à usage unique (60 s)",
+        "description": "Connexion ensuite sur ticket.url (?ticket=…&cursor=evt_…). Le serveur pousse un Event JSON par trame. message.delta n’est livré qu’en direct (trames WebSocket et GET …/events avec curseur après abonnement), jamais dans l’historique sans curseur. message.sent clôture la réponse.",
+        "tags": [
+          "Conversation"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ConversationId"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SocketTicket"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations/{conversationId}/mandates": {
+      "post": {
+        "operationId": "grantMandate",
+        "summary": "Accepter le consentement présenté dans un bloc consent",
+        "description": "Connexion requise. Déclenché uniquement par le clic de l’usager, jamais par le modèle.",
+        "tags": [
+          "Conversation"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ConversationId"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mandate"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations/{conversationId}/mandates/{mandateId}/revoke": {
+      "post": {
+        "operationId": "revokeMandate",
+        "summary": "Retirer un consentement",
+        "description": "Effet immédiat sur les actions suivantes.",
+        "tags": [
+          "Conversation"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ConversationId"
+            }
+          },
+          {
+            "name": "mandateId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MandateId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mandate"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit d’état (CONFLICT, INVALID_TRANSITION, IDEMPOTENCY_CONFLICT).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/files": {
+      "post": {
+        "operationId": "uploadFile",
+        "summary": "Déposer une pièce ou un message vocal",
+        "description": "Corps binaire, 10 Mio maximum. Le contenu n’est jamais transmis au modèle. Pièces conservées 24 h si elles ne sont pas rattachées à un dossier.",
+        "tags": [
+          "Conversation"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "X-File-Mime-Type",
+            "in": "header",
+            "required": true,
+            "description": "Type du fichier.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "application/pdf",
+                "image/jpeg",
+                "image/png",
+                "audio/ogg",
+                "audio/mpeg",
+                "audio/mp4",
+                "audio/webm"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/File"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases": {
+      "get": {
+        "operationId": "listMyCases",
+        "summary": "Mes démarches (dossiers déposés)",
+        "description": "Connexion requise. Lu en direct dans le X-Road simulé pour l’usager courant.",
+        "tags": [
+          "Démarches"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Curseur opaque retourné par la page précédente.",
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Taille de page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{caseId}": {
+      "get": {
+        "operationId": "getMyCase",
+        "summary": "Un de mes dossiers",
+        "tags": [
+          "Démarches"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{caseId}/documents/{documentId}": {
+      "get": {
+        "operationId": "downloadMyCaseDocument",
+        "summary": "Télécharger un document de mon dossier",
+        "tags": [
+          "Démarches"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CaseId"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource absente ou hors de portée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "AdministrationId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{1,62}$",
+        "description": "Identifiant stable d’une administration du X-Road simulé (ex. justice, anip)."
+      },
+      "AgentMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/MessageId"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "blocks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "blocks",
+          "createdAt"
+        ]
+      },
+      "AttachInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "guestToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "guestToken"
+        ]
+      },
+      "Block": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "text"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Source"
+                },
+                "description": "Obligatoire et non vide pour toute information administrative."
+              }
+            },
+            "required": [
+              "type",
+              "text",
+              "sources"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "buttons"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 24
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "type",
+              "items"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "form"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "fields": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "number",
+                        "date"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "label",
+                    "required",
+                    "type"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "fields"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "fileRequest"
+              },
+              "requestId": {
+                "$ref": "#/components/schemas/RequestId"
+              },
+              "documentType": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,62}$"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "acceptedMimeTypes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "received": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "requestId",
+              "documentType",
+              "label",
+              "acceptedMimeTypes",
+              "received"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "loginRequired"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              }
+            },
+            "required": [
+              "type",
+              "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "consent"
+              },
+              "challenge": {
+                "$ref": "#/components/schemas/Challenge"
+              }
+            },
+            "required": [
+              "type",
+              "challenge"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "requestCard"
+              },
+              "request": {
+                "$ref": "#/components/schemas/Request"
+              }
+            },
+            "required": [
+              "type",
+              "request"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "caseCard"
+              },
+              "case": {
+                "$ref": "#/components/schemas/Case"
+              }
+            },
+            "required": [
+              "type",
+              "case"
+            ]
+          }
+        ]
+      },
+      "Case": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/CaseId"
+          },
+          "reference": {
+            "type": "string",
+            "pattern": "^SIM-[A-Z]{2,5}-[0-9]{4}-[0-9]{6}$"
+          },
+          "simulated": {
+            "const": true
+          },
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "administrationId": {
+            "$ref": "#/components/schemas/AdministrationId"
+          },
+          "applicantRef": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "requestId": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Valeurs du formulaire de la démarche, conformes à Procedure.filing.formSchema."
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseDocument"
+            }
+          },
+          "payment": {
+            "$ref": "#/components/schemas/CasePayment"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/CaseStep"
+            }
+          },
+          "informationRequest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InformationRequest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Renseigné tant que status = information_requested."
+          },
+          "claimedBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OfficialId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "assistant",
+              "administration",
+              null
+            ]
+          },
+          "decisionNote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "simulated",
+          "procedureId",
+          "title",
+          "administrationId",
+          "applicantRef",
+          "requestId",
+          "channel",
+          "status",
+          "fields",
+          "documents",
+          "payment",
+          "steps",
+          "informationRequest",
+          "claimedBy",
+          "completedBy",
+          "decisionNote",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CaseDocument": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/DocumentId"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "submitted",
+              "issued"
+            ],
+            "description": "submitted = pièce de l’usager ; issued = document délivré par l’administration (simulation)."
+          },
+          "documentType": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,62}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png"
+            ]
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10485760
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "documentType",
+          "name",
+          "mimeType",
+          "sizeBytes",
+          "createdAt"
+        ]
+      },
+      "CaseId": {
+        "type": "string",
+        "pattern": "^cas_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "CasePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Case"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Curseur opaque de la page suivante ; null en fin de liste."
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "CasePayment": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "amountFcfa": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_required",
+              "pending",
+              "paid"
+            ]
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paidAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "simulated": {
+            "const": true
+          }
+        },
+        "required": [
+          "amountFcfa",
+          "status",
+          "reference",
+          "paidAt",
+          "simulated"
+        ]
+      },
+      "CaseStatus": {
+        "type": "string",
+        "enum": [
+          "awaiting_payment",
+          "received",
+          "in_review",
+          "information_requested",
+          "completed",
+          "rejected"
+        ]
+      },
+      "CaseStep": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,62}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "blocked",
+              "pending"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "enum": [
+              "assistant",
+              "applicant",
+              "administration"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "state",
+          "actor",
+          "note",
+          "at"
+        ]
+      },
+      "Challenge": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ChallengeId"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "userRef": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "scopes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            }
+          },
+          "consentText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "Texte affiché tel quel par l’Interface."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "proofToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192,
+            "description": "JWT RS256 signé par le Backend, opaque pour l’Interface et le modèle."
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "userRef",
+          "procedureId",
+          "scopes",
+          "consentText",
+          "expiresAt",
+          "proofToken"
+        ]
+      },
+      "ChallengeId": {
+        "type": "string",
+        "pattern": "^chl_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "Channel": {
+        "type": "string",
+        "enum": [
+          "web",
+          "whatsapp"
+        ]
+      },
+      "ConsentInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "challengeId": {
+            "$ref": "#/components/schemas/ChallengeId"
+          },
+          "accepted": {
+            "const": true
+          }
+        },
+        "required": [
+          "challengeId",
+          "accepted"
+        ]
+      },
+      "Content": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "text"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "audio"
+              },
+              "fileId": {
+                "$ref": "#/components/schemas/FileId"
+              }
+            },
+            "required": [
+              "type",
+              "fileId"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "file"
+              },
+              "fileId": {
+                "$ref": "#/components/schemas/FileId"
+              },
+              "documentType": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Réponse à un bloc fileRequest ; null pour une pièce libre."
+              }
+            },
+            "required": [
+              "type",
+              "fileId",
+              "documentType"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "interaction"
+              },
+              "actionId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "type",
+              "actionId",
+              "value"
+            ]
+          }
+        ]
+      },
+      "Conversation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "locale": {
+            "$ref": "#/components/schemas/Locale"
+          },
+          "authenticated": {
+            "type": "boolean",
+            "description": "true si la conversation est rattachée à un compte Keycloak ou à un numéro WhatsApp vérifié."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastMessageAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "channel",
+          "locale",
+          "authenticated",
+          "createdAt",
+          "lastMessageAt"
+        ]
+      },
+      "ConversationId": {
+        "type": "string",
+        "pattern": "^cnv_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "ConversationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "locale": {
+            "$ref": "#/components/schemas/Locale"
+          }
+        },
+        "required": [
+          "locale"
+        ]
+      },
+      "ConversationPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conversation"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Curseur opaque de la page suivante ; null en fin de liste."
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "DocumentId": {
+        "type": "string",
+        "pattern": "^doc_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "Event": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "specversion": {
+            "const": "1.0"
+          },
+          "id": {
+            "$ref": "#/components/schemas/EventId"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "urn:techma:backend",
+              "urn:techma:tooling"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "bj.techma.message.received.v2",
+              "bj.techma.message.delta.v2",
+              "bj.techma.message.sent.v2",
+              "bj.techma.case.updated.v2",
+              "bj.techma.tool.called.v2",
+              "bj.techma.mandate.granted.v2",
+              "bj.techma.mandate.revoked.v2"
+            ],
+            "description": "Toujours bj.techma.{data.kind}.v2."
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "datacontenttype": {
+            "const": "application/json"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EventData"
+          }
+        },
+        "required": [
+          "specversion",
+          "id",
+          "source",
+          "type",
+          "time",
+          "datacontenttype",
+          "data"
+        ]
+      },
+      "EventData": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "message.received"
+              },
+              "conversationId": {
+                "$ref": "#/components/schemas/ConversationId"
+              },
+              "message": {
+                "$ref": "#/components/schemas/UserMessage"
+              }
+            },
+            "required": [
+              "kind",
+              "conversationId",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Morceau live du futur bloc text. Pas dans GET …/events sans curseur. message.sent clôture ; pas de delta terminal obligatoire.",
+            "properties": {
+              "kind": {
+                "const": "message.delta"
+              },
+              "conversationId": {
+                "$ref": "#/components/schemas/ConversationId"
+              },
+              "messageId": {
+                "$ref": "#/components/schemas/MessageId",
+                "description": "Même identifiant que le message.sent à venir."
+              },
+              "delta": {
+                "type": "string",
+                "maxLength": 8000,
+                "description": "Morceau du texte du futur bloc text uniquement. Chaîne vide seulement si un signal terminal est indispensable ; le contrat n’exige pas ce delta terminal."
+              },
+              "index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Ordre 0-based des morceaux pour un même messageId. Facultatif."
+              }
+            },
+            "required": [
+              "kind",
+              "conversationId",
+              "messageId",
+              "delta"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "message.sent"
+              },
+              "conversationId": {
+                "$ref": "#/components/schemas/ConversationId"
+              },
+              "message": {
+                "$ref": "#/components/schemas/AgentMessage"
+              }
+            },
+            "required": [
+              "kind",
+              "conversationId",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "case.updated"
+              },
+              "conversationId": {
+                "$ref": "#/components/schemas/ConversationId"
+              },
+              "case": {
+                "$ref": "#/components/schemas/Case"
+              }
+            },
+            "required": [
+              "kind",
+              "conversationId",
+              "case"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "tool.called"
+              },
+              "conversationId": {
+                "$ref": "#/components/schemas/ConversationId"
+              },
+              "toolName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "success",
+                  "error"
+                ]
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": [
+              "kind",
+              "conversationId",
+              "toolName",
+              "outcome",
+              "code"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "mandate.granted",
+                  "mandate.revoked"
+                ]
+              },
+              "mandate": {
+                "$ref": "#/components/schemas/Mandate"
+              }
+            },
+            "required": [
+              "kind",
+              "mandate"
+            ]
+          }
+        ]
+      },
+      "EventId": {
+        "type": "string",
+        "pattern": "^evt_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "EventPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Curseur opaque de la page suivante ; null en fin de liste."
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "File": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/FileId"
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png",
+              "audio/ogg",
+              "audio/mpeg",
+              "audio/mp4",
+              "audio/webm"
+            ]
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10485760
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "mimeType",
+          "sizeBytes",
+          "expiresAt"
+        ]
+      },
+      "FileId": {
+        "type": "string",
+        "pattern": "^fil_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "GuestSession": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "JWT invité signé par le Backend."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt"
+        ]
+      },
+      "HomeContent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "themes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "administrationId": {
+                  "$ref": "#/components/schemas/AdministrationId"
+                },
+                "administrationName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              },
+              "required": [
+                "label",
+                "administrationId",
+                "administrationName"
+              ]
+            },
+            "description": "Thèmes des administrations connectées."
+          },
+          "suggestions": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "procedureId": {
+                  "$ref": "#/components/schemas/ProcedureId"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "assisted": {
+                  "type": "boolean",
+                  "description": "true si l’assistant peut déposer le dossier."
+                }
+              },
+              "required": [
+                "procedureId",
+                "title",
+                "assisted"
+              ]
+            },
+            "description": "Démarches déposables puis les plus demandées."
+          }
+        },
+        "required": [
+          "themes",
+          "suggestions"
+        ]
+      },
+      "InformationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestedBy": {
+            "$ref": "#/components/schemas/OfficialId"
+          }
+        },
+        "required": [
+          "note",
+          "requestedAt",
+          "requestedBy"
+        ]
+      },
+      "Locale": {
+        "type": "string",
+        "enum": [
+          "fr"
+        ]
+      },
+      "Mandate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/MandateId"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "userRef": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "scopes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "revoked",
+              "expired"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "userRef",
+          "procedureId",
+          "scopes",
+          "status",
+          "expiresAt"
+        ]
+      },
+      "MandateId": {
+        "type": "string",
+        "pattern": "^mdt_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "MessageAccepted": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "messageId": {
+            "$ref": "#/components/schemas/MessageId"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "status": {
+            "const": "accepted"
+          }
+        },
+        "required": [
+          "messageId",
+          "conversationId",
+          "status"
+        ]
+      },
+      "MessageId": {
+        "type": "string",
+        "pattern": "^msg_[0-9A-HJKMNP-TV-Z]{26}$",
+        "description": "Généré par le client pour dédupliquer les envois."
+      },
+      "MessageInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/MessageId"
+          },
+          "content": {
+            "$ref": "#/components/schemas/Content"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "sentAt"
+        ]
+      },
+      "OfficialId": {
+        "type": "string",
+        "pattern": "^off_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "INVALID_REQUEST",
+              "UNAUTHORIZED",
+              "LOGIN_REQUIRED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "CONFLICT",
+              "IDEMPOTENCY_CONFLICT",
+              "MANDATE_MISSING",
+              "MANDATE_EXPIRED",
+              "MANDATE_REVOKED",
+              "MANDATE_SCOPE_DENIED",
+              "REQUEST_INCOMPLETE",
+              "INVALID_TRANSITION",
+              "NOT_ASSISTED",
+              "REPLAY_EXPIRED",
+              "UNSUPPORTED_MEDIA_TYPE",
+              "FILE_TOO_LARGE",
+              "RATE_LIMITED",
+              "UPSTREAM_UNAVAILABLE",
+              "MCP_AUTH_FAILED",
+              "MCP_CONNECTION_FAILED",
+              "MCP_DISCOVERY_FAILED"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "traceId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "detail",
+          "traceId"
+        ]
+      },
+      "ProcedureId": {
+        "type": "string",
+        "pattern": "^PS[0-9]{5}$",
+        "description": "Identifiant officiel de la fiche sur service-public.bj."
+      },
+      "Request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/ConversationId"
+          },
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "administrationId": {
+            "$ref": "#/components/schemas/AdministrationId"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestField"
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestDocument"
+            }
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "description": "Champs et pièces encore requis avant dépôt."
+          },
+          "caseId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "procedureId",
+          "title",
+          "administrationId",
+          "status",
+          "fields",
+          "documents",
+          "missing",
+          "caseId",
+          "updatedAt"
+        ]
+      },
+      "RequestDocument": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "documentType": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,62}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "fileId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "documentType",
+          "label",
+          "fileId"
+        ]
+      },
+      "RequestField": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "value": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "answer",
+              "document",
+              null
+            ],
+            "description": "Provenance affichée dans le panneau « vos informations »."
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "value",
+          "source"
+        ]
+      },
+      "RequestId": {
+        "type": "string",
+        "pattern": "^req_[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "RequestStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "ready",
+          "submitted",
+          "cancelled"
+        ],
+        "description": "Brouillon côté Tooling. Après submitted, l’état fait foi dans le dossier X-Road (caseId)."
+      },
+      "Scope": {
+        "type": "string",
+        "enum": [
+          "requests:write",
+          "documents:write",
+          "requests:submit"
+        ]
+      },
+      "SocketTicket": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "ticket",
+          "expiresAt",
+          "url"
+        ]
+      },
+      "Source": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "procedureId": {
+            "$ref": "#/components/schemas/ProcedureId"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Fiche publique sur service-public.bj."
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date de collecte de la fiche."
+          }
+        },
+        "required": [
+          "procedureId",
+          "url",
+          "retrievedAt"
+        ]
+      },
+      "UserMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/MessageId"
+          },
+          "content": {
+            "$ref": "#/components/schemas/Content"
+          },
+          "transcript": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Transcription d’un message vocal."
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "transcript",
+          "sentAt"
+        ]
+      },
+      "UserRef": {
+        "type": "string",
+        "pattern": "^usr_[0-9A-HJKMNP-TV-Z]{26}$",
+        "description": "Référence opaque de l’usager, attribuée par le Backend. Jamais fournie par le navigateur ni par le modèle."
+      }
+    }
+  }
+}

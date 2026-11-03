@@ -1,54 +1,52 @@
-# Assistant démarches — Techma Bénin
+# Assistant-démarches — Techma Bénin
 
-Socle de collaboration pour trois équipes. Cette première livraison contient les contrats v1, les types générés, un client TypeScript, des simulations exécutables et leurs tests. Les applications métier NestJS / Next.js restent à implémenter dans les emplacements réservés.
+L'usager fait sa démarche administrative dans une conversation (web ou WhatsApp) : il s'informe sur la fiche officielle, prépare, dépose, paie et suit. Le dossier arrive dans une console unique pour tous les ministères, au-dessus d'un X-Road simulé.
+
+À lire dans cet ordre :
+1. [Spécification fonctionnelle](docs/spec.md) : ce que l'application fait.
+2. [Contrat v2](CONTRACTS.md) et `contracts/v2/` : la seule référence entre les équipes.
+3. [Architecture](docs/architecture.md) : services, processus, décisions.
+4. [Tâches par équipe](docs/taches.md) : ce qui reste à construire.
 
 ## Démarrer
 
-Node.js 22 et pnpm 10.20.0 (version déclarée dans `package.json`). Si Corepack est disponible : `corepack enable`, puis `corepack prepare pnpm@10.20.0 --activate`.
+Prérequis : Node.js 22 et pnpm 10.20.0 (`corepack enable`). Pas de Docker, pas de Java, pas de PostgreSQL à installer.
 
-```sh
-git clone https://github.com/Techma-Benin/assistant-demarches.git
-cd assistant-demarches
-git switch dev
-pnpm install --frozen-lockfile
-pnpm check
-pnpm mocks
-```
+Le backend se lance avec [BACKEND.md](BACKEND.md) : copier `.env.example`, renseigner `MODEL_API_KEY` (éventuellement `MODEL_PROVIDER`), laisser le reste commenté, puis `pnpm dev`. Un `.env` ancien (`DATABASE_URL` :5432, Tooling :4020) est ignoré avec un avertissement. La même clé active la transcription des vocaux.
 
-Simulations en mémoire : Backend `http://127.0.0.1:4010`, Tooling `http://127.0.0.1:4020/mcp`. Écoute locale uniquement. Aucun fournisseur, aucune clé, aucune démarche officielle nécessaires. Tout est perdu au redémarrage.
+`pnpm dev` sans argument démarre aussi le tooling, le X-Road simulé et l'interface. Ces trois applications ne sont pas encore prêtes pour cette commande. Le détail est dans [BACKEND.md](BACKEND.md).
 
-**Lire [CONTRACTS.md](CONTRACTS.md) avant d'implémenter une frontière entre groupes.** Les JSON de `contracts/v1/` sont la référence machine ; le guide fixe les comportements et l'authentification. Le PDF technique décrit l'intention initiale ; les décisions précisées dans ce dépôt priment pour l'implémentation.
+| Commande | Effet |
+|---|---|
+| `pnpm dev backend` | Backend, avec PostgreSQL et Keycloak locaux si `.env` ne les définit pas |
+| `pnpm dev:infra` | PostgreSQL et Keycloak seulement |
+| `pnpm dev` | L'infrastructure et toutes les applications citées dans le script |
+| `pnpm dev:reset` | Efface les données locales (bases, realm, fichiers) |
+| `pnpm check` | Contrats, types générés, typage et tests de toutes les applications |
+| `pnpm --filter @techma/backend test` | Tests backend (`PG_BIN` optionnel : `@embedded-postgres/<plateforme>-<arch>/native/bin`) |
+| `pnpm catalogue:import` | Réimporte le catalogue de service-public.bj |
+| `pnpm dev:check` | Diagnostique une pile déjà lancée (voir [BACKEND.md](BACKEND.md) « Brancher le front ») |
 
-## Qui travaille où ?
+Comptes de démo, mot de passe `demo-2026` :
 
-| Équipe | Répertoires | Dépendances simulées |
-|---|---|---|
-| Interface | `apps/interface/whatsapp-adapter`, `web-widget`, `admin-console`, `packages/ui` | C1 + C3 et WebSocket sur le Backend simulé |
-| Backend | `apps/backend`, `prompts`, `evals`, `packages/conversation-client` | Serveur MCP Streamable HTTP sur le Tooling simulé |
-| Tooling | `apps/tooling`, `content` | Client MCP et fixtures dans les tests ; réception C4 simulée |
-| Commun | `contracts`, `packages/contracts-ts`, `packages/observability`, `infra` | Tests et conventions partagés |
+| Compte | Rôle |
+|---|---|
+| `aminata.usager` | Usager |
+| `agent.justice`, `admin.justice` | Agent et admin de la Justice |
+| `agent.enseignement` | Agent de l'Enseignement |
+| `agent.anip` | Agent de l'ANIP |
+| `super.admin` | Super admin, toutes les administrations |
+| `operateur` | Écran opérateur |
 
-Les types C1/C3 sont générés par `pnpm contracts:generate` ; ne pas les modifier à la main. `pnpm check` valide schémas, OpenAPI, exemples, compilation TypeScript et parcours HTTP/MCP/WebSocket.
+Console Keycloak : <http://127.0.0.1:8080> (admin / admin, poste local uniquement). Si le port 8080 est déjà pris (service Oracle ou EnterpriseDB sous Windows par exemple) : `KEYCLOAK_PORT=8081 pnpm dev`, ou `$env:KEYCLOAK_PORT=8081; pnpm dev` dans PowerShell.
 
-## Branches
+## Qui travaille où
 
-`main` : livraison stable. `dev` : intégration. Chaque chantier part de `dev` et ouvre une PR vers `dev` :
+| Équipe | Dossiers |
+|---|---|
+| Interface | `apps/interface/*`, `packages/ui` |
+| Backend | `apps/backend`, `prompts` |
+| Tooling | `apps/tooling`, `apps/xroad-sim`, `content` |
+| Commun | `contracts`, `packages/contracts-ts`, `infra`, `scripts` |
 
-```sh
-git switch dev
-git pull --ff-only
-git switch -c interface/whatsapp-webhook
-# ou backend/conversations, tooling/procedures-search
-```
-
-Branches courtes ; Conventional Commits ; CI verte ; relecture par un autre groupe ; revue sécurité pour mandat, authentification et données personnelles. Promotion `dev` → `main` par PR de livraison. Voir [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Documents
-
-- [Contrats et comportements](CONTRACTS.md)
-- [Architecture et décisions](docs/architecture.md)
-- [Démarrage par équipe](docs/team-start.md)
-- [Analyse des lacunes du PDF](docs/contract-review.md)
-- [État de livraison et limites](docs/readiness.md)
-
-Objectif interne : démonstration et dossier prêts le 6 novembre 2026. Selon le communiqué local, dépôt des candidatures du 29 octobre au 12 novembre 2026 ; règlement complet à confirmer avant candidature.
+Branches et revue : [CONTRIBUTING.md](CONTRIBUTING.md). Échéance : démonstration complète le 6 novembre 2026.

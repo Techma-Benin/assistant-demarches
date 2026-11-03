@@ -1,0 +1,29 @@
+{
+  "name": "@techma/xroad-sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist/src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/src/main.js",
+    "dev": "tsc -p tsconfig.json && node --enable-source-maps dist/src/main.js",
+    "test": "tsc -p tsconfig.json && node --test --test-concurrency=1 --enable-source-maps \"dist/test/**/*.test.js\""
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "jose": "6.2.13",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@techma/contracts-ts": "workspace:*",
+    "@types/node": "22.20.5",
+    "@types/pg": "8.18.0",
+    "typescript": "5.9.3"
+  }
+}

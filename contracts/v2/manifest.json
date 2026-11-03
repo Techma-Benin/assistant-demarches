@@ -1,0 +1,13 @@
+{
+  "version": "2.1.0",
+  "documents": [
+    "domain.schema.json",
+    "conversation.openapi.json",
+    "admin.openapi.json",
+    "operator.openapi.json",
+    "backend-internal.openapi.json",
+    "tooling-internal.openapi.json",
+    "xroad.openapi.json",
+    "mcp.tools.json"
+  ]
+}

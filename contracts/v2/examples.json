@@ -1,0 +1,194 @@
+{
+  "description": "Exemples validés par pnpm contracts:check. La fiche est la vraie fiche PS00373 de service-public.bj ; le dossier est une simulation déclarée.",
+  "schemas": {
+    "Procedure": {
+      "id": "PS00373",
+      "title": "Délivrance du Casier judiciaire (Extrait B3 du casier judiciaire)",
+      "administrationId": "justice",
+      "summary": "Ce service permet à tout citoyen béninois, tout étranger résidant ou ayant résidé au Bénin de demander un extrait B3 de son casier judiciaire. Le casier judiciaire est valide pour 3 mois.",
+      "target": "Tout citoyen béninois, tout étranger résidant ou ayant résidé au Bénin",
+      "authority": "Centre National du Casier Judiciaire",
+      "feeFcfa": 1900,
+      "processingDays": 3,
+      "inPerson": {
+        "fee": "1 900 FCFA",
+        "delay": "72h",
+        "documents": "* Extrait d'acte de naissance sécurisé ou légalisé\n* Pièce d'identification",
+        "process": null,
+        "where": "Les greffes des tribunaux de premières instances et la Cour d'appel de Cotonou",
+        "url": null
+      },
+      "online": {
+        "fee": "1 900 FCFA",
+        "delay": "72h",
+        "documents": "* Extrait d'acte de naissance sécurisé ou légalisé",
+        "process": null,
+        "where": null,
+        "url": null
+      },
+      "hours": "Lundi au vendredi\n\nMatinée : 08h00mn à 12h30mn\nSoirée : 14h00mn à 17h30mn",
+      "source": {
+        "procedureId": "PS00373",
+        "url": "https://service-public.bj/public/services/service/PS00373",
+        "retrievedAt": "2026-10-30T16:22:40.188Z"
+      },
+      "filing": {
+        "scope": "Béninois nés au Bénin, demande en ligne",
+        "formSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "adresseDomicile": { "type": "string", "minLength": 1, "title": "Adresse du domicile" },
+            "profession": { "type": "string", "minLength": 1, "title": "Profession" },
+            "nombreEnfantsACharge": { "type": "integer", "minimum": 0, "maximum": 30, "title": "Nombre d'enfants à charge" },
+            "situationMatrimoniale": { "type": "string", "minLength": 1, "title": "Situation matrimoniale" }
+          },
+          "required": ["adresseDomicile", "profession", "nombreEnfantsACharge", "situationMatrimoniale"]
+        },
+        "requiredDocuments": [
+          { "documentType": "extrait-acte-naissance", "label": "Extrait d'acte de naissance sécurisé ou légalisé", "acceptedMimeTypes": ["application/pdf", "image/jpeg", "image/png"] }
+        ],
+        "feeFcfa": 1900,
+        "processingDays": 3
+      }
+    },
+    "Request": {
+      "id": "req_01JD0000000000000000000001",
+      "conversationId": "cnv_01JD0000000000000000000001",
+      "procedureId": "PS00373",
+      "title": "Délivrance du Casier judiciaire (Extrait B3 du casier judiciaire)",
+      "administrationId": "justice",
+      "status": "ready",
+      "fields": [
+        { "name": "adresseDomicile", "label": "Adresse du domicile", "value": "Cotonou, Akpakpa", "source": "answer" },
+        { "name": "profession", "label": "Profession", "value": "Comptable", "source": "answer" },
+        { "name": "nombreEnfantsACharge", "label": "Nombre d'enfants à charge", "value": 2, "source": "answer" },
+        { "name": "situationMatrimoniale", "label": "Situation matrimoniale", "value": "Marié", "source": "answer" }
+      ],
+      "documents": [
+        { "documentType": "extrait-acte-naissance", "label": "Extrait d'acte de naissance sécurisé ou légalisé", "fileId": "fil_01JD0000000000000000000001" }
+      ],
+      "missing": [],
+      "caseId": null,
+      "updatedAt": "2026-11-02T09:00:00Z"
+    },
+    "Case": {
+      "id": "cas_01JD0000000000000000000001",
+      "reference": "SIM-JUS-2026-000001",
+      "simulated": true,
+      "procedureId": "PS00373",
+      "title": "Délivrance du Casier judiciaire (Extrait B3 du casier judiciaire)",
+      "administrationId": "justice",
+      "applicantRef": "usr_01JD0000000000000000000001",
+      "requestId": "req_01JD0000000000000000000001",
+      "channel": "web",
+      "status": "in_review",
+      "fields": { "adresseDomicile": "Cotonou, Akpakpa", "profession": "Comptable", "nombreEnfantsACharge": 2, "situationMatrimoniale": "Marié" },
+      "documents": [
+        { "id": "doc_01JD0000000000000000000001", "kind": "submitted", "documentType": "extrait-acte-naissance", "name": "Extrait d'acte de naissance", "mimeType": "application/pdf", "sizeBytes": 182044, "createdAt": "2026-11-02T09:05:00Z" }
+      ],
+      "payment": { "amountFcfa": 1900, "status": "paid", "reference": "SIM-PAY-000001", "paidAt": "2026-11-02T09:06:00Z", "simulated": true },
+      "steps": [
+        { "id": "depot", "label": "Dossier déposé par l'assistant", "state": "done", "actor": "assistant", "note": null, "at": "2026-11-02T09:05:00Z" },
+        { "id": "paiement", "label": "Frais payés", "state": "done", "actor": "applicant", "note": null, "at": "2026-11-02T09:06:00Z" },
+        { "id": "verification", "label": "Vérification de l'identité par un agent", "state": "blocked", "actor": "administration", "note": "Nouvelle demande à vérifier", "at": null }
+      ],
+      "informationRequest": null,
+      "claimedBy": null,
+      "completedBy": null,
+      "decisionNote": null,
+      "createdAt": "2026-11-02T09:05:00Z",
+      "updatedAt": "2026-11-02T09:06:00Z"
+    },
+    "Official": {
+      "id": "off_01JD0000000000000000000001",
+      "subject": "5b0c8a52-0d3e-4c1f-9d55-2b8f1c0e7a11",
+      "email": "agent.justice@demo.techma.bj",
+      "displayName": "Agent Justice",
+      "jobTitle": "Agent instructeur",
+      "administrationId": "justice",
+      "role": "agent",
+      "avatarUrl": null,
+      "active": true
+    },
+    "AgentMessage": {
+      "id": "msg_01JD0000000000000000000002",
+      "conversationId": "cnv_01JD0000000000000000000001",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "L'extrait B3 du casier judiciaire coûte 1 900 FCFA et il est délivré en 72 h environ.",
+          "sources": [{ "procedureId": "PS00373", "url": "https://service-public.bj/public/services/service/PS00373", "retrievedAt": "2026-10-30T16:22:40.188Z" }]
+        },
+        { "type": "buttons", "items": [{ "id": "prepare", "label": "Préparer ma demande" }] }
+      ],
+      "createdAt": "2026-11-02T09:00:00Z"
+    }
+  },
+  "events": [
+    {
+      "specversion": "1.0",
+      "id": "evt_01JD0000000000000000000001",
+      "source": "urn:techma:backend",
+      "type": "bj.techma.message.received.v2",
+      "time": "2026-11-02T08:59:58Z",
+      "datacontenttype": "application/json",
+      "data": {
+        "kind": "message.received",
+        "conversationId": "cnv_01JD0000000000000000000001",
+        "message": { "id": "msg_01JD0000000000000000000001", "content": { "type": "text", "text": "Comment obtenir mon casier judiciaire ?" }, "transcript": null, "sentAt": "2026-11-02T08:59:57Z" }
+      }
+    },
+    {
+      "specversion": "1.0",
+      "id": "evt_01JD0000000000000000000002",
+      "source": "urn:techma:backend",
+      "type": "bj.techma.message.delta.v2",
+      "time": "2026-11-02T08:59:59Z",
+      "datacontenttype": "application/json",
+      "data": {
+        "kind": "message.delta",
+        "conversationId": "cnv_01JD0000000000000000000001",
+        "messageId": "msg_01JD0000000000000000000002",
+        "delta": "L'extrait B3",
+        "index": 0
+      }
+    },
+    {
+      "specversion": "1.0",
+      "id": "evt_01JD0000000000000000000003",
+      "source": "urn:techma:backend",
+      "type": "bj.techma.message.sent.v2",
+      "time": "2026-11-02T09:00:00Z",
+      "datacontenttype": "application/json",
+      "data": {
+        "kind": "message.sent",
+        "conversationId": "cnv_01JD0000000000000000000001",
+        "message": {
+          "id": "msg_01JD0000000000000000000002",
+          "conversationId": "cnv_01JD0000000000000000000001",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "L'extrait B3 du casier judiciaire coûte 1 900 FCFA et il est délivré en 72 h environ.",
+              "sources": [{ "procedureId": "PS00373", "url": "https://service-public.bj/public/services/service/PS00373", "retrievedAt": "2026-10-30T16:22:40.188Z" }]
+            },
+            { "type": "buttons", "items": [{ "id": "prepare", "label": "Préparer ma demande" }] }
+          ],
+          "createdAt": "2026-11-02T09:00:00Z"
+        }
+      }
+    }
+  ],
+  "tools": {
+    "procedures.search": { "input": { "query": "casier judiciaire" } },
+    "procedures.get": { "input": { "procedureId": "PS00373" } },
+    "request.create": { "input": { "procedureId": "PS00373" } },
+    "request.update": { "input": { "requestId": "req_01JD0000000000000000000001", "fields": [{ "name": "profession", "value": "Comptable", "source": "answer" }] } },
+    "documents.attach": { "input": { "requestId": "req_01JD0000000000000000000001", "documentType": "extrait-acte-naissance", "fileId": "fil_01JD0000000000000000000001" } },
+    "request.submit": { "input": { "requestId": "req_01JD0000000000000000000001" } },
+    "request.pay": { "input": { "requestId": "req_01JD0000000000000000000001" } },
+    "case.status": { "input": { "requestId": "req_01JD0000000000000000000001" } },
+    "case.respond": { "input": { "requestId": "req_01JD0000000000000000000001", "message": "Voici ma pièce d'identité.", "fields": {}, "fileIds": [{ "documentType": "piece-identite", "fileId": "fil_01JD0000000000000000000002" }] } }
+  }
+}
