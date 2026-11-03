@@ -57,6 +57,24 @@ async function get(url, init = {}) {
   }
 }
 
+function readyHint(name, item) {
+  const detail = String(item?.detail ?? "");
+  if (name === "model") {
+    if (/provider_network_access_denied/.test(detail))
+      return "Couche modèle : le fournisseur refuse l'accès réseau (403). Vérifier IP / projet / MODEL_API_KEY, ou MODEL_READINESS_PROBE=off pour ignorer la sonde.";
+    if (/provider_authentication_failed/.test(detail))
+      return "Couche modèle : authentification fournisseur refusée (401). Vérifier MODEL_API_KEY.";
+    if (/provider_access_forbidden/.test(detail))
+      return "Couche modèle : accès fournisseur interdit (403). Vérifier le compte et le modèle autorisé.";
+    if (/provider_rate_limit/.test(detail))
+      return "Couche modèle : quota ou limite du fournisseur (429). Réessayer plus tard.";
+    if (/AUCUN MODÈLE|MODEL_API_KEY/.test(detail))
+      return "Couche modèle : renseigner MODEL_API_KEY dans .env (voir .env.example).";
+    return "Couche modèle : voir BACKEND.md « Brancher le front ».";
+  }
+  return "Voir BACKEND.md « Brancher le front ».";
+}
+
 function diagnose(status, json) {
   if (status === 404 || status === 405) return "endpoint absent côté backend (404/405) — vérifier routes.ts / le contrat v2";
   if (status === 401 || status === 403) return "auth (401/403) — jeton invité, CORS ou Keycloak";
@@ -90,7 +108,7 @@ if (!ready.json) {
   for (const name of ["model", "tooling", "mcpTools", "xroad", "oidc", "database"]) {
     const item = ready.json[name];
     if (!item) continue;
-    mark(Boolean(item.ok), `ready.${name}`, item.detail, item.ok ? undefined : "Voir BACKEND.md « Brancher le front ».");
+    mark(Boolean(item.ok), `ready.${name}`, item.detail, item.ok ? undefined : readyHint(name, item));
   }
 }
 
@@ -282,7 +300,17 @@ async function browserJourney() {
   const posted_at = postedAt - startedAt;
   const sources = sent.data.message.blocks.flatMap((block) => (block.type === "text" ? block.sources : []));
   mark(order, "Parcours navigateur : ordre des événements", `${kinds.length} trames : message.received → ${deltas.length} × message.delta → message.sent (blocs : ${sent.data.message.blocks.map((block) => block.type).join(", ")} ; ${sources.length} source(s))`);
-  mark(deltas.length === 0 || assembled === text, "Parcours navigateur : deltas = message.sent", deltas.length ? `texte assemblé identique (${text.length} car., premier delta à +${firstDelta.at} ms, message.sent à +${last.at} ms)` : "aucun delta (la réponse n'a pas de texte)", "Le texte assemblé des deltas diffère du bloc text final.");
+  const sameText = deltas.length === 0 || assembled === text;
+  mark(
+    sameText,
+    "Parcours navigateur : deltas = message.sent",
+    deltas.length === 0
+      ? "aucun delta (la réponse n'a pas de texte)"
+      : sameText
+        ? `texte assemblé identique (${text.length} car., premier delta à +${firstDelta.at} ms, message.sent à +${last.at} ms)`
+        : `texte assemblé différent (${assembled.length} car. de deltas, ${text.length} car. dans message.sent)`,
+    "Le texte assemblé des deltas diffère du bloc text final.",
+  );
   // The reply must be streamed while the model writes it: deltas bunched right before message.sent mean the Backend
   // waited for the end of the generation (the exact defect this check guards against).
   if (deltas.length === 0) {

@@ -5,6 +5,10 @@ import { generateKeyPair, exportJWK, createLocalJWKSet, SignJWT } from "jose";
 import { isolatedDatabase } from "./helpers.mjs";
 import { database, migrate, provision } from "../dist/apps/backend/src/database.js";
 import { createBackend } from "../dist/apps/backend/src/app.js";
+import {
+  probeReadiness,
+  resetReadinessProbeCache,
+} from "../dist/apps/backend/src/readiness.js";
 
 test("GET /health/ready reports components without secrets and is 503 until a model is active", async (t) => {
   const pg = await isolatedDatabase();
@@ -68,4 +72,49 @@ test("GET /health/ready reports components without secrets and is 503 until a mo
   assert.equal(report.model.ok, true);
   assert.match(report.model.detail, /Prêt \/ synthetic/);
   assert.equal(report.status === "ok" || report.mcpTools.ok === false, true);
+});
+
+test("model readiness probe classifies a provider 403 without leaking secrets", async (t) => {
+  resetReadinessProbeCache();
+  t.after(resetReadinessProbeCache);
+  const pg = await isolatedDatabase();
+  const pool = database(pg.connection);
+  t.after(async () => {
+    await pool.end();
+    await pg.close();
+  });
+  await migrate(pool);
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(403, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        error: { message: "Access denied. Please check your network settings. secret-key-test" },
+      }),
+    );
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => { upstream.closeAllConnections(); upstream.close(resolve); }));
+  const baseUrl = `http://127.0.0.1:${upstream.address().port}/v1`;
+  await provision(pool, "global", "models", {
+    id: "ready",
+    label: "Prêt",
+    baseUrl,
+    protocol: "chat-completions",
+    model: "synthetic",
+    apiKeyRef: "PROBE_KEY",
+    temperature: 0,
+    active: true,
+  });
+  const report = await probeReadiness({
+    pool,
+    environment: { MODEL_READINESS_PROBE: "on", PROBE_KEY: "secret-key-test" },
+  });
+  assert.equal(report.model.ok, false);
+  assert.match(report.model.detail, /provider_network_access_denied/);
+  assert.equal(JSON.stringify(report).includes("secret-key-test"), false);
+  const skipped = await probeReadiness({
+    pool,
+    environment: { MODEL_READINESS_PROBE: "off", PROBE_KEY: "secret-key-test" },
+  });
+  assert.equal(skipped.model.ok, true);
 });
