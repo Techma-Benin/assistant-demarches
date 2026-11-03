@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { providerReason } from "./diagnostics.js";
 import { catalog } from "./tooling.js";
 
 export type ComponentStatus = { ok: boolean; detail: string };
@@ -20,7 +21,55 @@ export type ReadinessOptions = {
   mcpToken?: () => Promise<string>;
   xroadUrl?: string;
   oidcJwksUrl?: string;
+  /** `process.env` by default; override in tests. */
+  environment?: NodeJS.ProcessEnv;
 };
+
+const PROBE_TTL_MS = 60_000;
+let probeCache: { key: string; at: number; result: ComponentStatus } | undefined;
+
+export function resetReadinessProbeCache(): void {
+  probeCache = undefined;
+}
+
+export function modelReadinessProbeEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
+  const flag = (environment.MODEL_READINESS_PROBE ?? "").toLowerCase();
+  if (flag === "off" || flag === "0" || flag === "false") return false;
+  if (flag === "on" || flag === "1" || flag === "true") return true;
+  return !environment.NODE_TEST_CONTEXT;
+}
+
+async function probeProvider(
+  baseUrl: string,
+  apiKey: string | undefined,
+): Promise<ComponentStatus> {
+  const base = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
+  let modelsUrl: string;
+  try {
+    modelsUrl = new URL("models", base).href;
+  } catch {
+    return { ok: false, detail: "URL du fournisseur invalide" };
+  }
+  try {
+    const response = await fetch(modelsUrl, {
+      redirect: "error",
+      signal: timeout(1500),
+      headers: apiKey ? { Authorization: "Bearer " + apiKey } : {},
+    });
+    let message: unknown;
+    try {
+      const body = (await response.json()) as { error?: { message?: unknown }; message?: unknown };
+      message = body.error?.message ?? body.message;
+    } catch { /* classification without a body is still useful */ }
+    const reason = providerReason(response.status, message);
+    if (response.ok) return { ok: true, detail: "" };
+    if (response.status === 404) return { ok: true, detail: "" };
+    return { ok: false, detail: reason };
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "injoignable";
+    return { ok: false, detail: `fournisseur injoignable (${code.replace(/https?:\/\/[^\s]+/g, "[url]")})` };
+  }
+}
 
 const timeout = (ms = 3000) => AbortSignal.timeout(ms);
 
@@ -88,9 +137,38 @@ export async function probeReadiness(options: ReadinessOptions): Promise<ReadyRe
         )
       ).rows;
       if (rows.length === 1) {
-        const body = rows[0].body as { label?: string; model?: string; id?: string };
-        model.ok = true;
-        model.detail = `${body.label ?? body.id} / ${body.model ?? "modèle"}`;
+        const body = rows[0].body as {
+          label?: string;
+          model?: string;
+          id?: string;
+          baseUrl?: string;
+          apiKeyRef?: string;
+        };
+        const label = `${body.label ?? body.id} / ${body.model ?? "modèle"}`;
+        const env = options.environment ?? process.env;
+        if (body.baseUrl && modelReadinessProbeEnabled(env)) {
+          const cacheKey = `${body.id ?? ""}|${body.baseUrl}|${body.apiKeyRef ?? ""}`;
+          const now = Date.now();
+          let probe: ComponentStatus;
+          if (probeCache && probeCache.key === cacheKey && now - probeCache.at < PROBE_TTL_MS) {
+            probe = probeCache.result;
+          } else {
+            probe = await probeProvider(
+              body.baseUrl,
+              body.apiKeyRef ? env[body.apiKeyRef] : undefined,
+            );
+            probeCache = { key: cacheKey, at: now, result: probe };
+          }
+          if (probe.ok) {
+            model.ok = true;
+            model.detail = label;
+          } else {
+            model.detail = `${label} — ${probe.detail}`;
+          }
+        } else {
+          model.ok = true;
+          model.detail = label;
+        }
       } else if (rows.length > 1) {
         model.detail = `${rows.length} modèles actifs (un seul est requis)`;
       }
