@@ -90,7 +90,7 @@ export function HeroSlideshow({ photos = HERO_PHOTOS, className }: { photos?: He
 
   return (
     <div className={cn('relative', className)}>
-      <div className="mx-auto w-full max-w-[1200px] px-3 md:px-6 lg:h-full lg:max-w-none lg:px-0">
+      <div className="mx-auto w-full max-w-[1200px] px-3 md:px-6 lg:h-full">
         <div className="relative aspect-[4/5] overflow-hidden rounded-[24px] bg-line sm:aspect-[16/10] md:rounded-[32px] lg:aspect-auto lg:h-full">
           {photos.map((photo, i) => {
             const active = i === index;
@@ -100,8 +100,8 @@ export function HeroSlideshow({ photos = HERO_PHOTOS, className }: { photos?: He
                 src={photo.src}
                 alt={photo.alt}
                 fill
-                // Half the page from lg up (the card is at most 660px wide), full width below that.
-                sizes="(min-width: 1320px) 660px, (min-width: 1024px) 50vw, 100vw"
+                // The card is at most 1152px wide (1200px minus its padding); full width below that.
+                sizes="(min-width: 1200px) 1152px, 100vw"
                 quality={85}
                 priority={i === 0}
                 aria-hidden={active ? undefined : true}
@@ -121,7 +121,7 @@ export function HeroSlideshow({ photos = HERO_PHOTOS, className }: { photos?: He
           </div>
         </div>
       </div>
-      <div className="mt-5 flex items-center justify-center gap-2 lg:absolute lg:bottom-6 lg:right-5 lg:mt-0">
+      <div className="mt-5 flex items-center justify-center gap-2 lg:absolute lg:bottom-6 lg:right-[max(2.5rem,calc((100%-1200px)/2+2.5rem))] lg:mt-0">
         <button type="button" aria-label="Photo précédente" onClick={() => go(-1)} className={controlClass}>
           <ChevronLeft aria-hidden="true" className="size-5" />
         </button>

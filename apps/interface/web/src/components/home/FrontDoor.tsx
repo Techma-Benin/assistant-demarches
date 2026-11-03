@@ -138,68 +138,66 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
         <section
           id="top"
           aria-labelledby="hero-title"
-          className="lg:h-[calc(100svh-92px)] lg:min-h-[548px]"
+          className="flex flex-col items-stretch lg:h-[calc(100svh-92px)] lg:min-h-[600px] lg:pb-6"
         >
-          <div className="mx-auto flex max-w-[1320px] flex-col items-stretch lg:grid lg:h-full lg:grid-cols-12 lg:grid-rows-[1fr_auto_auto_1fr] lg:gap-x-10 lg:px-8 lg:pb-8">
-            <div className="lg:col-span-6 lg:row-start-2">
-              <div className="px-5 text-center md:px-10 lg:p-0 lg:text-left">
-                <h1
-                  id="hero-title"
-                  {...rise(0)}
-                  className={cn(
-                    'm-0 mt-6 text-balance font-display text-[clamp(44px,7vw,104px)] font-extrabold leading-[0.95] tracking-[-0.045em] md:mt-12 lg:mt-0 lg:text-[clamp(44px,5.2vw,88px)]',
-                    rise(0).className,
-                  )}
-                >
-                  Vos démarches, simplement.
-                </h1>
-                <p
-                  {...rise(1)}
-                  className={cn(
-                    'm-0 mt-4 font-display text-[clamp(18px,2vw,24px)] font-semibold tracking-[-0.02em] text-ink-muted md:mt-6 lg:mt-5',
-                    rise(1).className,
-                  )}
-                >
-                  Quelle que soit votre démarche, commencez ici.
-                </p>
-              </div>
+          <div className="px-5 text-center md:px-10">
+            <h1
+              id="hero-title"
+              {...rise(0)}
+              className={cn(
+                // From lg the title also scales with the screen height, so short laptop screens keep the photo in view.
+                'm-0 mt-6 text-balance font-display text-[clamp(44px,7vw,104px)] font-extrabold leading-[0.95] tracking-[-0.045em] md:mt-12 lg:mt-2 lg:text-[clamp(44px,min(6.4vw,9.5svh),104px)]',
+                rise(0).className,
+              )}
+            >
+              Vos démarches, simplement.
+            </h1>
+            <p
+              {...rise(1)}
+              className={cn(
+                'm-0 mt-4 font-display text-[clamp(18px,2vw,24px)] font-semibold tracking-[-0.02em] text-ink-muted md:mt-6 lg:mt-3',
+                rise(1).className,
+              )}
+            >
+              Quelle que soit votre démarche, commencez ici.
+            </p>
+          </div>
 
-              <div className="mt-8 px-3 md:mt-12 md:px-6 lg:mt-0 lg:p-0">
-                <div
-                  ref={heroPrompt}
-                  {...rise(2)}
-                  className={cn('relative z-10 mx-auto w-full max-w-[880px] lg:mx-0 lg:mt-8 lg:max-w-none', rise(2).className)}
-                >
-                  <Composer
-                    variant="compact"
-                    label="Votre question"
-                    placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
-                    value={draft}
-                    onValueChange={setDraft}
-                    onSend={submitDraft}
-                    onFiles={onFiles}
-                    staged={staged}
-                    hint={false}
-                    disabled={disabled}
-                    className="w-full text-left"
-                  />
-                </div>
-              </div>
+          <div className="mt-8 px-3 md:mt-12 md:px-6 lg:mt-6">
+            <div
+              ref={heroPrompt}
+              {...rise(2)}
+              className={cn('relative z-10 mx-auto -mb-8 w-full max-w-[880px] md:-mb-9', rise(2).className)}
+            >
+              <Composer
+                variant="compact"
+                label="Votre question"
+                placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
+                value={draft}
+                onValueChange={setDraft}
+                onSend={submitDraft}
+                onFiles={onFiles}
+                staged={staged}
+                hint={false}
+                disabled={disabled}
+                className="w-full text-left"
+              />
             </div>
+          </div>
 
-            <HeroSlideshow className="mt-8 lg:col-span-6 lg:col-start-7 lg:row-span-4 lg:row-start-1 lg:mt-0 lg:h-full lg:min-h-0" />
+          {/* From lg the photo takes whatever height the text leaves, so the whole hero fits one screen. */}
+          <HeroSlideshow className="lg:min-h-0 lg:flex-1" />
 
-            <div className="flex flex-col items-center gap-4 px-5 pb-10 pt-6 text-center md:px-10 md:pb-14 lg:col-span-6 lg:row-start-3 lg:items-start lg:gap-3 lg:p-0 lg:pt-4 lg:text-left">
-              {resume && <ResumeLine {...resume} />}
-              <div {...rise(3)} className={cn('flex flex-wrap justify-center gap-2 lg:justify-start', rise(3).className)}>
-                {SUGGESTIONS.map((s) => (
-                  <Chip key={s} disabled={disabled} onClick={() => ask(s)}>
-                    {s}
-                  </Chip>
-                ))}
-              </div>
-              <p className="m-0 text-[16px] text-ink-muted">Sans connexion pour poser une question · Chaque information administrative cite sa fiche officielle</p>
+          <div className="flex flex-col items-center gap-4 px-5 pb-10 pt-6 text-center md:px-10 md:pb-14 lg:gap-3 lg:pb-0 lg:pt-4">
+            {resume && <ResumeLine {...resume} />}
+            <div {...rise(3)} className={cn('flex flex-wrap justify-center gap-2', rise(3).className)}>
+              {SUGGESTIONS.map((s) => (
+                <Chip key={s} disabled={disabled} onClick={() => ask(s)}>
+                  {s}
+                </Chip>
+              ))}
             </div>
+            <p className="m-0 text-[16px] text-ink-muted">Sans connexion pour poser une question · Chaque information administrative cite sa fiche officielle</p>
           </div>
         </section>
 
