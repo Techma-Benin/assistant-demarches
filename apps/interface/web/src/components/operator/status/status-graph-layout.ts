@@ -12,6 +12,12 @@ const ROW_GAP = 24;
 const FLOW_BOTTOM_PAD = 40;
 const STACK_BREAK = 920;
 const HANDLE_SIZE = 6;
+/** Floor for the flow pane so flex parents cannot collapse the graph to 0px. */
+export const STATUS_GRAPH_FLOW_MIN_REM = 28;
+
+export function statusGraphFlowMinHeight(layoutHeight: number): number {
+  return Math.max(layoutHeight, STATUS_GRAPH_FLOW_MIN_REM * 16);
+}
 
 const CHILD_IDS = ['model', 'mcp', 'admin'] as const;
 

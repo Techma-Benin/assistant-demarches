@@ -19,6 +19,8 @@ import {
   ADMIN_CHIPS_EXTRA,
   CARD_HEIGHT,
   buildStatusGraphElements,
+  STATUS_GRAPH_FLOW_MIN_REM,
+  statusGraphFlowMinHeight,
   statusGraphHeight,
   statusGraphLayoutWidth,
   statusGraphNodeExtent,
@@ -267,6 +269,7 @@ function StatusGraphFlow({
 
   return (
     <ReactFlow
+      style={{ width: '100%', height }}
       nodes={nodes}
       edges={edges}
       onNodesChange={onNodesChange}
@@ -310,8 +313,9 @@ export function StatusGraph({
   );
   const adminHasChips = connected.length > 0;
   const layoutWidth = statusGraphLayoutWidth(width);
-  const minHeight = statusGraphHeight(layoutWidth, adminHasChips);
-  const [paneHeight, setPaneHeight] = useState(minHeight);
+  const layoutHeight = statusGraphHeight(layoutWidth, adminHasChips);
+  const flowMinHeight = statusGraphFlowMinHeight(layoutHeight);
+  const [paneHeight, setPaneHeight] = useState(flowMinHeight);
 
   useEffect(() => {
     const el = shellRef.current;
@@ -319,31 +323,39 @@ export function StatusGraph({
     const applySize = (rawWidth: number, rawHeight: number) => {
       const nextWidth = statusGraphLayoutWidth(rawWidth);
       setWidth((current) => (current === nextWidth ? current : nextWidth));
-      const nextHeight = Math.max(minHeight, Math.round(rawHeight));
+      const nextHeight = Math.max(flowMinHeight, Math.round(rawHeight));
       setPaneHeight((current) => (current === nextHeight ? current : nextHeight));
     };
     const observer = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
-      if (!rect || rect.width <= 0 || rect.height <= 0) return;
+      if (!rect || rect.width <= 0) return;
       applySize(rect.width, rect.height);
     });
     observer.observe(el);
     const rect = el.getBoundingClientRect();
-    applySize(rect.width || 960, rect.height || minHeight);
+    applySize(rect.width || 960, rect.height);
     return () => observer.disconnect();
-  }, [minHeight]);
+  }, [flowMinHeight]);
+
+  const flowHeight = Math.max(flowMinHeight, paneHeight);
+  const flowMinCss = `max(${layoutHeight}px, ${STATUS_GRAPH_FLOW_MIN_REM}rem)`;
 
   return (
     <section
       aria-label="Schéma des connexions"
       className={cn('op-status-chain', className)}
+      style={{ ['--op-status-flow-min' as string]: `${layoutHeight}px` }}
     >
-      <div ref={shellRef} className="op-status-flow" style={{ minHeight }}>
+      <div
+        ref={shellRef}
+        className="op-status-flow"
+        style={{ minHeight: flowMinCss, height: flowHeight }}
+      >
         <ReactFlowProvider>
           <StatusGraphFlow
             status={status}
             width={layoutWidth}
-            height={paneHeight}
+            height={flowHeight}
             adminHasChips={adminHasChips}
           />
         </ReactFlowProvider>

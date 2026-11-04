@@ -74,7 +74,7 @@ export function StatusPage() {
       ) : (
         <>
           <Summary status={status} />
-          <StatusGraph status={status} className="min-h-0 flex-1" />
+          <StatusGraph status={status} className="min-h-[28rem] flex-1" />
         </>
       )}
     </div>

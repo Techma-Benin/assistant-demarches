@@ -18,6 +18,23 @@ afterEach(() => vi.unstubAllGlobals());
 describe('Statut', () => {
   it('fixture conforms to the v2 contract', () => assertContract('OperatorStatus', status));
 
+  it('renders a sized React Flow pane with hub, cards, and edges', async () => {
+    stubOperator((call) => (call.path === '/status' ? json(status) : undefined));
+    render(<StatusPage />);
+
+    const schema = await screen.findByRole('region', { name: 'Schéma des connexions' });
+    const shell = schema.querySelector('.op-status-flow') as HTMLElement;
+    expect(shell).toBeTruthy();
+    expect(shell.style.height).not.toBe('');
+    expect(Number.parseInt(shell.style.height, 10)).toBeGreaterThanOrEqual(448);
+
+    expect(schema.querySelector('.react-flow')).toBeTruthy();
+    expect(within(schema).getByRole('img', { name: 'Assistant' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(schema).getAllByTestId('rf__edge-hub-model')).toHaveLength(1);
+    });
+  });
+
   it('draws the connection schema and opens Modèles and Connexions from it', async () => {
     stubOperator((call) => (call.path === '/status' ? json(status) : undefined));
     render(<StatusPage />);
