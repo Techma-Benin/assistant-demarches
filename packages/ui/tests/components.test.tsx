@@ -26,6 +26,12 @@ describe('Button', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
+  it('shows a pointer cursor so the control looks clickable', () => {
+    render(<Button>Ok</Button>);
+    expect(screen.getByRole('button', { name: 'Ok' }).className).toContain('cursor-pointer');
+    expect(screen.getByRole('button', { name: 'Ok' }).className).toContain('disabled:cursor-not-allowed');
+  });
+
   it('does not fire when disabled', async () => {
     const onClick = vi.fn();
     render(
