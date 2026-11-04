@@ -9,12 +9,16 @@ export function FitWord({
   maxScreenHeight,
   className,
   style,
+  fills,
+  active = 0,
 }: {
   word: string;
   max?: number;
   maxScreenHeight?: number;
   className?: string;
   style?: CSSProperties;
+  fills?: CSSProperties[];
+  active?: number;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const sizer = useRef<HTMLSpanElement>(null);
@@ -46,9 +50,18 @@ export function FitWord({
       <span ref={sizer} className={cn(type, 'pointer-events-none absolute left-0 top-0 opacity-0')}>
         {word}
       </span>
-      <span className={cn(type, className)} style={style}>
+      <span className={cn(type, className, fills && 'invisible')} style={fills ? undefined : style}>
         {word}
       </span>
+      {fills?.map((fill, i) => (
+        <span
+          key={i}
+          style={fill}
+          className={cn(type, className, 'absolute inset-0 transition-opacity duration-700 ease-in-out', i === active ? 'opacity-100' : 'opacity-0')}
+        >
+          {word}
+        </span>
+      ))}
     </div>
   );
 }

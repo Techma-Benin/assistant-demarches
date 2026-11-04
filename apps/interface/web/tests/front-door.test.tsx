@@ -152,7 +152,7 @@ describe('FrontDoor', () => {
     const footer = document.querySelector('footer') as HTMLElement;
     expect(within(footer).getByText('Crédits photos')).toBeInTheDocument();
     const links = within(footer).getAllByRole('link', { name: /^«.*»$/ });
-    expect(links).toHaveLength(5);
+    expect(links).toHaveLength(6);
     expect(links[0]).toHaveAttribute('href', 'https://commons.wikimedia.org/wiki/File:Le_monument_de_l%27Amazone.jpg');
   });
 

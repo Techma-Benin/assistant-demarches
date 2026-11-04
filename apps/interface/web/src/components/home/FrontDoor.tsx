@@ -14,7 +14,7 @@ import { HERO_PHOTOS, HeroSlideshow } from './HeroSlideshow';
 import { AskDemo, PrepareDemo, ValidateDemo } from './HowItWorksDemos';
 import { NeverShowcase } from './NeverDemos';
 import { PromptDock } from './PromptDock';
-import { CatalogueSection } from './CatalogueSection';
+import { CATALOGUE_PHOTO_CREDITS, CatalogueSection } from './CatalogueSection';
 import { useReveal } from './use-reveal';
 
 export type FrontDoorProps = {
@@ -335,7 +335,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
                 Crédits photos
               </summary>
               <p className="m-0 pb-3 leading-relaxed">
-                {HERO_PHOTOS.map((p, i) => (
+                {[...HERO_PHOTOS, ...CATALOGUE_PHOTO_CREDITS].map((p, i) => (
                   <span key={p.page}>
                     {i > 0 && ' · '}
                     <a href={p.page} target="_blank" rel="noopener" className="underline underline-offset-4 hover:no-underline">

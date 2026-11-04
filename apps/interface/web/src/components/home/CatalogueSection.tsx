@@ -30,12 +30,14 @@ type Theme = {
   title: string;
   description: string;
   kind: DocumentKind;
+  backdrop: { src: string; size: string; y: string };
   items: { name: string; question: string; icon: LucideIcon; kind?: DocumentKind }[];
 };
 
 const CATALOGUE: Theme[] = [
   {
     title: 'Identité',
+    backdrop: { src: '/photos/fond-identite.jpg', size: 'cover', y: '50%' },
     description: 'Carte d’identité, certificats de résidence et de nationalité : les pièces qui prouvent qui vous êtes.',
     kind: 'cni',
     items: [
@@ -47,6 +49,7 @@ const CATALOGUE: Theme[] = [
   },
   {
     title: 'État civil',
+    backdrop: { src: '/photos/esplanade-statue-bande.jpg', size: 'cover', y: '50%' },
     description: 'Naissance, mariage, décès : les actes à demander, et comment les obtenir.',
     kind: 'acte-naissance',
     items: [
@@ -57,6 +60,7 @@ const CATALOGUE: Theme[] = [
   },
   {
     title: 'Voyage',
+    backdrop: { src: '/photos/pirogue-ganvie.jpg', size: 'auto 200svh', y: '100%' },
     description: 'Passeport et visa : les pièces, le coût et le délai avant de partir.',
     kind: 'passeport',
     items: [
@@ -66,6 +70,7 @@ const CATALOGUE: Theme[] = [
   },
   {
     title: 'Entreprise',
+    backdrop: { src: '/photos/vieux-pont-grand-popo.jpg', size: 'auto 200svh', y: '70%' },
     description: 'Créer, modifier ou fermer une entreprise, étape par étape.',
     kind: 'entreprise',
     items: [
@@ -76,6 +81,7 @@ const CATALOGUE: Theme[] = [
   },
   {
     title: 'Justice',
+    backdrop: { src: '/photos/porte-non-retour-ouidah.jpg', size: 'auto 200svh', y: '62%' },
     description: 'Casier judiciaire et légalisation de signature, sans aller-retour inutile.',
     kind: 'casier',
     items: [
@@ -85,6 +91,7 @@ const CATALOGUE: Theme[] = [
   },
   {
     title: 'Foncier et logement',
+    backdrop: { src: '/photos/tata-somba-nadoba.jpg', size: 'auto 200svh', y: '22%' },
     description: 'Titre foncier et permis de construire : savoir quoi préparer avant de déposer.',
     kind: 'permis',
     items: [
@@ -99,6 +106,16 @@ const h2Class = 'm-0 font-display font-extrabold leading-[1.02] tracking-[-0.04e
 
 /** Staggered entrance step: pass the order of the element inside its section. */
 const rv = (i: number) => ({ 'data-r': '', style: { '--r': i } as CSSProperties });
+
+export const CATALOGUE_PHOTO_CREDITS = [
+  {
+    src: '/photos/tata-somba-nadoba.jpg',
+    title: 'Tata Somba de Nadoba',
+    author: 'Step may',
+    licence: 'CC BY-SA 4.0',
+    page: 'https://commons.wikimedia.org/wiki/File:Tata_Somba_de_Nadoba.jpg',
+  },
+];
 
 const FAN_ROTATIONS = ['-rotate-[8deg]', 'rotate-0', 'rotate-[8deg]'];
 
@@ -150,7 +167,8 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
             word="DÉMARCHES"
             max={240}
             maxScreenHeight={0.22}
-            style={{ backgroundImage: 'url(/photos/esplanade-statue-bande.jpg)', backgroundSize: 'cover', backgroundPosition: '50% 50%' }}
+            fills={CATALOGUE.map((t) => ({ backgroundImage: `url(${t.backdrop.src})`, backgroundSize: t.backdrop.size, backgroundPosition: `50% ${t.backdrop.y}`, '--fy': t.backdrop.y }) as CSSProperties)}
+            active={selected}
             className="type-photo bg-fixed animate-[home-pan_24s_ease-in-out_infinite_alternate]"
           />
         </div>
