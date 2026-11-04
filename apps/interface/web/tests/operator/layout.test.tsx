@@ -55,6 +55,8 @@ describe('operator layout gate', () => {
     expect(activeLink.className).toContain('rounded-none');
     expect(activeLink.className).toContain('w-full');
     expect(activeLink.className).toContain('max-md:bg-canvas');
+    expect(activeLink.className).toContain('md:min-h-12');
+    expect(activeLink.className).toContain('md:py-3.5');
     const aside = container.querySelector('aside')!;
     expect(aside.className).not.toMatch(/border-r/);
     expect(aside.className).not.toMatch(/border-b/);
@@ -85,11 +87,23 @@ describe('operator layout gate', () => {
   it('persists sidebar collapse in localStorage', async () => {
     readSession.mockResolvedValue(user(['operator']));
     const ui = userEvent.setup();
-    render(await OperatorLayout({ children: <p>contenu</p> }));
+    const { container } = render(await OperatorLayout({ children: <p>contenu</p> }));
     await ui.click(screen.getByRole('button', { name: 'Replier le menu latéral' }));
     expect(localStorage.getItem(OPERATOR_NAV_COLLAPSED_KEY)).toBe('true');
     expect(screen.getByRole('button', { name: 'Déplier le menu latéral' })).toHaveAttribute('aria-expanded', 'false');
     const shell = screen.getByText('contenu').closest('.min-h-dvh')!;
     expect(shell.className).toContain('md:grid-cols-[4.25rem_minmax(0,1fr)]');
+    expect(shell).toHaveAttribute('data-collapsed', '');
+    const activeLink = screen.getByRole('link', { name: 'Connexions' });
+    expect(activeLink.className).toContain('md:size-12');
+    expect(activeLink.className).toContain('md:mx-auto');
+    const nav = screen.getByRole('navigation', { name: 'Navigation principale' });
+    const indicator = nav.querySelector('[data-nav-indicator]') as HTMLElement;
+    const width = Number.parseFloat(indicator.style.width);
+    const height = Number.parseFloat(indicator.style.height);
+    if (width > 0 && height > 0) {
+      expect(width).toBe(height);
+    }
+    expect(container.querySelector('[data-nav-indicator]')).toBeTruthy();
   });
 });

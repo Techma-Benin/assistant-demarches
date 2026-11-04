@@ -137,7 +137,14 @@ export function OperatorShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
-  const [indicator, setIndicator] = useState({ top: 0, height: 0, visible: false });
+  const [indicator, setIndicator] = useState({
+    top: 0,
+    left: 0,
+    width: 0,
+    height: 0,
+    visible: false,
+    fullWidth: true,
+  });
 
   useEffect(() => {
     setCollapsed(readStoredCollapsed());
@@ -153,12 +160,31 @@ export function OperatorShell({ children }: { children: ReactNode }) {
     }
     const listRect = list.getBoundingClientRect();
     const itemRect = activeEl.getBoundingClientRect();
+    const top = itemRect.top - listRect.top;
+
+    if (collapsed) {
+      const size = Math.min(itemRect.width, itemRect.height);
+      const left = itemRect.left - listRect.left + (itemRect.width - size) / 2;
+      setIndicator({
+        top,
+        left,
+        width: size,
+        height: size,
+        visible: true,
+        fullWidth: false,
+      });
+      return;
+    }
+
     setIndicator({
-      top: itemRect.top - listRect.top,
+      top,
+      left: 0,
+      width: 0,
       height: itemRect.height,
       visible: true,
+      fullWidth: true,
     });
-  }, []);
+  }, [collapsed]);
 
   useLayoutEffect(() => {
     measureIndicator();
@@ -200,6 +226,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
 
   return (
     <div
+      data-collapsed={collapsed ? '' : undefined}
       className={cn(
         'min-h-dvh md:grid md:transition-[grid-template-columns] md:duration-[220ms] md:ease-(--ui-ease-drawer)',
         collapsed ? 'md:grid-cols-[4.25rem_minmax(0,1fr)]' : 'md:grid-cols-[15rem_minmax(0,1fr)]',
@@ -238,18 +265,27 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                 aria-hidden="true"
                 data-nav-indicator=""
                 className={cn(
-                  'pointer-events-none absolute inset-x-0 z-0 hidden md:block motion-reduce:transition-none',
-                  'transition-[transform,height] duration-[220ms] ease-(--ui-ease-drawer)',
+                  'pointer-events-none absolute z-0 hidden md:block motion-reduce:transition-none',
+                  indicator.fullWidth && 'inset-x-0',
+                  'transition-[transform,width,height] duration-[220ms] ease-(--ui-ease-drawer)',
                   indicator.visible ? 'opacity-100' : 'opacity-0',
                 )}
-                style={{
-                  transform: `translateY(${indicator.top}px)`,
-                  height: indicator.height || undefined,
-                }}
+                style={
+                  indicator.fullWidth
+                    ? {
+                        transform: `translateY(${indicator.top}px)`,
+                        height: indicator.height || undefined,
+                      }
+                    : {
+                        transform: `translate(${indicator.left}px, ${indicator.top}px)`,
+                        width: indicator.width || undefined,
+                        height: indicator.height || undefined,
+                      }
+                }
               >
                 <span className="absolute inset-0 bg-canvas" />
               </div>
-              <ul ref={listRef} className="relative z-10 flex gap-1 md:flex-col md:gap-0">
+              <ul ref={listRef} className="relative z-10 flex gap-1 md:flex-col md:gap-1">
                 {NAV.map(({ href, label, icon }) => {
                   const active = isActive(href, pathname);
                   const link = (
@@ -258,11 +294,12 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                       aria-current={active ? 'page' : undefined}
                       data-nav-active={active ? 'true' : undefined}
                       className={cn(
-                        'flex min-h-11 w-full items-center justify-center gap-2 rounded-none px-2 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:min-h-10 md:justify-start md:gap-3 md:px-3',
+                        'flex min-h-12 w-full items-center justify-center gap-2 rounded-none px-2 py-3 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:min-h-12 md:justify-start md:gap-3 md:px-3 md:py-3.5',
                         active
                           ? 'text-ink max-md:bg-canvas md:bg-transparent'
                           : 'text-ink-muted hover:bg-sunken/80 hover:text-ink dark:hover:bg-sunken/60',
-                        collapsed && 'md:justify-center md:px-0',
+                        collapsed &&
+                          'md:mx-auto md:size-12 md:min-h-12 md:max-h-12 md:min-w-12 md:max-w-12 md:justify-center md:px-0 md:py-0',
                       )}
                     >
                       <NavIcon icon={icon} />
@@ -278,7 +315,10 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                   );
 
                   return (
-                    <li key={href} className="flex-1 md:flex-none md:w-full">
+                    <li
+                      key={href}
+                      className={cn('flex-1 md:flex-none md:w-full', collapsed && 'md:flex md:justify-center')}
+                    >
                       {collapsed ? (
                         <Tooltip label={label} side="right">
                           {link}
