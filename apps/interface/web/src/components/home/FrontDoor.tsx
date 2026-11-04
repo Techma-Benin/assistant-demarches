@@ -26,7 +26,7 @@ export type FrontDoorProps = {
   resume?: { title: string | null; at: string; onResume: () => void };
 };
 
-const SUGGESTIONS = ['Comment obtenir un casier judiciaire ?', 'Renouveler mon passeport', 'Déclarer une naissance', 'Créer mon entreprise'];
+const SUGGESTIONS = ['Obtenir un casier judiciaire', 'Renouveler mon passeport', 'Déclarer une naissance', 'Créer mon entreprise'];
 
 const SHOWCASE: CarouselItem[] = [
   { name: 'Acte de naissance', kind: 'acte-naissance', detail: 'État civil', question: 'Comment obtenir un acte de naissance ?' },
@@ -114,58 +114,68 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
           </div>
         </header>
 
-      <section id="top" aria-labelledby="hero-title" className="flex flex-1 flex-col">
-        <div className="px-5 text-center md:px-10">
-          <h1
-            id="hero-title"
-            className="m-0 mt-2 text-balance font-display text-[clamp(40px,min(7vw,10svh),104px)] font-extrabold leading-[0.95] tracking-[-0.045em] md:mt-4"
-          >
-            <span className="hero-word">Vos</span>{' '}
-            <span className="hero-word" style={{ '--d': 90 } as CSSProperties}>démarches,</span>{' '}
-            <span className="hero-word" style={{ '--d': 180 } as CSSProperties}>simplement.</span>
-          </h1>
-          <p style={{ '--d': 320 } as CSSProperties} className="hero-in m-0 mt-3 font-display text-[clamp(17px,min(2vw,2.6svh),24px)] font-semibold tracking-[-0.02em] text-ink-muted">
-            Quelle que soit votre démarche, commencez ici.
-          </p>
-        </div>
-
-        <div className="mt-5 px-3 md:mt-7 md:px-6">
-          <div ref={heroPrompt} style={{ '--d': 440 } as CSSProperties} className="hero-in relative z-10 mx-auto -mb-8 w-full max-w-[880px] md:-mb-9">
-            <Composer
-              variant="compact"
-              label="Votre question"
-              placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
-              value={draft}
-              onValueChange={setDraft}
-              onSend={submitDraft}
-              onFiles={onFiles}
-              staged={staged}
-              hint={false}
-              disabled={disabled}
-              className="w-full text-left"
-            />
+      <section
+        id="top"
+        aria-labelledby="hero-title"
+        className="mx-auto flex w-full max-w-[1320px] flex-1 flex-col lg:grid lg:grid-cols-12 lg:gap-x-8 lg:px-8 lg:pb-6"
+      >
+        <div className="contents lg:col-span-5 lg:flex lg:flex-col lg:justify-center lg:py-6">
+          <div className="px-5 text-center lg:px-0 lg:text-left">
+            <h1
+              id="hero-title"
+              className="m-0 mt-2 font-display text-[clamp(40px,min(7vw,10svh),104px)] font-extrabold leading-[0.95] tracking-[-0.045em] md:mt-4 lg:mt-0 lg:text-[clamp(44px,min(4.6vw,8.5svh),70px)]"
+            >
+              <span className="block whitespace-nowrap">
+                <span className="hero-word">Vos</span>{' '}
+                <span className="hero-word" style={{ '--d': 90 } as CSSProperties}>démarches,</span>
+              </span>
+              <span className="block whitespace-nowrap">
+                <span className="hero-word" style={{ '--d': 180 } as CSSProperties}>simplement.</span>
+              </span>
+            </h1>
+            <p style={{ '--d': 320 } as CSSProperties} className="hero-in m-0 mt-3 font-display text-[clamp(17px,min(2vw,2.6svh),24px)] font-semibold tracking-[-0.02em] text-ink-muted lg:mt-4">
+              Quelle que soit votre démarche, commencez ici.
+            </p>
           </div>
-        </div>
 
-        <HeroSlideshow className="min-h-[260px] flex-1 lg:min-h-[360px] lg:max-w-[1200px]" />
-
-        <div className="flex flex-col items-center gap-2 pb-4 pt-3 text-center md:px-10 md:pb-5">
-          {resume && <ResumeLine {...resume} />}
-          <div className="ui-scrollbar-none flex w-full max-w-full gap-2 overflow-x-auto px-5 md:flex-wrap md:justify-center md:overflow-visible md:px-0">
-            {SUGGESTIONS.map((s, i) => (
-              <Chip
-                key={s}
+          <div className="mt-5 px-3 md:mt-7 md:px-6 lg:mt-7 lg:px-0">
+            <div ref={heroPrompt} style={{ '--d': 440 } as CSSProperties} className="hero-in relative z-10 mx-auto -mb-8 w-full max-w-[880px] md:-mb-9 lg:mb-0">
+              <Composer
+                variant="compact"
+                label="Votre question"
+                placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
+                value={draft}
+                onValueChange={setDraft}
+                onSend={submitDraft}
+                onFiles={onFiles}
+                staged={staged}
+                hint={false}
                 disabled={disabled}
-                onClick={() => ask(s)}
-                style={{ '--d': 560 + i * 70 } as CSSProperties}
-                className="hero-in shrink-0"
-              >
-                {s}
-              </Chip>
-            ))}
+                className="w-full text-left"
+              />
+            </div>
           </div>
-          <p style={{ '--d': 860 } as CSSProperties} className="hero-in m-0 px-5 text-[14px] text-ink-muted md:text-[15px]">Sans connexion pour poser une question · Chaque information administrative cite sa fiche officielle</p>
+
+          <div className="order-last flex flex-col items-center gap-2 pb-4 pt-3 text-center lg:order-none lg:items-start lg:pb-0 lg:pt-5 lg:text-left">
+            {resume && <ResumeLine {...resume} />}
+            <div className="ui-scrollbar-none flex w-full max-w-full gap-2 overflow-x-auto px-5 md:flex-wrap md:justify-center md:overflow-visible lg:justify-start lg:px-0">
+              {SUGGESTIONS.map((s, i) => (
+                <Chip
+                  key={s}
+                  disabled={disabled}
+                  onClick={() => ask(s)}
+                  style={{ '--d': 560 + i * 70 } as CSSProperties}
+                  className="hero-in shrink-0"
+                >
+                  {s}
+                </Chip>
+              ))}
+            </div>
+            <p style={{ '--d': 860 } as CSSProperties} className="hero-in m-0 px-5 text-[14px] text-ink-muted md:text-[15px] lg:px-0">Sans connexion pour poser une question · Chaque information administrative cite sa fiche officielle</p>
+          </div>
         </div>
+
+        <HeroSlideshow className="min-h-[260px] flex-1 lg:col-span-7 lg:min-h-[420px] lg:px-0 lg:py-2" />
       </section>
       </div>
 
