@@ -193,6 +193,15 @@ describe('action visibility by status (A5)', () => {
     expect(buttons().filter((label) => label !== 'Réessayer')).toEqual([...expected]);
   });
 
+  it('hides Prendre en charge once claimedBy is set', async () => {
+    await open({ status: 'in_review', claimedBy: OFFICIAL_ID });
+    expect(buttons().filter((label) => label !== 'Réessayer')).toEqual([
+      'Demander un complément',
+      'Approuver',
+      'Rejeter',
+    ]);
+  });
+
   it('hides every action without cases:act', async () => {
     resetConsole(['cases:read']);
     await open({ status: 'in_review' });
@@ -228,6 +237,7 @@ describe('actions (A5)', () => {
     // The returned case replaces the displayed one: status and buttons follow.
     expect(await screen.findByText('En vérification')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approuver' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Prendre en charge' })).toBeNull();
   });
 
   it('approves with note null', async () => {

@@ -105,10 +105,11 @@ export function completedByLabel(item: Pick<Case, 'completedBy'>): string | null
   return null;
 }
 
-/** Actions an agent may take, by status (§8). The server decides in the end. */
-export function allowedActions(status: CaseStatus): CaseAction[] {
+/** Actions an agent may take, by status and claim (§8). The server decides in the end. */
+export function allowedActions(item: Pick<Case, 'status' | 'claimedBy'>): CaseAction[] {
+  const { status, claimedBy } = item;
   const actions: CaseAction[] = [];
-  if (status === 'received' || status === 'in_review') actions.push('claim');
+  if ((status === 'received' || status === 'in_review') && !claimedBy) actions.push('claim');
   if (status === 'in_review') actions.push('request_information', 'approve');
   if (status === 'in_review' || status === 'information_requested') actions.push('reject');
   return actions;

@@ -27,7 +27,7 @@ export function WorkActions({
   /** 409: the case changed meanwhile, the parent reloads it. */
   onConflict: () => void;
 }) {
-  const actions = allowedActions(item.status);
+  const actions = allowedActions(item);
   const [pending, setPending] = useState<CaseAction | null>(null); // action awaiting a note
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
