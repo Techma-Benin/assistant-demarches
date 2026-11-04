@@ -1,94 +1,104 @@
-/* Connection schema from the operator-console maquette (Assistant → branches). */
+/* Centered connection schema: prominent Assistant hub → three compact branches. */
 .op-status-chain {
   container-type: inline-size;
   display: flex;
-  align-items: center;
+  justify-content: center;
+  width: 100%;
 }
 
-.op-status-root {
+.op-status-cluster {
   display: flex;
-  flex: none;
-  width: 92px;
+  width: fit-content;
+  max-width: 100%;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 14px 6px;
+}
+
+.op-status-hub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 28px 20px;
   border: 1.5px solid var(--ui-border);
-  border-radius: 16px;
+  border-radius: 22px;
   text-align: center;
   background: var(--ui-surface);
+  box-shadow: 0 1px 0 light-dark(rgb(0 0 0 / 4%), rgb(255 255 255 / 4%));
 }
 
-.op-status-root-name {
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.1;
+.op-status-hub-mark {
+  display: block;
+  width: 88px;
+  height: 88px;
+  border-radius: 20px;
+  object-fit: cover;
 }
 
-.op-status-root-stamp {
-  font-size: 11.5px;
-  line-height: 1.2;
+.op-status-hub-name {
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.op-status-hub-stamp {
+  font-size: 12px;
+  line-height: 1.25;
   color: var(--ui-text-subtle);
 }
 
-.op-status-root-wire {
+.op-status-stem {
   display: block;
   flex: none;
-  width: 18px;
-  height: 2px;
+  width: 2px;
+  height: 22px;
   background: var(--ui-trust-line);
 }
 
 .op-status-branches {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.op-status-branches > li {
   position: relative;
-  padding: 0 0 12px 22px;
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  gap: 14px 16px;
+  margin: 0;
+  padding: 22px 0 0;
+  list-style: none;
+  justify-content: center;
 }
 
-.op-status-branches > li:last-child {
-  padding-bottom: 0;
-}
-
-.op-status-branches > li::before {
+.op-status-branches::before {
   position: absolute;
-  top: 32px;
+  top: 0;
+  right: 0;
   left: 0;
-  width: 22px;
   height: 2px;
   background: var(--ui-trust-line);
   content: '';
 }
 
-.op-status-branches > li::after {
+.op-status-branches > li {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: 18px;
+}
+
+.op-status-branches > li::before {
   position: absolute;
   top: 0;
-  bottom: 0;
-  left: 0;
+  left: 50%;
   width: 2px;
+  height: 18px;
   background: var(--ui-trust-line);
+  transform: translateX(-50%);
   content: '';
-}
-
-.op-status-branches > li:first-child::after {
-  top: 32px;
-}
-
-.op-status-branches > li:last-child::after {
-  bottom: auto;
-  height: 34px;
 }
 
 .op-status-card {
   display: block;
+  width: max-content;
+  max-width: min(22rem, 100%);
   padding: 14px 16px;
   border: 1.5px solid var(--ui-border);
   border-radius: 18px;
@@ -119,7 +129,7 @@ a.op-status-card:active {
 
 .op-status-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
 }
 
@@ -237,23 +247,37 @@ a.op-status-card:active {
   content: '';
 }
 
-@container (max-width: 560px) {
-  .op-status-root,
-  .op-status-root-wire {
+@container (max-width: 920px) {
+  .op-status-branches {
+    grid-template-columns: 1fr;
+    width: 100%;
+    max-width: 22rem;
+    padding-top: 0;
+  }
+
+  .op-status-branches::before,
+  .op-status-branches > li::before {
     display: none;
   }
 
   .op-status-branches > li {
-    padding: 0 0 10px;
+    padding-top: 0;
   }
 
-  .op-status-branches > li:last-child {
-    padding-bottom: 0;
+  .op-status-stem {
+    height: 16px;
   }
 
-  .op-status-branches > li::before,
-  .op-status-branches > li::after {
-    display: none;
+  .op-status-card {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+@container (max-width: 420px) {
+  .op-status-hub {
+    width: 100%;
+    max-width: 22rem;
   }
 }
 

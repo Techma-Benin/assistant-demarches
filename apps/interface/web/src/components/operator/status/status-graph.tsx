@@ -1,7 +1,7 @@
 'use client';
 
-import { FlagGlyph } from '@techma/ui';
 import { Cpu, Landmark, Plug, type LucideIcon } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { OperatorStatus } from '@/lib/operator/api';
@@ -66,79 +66,94 @@ export function StatusGraph({ status }: { status: OperatorStatus }) {
 
   return (
     <section aria-label="Schéma des connexions" className="op-status-chain">
-      <div className="op-status-root">
-        <FlagGlyph decorative width={30} height={22} />
-        <span className="op-status-root-name">Assistant</span>
-        <span className="op-status-root-stamp">Vérifié à l’instant</span>
+      <div className="op-status-cluster">
+        <div className="op-status-hub">
+          <Image
+            src="/operateur/assistant-mark.jpg"
+            alt="Assistant"
+            width={88}
+            height={88}
+            className="op-status-hub-mark"
+            priority
+          />
+          <span className="op-status-hub-name">Assistant</span>
+          <span className="op-status-hub-stamp">Vérifié à l’instant</span>
+        </div>
+        <span className="op-status-stem" aria-hidden="true" />
+        <ul className="op-status-branches">
+          <li>
+            <BranchCard href="/operateur/modeles">
+              <div className="op-status-head">
+                <Tile kind="model" icon={Cpu} />
+                <div className="op-status-main">
+                  <div className="op-status-title-row">
+                    <h2 id="op-status-model">Modèle</h2>
+                    {status.model ? (
+                      <StatusBadge ok={status.model.reachable}>
+                        {status.model.reachable ? 'Joignable' : 'Injoignable'}
+                      </StatusBadge>
+                    ) : null}
+                  </div>
+                  <p className="op-status-sub">{status.model ? status.model.label : 'Aucun modèle actif.'}</p>
+                </div>
+              </div>
+            </BranchCard>
+          </li>
+          <li>
+            <BranchCard href="/operateur/mcp">
+              <div className="op-status-head">
+                <Tile kind="mcp" icon={Plug} />
+                <div className="op-status-main">
+                  <div className="op-status-title-row">
+                    <h2 id="op-status-mcp">Serveurs MCP</h2>
+                    {status.mcpServers.length > 0 ? (
+                      <StatusBadge ok={mcpOk}>{mcpOk ? 'Joignable' : 'Injoignable'}</StatusBadge>
+                    ) : null}
+                  </div>
+                  <p className="op-status-sub">{mcpCopy(status.mcpServers)}</p>
+                </div>
+              </div>
+            </BranchCard>
+          </li>
+          <li>
+            <BranchCard labelledBy="op-status-admins">
+              <div className="op-status-head">
+                <Tile kind="admin" icon={Landmark} />
+                <div className="op-status-main">
+                  <div className="op-status-title-row">
+                    <h2 id="op-status-admins">Administrations</h2>
+                    {connected.length > 0 ? (
+                      <StatusBadge>
+                        {connected.length} connectée{connected.length > 1 ? 's' : ''}
+                      </StatusBadge>
+                    ) : null}
+                  </div>
+                  <p className="op-status-sub">
+                    {connected.length > 0 ? 'X-Road simulé' : 'Aucune administration connectée.'}
+                  </p>
+                </div>
+              </div>
+              {connected.length > 0 ? (
+                <ul className="op-status-chips" aria-label="Administrations connectées">
+                  {connected.map((administration) => (
+                    <li
+                      key={administration.id}
+                      className="op-status-chip"
+                      title={
+                        administration.connection.since
+                          ? `${administration.name} · depuis le ${formatDate(administration.connection.since)}`
+                          : administration.name
+                      }
+                    >
+                      {administration.shortName || administration.name}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </BranchCard>
+          </li>
+        </ul>
       </div>
-      <span className="op-status-root-wire" aria-hidden="true" />
-      <ul className="op-status-branches">
-        <li>
-          <BranchCard href="/operateur/modeles">
-            <div className="op-status-head">
-              <Tile kind="model" icon={Cpu} />
-              <div className="op-status-main">
-                <div className="op-status-title-row">
-                  <h2 id="op-status-model">Modèle</h2>
-                  {status.model ? <StatusBadge ok={status.model.reachable}>{status.model.reachable ? 'Joignable' : 'Injoignable'}</StatusBadge> : null}
-                </div>
-                <p className="op-status-sub">{status.model ? status.model.label : 'Aucun modèle actif.'}</p>
-              </div>
-            </div>
-          </BranchCard>
-        </li>
-        <li>
-          <BranchCard href="/operateur/mcp">
-            <div className="op-status-head">
-              <Tile kind="mcp" icon={Plug} />
-              <div className="op-status-main">
-                <div className="op-status-title-row">
-                  <h2 id="op-status-mcp">Serveurs MCP</h2>
-                  {status.mcpServers.length > 0 ? <StatusBadge ok={mcpOk}>{mcpOk ? 'Joignable' : 'Injoignable'}</StatusBadge> : null}
-                </div>
-                <p className="op-status-sub">{mcpCopy(status.mcpServers)}</p>
-              </div>
-            </div>
-          </BranchCard>
-        </li>
-        <li>
-          <BranchCard labelledBy="op-status-admins">
-            <div className="op-status-head">
-              <Tile kind="admin" icon={Landmark} />
-              <div className="op-status-main">
-                <div className="op-status-title-row">
-                  <h2 id="op-status-admins">Administrations</h2>
-                  {connected.length > 0 ? (
-                    <StatusBadge>
-                      {connected.length} connectée{connected.length > 1 ? 's' : ''}
-                    </StatusBadge>
-                  ) : null}
-                </div>
-                <p className="op-status-sub">
-                  {connected.length > 0 ? 'X-Road simulé' : 'Aucune administration connectée.'}
-                </p>
-              </div>
-            </div>
-            {connected.length > 0 ? (
-              <ul className="op-status-chips" aria-label="Administrations connectées">
-                {connected.map((administration) => (
-                  <li
-                    key={administration.id}
-                    className="op-status-chip"
-                    title={
-                      administration.connection.since
-                        ? `${administration.name} · depuis le ${formatDate(administration.connection.since)}`
-                        : administration.name
-                    }
-                  >
-                    {administration.shortName || administration.name}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </BranchCard>
-        </li>
-      </ul>
     </section>
   );
 }
