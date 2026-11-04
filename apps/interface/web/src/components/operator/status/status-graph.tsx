@@ -1,11 +1,24 @@
 'use client';
 
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+  type Edge,
+  type Node,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { Cpu, Landmark, Plug, type LucideIcon } from 'lucide-react';
-import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { OperatorStatus } from '@/lib/operator/api';
 import { formatDate } from '../ui';
-import { AssistantMark } from './assistant-mark';
+import {
+  ADMIN_CHIPS_EXTRA,
+  CARD_HEIGHT,
+  buildStatusGraphElements,
+  statusGraphHeight,
+} from './status-graph-layout';
+import { statusGraphNodeTypes, type BranchNodeData } from './status-graph-nodes';
 import './status-graph.css';
 
 type Administration = OperatorStatus['administrations'][number];
@@ -23,29 +36,6 @@ function Tile({ kind, icon: Icon }: { kind: 'model' | 'mcp' | 'admin'; icon: Luc
   );
 }
 
-function BranchCard({
-  href,
-  labelledBy,
-  children,
-}: {
-  href?: string;
-  labelledBy?: string;
-  children: ReactNode;
-}) {
-  if (href) {
-    return (
-      <Link href={href} className="op-status-card">
-        {children}
-      </Link>
-    );
-  }
-  return (
-    <div className="op-status-card" aria-labelledby={labelledBy}>
-      {children}
-    </div>
-  );
-}
-
 function mcpCopy(servers: McpServer[]): string {
   if (servers.length === 0) return 'Aucun serveur MCP.';
   return servers
@@ -60,94 +50,169 @@ function connectedAdministrations(administrations: Administration[]): Administra
   return administrations.filter((administration) => administration.connection.status === 'connected');
 }
 
-export function StatusGraph({ status }: { status: OperatorStatus }) {
+function FitViewWhenReady({ layoutKey }: { layoutKey: string }) {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      void fitView({ padding: 0.08, duration: 0, minZoom: 1, maxZoom: 1 });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [fitView, layoutKey]);
+  return null;
+}
+
+function StatusGraphFlow({ status, width }: { status: OperatorStatus; width: number }) {
   const connected = connectedAdministrations(status.administrations);
   const mcpOk = status.mcpServers.every((server) => !server.enabled || server.reachable);
+  const adminHasChips = connected.length > 0;
+
+  const branches = useMemo(() => {
+    const modelBody = (
+      <div className="op-status-head">
+        <Tile kind="model" icon={Cpu} />
+        <div className="op-status-main">
+          <div className="op-status-title-row">
+            <h2 id="op-status-model">Modèle</h2>
+            {status.model ? (
+              <StatusBadge ok={status.model.reachable}>
+                {status.model.reachable ? 'Joignable' : 'Injoignable'}
+              </StatusBadge>
+            ) : null}
+          </div>
+          <p className="op-status-sub">{status.model ? status.model.label : 'Aucun modèle actif.'}</p>
+        </div>
+      </div>
+    );
+
+    const mcpBody = (
+      <div className="op-status-head">
+        <Tile kind="mcp" icon={Plug} />
+        <div className="op-status-main">
+          <div className="op-status-title-row">
+            <h2 id="op-status-mcp">Serveurs MCP</h2>
+            {status.mcpServers.length > 0 ? (
+              <StatusBadge ok={mcpOk}>{mcpOk ? 'Joignable' : 'Injoignable'}</StatusBadge>
+            ) : null}
+          </div>
+          <p className="op-status-sub">{mcpCopy(status.mcpServers)}</p>
+        </div>
+      </div>
+    );
+
+    const adminBody = (
+      <>
+        <div className="op-status-head">
+          <Tile kind="admin" icon={Landmark} />
+          <div className="op-status-main">
+            <div className="op-status-title-row">
+              <h2 id="op-status-admins">Administrations</h2>
+              {connected.length > 0 ? (
+                <StatusBadge>
+                  {connected.length} connectée{connected.length > 1 ? 's' : ''}
+                </StatusBadge>
+              ) : null}
+            </div>
+            <p className="op-status-sub">
+              {connected.length > 0 ? 'X-Road simulé' : 'Aucune administration connectée.'}
+            </p>
+          </div>
+        </div>
+        {connected.length > 0 ? (
+          <ul className="op-status-chips" aria-label="Administrations connectées">
+            {connected.map((administration) => (
+              <li
+                key={administration.id}
+                className="op-status-chip"
+                title={
+                  administration.connection.since
+                    ? `${administration.name} · depuis le ${formatDate(administration.connection.since)}`
+                    : administration.name
+                }
+              >
+                {administration.shortName || administration.name}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </>
+    );
+
+    const adminHeight = adminHasChips ? CARD_HEIGHT + ADMIN_CHIPS_EXTRA : CARD_HEIGHT;
+
+    return [
+      {
+        id: 'model' as const,
+        height: CARD_HEIGHT,
+        data: { href: '/operateur/modeles', children: modelBody } satisfies BranchNodeData,
+      },
+      {
+        id: 'mcp' as const,
+        height: CARD_HEIGHT,
+        data: { href: '/operateur/mcp', children: mcpBody } satisfies BranchNodeData,
+      },
+      {
+        id: 'admin' as const,
+        height: adminHeight,
+        data: { labelledBy: 'op-status-admins', children: adminBody } satisfies BranchNodeData,
+      },
+    ];
+  }, [adminHasChips, connected, mcpOk, status]);
+
+  const { nodes, edges } = useMemo(
+    () => buildStatusGraphElements(width, branches),
+    [branches, width],
+  );
+
+  const layoutKey = `${width}-${adminHasChips}-${status.model?.id ?? 'none'}-${status.mcpServers.length}`;
+
+  return (
+    <ReactFlow
+      nodes={nodes as Node[]}
+      edges={edges as Edge[]}
+      nodeTypes={statusGraphNodeTypes}
+      nodesDraggable={false}
+      nodesConnectable={false}
+      elementsSelectable={false}
+      panOnDrag={false}
+      panOnScroll={false}
+      zoomOnScroll={false}
+      zoomOnPinch={false}
+      zoomOnDoubleClick={false}
+      preventScrolling={false}
+      proOptions={{ hideAttribution: true }}
+      fitView
+      fitViewOptions={{ padding: 0.08, minZoom: 1, maxZoom: 1 }}
+    >
+      <FitViewWhenReady layoutKey={layoutKey} />
+    </ReactFlow>
+  );
+}
+
+export function StatusGraph({ status }: { status: OperatorStatus }) {
+  const shellRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(960);
+
+  const connected = connectedAdministrations(status.administrations);
+  const height = statusGraphHeight(width, connected.length > 0);
+
+  useEffect(() => {
+    const el = shellRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const next = entries[0]?.contentRect.width;
+      if (next && next > 0) setWidth(next);
+    });
+    observer.observe(el);
+    setWidth(el.getBoundingClientRect().width || 960);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <section aria-label="Schéma des connexions" className="op-status-chain">
-      <div className="op-status-cluster">
-        <div className="op-status-hub">
-          <span className="op-status-hub-mark" role="img" aria-label="Assistant">
-            <AssistantMark />
-          </span>
-          <span className="op-status-hub-name">Assistant</span>
-          <span className="op-status-hub-stamp">Vérifié à l’instant</span>
-        </div>
-        <span className="op-status-stem" aria-hidden="true" />
-        <ul className="op-status-branches">
-          <li>
-            <BranchCard href="/operateur/modeles">
-              <div className="op-status-head">
-                <Tile kind="model" icon={Cpu} />
-                <div className="op-status-main">
-                  <div className="op-status-title-row">
-                    <h2 id="op-status-model">Modèle</h2>
-                    {status.model ? (
-                      <StatusBadge ok={status.model.reachable}>
-                        {status.model.reachable ? 'Joignable' : 'Injoignable'}
-                      </StatusBadge>
-                    ) : null}
-                  </div>
-                  <p className="op-status-sub">{status.model ? status.model.label : 'Aucun modèle actif.'}</p>
-                </div>
-              </div>
-            </BranchCard>
-          </li>
-          <li>
-            <BranchCard href="/operateur/mcp">
-              <div className="op-status-head">
-                <Tile kind="mcp" icon={Plug} />
-                <div className="op-status-main">
-                  <div className="op-status-title-row">
-                    <h2 id="op-status-mcp">Serveurs MCP</h2>
-                    {status.mcpServers.length > 0 ? (
-                      <StatusBadge ok={mcpOk}>{mcpOk ? 'Joignable' : 'Injoignable'}</StatusBadge>
-                    ) : null}
-                  </div>
-                  <p className="op-status-sub">{mcpCopy(status.mcpServers)}</p>
-                </div>
-              </div>
-            </BranchCard>
-          </li>
-          <li>
-            <BranchCard labelledBy="op-status-admins">
-              <div className="op-status-head">
-                <Tile kind="admin" icon={Landmark} />
-                <div className="op-status-main">
-                  <div className="op-status-title-row">
-                    <h2 id="op-status-admins">Administrations</h2>
-                    {connected.length > 0 ? (
-                      <StatusBadge>
-                        {connected.length} connectée{connected.length > 1 ? 's' : ''}
-                      </StatusBadge>
-                    ) : null}
-                  </div>
-                  <p className="op-status-sub">
-                    {connected.length > 0 ? 'X-Road simulé' : 'Aucune administration connectée.'}
-                  </p>
-                </div>
-              </div>
-              {connected.length > 0 ? (
-                <ul className="op-status-chips" aria-label="Administrations connectées">
-                  {connected.map((administration) => (
-                    <li
-                      key={administration.id}
-                      className="op-status-chip"
-                      title={
-                        administration.connection.since
-                          ? `${administration.name} · depuis le ${formatDate(administration.connection.since)}`
-                          : administration.name
-                      }
-                    >
-                      {administration.shortName || administration.name}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </BranchCard>
-          </li>
-        </ul>
+      <div ref={shellRef} className="op-status-flow" style={{ height }}>
+        <ReactFlowProvider>
+          <StatusGraphFlow status={status} width={width} />
+        </ReactFlowProvider>
       </div>
     </section>
   );

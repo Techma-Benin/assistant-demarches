@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -22,8 +22,14 @@ describe('Statut', () => {
     stubOperator((call) => (call.path === '/status' ? json(status) : undefined));
     render(<StatusPage />);
 
-    expect(await screen.findByRole('region', { name: 'Schéma des connexions' })).toBeInTheDocument();
+    const schema = await screen.findByRole('region', { name: 'Schéma des connexions' });
+    expect(schema).toBeInTheDocument();
     expect(screen.getByText('Assistant')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(schema).getAllByTestId('rf__edge-hub-model')).toHaveLength(1);
+      expect(within(schema).getAllByTestId('rf__edge-hub-mcp')).toHaveLength(1);
+      expect(within(schema).getAllByTestId('rf__edge-hub-admin')).toHaveLength(1);
+    });
 
     const model = screen.getByRole('link', { name: /Modèle/ });
     expect(model).toHaveAttribute('href', '/operateur/modeles');
@@ -42,7 +48,7 @@ describe('Statut', () => {
     render(<StatusPage />);
 
     const schema = await screen.findByRole('region', { name: 'Schéma des connexions' });
-    const admins = within(schema).getByRole('heading', { name: 'Administrations' }).closest('.op-status-card')!;
+    const admins = within(schema).getByRole('heading', { name: 'Administrations' }).closest('.op-status-card') as HTMLElement;
     expect(within(admins).getByText('Justice')).toBeInTheDocument();
     expect(within(admins).getByText('1 connectée')).toBeInTheDocument();
     expect(within(admins).queryByText('ANIP')).not.toBeInTheDocument();

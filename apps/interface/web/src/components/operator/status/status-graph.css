@@ -1,17 +1,57 @@
-/* Centered connection schema: prominent Assistant hub → three compact branches. */
+/* Centered connection schema: Assistant hub → three branch cards via React Flow edges. */
 .op-status-chain {
-  container-type: inline-size;
   display: flex;
   justify-content: center;
   width: 100%;
 }
 
-.op-status-cluster {
-  display: flex;
-  width: fit-content;
-  max-width: 100%;
-  flex-direction: column;
-  align-items: center;
+.op-status-flow {
+  width: 100%;
+  max-width: 980px;
+}
+
+.op-status-flow .react-flow {
+  --xy-edge-stroke-default: var(--ui-trust-line);
+  --xy-edge-stroke-width-default: 2;
+  --xy-background-color: transparent;
+}
+
+.op-status-flow .react-flow__pane {
+  cursor: default;
+}
+
+.op-status-flow .react-flow__node {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.op-status-flow .react-flow__edge-path {
+  stroke: var(--ui-trust-line);
+  stroke-width: 2;
+}
+
+.op-status-hub-node,
+.op-status-branch-node {
+  position: relative;
+}
+
+.op-status-handle {
+  width: 6px;
+  height: 6px;
+  border: none;
+  background: var(--ui-trust-line);
+  opacity: 0;
+  transform: none;
+}
+
+.op-status-handle--source {
+  bottom: -1px;
+}
+
+.op-status-handle--target {
+  top: -1px;
 }
 
 .op-status-hub {
@@ -50,53 +90,6 @@
   font-size: 12px;
   line-height: 1.25;
   color: var(--ui-text-subtle);
-}
-
-.op-status-stem {
-  display: block;
-  flex: none;
-  width: 2px;
-  height: 22px;
-  background: var(--ui-trust-line);
-}
-
-.op-status-branches {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(3, max-content);
-  gap: 14px 16px;
-  margin: 0;
-  padding: 22px 0 0;
-  list-style: none;
-  justify-content: center;
-}
-
-.op-status-branches::before {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 2px;
-  background: var(--ui-trust-line);
-  content: '';
-}
-
-.op-status-branches > li {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  padding-top: 18px;
-}
-
-.op-status-branches > li::before {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: 2px;
-  height: 18px;
-  background: var(--ui-trust-line);
-  transform: translateX(-50%);
-  content: '';
 }
 
 .op-status-card {
@@ -251,37 +244,15 @@ a.op-status-card:active {
   content: '';
 }
 
-@container (max-width: 920px) {
-  .op-status-branches {
-    grid-template-columns: 1fr;
-    width: 100%;
-    max-width: 22rem;
-    padding-top: 0;
-  }
-
-  .op-status-branches::before,
-  .op-status-branches > li::before {
-    display: none;
-  }
-
-  .op-status-branches > li {
-    padding-top: 0;
-  }
-
-  .op-status-stem {
-    height: 16px;
-  }
-
+@media (max-width: 920px) {
   .op-status-card {
-    width: 100%;
+    width: min(22rem, 100%);
     max-width: none;
   }
-}
 
-@container (max-width: 420px) {
   .op-status-hub {
-    width: 100%;
-    max-width: 22rem;
+    width: min(22rem, 100%);
+    max-width: none;
   }
 }
 
