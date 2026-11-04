@@ -1,6 +1,25 @@
 'use client';
 
-import { ArrowUpRight } from 'lucide-react';
+import {
+  ArrowUpRight,
+  Baby,
+  BookUser,
+  DoorClosed,
+  FilePenLine,
+  Fingerprint,
+  Flag,
+  Flower,
+  HardHat,
+  HeartHandshake,
+  IdCard,
+  LandPlot,
+  MapPinHouse,
+  Scale,
+  Signature,
+  Stamp as StampIcon,
+  Store,
+  type LucideIcon,
+} from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { Button, cn } from '@techma/ui';
 import { DocumentArt, Stamp, type DocumentKind } from './DocumentArt';
@@ -11,7 +30,7 @@ type Theme = {
   title: string;
   description: string;
   kind: DocumentKind;
-  items: { name: string; question: string; kind?: DocumentKind }[];
+  items: { name: string; question: string; icon: LucideIcon; kind?: DocumentKind }[];
 };
 
 const CATALOGUE: Theme[] = [
@@ -20,10 +39,10 @@ const CATALOGUE: Theme[] = [
     description: 'Carte d’identité, certificats de résidence et de nationalité : les pièces qui prouvent qui vous êtes.',
     kind: 'cni',
     items: [
-      { name: 'Carte d’identité', question: 'Comment obtenir ma carte d’identité ?' },
-      { name: 'Certificat de résidence', question: 'Comment obtenir un certificat de résidence ?', kind: 'residence' },
-      { name: 'Certificat d’identification personnelle', question: 'Comment obtenir mon certificat d’identification personnelle ?' },
-      { name: 'Certificat de nationalité', question: 'Comment obtenir un certificat de nationalité ?' },
+      { name: 'Carte d’identité', question: 'Comment obtenir ma carte d’identité ?', icon: IdCard },
+      { name: 'Certificat de résidence', question: 'Comment obtenir un certificat de résidence ?', kind: 'residence', icon: MapPinHouse },
+      { name: 'Certificat d’identification personnelle', question: 'Comment obtenir mon certificat d’identification personnelle ?', icon: Fingerprint },
+      { name: 'Certificat de nationalité', question: 'Comment obtenir un certificat de nationalité ?', icon: Flag },
     ],
   },
   {
@@ -31,9 +50,9 @@ const CATALOGUE: Theme[] = [
     description: 'Naissance, mariage, décès : les actes à demander, et comment les obtenir.',
     kind: 'acte-naissance',
     items: [
-      { name: 'Acte de naissance', question: 'Comment obtenir un acte de naissance ?' },
-      { name: 'Acte de mariage', question: 'Comment obtenir un acte de mariage ?' },
-      { name: 'Acte de décès', question: 'Comment obtenir un acte de décès ?' },
+      { name: 'Acte de naissance', question: 'Comment obtenir un acte de naissance ?', icon: Baby },
+      { name: 'Acte de mariage', question: 'Comment obtenir un acte de mariage ?', icon: HeartHandshake },
+      { name: 'Acte de décès', question: 'Comment obtenir un acte de décès ?', icon: Flower },
     ],
   },
   {
@@ -41,8 +60,8 @@ const CATALOGUE: Theme[] = [
     description: 'Passeport et visa : les pièces, le coût et le délai avant de partir.',
     kind: 'passeport',
     items: [
-      { name: 'Passeport', question: 'Comment renouveler mon passeport ?' },
-      { name: 'Visa', question: 'Comment demander un visa ?' },
+      { name: 'Passeport', question: 'Comment renouveler mon passeport ?', icon: BookUser },
+      { name: 'Visa', question: 'Comment demander un visa ?', icon: StampIcon },
     ],
   },
   {
@@ -50,9 +69,9 @@ const CATALOGUE: Theme[] = [
     description: 'Créer, modifier ou fermer une entreprise, étape par étape.',
     kind: 'entreprise',
     items: [
-      { name: 'Créer une entreprise', question: 'Comment créer mon entreprise ?' },
-      { name: 'Modifier une entreprise', question: 'Comment modifier mon entreprise ?' },
-      { name: 'Fermer une entreprise', question: 'Comment fermer mon entreprise ?' },
+      { name: 'Créer une entreprise', question: 'Comment créer mon entreprise ?', icon: Store },
+      { name: 'Modifier une entreprise', question: 'Comment modifier mon entreprise ?', icon: FilePenLine },
+      { name: 'Fermer une entreprise', question: 'Comment fermer mon entreprise ?', icon: DoorClosed },
     ],
   },
   {
@@ -60,8 +79,8 @@ const CATALOGUE: Theme[] = [
     description: 'Casier judiciaire et légalisation de signature, sans aller-retour inutile.',
     kind: 'casier',
     items: [
-      { name: 'Casier judiciaire', question: 'Comment obtenir un extrait de casier judiciaire ?' },
-      { name: 'Légalisation de signature', question: 'Comment faire légaliser une signature ?' },
+      { name: 'Casier judiciaire', question: 'Comment obtenir un extrait de casier judiciaire ?', icon: Scale },
+      { name: 'Légalisation de signature', question: 'Comment faire légaliser une signature ?', icon: Signature },
     ],
   },
   {
@@ -69,8 +88,8 @@ const CATALOGUE: Theme[] = [
     description: 'Titre foncier et permis de construire : savoir quoi préparer avant de déposer.',
     kind: 'permis',
     items: [
-      { name: 'Titre foncier', question: 'Comment obtenir un titre foncier ?' },
-      { name: 'Permis de construire', question: 'Comment obtenir un permis de construire ?' },
+      { name: 'Titre foncier', question: 'Comment obtenir un titre foncier ?', icon: LandPlot },
+      { name: 'Permis de construire', question: 'Comment obtenir un permis de construire ?', icon: HardHat },
     ],
   },
 ];
@@ -243,7 +262,9 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
                 <div className="flex flex-col gap-3">
                   <p className="m-0 text-[13px] font-semibold uppercase tracking-[0.08em] text-(--home-field-green)">Les démarches</p>
                   <ul className="m-0 flex list-none flex-col p-0">
-                    {theme.items.map((item, i) => (
+                    {theme.items.map((item, i) => {
+                      const Icon = item.icon;
+                      return (
                       <li key={item.name} className="border-t border-line last:border-b">
                         <button
                           type="button"
@@ -253,13 +274,20 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
                           onMouseLeave={() => setLifted(null)}
                           onFocus={() => setLifted(i < fan.length ? i : null)}
                           onBlur={() => setLifted(null)}
-                          className="ui-press group flex min-h-12 w-full items-center justify-between gap-4 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                          className="ui-press group flex min-h-14 w-full items-center gap-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          <span className="text-[16px] font-semibold group-enabled:group-hover:underline">{item.name}</span>
+                          <span
+                            aria-hidden="true"
+                            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-trust-soft text-trust-text transition-colors duration-200 group-enabled:group-hover:bg-(--home-field-green) group-enabled:group-hover:text-on-trust group-focus-visible:bg-(--home-field-green) group-focus-visible:text-on-trust"
+                          >
+                            <Icon className="size-5" strokeWidth={1.75} />
+                          </span>
+                          <span className="min-w-0 flex-1 text-[16px] font-semibold group-enabled:group-hover:underline">{item.name}</span>
                           <ArrowUpRight aria-hidden="true" className="size-5 shrink-0" />
                         </button>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 </div>
               </div>
