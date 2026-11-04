@@ -10,6 +10,7 @@ import {
   type Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { cn } from '@techma/ui';
 import { Cpu, Landmark, Plug, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { OperatorStatus } from '@/lib/operator/api';
@@ -20,6 +21,7 @@ import {
   buildStatusGraphElements,
   statusGraphHeight,
   statusGraphLayoutWidth,
+  statusGraphNodeExtent,
 } from './status-graph-layout';
 import { statusGraphNodeTypes, type BranchNodeData } from './status-graph-nodes';
 import './status-graph.css';
@@ -73,14 +75,23 @@ function FitViewWhenReady({ layoutKey }: { layoutKey: string }) {
   return null;
 }
 
-function StatusGraphFlow({ status, width }: { status: OperatorStatus; width: number }) {
+function StatusGraphFlow({
+  status,
+  width,
+  height,
+  adminHasChips,
+}: {
+  status: OperatorStatus;
+  width: number;
+  height: number;
+  adminHasChips: boolean;
+}) {
   const layoutWidth = statusGraphLayoutWidth(width);
   const connected = useMemo(
     () => connectedAdministrations(status.administrations),
     [status.administrations],
   );
   const mcpOk = status.mcpServers.every((server) => !server.enabled || server.reachable);
-  const adminHasChips = connected.length > 0;
   const connectedAdminKey = useMemo(
     () => connected.map((administration) => administration.id).join(','),
     [connected],
@@ -247,6 +258,11 @@ function StatusGraphFlow({ status, width }: { status: OperatorStatus; width: num
     setEdges(layoutEdges);
   }, [contentKey, layoutKey, layoutNodesEdges, setEdges, setNodes]);
 
+  const dragExtent = useMemo(
+    () => statusGraphNodeExtent(width, height, adminHasChips),
+    [adminHasChips, height, width],
+  );
+
   return (
     <ReactFlow
       nodes={nodes}
@@ -262,7 +278,10 @@ function StatusGraphFlow({ status, width }: { status: OperatorStatus; width: num
       zoomOnScroll={false}
       zoomOnPinch={false}
       zoomOnDoubleClick={false}
-      preventScrolling={false}
+      autoPanOnNodeDrag={false}
+      preventScrolling
+      nodeExtent={dragExtent}
+      translateExtent={dragExtent}
       nodeDragThreshold={3}
       proOptions={{ hideAttribution: true }}
     >
@@ -271,38 +290,58 @@ function StatusGraphFlow({ status, width }: { status: OperatorStatus; width: num
   );
 }
 
-export function StatusGraph({ status }: { status: OperatorStatus }) {
+export function StatusGraph({
+  status,
+  className,
+}: {
+  status: OperatorStatus;
+  className?: string;
+}) {
   const shellRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(960);
+  const [paneHeight, setPaneHeight] = useState(456);
 
   const connected = useMemo(
     () => connectedAdministrations(status.administrations),
     [status.administrations],
   );
+  const adminHasChips = connected.length > 0;
   const layoutWidth = statusGraphLayoutWidth(width);
-  const height = statusGraphHeight(layoutWidth, connected.length > 0);
+  const minHeight = statusGraphHeight(layoutWidth, adminHasChips);
 
   useEffect(() => {
     const el = shellRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const applyWidth = (raw: number) => {
-      const next = statusGraphLayoutWidth(raw);
-      setWidth((current) => (current === next ? current : next));
+    const applySize = (rawWidth: number, rawHeight: number) => {
+      const nextWidth = statusGraphLayoutWidth(rawWidth);
+      setWidth((current) => (current === nextWidth ? current : nextWidth));
+      const nextHeight = Math.max(minHeight, Math.round(rawHeight));
+      setPaneHeight((current) => (current === nextHeight ? current : nextHeight));
     };
     const observer = new ResizeObserver((entries) => {
-      const next = entries[0]?.contentRect.width;
-      if (next && next > 0) applyWidth(next);
+      const rect = entries[0]?.contentRect;
+      if (!rect || rect.width <= 0 || rect.height <= 0) return;
+      applySize(rect.width, rect.height);
     });
     observer.observe(el);
-    applyWidth(el.getBoundingClientRect().width || 960);
+    const rect = el.getBoundingClientRect();
+    applySize(rect.width || 960, rect.height || minHeight);
     return () => observer.disconnect();
-  }, []);
+  }, [minHeight]);
 
   return (
-    <section aria-label="Schéma des connexions" className="op-status-chain">
-      <div ref={shellRef} className="op-status-flow" style={{ height }}>
+    <section
+      aria-label="Schéma des connexions"
+      className={cn('op-status-chain', className)}
+    >
+      <div ref={shellRef} className="op-status-flow" style={{ minHeight }}>
         <ReactFlowProvider>
-          <StatusGraphFlow status={status} width={width} />
+          <StatusGraphFlow
+            status={status}
+            width={layoutWidth}
+            height={paneHeight}
+            adminHasChips={adminHasChips}
+          />
         </ReactFlowProvider>
       </div>
     </section>

@@ -50,6 +50,27 @@ export function statusGraphHeight(containerWidth: number, adminHasChips: boolean
   return HUB_HEIGHT + STEM + CARD_HEIGHT + ROW_GAP + CARD_HEIGHT + ROW_GAP + adminHeight + FLOW_BOTTOM_PAD;
 }
 
+const NODE_EXTENT_PAD = 8;
+
+/** Clamp draggable nodes inside the visible flow pane (top-left origin). */
+export function statusGraphNodeExtent(
+  paneWidth: number,
+  paneHeight: number,
+  adminHasChips: boolean,
+): [[number, number], [number, number]] {
+  const maxNodeHeight = adminHasChips ? CARD_HEIGHT + ADMIN_CHIPS_EXTRA : CARD_HEIGHT;
+  const maxNodeWidth = CARD_WIDTH;
+  const pad = NODE_EXTENT_PAD;
+  const innerW = Math.max(0, paneWidth - pad * 2);
+  const innerH = Math.max(0, paneHeight - pad * 2);
+  const maxX = Math.max(pad, pad + innerW - maxNodeWidth);
+  const maxY = Math.max(pad, pad + innerH - maxNodeHeight);
+  return [
+    [pad, pad],
+    [maxX, maxY],
+  ];
+}
+
 type BranchPayload = {
   id: (typeof CHILD_IDS)[number];
   data: BranchNodeData;

@@ -49,7 +49,7 @@ export function StatusPage() {
   }, [load]);
 
   return (
-    <div className="ui-rise">
+    <div className="ui-rise flex min-h-[calc(100dvh-3rem)] flex-col md:min-h-[calc(100dvh-4rem)]">
       <PageHeader
         title="Statut"
         description="Modèle actif, serveurs MCP et administrations connectées."
@@ -74,7 +74,7 @@ export function StatusPage() {
       ) : (
         <>
           <Summary status={status} />
-          <StatusGraph status={status} />
+          <StatusGraph status={status} className="min-h-0 flex-1" />
         </>
       )}
     </div>
