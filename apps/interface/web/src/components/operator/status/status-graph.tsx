@@ -3,6 +3,8 @@
 import {
   ReactFlow,
   ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
   useReactFlow,
   type Edge,
   type Node,
@@ -54,7 +56,7 @@ function FitViewWhenReady({ layoutKey }: { layoutKey: string }) {
   const { fitView } = useReactFlow();
   useEffect(() => {
     const id = requestAnimationFrame(() => {
-      void fitView({ padding: 0.08, duration: 0, minZoom: 1, maxZoom: 1 });
+      void fitView({ padding: { top: 0.02, right: 0.06, bottom: 0.12, left: 0.06 }, duration: 0, minZoom: 1, maxZoom: 1 });
     });
     return () => cancelAnimationFrame(id);
   }, [fitView, layoutKey]);
@@ -158,30 +160,61 @@ function StatusGraphFlow({ status, width }: { status: OperatorStatus; width: num
     ];
   }, [adminHasChips, connected, mcpOk, status]);
 
-  const { nodes, edges } = useMemo(
+  const layoutNodesEdges = useMemo(
     () => buildStatusGraphElements(width, branches),
     [branches, width],
   );
 
   const layoutKey = `${width}-${adminHasChips}-${status.model?.id ?? 'none'}-${status.mcpServers.length}`;
 
+  const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodesEdges.nodes as Node[]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(layoutNodesEdges.edges as Edge[]);
+  const layoutKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const layoutNodes = layoutNodesEdges.nodes as Node[];
+    const layoutEdges = layoutNodesEdges.edges as Edge[];
+
+    if (layoutKeyRef.current !== layoutKey) {
+      layoutKeyRef.current = layoutKey;
+      setNodes(layoutNodes);
+      setEdges(layoutEdges);
+      return;
+    }
+
+    setNodes((current) =>
+      layoutNodes.map((layoutNode) => {
+        const existing = current.find((node) => node.id === layoutNode.id);
+        return existing ? { ...layoutNode, position: existing.position } : layoutNode;
+      }),
+    );
+    setEdges(layoutEdges);
+  }, [layoutKey, layoutNodesEdges, setEdges, setNodes]);
+
   return (
     <ReactFlow
-      nodes={nodes as Node[]}
-      edges={edges as Edge[]}
+      nodes={nodes}
+      edges={edges}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
       nodeTypes={statusGraphNodeTypes}
-      nodesDraggable={false}
+      nodesDraggable
       nodesConnectable={false}
-      elementsSelectable={false}
+      elementsSelectable
       panOnDrag={false}
       panOnScroll={false}
       zoomOnScroll={false}
       zoomOnPinch={false}
       zoomOnDoubleClick={false}
       preventScrolling={false}
+      nodeDragThreshold={3}
       proOptions={{ hideAttribution: true }}
       fitView
-      fitViewOptions={{ padding: 0.08, minZoom: 1, maxZoom: 1 }}
+      fitViewOptions={{
+        padding: { top: 0.02, right: 0.06, bottom: 0.12, left: 0.06 },
+        minZoom: 1,
+        maxZoom: 1,
+      }}
     >
       <FitViewWhenReady layoutKey={layoutKey} />
     </ReactFlow>

@@ -20,6 +20,18 @@
   cursor: default;
 }
 
+.op-status-flow .react-flow__node.draggable {
+  cursor: grab;
+}
+
+.op-status-flow .react-flow__node.draggable.dragging {
+  cursor: grabbing;
+}
+
+.op-status-flow .react-flow__node.draggable:active {
+  cursor: grabbing;
+}
+
 .op-status-flow .react-flow__node {
   padding: 0;
   border: none;

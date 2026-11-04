@@ -6,8 +6,10 @@ const HUB_HEIGHT = 168;
 const CARD_WIDTH = 288;
 const CARD_HEIGHT = 108;
 const ADMIN_CHIPS_EXTRA = 44;
-const STEM = 28;
-const ROW_GAP = 16;
+/** Vertical hub→branch gap so smoothstep stems stay visible in the flow pane. */
+const STEM = 96;
+const ROW_GAP = 24;
+const FLOW_BOTTOM_PAD = 40;
 const STACK_BREAK = 920;
 const HANDLE_SIZE = 6;
 
@@ -42,10 +44,10 @@ function branchHandles() {
 export function statusGraphHeight(containerWidth: number, adminHasChips: boolean): number {
   if (containerWidth >= STACK_BREAK) {
     const adminHeight = adminHasChips ? CARD_HEIGHT + ADMIN_CHIPS_EXTRA : CARD_HEIGHT;
-    return HUB_HEIGHT + STEM + Math.max(CARD_HEIGHT, adminHeight) + 24;
+    return HUB_HEIGHT + STEM + Math.max(CARD_HEIGHT, adminHeight) + FLOW_BOTTOM_PAD;
   }
   const adminHeight = adminHasChips ? CARD_HEIGHT + ADMIN_CHIPS_EXTRA : CARD_HEIGHT;
-  return HUB_HEIGHT + STEM + CARD_HEIGHT + ROW_GAP + CARD_HEIGHT + ROW_GAP + adminHeight + 24;
+  return HUB_HEIGHT + STEM + CARD_HEIGHT + ROW_GAP + CARD_HEIGHT + ROW_GAP + adminHeight + FLOW_BOTTOM_PAD;
 }
 
 type BranchPayload = {
@@ -72,9 +74,7 @@ export function buildStatusGraphElements(
       height: HUB_HEIGHT,
       measured: { width: HUB_WIDTH, height: HUB_HEIGHT },
       handles: hubHandles,
-      draggable: false,
-      selectable: false,
-      focusable: false,
+      draggable: true,
     },
   ];
 
@@ -91,9 +91,7 @@ export function buildStatusGraphElements(
         height: branch.height,
         measured: { width: CARD_WIDTH, height: branch.height },
         handles: branchHandles(),
-        draggable: false,
-        selectable: false,
-        focusable: false,
+        draggable: true,
       });
       y += branch.height + ROW_GAP;
     }
@@ -112,9 +110,7 @@ export function buildStatusGraphElements(
         height: branch.height,
         measured: { width: CARD_WIDTH, height: branch.height },
         handles: branchHandles(),
-        draggable: false,
-        selectable: false,
-        focusable: false,
+        draggable: true,
       });
       x += CARD_WIDTH + gap;
     }
