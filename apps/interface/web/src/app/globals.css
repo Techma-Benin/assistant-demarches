@@ -255,3 +255,11 @@ html:has([data-home])::-webkit-scrollbar {
     transform: scale(1);
   }
 }
+
+.footer-cta .footer-word {
+  transition: transform 350ms var(--ui-ease-out);
+}
+.footer-cta:enabled:hover .footer-word,
+.footer-cta:focus-visible .footer-word {
+  transform: translateX(1.5%);
+}

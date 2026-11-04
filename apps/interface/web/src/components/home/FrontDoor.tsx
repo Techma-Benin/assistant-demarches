@@ -236,23 +236,8 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
       </main>
 
-      <footer id="site-footer" aria-labelledby="footer-title" className="relative overflow-hidden bg-action text-on-action">
-        <div className="mx-auto max-w-[1320px] px-5 pt-14 md:px-8 md:pt-20">
-          <div className="flex flex-col gap-6 border-b border-on-action/15 pb-10 md:flex-row md:items-end md:justify-between md:pb-14">
-            <h2 id="footer-title" className="m-0 max-w-[18ch] font-display text-[clamp(32px,4.4vw,64px)] font-extrabold leading-[1.02] tracking-[-0.04em]">
-              Une démarche en tête ? Demandez maintenant.
-            </h2>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={goToQuestion}
-              className="ui-press group inline-flex min-h-14 shrink-0 items-center gap-2 self-start rounded-pill bg-canvas px-7 text-[17px] font-semibold text-ink hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-on-action disabled:cursor-not-allowed disabled:opacity-50 md:self-auto"
-            >
-              Poser ma question
-              <ArrowRight aria-hidden="true" className="size-5 transition-transform duration-200 group-hover:translate-x-0.5" />
-            </button>
-          </div>
-
+      <footer id="site-footer" className="relative overflow-hidden bg-action text-on-action">
+        <div className="mx-auto max-w-[1320px] px-5 pt-6 md:px-8 md:pt-10">
           <div className="grid grid-cols-2 gap-x-8 gap-y-10 py-10 md:grid-cols-12 md:py-14">
             <div className="col-span-2 md:col-span-4">
               <p className="m-0 flex items-center gap-2 text-[20px] font-bold">
@@ -349,8 +334,20 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
           </div>
         </div>
 
-        <div className="mx-auto max-w-[1320px] px-5 pb-6 md:px-8 md:pb-8">
-          <FitWord word="Démarches" className="footer-word" />
+        <div className="mx-auto max-w-[1320px] px-5 pb-8 md:px-8 md:pb-10">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={goToQuestion}
+            aria-label="Poser ma question"
+            className="footer-cta group block w-full rounded-[24px] text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-on-action disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="flex items-center justify-between gap-4 text-[clamp(18px,2vw,26px)] font-semibold text-on-action/80">
+              Une démarche en tête ?
+              <span className="hidden text-[16px] font-medium text-on-action/60 md:inline">L’assistant vous répond, d’après la fiche officielle.</span>
+            </span>
+            <FitWord word="Demandez maintenant →" className="footer-word" />
+          </button>
         </div>
         <div aria-hidden="true" className="relative flex h-1.5">
           <div className="flex-1 bg-(--home-field-green)" />
