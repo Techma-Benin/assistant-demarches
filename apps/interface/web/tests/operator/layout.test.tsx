@@ -50,9 +50,14 @@ describe('operator layout gate', () => {
     expect(container.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
     const nav = screen.getByRole('navigation', { name: 'Navigation principale' });
     expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual(['Statut', 'Modèles', 'Connexions']);
+    const activeLink = screen.getByRole('link', { name: 'Connexions' });
+    expect(activeLink.className).not.toContain('rounded-field');
+    expect(activeLink.className).toContain('rounded-none');
+    expect(activeLink.className).toContain('w-full');
+    expect(nav.querySelector('[data-nav-indicator]')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Statut' })).toHaveAttribute('href', '/operateur');
     expect(screen.getByRole('link', { name: 'Modèles' })).toHaveAttribute('href', '/operateur/modeles');
-    expect(screen.getByRole('link', { name: 'Connexions' })).toHaveAttribute('aria-current', 'page');
+    expect(activeLink).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Statut' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: 'Replier le menu latéral' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('button', { name: 'Se déconnecter' }).closest('form')).toHaveAttribute('action', '/auth/logout');

@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, THEME_STORAGE_KEY, Tooltip, cn } from '@techma/ui';
+import { BrandMark, Button, THEME_STORAGE_KEY, Tooltip, cn } from '@techma/ui';
 import { Activity, ChevronsLeft, ChevronsRight, Cpu, LogOut, Monitor, Moon, Plug, Sun, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -91,8 +91,8 @@ function ShellThemeControl({ collapsed }: { collapsed: boolean }) {
       onClick={cycle}
       leadingIcon={<Icon key={preference} aria-hidden="true" className="ui-swap ui-theme-icon size-5 shrink-0" />}
       className={cn(
-        'min-h-10 w-full justify-start gap-3 rounded-field px-3 text-[15px] font-semibold text-ink-muted hover:bg-sunken hover:text-ink',
-        collapsed && 'md:size-11 md:justify-center md:px-0',
+        'min-h-10 w-full justify-start gap-3 rounded-none px-3 text-[15px] font-semibold text-ink-muted hover:bg-sunken hover:text-ink',
+        collapsed && 'md:justify-center md:px-0',
       )}
     >
       <span className={cn('transition-opacity duration-[220ms] ease-(--ui-ease-drawer)', collapsed && 'md:sr-only')}>
@@ -117,8 +117,8 @@ function ShellLogoutControl({ collapsed }: { collapsed: boolean }) {
       size="sm"
       leadingIcon={<LogOut aria-hidden="true" className="size-5 shrink-0" />}
       className={cn(
-        'min-h-10 w-full justify-start gap-3 rounded-field px-3 text-[15px] font-semibold text-ink-muted hover:bg-sunken hover:text-ink',
-        collapsed && 'md:size-11 md:justify-center md:px-0',
+        'min-h-10 w-full justify-start gap-3 rounded-none px-3 text-[15px] font-semibold text-ink-muted hover:bg-sunken hover:text-ink',
+        collapsed && 'md:justify-center md:px-0',
       )}
     >
       <span className={cn('transition-opacity duration-[220ms] ease-(--ui-ease-drawer)', collapsed && 'md:sr-only')}>
@@ -189,6 +189,22 @@ export function OperatorShell({ children }: { children: ReactNode }) {
     });
   }
 
+  const collapseToggle = (
+    <button
+      type="button"
+      onClick={toggleCollapsed}
+      aria-expanded={!collapsed}
+      aria-label={collapsed ? 'Déplier le menu latéral' : 'Replier le menu latéral'}
+      className="hidden size-9 shrink-0 cursor-pointer items-center justify-center rounded-none text-ink-muted transition-colors duration-(--ui-dur-press) hover:bg-sunken hover:text-ink md:inline-flex"
+    >
+      {collapsed ? (
+        <ChevronsRight aria-hidden="true" className="size-4" strokeWidth={2} />
+      ) : (
+        <ChevronsLeft aria-hidden="true" className="size-4" strokeWidth={2} />
+      )}
+    </button>
+  );
+
   return (
     <div
       className={cn(
@@ -197,45 +213,37 @@ export function OperatorShell({ children }: { children: ReactNode }) {
       )}
     >
       <aside className="border-b border-line-subtle bg-shell md:sticky md:top-0 md:h-dvh md:border-r md:border-b-0">
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-3 md:flex md:h-full md:flex-col md:flex-nowrap md:items-stretch md:justify-start md:gap-0 md:p-3 md:pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-3 md:flex md:h-full md:flex-col md:flex-nowrap md:items-stretch md:justify-start md:gap-0 md:p-0">
           <div
             className={cn(
-              'flex shrink-0 items-center gap-2 md:px-1 md:pb-4',
-              collapsed ? 'md:flex-col md:gap-2 md:px-0' : 'md:gap-2.5',
+              'flex w-full shrink-0 items-center justify-between gap-2 px-3 pt-3 md:pt-4',
+              collapsed && 'md:flex-col md:items-center md:gap-2 md:px-0 md:pb-1',
             )}
           >
-            <OperatorLogomark className={cn(collapsed ? 'md:size-7' : 'md:size-8')} />
-            <div
-              className={cn(
-                'min-w-0 flex-1 overflow-hidden transition-[opacity,width] duration-[220ms] ease-(--ui-ease-drawer)',
-                collapsed ? 'md:w-0 md:flex-none md:opacity-0' : 'md:opacity-100',
-              )}
-            >
-              <p className="font-display text-[19px] leading-none font-extrabold tracking-[-0.02em] text-ink">Démarches</p>
-              <p className="mt-1 text-xs leading-tight font-semibold text-ink-muted">Console opérateur</p>
-            </div>
-            <button
-              type="button"
-              onClick={toggleCollapsed}
-              aria-expanded={!collapsed}
-              aria-label={collapsed ? 'Déplier le menu latéral' : 'Replier le menu latéral'}
-              className={cn(
-                'hidden size-9 shrink-0 cursor-pointer items-center justify-center rounded-field text-ink-muted transition-colors duration-(--ui-dur-press) hover:bg-sunken hover:text-ink md:inline-flex',
-                collapsed ? 'md:order-last' : 'md:ml-auto',
-              )}
-            >
-              {collapsed ? (
-                <ChevronsRight aria-hidden="true" className="size-4" strokeWidth={2} />
-              ) : (
-                <ChevronsLeft aria-hidden="true" className="size-4" strokeWidth={2} />
-              )}
-            </button>
+            {collapsed ? (
+              <>
+                <OperatorLogomark />
+                {collapseToggle}
+              </>
+            ) : (
+              <>
+                <div className="min-w-0 flex-1">
+                  <BrandMark />
+                  <p className="mt-1 text-xs leading-tight font-semibold text-ink-muted">Console opérateur</p>
+                </div>
+                {collapseToggle}
+              </>
+            )}
           </div>
 
-          <nav aria-label="Navigation principale" className="order-last w-full md:order-none md:flex-1 md:px-0 md:pt-1">
-            <div className="relative max-md:border-t max-md:border-line-subtle max-md:pt-2">
+          <nav
+            aria-label="Navigation principale"
+            className="order-last w-full md:order-none md:w-full md:flex-none md:pt-1"
+          >
+            <div className="relative w-full max-md:border-t max-md:border-line-subtle max-md:px-3 max-md:pt-2">
               <div
                 aria-hidden="true"
+                data-nav-indicator=""
                 className={cn(
                   'pointer-events-none absolute inset-x-0 z-0 hidden md:block motion-reduce:transition-none',
                   'transition-[transform,height,opacity] duration-[220ms] ease-(--ui-ease-drawer)',
@@ -246,10 +254,10 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                   height: indicator.height || undefined,
                 }}
               >
-                <span className="absolute top-1 bottom-1 left-0 w-[3px] rounded-full bg-action" />
-                <span className="absolute inset-y-0 right-0 left-0 rounded-field bg-sunken/90 dark:bg-sunken/80" />
+                <span className="absolute inset-y-0 left-0 w-[3px] bg-action" />
+                <span className="absolute inset-0 bg-sunken/90 dark:bg-sunken/80" />
               </div>
-              <ul ref={listRef} className="relative z-10 flex gap-1 md:flex-col md:gap-0.5">
+              <ul ref={listRef} className="relative z-10 flex gap-1 md:flex-col md:gap-0">
                 {NAV.map(({ href, label, icon }) => {
                   const active = isActive(href, pathname);
                   const link = (
@@ -258,8 +266,8 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                       aria-current={active ? 'page' : undefined}
                       data-nav-active={active ? 'true' : undefined}
                       className={cn(
-                        'flex min-h-11 items-center justify-center gap-2 rounded-field px-2 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:min-h-10 md:justify-start md:gap-3 md:px-3',
-                        active ? 'text-ink max-md:bg-sunken' : 'text-ink-muted hover:text-ink max-md:hover:bg-sunken',
+                        'flex min-h-11 w-full items-center justify-center gap-2 rounded-none px-2 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:min-h-10 md:justify-start md:gap-3 md:px-3',
+                        active ? 'text-ink max-md:bg-sunken' : 'text-ink-muted hover:bg-sunken hover:text-ink',
                         collapsed && 'md:justify-center md:px-0',
                       )}
                     >
@@ -276,7 +284,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                   );
 
                   return (
-                    <li key={href} className="flex-1 md:flex-none">
+                    <li key={href} className="flex-1 md:flex-none md:w-full">
                       {collapsed ? (
                         <Tooltip label={label} side="right">
                           {link}
@@ -291,12 +299,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
             </div>
           </nav>
 
-          <div
-            className={cn(
-              'flex w-full items-center gap-1 border-line-subtle md:mt-auto md:flex-col md:gap-1 md:border-t md:pt-3',
-              collapsed ? 'md:px-0' : 'md:px-0',
-            )}
-          >
+          <div className="flex w-full items-center gap-1 border-line-subtle px-3 max-md:pb-1 md:mt-auto md:flex-col md:gap-0 md:border-t md:px-0 md:pt-0">
             <ShellLogoutControl collapsed={collapsed} />
             <ShellThemeControl collapsed={collapsed} />
           </div>
