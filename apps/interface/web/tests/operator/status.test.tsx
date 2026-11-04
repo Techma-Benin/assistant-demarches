@@ -1,32 +1,62 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StatusPage } from '@/components/operator/status/status-page';
 import { assertContract, json, problem, status, stubOperator } from './helpers';
+
+vi.mock('next/link', () => ({
+  default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
+}));
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Statut', () => {
   it('fixture conforms to the v2 contract', () => assertContract('OperatorStatus', status));
 
-  it('shows the model, the MCP servers with tool counts and the administrations', async () => {
+  it('draws the connection schema and opens Modèles and Connexions from it', async () => {
     stubOperator((call) => (call.path === '/status' ? json(status) : undefined));
     render(<StatusPage />);
-    const model = (await screen.findByRole('heading', { name: 'Modèle' })).closest('section')!;
+
+    expect(await screen.findByRole('region', { name: 'Schéma des connexions' })).toBeInTheDocument();
+    expect(screen.getByText('Assistant')).toBeInTheDocument();
+
+    const model = screen.getByRole('link', { name: /Modèle/ });
+    expect(model).toHaveAttribute('href', '/operateur/modeles');
     expect(within(model).getByText('Groq Llama')).toBeInTheDocument();
     expect(within(model).getByText('Joignable')).toBeInTheDocument();
 
-    const mcp = screen.getByRole('heading', { name: 'Serveurs MCP' }).closest('section')!;
-    const [techma, autre] = within(mcp).getAllByRole('listitem');
-    expect(within(techma).getByText(/2 outils/)).toBeInTheDocument();
-    expect(within(techma).getByText('Joignable')).toBeInTheDocument();
-    expect(within(autre).getByText(/0 outil\b/)).toBeInTheDocument();
-    expect(within(autre).getByText('Injoignable')).toBeInTheDocument();
+    const mcp = screen.getByRole('link', { name: /Serveurs MCP/ });
+    expect(mcp).toHaveAttribute('href', '/operateur/mcp');
+    expect(within(mcp).getByText(/Serveur Techma · 2 outils/)).toBeInTheDocument();
+    expect(within(mcp).getByText(/Autre serveur · 0 outil/)).toBeInTheDocument();
+    expect(within(mcp).getByText('Injoignable')).toBeInTheDocument();
+  });
 
-    const admins = screen.getByRole('heading', { name: 'Administrations' }).closest('section')!;
-    const [justice, anip] = within(admins).getAllByRole('listitem');
-    expect(within(justice).getByText('Connectée')).toBeInTheDocument();
-    expect(within(anip).getByText('Non connectée')).toBeInTheDocument();
+  it('keeps only connected administrations, with no way to connect the others', async () => {
+    stubOperator((call) => (call.path === '/status' ? json(status) : undefined));
+    render(<StatusPage />);
+
+    const schema = await screen.findByRole('region', { name: 'Schéma des connexions' });
+    const admins = within(schema).getByRole('heading', { name: 'Administrations' }).closest('.op-status-card')!;
+    expect(within(admins).getByText('Justice')).toBeInTheDocument();
+    expect(within(admins).getByText('1 connectée')).toBeInTheDocument();
+    expect(within(admins).queryByText('ANIP')).not.toBeInTheDocument();
+    expect(screen.queryByText('Non connectée')).not.toBeInTheDocument();
+    expect(within(admins).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('says when no administration is connected', async () => {
+    stubOperator((call) =>
+      call.path === '/status' ? json({ ...status, administrations: [status.administrations[1]] }) : undefined,
+    );
+    render(<StatusPage />);
+    expect(await screen.findByText('Aucune administration connectée.')).toBeInTheDocument();
+    expect(screen.queryByText('ANIP')).not.toBeInTheDocument();
   });
 
   it('summarises what needs attention', async () => {
@@ -44,6 +74,7 @@ describe('Statut', () => {
     stubOperator(() => json({ ...status, model: null }));
     render(<StatusPage />);
     expect(await screen.findByText('Aucun modèle actif.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Modèle/ })).toHaveAttribute('href', '/operateur/modeles');
   });
 
   it('shows the error and refreshes on demand', async () => {
