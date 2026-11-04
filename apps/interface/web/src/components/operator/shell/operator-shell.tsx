@@ -4,7 +4,7 @@ import { BrandMark, Button, THEME_STORAGE_KEY, Tooltip, cn } from '@techma/ui';
 import { Activity, ChevronsLeft, ChevronsRight, Cpu, LogOut, Monitor, Moon, Plug, Sun, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { OperatorLogomark } from './operator-logomark';
 
 export const OPERATOR_NAV_COLLAPSED_KEY = 'operator-nav-collapsed';
@@ -14,6 +14,8 @@ const NAV: readonly { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/operateur/modeles', label: 'Modèles', icon: Cpu },
   { href: '/operateur/mcp', label: 'Connexions', icon: Plug },
 ];
+
+const NAV_DRAWER_MS = 220;
 
 type ThemePreference = 'system' | 'light' | 'dark';
 const THEME_ORDER: ThemePreference[] = ['system', 'light', 'dark'];
@@ -26,6 +28,11 @@ const THEME_ICONS = { system: Monitor, light: Sun, dark: Moon } as const;
 
 function isActive(href: string, pathname: string): boolean {
   return href === '/operateur' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function navActiveIndex(pathname: string): number {
+  const index = NAV.findIndex(({ href }) => isActive(href, pathname));
+  return index >= 0 ? index : 0;
 }
 
 function readStoredTheme(): ThemePreference {
@@ -128,11 +135,47 @@ function ShellLogoutControl({ collapsed }: { collapsed: boolean }) {
 
 export function OperatorShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const activeIndex = navActiveIndex(pathname);
   const [collapsed, setCollapsed] = useState(false);
+  const [indicatorTransition, setIndicatorTransition] = useState(true);
+  const navTrackRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  const syncNavMetrics = useCallback(() => {
+    const list = listRef.current;
+    const track = navTrackRef.current;
+    if (!list || !track) return;
+    const firstItem = list.querySelector('li');
+    if (!firstItem) return;
+    const height = firstItem.getBoundingClientRect().height;
+    if (height <= 0) return;
+    const gap = Number.parseFloat(getComputedStyle(list).rowGap || getComputedStyle(list).gap) || 0;
+    track.style.setProperty('--nav-item-height', `${height}px`);
+    track.style.setProperty('--nav-item-step', `${height + gap}px`);
+  }, []);
 
   useEffect(() => {
     setCollapsed(readStoredCollapsed());
   }, []);
+
+  useLayoutEffect(() => {
+    syncNavMetrics();
+  }, [pathname, syncNavMetrics]);
+
+  useEffect(() => {
+    setIndicatorTransition(false);
+    const afterDrawer = window.setTimeout(() => {
+      syncNavMetrics();
+      setIndicatorTransition(true);
+    }, NAV_DRAWER_MS);
+    return () => window.clearTimeout(afterDrawer);
+  }, [collapsed, syncNavMetrics]);
+
+  useEffect(() => {
+    const onResize = () => syncNavMetrics();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [syncNavMetrics]);
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -146,6 +189,10 @@ export function OperatorShell({ children }: { children: ReactNode }) {
       return next;
     });
   }
+
+  const navTrackStyle = {
+    '--nav-active-index': activeIndex,
+  } as CSSProperties;
 
   const collapseToggle = (
     <button
@@ -199,8 +246,29 @@ export function OperatorShell({ children }: { children: ReactNode }) {
             aria-label="Navigation principale"
             className="order-last w-full md:order-none md:w-full md:flex-none md:pt-8"
           >
-            <div className="relative w-full max-md:px-3 max-md:pt-2">
-              <ul className="relative flex gap-1 md:flex-col md:gap-1">
+            <div
+              ref={navTrackRef}
+              data-operator-nav-track=""
+              data-nav-active-index={activeIndex}
+              style={navTrackStyle}
+              className="relative w-full max-md:px-3 max-md:pt-2"
+            >
+              <div
+                aria-hidden="true"
+                data-nav-indicator=""
+                className={cn(
+                  'pointer-events-none absolute inset-x-0 z-0 hidden md:block motion-reduce:transition-none',
+                  indicatorTransition &&
+                    'transition-[transform,height] duration-[220ms] ease-(--ui-ease-drawer)',
+                )}
+                style={{
+                  height: 'var(--nav-item-height, 0px)',
+                  transform: 'translateY(calc(var(--nav-active-index, 0) * var(--nav-item-step, 0px)))',
+                }}
+              >
+                <span className="absolute inset-0 rounded-none bg-canvas" />
+              </div>
+              <ul ref={listRef} className="relative z-10 flex gap-1 md:flex-col md:gap-1">
                 {NAV.map(({ href, label, icon }) => {
                   const active = isActive(href, pathname);
                   const link = (
@@ -211,7 +279,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                       className={cn(
                         'flex min-h-12 w-full items-center justify-center gap-2 rounded-none px-2 py-3 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:min-h-12 md:justify-start md:gap-3 md:px-3 md:py-3.5',
                         active
-                          ? 'bg-canvas text-ink'
+                          ? 'text-ink max-md:bg-canvas md:bg-transparent'
                           : 'text-ink-muted hover:bg-sunken/80 hover:text-ink dark:hover:bg-sunken/60',
                         collapsed &&
                           'md:aspect-square md:w-full md:min-h-0 md:max-h-none md:min-w-0 md:justify-center md:px-0 md:py-0',

@@ -8,14 +8,20 @@ const readSession = vi.fn();
 const redirect = vi.fn((url: string) => {
   throw new Error(`REDIRECT:${url}`);
 });
+const usePathname = vi.fn(() => '/operateur/mcp');
 vi.mock('@/server/auth/session', () => ({ readSession: () => readSession() }));
-vi.mock('next/navigation', () => ({ redirect: (url: string) => redirect(url), usePathname: () => '/operateur/mcp' }));
+vi.mock('next/navigation', () => ({
+  redirect: (url: string) => redirect(url),
+  usePathname: () => usePathname(),
+}));
 
 const user = (roles: string[], refreshExpiresAt = Date.now() + 60_000) => ({ user: { roles, refreshExpiresAt } });
 
 beforeEach(() => {
   readSession.mockReset();
   redirect.mockClear();
+  usePathname.mockReset();
+  usePathname.mockReturnValue('/operateur/mcp');
   localStorage.clear();
 });
 
@@ -54,14 +60,20 @@ describe('operator layout gate', () => {
     expect(activeLink.className).not.toContain('rounded-field');
     expect(activeLink.className).toContain('rounded-none');
     expect(activeLink.className).toContain('w-full');
-    expect(activeLink.className).toContain('bg-canvas');
-    expect(activeLink.className).not.toContain('md:bg-transparent');
+    expect(activeLink.className).toContain('md:bg-transparent');
+    expect(activeLink.className.split(' ')).not.toContain('md:bg-canvas');
     expect(activeLink.className).toContain('md:min-h-12');
     expect(activeLink.className).toContain('md:py-3.5');
     const aside = container.querySelector('aside')!;
     expect(aside.className).not.toMatch(/border-r/);
     expect(aside.className).not.toMatch(/border-b/);
-    expect(nav.querySelector('[data-nav-indicator]')).toBeNull();
+    const track = nav.querySelector('[data-operator-nav-track]')!;
+    expect(track.getAttribute('data-nav-active-index')).toBe('2');
+    const indicator = nav.querySelector('[data-nav-indicator]') as HTMLElement;
+    expect(indicator).toBeTruthy();
+    expect(indicator.className).toContain('inset-x-0');
+    expect(indicator.innerHTML).toContain('bg-canvas');
+    expect(indicator.style.transform).toContain('var(--nav-active-index');
     const statutIcon = screen.getByRole('link', { name: 'Statut' }).querySelector('svg')!;
     const connexionsIcon = activeLink.querySelector('svg')!;
     expect(statutIcon.getAttribute('fill')).toBe('none');
@@ -82,6 +94,21 @@ describe('operator layout gate', () => {
     expect(main.className).not.toContain('mx-auto');
   });
 
+  it('slides the nav indicator when the active route changes', async () => {
+    readSession.mockResolvedValue(user(['operator']));
+    usePathname.mockReturnValue('/operateur');
+    const { rerender } = render(await OperatorLayout({ children: <p>contenu</p> }));
+    const nav = screen.getByRole('navigation', { name: 'Navigation principale' });
+    const track = nav.querySelector('[data-operator-nav-track]')!;
+    const indicator = nav.querySelector('[data-nav-indicator]') as HTMLElement;
+    expect(track.getAttribute('data-nav-active-index')).toBe('0');
+
+    usePathname.mockReturnValue('/operateur/modeles');
+    rerender(await OperatorLayout({ children: <p>contenu</p> }));
+    expect(track.getAttribute('data-nav-active-index')).toBe('1');
+    expect(indicator.style.transform).toContain('var(--nav-active-index');
+  });
+
   it('persists sidebar collapse in localStorage', async () => {
     readSession.mockResolvedValue(user(['operator']));
     const ui = userEvent.setup();
@@ -93,15 +120,17 @@ describe('operator layout gate', () => {
     expect(shell.className).toContain('md:grid-cols-[4.25rem_minmax(0,1fr)]');
     expect(shell).toHaveAttribute('data-collapsed', '');
     const activeLink = screen.getByRole('link', { name: 'Connexions' });
-    expect(activeLink.className).toContain('bg-canvas');
+    expect(activeLink.className).toContain('md:bg-transparent');
+    expect(activeLink.className.split(' ')).not.toContain('bg-canvas');
     expect(activeLink.className).toContain('md:w-full');
     expect(activeLink.className).toContain('md:aspect-square');
     expect(activeLink.className).not.toContain('md:size-12');
     expect(activeLink.className).not.toContain('md:mx-auto');
-    expect(activeLink.className).not.toContain('md:bg-transparent');
     const nav = screen.getByRole('navigation', { name: 'Navigation principale' });
-    expect(nav.querySelector('[data-nav-indicator]')).toBeNull();
+    const indicator = nav.querySelector('[data-nav-indicator]') as HTMLElement;
+    expect(indicator.className).toContain('inset-x-0');
     const statutLink = screen.getByRole('link', { name: 'Statut' });
-    expect(statutLink.className).not.toContain('bg-canvas');
+    expect(statutLink.className.split(' ')).not.toContain('bg-canvas');
+    expect(container.querySelector('aside')!.className).toContain('bg-shell-rail');
   });
 });
