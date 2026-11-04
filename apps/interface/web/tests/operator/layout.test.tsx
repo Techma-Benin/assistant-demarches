@@ -1,6 +1,8 @@
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import OperatorLayout from '@/app/operateur/layout';
+import { OPERATOR_NAV_COLLAPSED_KEY } from '@/components/operator/shell/operator-shell';
 
 const readSession = vi.fn();
 const redirect = vi.fn((url: string) => {
@@ -14,6 +16,7 @@ const user = (roles: string[], refreshExpiresAt = Date.now() + 60_000) => ({ use
 beforeEach(() => {
   readSession.mockReset();
   redirect.mockClear();
+  localStorage.clear();
 });
 
 describe('operator layout gate', () => {
@@ -40,19 +43,36 @@ describe('operator layout gate', () => {
 
   it('renders the operator shell with its navigation for an operator', async () => {
     readSession.mockResolvedValue(user(['operator']));
-    render(await OperatorLayout({ children: <p>contenu</p> }));
+    const { container } = render(await OperatorLayout({ children: <p>contenu</p> }));
     expect(screen.getByText('contenu')).toBeInTheDocument();
+    expect(screen.getByText('Démarches')).toBeInTheDocument();
+    expect(screen.getByText('Console opérateur')).toBeInTheDocument();
+    expect(container.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
     const nav = screen.getByRole('navigation', { name: 'Navigation principale' });
     expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual(['Statut', 'Modèles', 'Connexions']);
     expect(screen.getByRole('link', { name: 'Statut' })).toHaveAttribute('href', '/operateur');
     expect(screen.getByRole('link', { name: 'Modèles' })).toHaveAttribute('href', '/operateur/modeles');
     expect(screen.getByRole('link', { name: 'Connexions' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Statut' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: 'Replier le menu latéral' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('button', { name: 'Se déconnecter' }).closest('form')).toHaveAttribute('action', '/auth/logout');
-    expect(screen.getByRole('button', { name: /Thème/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Thème' })).toBeInTheDocument();
+    const shell = container.firstElementChild!;
+    expect(shell.className).toContain('md:grid-cols-[15rem_minmax(0,1fr)]');
     const main = screen.getByRole('main');
     expect(main.className).toContain('w-full');
     expect(main.className).not.toContain('max-w-5xl');
     expect(main.className).not.toContain('mx-auto');
+  });
+
+  it('persists sidebar collapse in localStorage', async () => {
+    readSession.mockResolvedValue(user(['operator']));
+    const ui = userEvent.setup();
+    render(await OperatorLayout({ children: <p>contenu</p> }));
+    await ui.click(screen.getByRole('button', { name: 'Replier le menu latéral' }));
+    expect(localStorage.getItem(OPERATOR_NAV_COLLAPSED_KEY)).toBe('true');
+    expect(screen.getByRole('button', { name: 'Déplier le menu latéral' })).toHaveAttribute('aria-expanded', 'false');
+    const shell = screen.getByText('contenu').closest('.min-h-dvh')!;
+    expect(shell.className).toContain('md:grid-cols-[4.25rem_minmax(0,1fr)]');
   });
 });
