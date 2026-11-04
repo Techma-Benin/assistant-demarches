@@ -6,6 +6,7 @@ import { describeError, operatorApi, type McpServer } from '@/lib/operator/api';
 import {
   emptyServerForm,
   makeId,
+  serverToForm,
   validateServerForm,
   type ServerFormErrors,
   type ServerFormValues,
@@ -18,17 +19,20 @@ const AUTH_OPTIONS = [
   { value: 'oauth-client-credentials', label: 'OAuth (identifiants client)' },
 ] as const;
 
-export const SERVER_FORM_TITLE = 'Ajouter un serveur MCP';
+export const serverFormTitle = (server?: McpServer) => (server ? `Modifier ${server.name}` : 'Ajouter une connexion');
 
-/** Body and footer of the add dialog (the dialog itself provides the title). */
+/** Body and footer of the add/edit dialog (the dialog itself provides the title). */
 export function ServerForm({
+  server,
   existingIds,
   onSaved,
 }: {
+  /** Absent: creation. */
+  server?: McpServer;
   existingIds: readonly string[];
   onSaved: (saved: McpServer) => void;
 }) {
-  const [values, setValues] = useState<ServerFormValues>(emptyServerForm);
+  const [values, setValues] = useState<ServerFormValues>(server ? serverToForm(server) : emptyServerForm);
   const [errors, setErrors] = useState<ServerFormErrors>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -39,22 +43,26 @@ export function ServerForm({
   async function submit(event: FormEvent) {
     event.preventDefault();
     setFailure(null);
-    const result = validateServerForm(values, makeId(values.name, existingIds));
+    const id = server?.id ?? makeId(values.name, existingIds);
+    const result = validateServerForm(values, id);
     setErrors(result.errors);
     if (!result.server) return;
+    const payload: McpServer = { ...result.server, enabled: server?.enabled ?? true };
     setSaving(true);
     try {
-      onSaved(await operatorApi.createServer(result.server));
+      const saved = server ? await operatorApi.updateServer(payload) : await operatorApi.createServer(payload);
+      onSaved(saved);
     } catch (error) {
-      // The server enforces MCP_ALLOWED_URLS: its refusal is shown as is.
       setFailure(describeError(error));
     } finally {
       setSaving(false);
     }
   }
 
+  const title = serverFormTitle(server);
+
   return (
-    <form onSubmit={submit} noValidate aria-label={SERVER_FORM_TITLE} className="flex min-h-0 flex-1 flex-col">
+    <form onSubmit={submit} noValidate aria-label={title} className="flex min-h-0 flex-1 flex-col">
       <DialogBody className="flex flex-col gap-4 py-3">
         {failure ? <InlineAlert>{failure}</InlineAlert> : null}
         <TextField label="Nom" required value={values.name} error={errors.name} onChange={(e) => set('name', e.target.value)} />
@@ -118,7 +126,7 @@ export function ServerForm({
           <Button variant="outline">Annuler</Button>
         </DialogClose>
         <Button type="submit" disabled={saving}>
-          {saving ? 'Ajout…' : 'Ajouter'}
+          {saving ? (server ? 'Enregistrement…' : 'Ajout…') : server ? 'Enregistrer' : 'Ajouter'}
         </Button>
       </DialogFooter>
     </form>

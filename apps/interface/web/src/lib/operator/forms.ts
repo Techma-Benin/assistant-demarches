@@ -137,6 +137,23 @@ export const emptyServerForm: ServerFormValues = {
   scope: '',
 };
 
+export function serverToForm(server: McpServer): ServerFormValues {
+  const base: ServerFormValues = { ...emptyServerForm, name: server.name, url: server.url };
+  const auth = server.auth;
+  if (auth.type === 'bearer') return { ...base, authType: 'bearer', secretRef: auth.secretRef };
+  if (auth.type === 'oauth-client-credentials') {
+    return {
+      ...base,
+      authType: 'oauth-client-credentials',
+      tokenUrl: auth.tokenUrl,
+      clientId: auth.clientId,
+      clientSecretRef: auth.clientSecretRef,
+      scope: auth.scope ?? '',
+    };
+  }
+  return base;
+}
+
 export function validateServerForm(
   values: ServerFormValues,
   id: string,

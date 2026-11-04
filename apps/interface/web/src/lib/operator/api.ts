@@ -86,6 +86,7 @@ export const operatorApi = {
 
   listServers: (signal?: AbortSignal) => listAll<McpServer>('/mcp-servers', signal),
   createServer: (server: McpServer) => request<McpServer>('POST', '/mcp-servers', server),
+  updateServer: (server: McpServer) => request<McpServer>('PUT', `/mcp-servers/${enc(server.id)}`, server),
   deleteServer: (id: string) => request<void>('DELETE', `/mcp-servers/${enc(id)}`),
   discover: (id: string) => request<McpToolList>('POST', `/mcp-servers/${enc(id)}/discover`),
   listTools: (id: string, signal?: AbortSignal) =>
