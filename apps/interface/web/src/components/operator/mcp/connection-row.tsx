@@ -2,9 +2,8 @@
 
 import { Badge, IconButton, InlineAlert, Tooltip, cn } from '@techma/ui';
 import { List, Pencil, RefreshCw, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { describeError, operatorApi, type McpServer } from '@/lib/operator/api';
-import { formatDate } from '../ui';
 
 export function ConnectionRow({
   server,
@@ -23,31 +22,14 @@ export function ConnectionRow({
   onDiscoverDone: () => void;
   notify: (message: string) => void;
 }) {
-  const [discoveredAt, setDiscoveredAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
-
-  const loadMeta = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const list = await operatorApi.listTools(server.id, signal);
-      setDiscoveredAt(list.discoveredAt);
-    } catch {
-      if (!signal?.aborted) setDiscoveredAt(null);
-    }
-  }, [server.id]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadMeta(controller.signal);
-    return () => controller.abort();
-  }, [loadMeta]);
 
   async function discover() {
     setError(null);
     setDiscovering(true);
     try {
       const list = await operatorApi.discover(server.id);
-      setDiscoveredAt(list.discoveredAt);
       onDiscoverDone();
       notify(`${list.items.length} outil${list.items.length > 1 ? 's' : ''} découvert${list.items.length > 1 ? 's' : ''} sur « ${server.name} ».`);
     } catch (e) {
@@ -77,9 +59,6 @@ export function ConnectionRow({
             {server.enabled ? null : <Badge>Désactivé</Badge>}
           </h2>
           <p className="mt-0.5 font-mono text-[13px] break-all text-ink-muted">{server.url}</p>
-          {discoveredAt ? (
-            <p className="mt-1 text-xs text-ink-muted">Dernière découverte : {formatDate(discoveredAt)}</p>
-          ) : null}
         </button>
         <div className="ml-auto flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
           <Tooltip label="Actualiser les outils">
