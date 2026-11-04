@@ -6,16 +6,18 @@ import { C1Error, type C1Client } from '@/lib/c1-client';
 import { exampleCase, issuedCase } from './fixtures-v2';
 
 const session = (user: unknown) => vi.fn(async () => new Response(JSON.stringify({ user }), { status: 200 }));
+const listConversations = vi.fn(async () => ({ items: [], nextCursor: null }));
 const second = { ...exampleCase, id: 'cas_01JD0000000000000000000002', reference: 'SIM-ANIP-2026-000002', title: 'Acte de naissance sécurisé', administrationId: 'anip', status: 'completed' as const };
 
 beforeEach(() => {
+  listConversations.mockClear();
   vi.stubGlobal('fetch', session({ name: 'Awa', roles: ['citizen'] }));
 });
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Mes démarches', () => {
   it('lists the cases with status, SIM reference and Simulation mark, administration and last update', async () => {
-    const client = { listCases: vi.fn(async () => ({ items: [exampleCase, second], nextCursor: null })) };
+    const client = { listCases: vi.fn(async () => ({ items: [exampleCase, second], nextCursor: null })), listConversations };
     render(<MyCases client={client as unknown as C1Client} />);
     const list = await screen.findByRole('list', { name: 'Vos démarches' });
     const items = within(list).getAllByRole('listitem');
@@ -35,7 +37,7 @@ describe('Mes démarches', () => {
       .fn()
       .mockResolvedValueOnce({ items: [exampleCase], nextCursor: 'CURSOR2' })
       .mockResolvedValueOnce({ items: [second], nextCursor: null });
-    render(<MyCases client={{ listCases } as unknown as C1Client} />);
+    render(<MyCases client={{ listCases, listConversations } as unknown as C1Client} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Voir plus' }));
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2));
     expect(listCases).toHaveBeenLastCalledWith('CURSOR2');
@@ -43,30 +45,41 @@ describe('Mes démarches', () => {
   });
 
   it('says so when there is nothing yet', async () => {
-    render(<MyCases client={{ listCases: vi.fn(async () => ({ items: [], nextCursor: null })) } as unknown as C1Client} />);
+    render(<MyCases client={{ listCases: vi.fn(async () => ({ items: [], nextCursor: null })), listConversations } as unknown as C1Client} />);
     expect(await screen.findByText('Vous n’avez pas encore déposé de démarche.')).toBeInTheDocument();
   });
 
   it('asks a guest to log in, without calling the cases API', async () => {
     vi.stubGlobal('fetch', session(null));
-    const client = { listCases: vi.fn() };
+    const client = { listCases: vi.fn(), listConversations: vi.fn() };
     render(<MyCases client={client as unknown as C1Client} />);
-    expect(await screen.findByText('Connectez-vous pour voir vos démarches')).toBeInTheDocument();
+    expect(await screen.findByText('Connectez-vous pour retrouver vos démarches et vos conversations')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Se connecter' })).toHaveAttribute('href', '/auth/login?returnTo=%2Fdemarches');
     expect(client.listCases).not.toHaveBeenCalled();
+    expect(client.listConversations).not.toHaveBeenCalled();
   });
 
   it.each([401, 403])('shows the same prompt when the API answers %i', async (status) => {
-    const client = { listCases: vi.fn(async () => Promise.reject(new C1Error(status))) };
+    const client = { listCases: vi.fn(async () => Promise.reject(new C1Error(status))), listConversations };
     render(<MyCases client={client as unknown as C1Client} />);
-    expect(await screen.findByText('Connectez-vous pour voir vos démarches')).toBeInTheDocument();
+    expect(await screen.findByText('Connectez-vous pour retrouver vos démarches et vos conversations')).toBeInTheDocument();
   });
 
   it('offers to retry after a failure', async () => {
     const listCases = vi.fn().mockRejectedValueOnce(new C1Error(503)).mockResolvedValue({ items: [exampleCase], nextCursor: null });
-    render(<MyCases client={{ listCases } as unknown as C1Client} />);
+    render(<MyCases client={{ listCases, listConversations } as unknown as C1Client} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Réessayer' }));
     expect(await screen.findByRole('list', { name: 'Vos démarches' })).toBeInTheDocument();
+  });
+});
+
+describe('Mes démarches, citizen space', () => {
+  it('shows Conversations first, then Dossiers déposés', async () => {
+    render(<MyCases client={{ listCases: vi.fn(async () => ({ items: [exampleCase], nextCursor: null })), listConversations } as unknown as C1Client} />);
+    await screen.findByRole('list', { name: 'Vos démarches' });
+    const headings = screen.getAllByRole('heading').map((h) => [h.tagName, h.textContent]);
+    expect(headings.slice(0, 3)).toEqual([['H1', 'Mes démarches'], ['H2', 'Conversations'], ['H2', 'Dossiers déposés']]);
+    expect(screen.getByText('Aucune conversation pour le moment.')).toBeInTheDocument();
   });
 });
 
@@ -86,7 +99,7 @@ describe('Mes démarches, detail', () => {
 
   it('asks a guest to log in, and says when the case does not exist', async () => {
     const { unmount } = render(<CaseDetail caseId="cas_x" client={{ getCase: vi.fn(async () => Promise.reject(new C1Error(401))) } as unknown as C1Client} />);
-    expect(await screen.findByText('Connectez-vous pour voir vos démarches')).toBeInTheDocument();
+    expect(await screen.findByText('Connectez-vous pour retrouver vos démarches et vos conversations')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Se connecter' })).toHaveAttribute('href', '/auth/login?returnTo=%2Fdemarches%2Fcas_x');
     unmount();
     render(<CaseDetail caseId="cas_x" client={{ getCase: vi.fn(async () => Promise.reject(new C1Error(404))) } as unknown as C1Client} />);

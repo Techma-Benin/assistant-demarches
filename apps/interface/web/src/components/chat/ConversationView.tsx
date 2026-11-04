@@ -3,12 +3,13 @@
 import { Fragment, useEffect, useId, useState } from 'react';
 import { BrandMark, Button, Chip, FlagGlyph, InlineAlert, SourceList, ThemeToggle, TypingIndicator, cn } from '@techma/ui';
 import { ArrowDown, FilePlus2, Plus } from 'lucide-react';
+import { AccountMenu } from '@/components/app/AccountMenu';
 import { BlockRenderer } from '@/components/blocks/BlockRenderer';
 import { useThreadScroll } from '@/hooks/use-thread-scroll';
 import { useUnreadTitle } from '@/hooks/use-unread-title';
 import type { useConversation } from '@/hooks/use-conversation';
 import { WAITING_LABEL, type TimelineEntry } from '@/lib/conversation-state';
-import { latestRequest, lastTextSources, prepareRequestAction, toSourceInfo, type DraftRequest } from '@/lib/dossier';
+import { fileRequestKey, latestFileRequestSlots, latestRequest, lastTextSources, openFileRequests, receivedFileRequests, prepareRequestAction, toSourceInfo, type DraftRequest } from '@/lib/dossier';
 import { dayKey, formatDayLabel, formatTime } from '@/lib/format-time';
 import { revealDelays } from '@/lib/reveal';
 import { TextBlock } from '@/components/blocks/TextBlock';
@@ -177,6 +178,10 @@ export function ConversationView({
   const title = firstQuestion?.kind === 'user' ? firstQuestion.display : null;
 
   const request = latestRequest(state.timeline);
+  // A requested document stays addable from its own line while it is missing, on its most recent block only.
+  const openRequests = openFileRequests(state.timeline);
+  const receivedRequests = receivedFileRequests(state.timeline);
+  const requestSlots = latestFileRequestSlots(state.timeline);
   const sources = lastTextSources(state.timeline).map((source, index) => toSourceInfo(source, index, true));
   const panelLabel = request !== null ? 'Vos informations' : sources.length > 0 ? `Sources (${sources.length})` : null;
 
@@ -213,7 +218,7 @@ export function ConversationView({
             <button
               type="button"
               onClick={() => setSheetOpen(true)}
-              className="ui-press inline-flex min-h-11 items-center rounded-pill border border-line bg-surface px-4 text-sm font-semibold text-ink transition-[background-color,transform] duration-(--ui-dur-press) ease-(--ui-ease-out) hover:bg-sunken min-[1440px]:hidden"
+              className="ui-press inline-flex min-h-11 items-center whitespace-nowrap rounded-pill border border-line bg-surface px-4 text-sm font-semibold text-ink transition-[background-color,transform] duration-(--ui-dur-press) ease-(--ui-ease-out) hover:bg-sunken min-[1440px]:hidden"
             >
               {panelLabel}
             </button>
@@ -228,6 +233,7 @@ export function ConversationView({
             {/* Icon only on phones so the header stays on one line. */}
             <span className="max-sm:sr-only">Nouvelle question</span>
           </Button>
+          {!embedded && <AccountMenu />}
           {/* Phones follow the system theme: one line of header matters more than the toggle there. */}
           <ThemeToggle className="max-sm:hidden" />
         </div>
@@ -436,6 +442,12 @@ export function ConversationView({
                               key={blockIndex}
                               block={block}
                               interactive={index === lastAgentIndex}
+                              fileRequestActive={
+                                block.type === 'fileRequest' &&
+                                openRequests.has(fileRequestKey(block)) &&
+                                requestSlots.get(fileRequestKey(block)) === `${index}:${blockIndex}`
+                              }
+                              fileRequestReceived={block.type === 'fileRequest' && receivedRequests.has(fileRequestKey(block))}
                               onButton={sendButton}
                               onForm={sendForm}
                               onFiles={(files, documentType) => sendFiles(files, undefined, undefined, documentType)}

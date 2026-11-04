@@ -21,6 +21,10 @@ export type BlockRendererProps = {
   consent?: ConsentControls;
   /** Conversation to attach after login (`loginRequired` block). */
   conversationId?: string | null;
+  /** `fileRequest` only: this block may stay active even when it is not in the last agent message. */
+  fileRequestActive?: boolean;
+  /** `fileRequest` only: a later request card shows the document as received. */
+  fileRequestReceived?: boolean;
   /** Progressive reveal of a live answer: start delay (ms) of this block. Undefined = shown at once. */
   revealDelay?: number;
 };
@@ -33,6 +37,8 @@ export function BlockRenderer({
   onFiles,
   consent = noopConsent,
   conversationId = null,
+  fileRequestActive = false,
+  fileRequestReceived,
   revealDelay,
 }: BlockRendererProps) {
   if (block.type === 'text') return <TextBlock block={block} revealDelay={revealDelay} />;
@@ -43,7 +49,7 @@ export function BlockRenderer({
       case 'form':
         return <FormBlock block={block} interactive={interactive} onForm={onForm} />;
       case 'fileRequest':
-        return <FileRequestBlock block={block} interactive={interactive} onFiles={onFiles} />;
+        return <FileRequestBlock block={block} interactive={interactive || fileRequestActive} received={fileRequestReceived} onFiles={onFiles} />;
       case 'loginRequired':
         return <LoginRequiredBlock block={block} conversationId={conversationId} />;
       case 'consent':

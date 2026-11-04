@@ -2,6 +2,7 @@
 
 import { MessageSquare } from 'lucide-react';
 import { useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { AccountMenu } from '@/components/app/AccountMenu';
 import { BrandMark, Button, Chip, ThemeToggle, cn } from '@techma/ui';
 import { Composer } from '@/components/chat/Composer';
 import { useStagedFiles } from '@/hooks/use-staged-files';
@@ -179,6 +180,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               <a href="#fonctionnement" className={navLink}>Comment ça marche</a>
               <a href="#whatsapp" className={navLink}>WhatsApp</a>
             </nav>
+            <AccountMenu />
             <ThemeToggle />
           </div>
         </header>

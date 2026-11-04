@@ -1,7 +1,7 @@
 import type { Schemas } from '@techma/contracts-ts';
 import { describe, expect, it } from 'vitest';
 import type { TimelineEntry } from '@/lib/conversation-state';
-import { latestRequest, prepareRequestAction, lastTextSources, toSourceInfo } from '@/lib/dossier';
+import { latestRequest, lastTextSources, openFileRequests, prepareRequestAction, receivedFileRequests, toSourceInfo } from '@/lib/dossier';
 import { caseCardBlock, consentBlock, exampleRequest, fileRequestBlock, msgId, requestCardBlock } from './fixtures-v2';
 
 type Block = Schemas['Block'];
@@ -81,5 +81,40 @@ describe('prepareRequestAction', () => {
     const cited = agent(2, text([src('https://x.fr', 'F1')]));
     expect(prepareRequestAction([agent(1, requestCardBlock()), user(1), cited])).toBeNull();
     expect(prepareRequestAction([agent(1, caseCardBlock()), user(1), cited])).toBeNull();
+  });
+});
+
+describe('openFileRequests / receivedFileRequests', () => {
+  const KEY = `${exampleRequest.id}:extrait-acte-naissance`;
+  const FILE = 'fil_01JD0000000000000000000001' as never;
+  const card = (over: Partial<typeof exampleRequest>, fileId: unknown = null) =>
+    requestCardBlock({ ...exampleRequest, documents: [{ ...exampleRequest.documents[0], fileId: fileId as never }], ...over });
+
+  it.each(['draft', 'ready'] as const)('opens a missing document of a %s request', (status) => {
+    const timeline = [agent(1, card({ status }))];
+    expect(openFileRequests(timeline)).toEqual(new Set([KEY]));
+    expect(receivedFileRequests(timeline).size).toBe(0);
+  });
+
+  it('closes it once submitted or filed as a case', () => {
+    expect(openFileRequests([agent(1, card({ status: 'submitted' }))]).size).toBe(0);
+    expect(openFileRequests([agent(1, card({ status: 'ready', caseId: 'cas_01JD0000000000000000000001' as never }))]).size).toBe(0);
+  });
+
+  it('lets the newest card of a request override the older one', () => {
+    const timeline = [agent(1, card({ status: 'draft' })), user(1), agent(2, card({ status: 'ready' }, FILE))];
+    expect(openFileRequests(timeline).size).toBe(0);
+    expect(receivedFileRequests(timeline)).toEqual(new Set([KEY]));
+  });
+
+  it('keeps requests apart', () => {
+    const other = { id: 'req_01JD0000000000000000000002' as never };
+    const timeline = [agent(1, card({ status: 'draft' }), card({ ...other, status: 'draft' }, FILE))];
+    expect(openFileRequests(timeline)).toEqual(new Set([KEY]));
+    expect(receivedFileRequests(timeline)).toEqual(new Set(['req_01JD0000000000000000000002:extrait-acte-naissance']));
+  });
+
+  it('is empty without any card', () => {
+    expect(openFileRequests([user(1), agent(1, fileRequestBlock())]).size).toBe(0);
   });
 });
