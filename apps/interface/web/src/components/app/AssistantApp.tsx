@@ -4,7 +4,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Mutable
 import { ConversationView } from '@/components/chat/ConversationView';
 import { FrontDoor } from '@/components/home/FrontDoor';
 import { useConversation } from '@/hooks/use-conversation';
-import { clearConversation, loadConversation, type ConversationSnapshot } from '@/lib/conversation-persistence';
+import { useSessionUser } from '@/hooks/use-session-user';
+import { C1Client } from '@/lib/c1-client';
+import { clearConversation, loadConversation, saveConversation, type ConversationSnapshot } from '@/lib/conversation-persistence';
 import type { TimelineEntry } from '@/lib/conversation-state';
 
 export type AppView = 'home' | 'conversation';
@@ -74,6 +76,27 @@ function Session({
     onPendingSent();
   }, [pending, canSend, dispatch, onPendingSent]);
 
+  // A signed-in person on a new tab has no saved conversation: offer the newest one of their account.
+  // Never asked for a guest: the call would open a guest session for nothing.
+  const { status: access } = useSessionUser();
+  const [remote, setRemote] = useState<{ id: string; at: string } | null>(null);
+  const lookup = view === 'home' && !hasTimeline && access === 'user';
+  useEffect(() => {
+    if (!lookup) return;
+    let cancelled = false;
+    new C1Client()
+      .listConversations(null, 1)
+      .then((page) => {
+        const newest = page.items[0];
+        // `lastMessageAt` may be missing even when the conversation has messages: fall back to its creation.
+        if (!cancelled && newest) setRemote({ id: newest.id, at: newest.lastMessageAt ?? newest.createdAt });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [lookup]);
+
   if (view === 'conversation') {
     return <ConversationView conversation={conversation} onRestart={onRestart} onHome={() => onView('home')} />;
   }
@@ -96,7 +119,16 @@ function Session({
       resume={
         hasTimeline
           ? { title: conversationTitle(state.timeline), at: lastActivity(state.timeline), onResume: () => onView('conversation') }
-          : undefined
+          : remote
+            ? {
+                title: null,
+                at: remote.at,
+                onResume: () => {
+                  saveConversation({ conversationId: remote.id });
+                  window.location.assign(CONVERSATION_PATH);
+                },
+              }
+            : undefined
       }
     />
   );

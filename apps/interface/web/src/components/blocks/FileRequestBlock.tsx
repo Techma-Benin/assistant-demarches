@@ -10,18 +10,20 @@ type Block = Schemas['Block'];
 type Props = {
   block: Extract<Block, { type: 'fileRequest' }>;
   interactive: boolean;
+  /** Overrides `block.received` when a later request card shows the document was given. */
+  received?: boolean;
   /** `documentType` is the one of the line: the message that carries the file answers this request. */
   onFiles: (files: File[], documentType: string) => void;
 };
 
 /** One expected document of a draft: a button adds the file, `received` shows it was already given. */
-export function FileRequestBlock({ block, interactive, onFiles }: Props) {
+export function FileRequestBlock({ block, interactive, received: receivedOverride, onFiles }: Props) {
   const [sent, setSent] = useState<{ name: string; size: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
   const accepted = effectiveMimeTypes(block.acceptedMimeTypes);
-  const received = block.received || sent !== null;
+  const received = block.received || receivedOverride === true || sent !== null;
   const disabled = !interactive || received;
 
   function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
