@@ -161,15 +161,15 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
   return (
     <section id="themes" ref={ref} aria-labelledby="themes-title" className={cn(sectionPad, 'overflow-x-clip bg-action text-on-action lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-16')}>
       <div className="mx-auto max-w-[1320px] px-5 md:px-8">
-        {/* Decorative: the photo shows through the letters and drifts slowly. */}
+        {/* Decorative: the chosen theme's photo shows through the letters, fixed to the screen while the page scrolls. */}
         <div {...rv(0)}>
           <FitWord
             word="DÉMARCHES"
             max={240}
             maxScreenHeight={0.22}
-            fills={CATALOGUE.map((t) => ({ backgroundImage: `url(${t.backdrop.src})`, backgroundSize: t.backdrop.size, backgroundPosition: `50% ${t.backdrop.y}`, '--fy': t.backdrop.y }) as CSSProperties)}
+            fills={CATALOGUE.map((t) => ({ backgroundImage: `url(${t.backdrop.src})`, backgroundSize: t.backdrop.size, backgroundPosition: `50% ${t.backdrop.y}` }))}
             active={selected}
-            className="type-photo bg-fixed animate-[home-pan_24s_ease-in-out_infinite_alternate]"
+            className="type-photo bg-fixed"
           />
         </div>
 
@@ -182,14 +182,14 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
           </p>
         </div>
 
-        <div className="mt-10 grid grid-cols-1 gap-8 lg:mt-12 lg:grid-cols-12 lg:gap-x-8">
-          <div {...rv(3)} className="flex min-w-0 flex-col gap-8 lg:col-span-4">
+        <div className="mt-10 grid grid-cols-1 gap-8 lg:mt-12 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:gap-x-12 lg:gap-y-8">
+          <div {...rv(3)} className="min-w-0 lg:col-span-4">
             <div
               role="tablist"
               aria-label="Thèmes de démarches"
               aria-orientation={vertical ? 'vertical' : 'horizontal'}
               onKeyDown={onKey}
-              className="ui-scrollbar-none -mx-5 flex overflow-x-auto px-5 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0"
+              className="ui-scrollbar-none -mx-5 flex gap-2 overflow-x-auto px-5 pb-1 lg:mx-0 lg:flex-col lg:gap-0 lg:overflow-visible lg:border-t lg:border-on-action/20 lg:px-0 lg:pb-0"
             >
               {CATALOGUE.map((t, i) => {
                 const active = i === selected;
@@ -206,20 +206,24 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
                     aria-controls="theme-panel"
                     tabIndex={active ? 0 : -1}
                     onClick={() => choose(i)}
+                    onMouseEnter={() => choose(i)}
+                    onFocus={() => choose(i)}
                     className={cn(
-                      'ui-press relative flex shrink-0 items-baseline justify-between gap-6 whitespace-nowrap px-4 py-3 text-left font-display text-[20px] leading-[1.15] tracking-[-0.03em] lg:border-t lg:border-on-action/20 lg:px-0 lg:py-[clamp(10px,1.8svh,18px)] lg:text-[clamp(22px,2vw,30px)]',
-                      i === CATALOGUE.length - 1 && 'lg:border-b',
-                      active ? 'font-extrabold text-on-action' : 'font-semibold text-on-action/60 hover:text-on-action',
+                      'ui-press relative flex min-h-11 shrink-0 items-center justify-between gap-6 whitespace-nowrap rounded-pill border px-4 text-left text-[15px] font-semibold transition-colors duration-200',
+                      'lg:rounded-none lg:border-0 lg:border-b lg:border-on-action/20 lg:px-0 lg:py-[clamp(10px,1.8svh,18px)] lg:font-display lg:text-[clamp(22px,2vw,30px)] lg:leading-[1.15] lg:tracking-[-0.03em]',
+                      active
+                        ? 'border-on-action bg-on-action text-action lg:bg-transparent lg:font-extrabold lg:text-on-action'
+                        : 'border-on-action/25 text-on-action/75 hover:text-on-action lg:text-on-action/60',
                     )}
                   >
                     {t.title}
-                    <span aria-hidden="true" className="hidden font-mono text-[13px] font-normal text-on-action/60 lg:inline">
+                    <span aria-hidden="true" className={cn('hidden font-mono text-[13px] font-normal transition-colors duration-200 lg:inline', active ? 'text-(--home-field-green)' : 'text-on-action/60')}>
                       {String(i + 1).padStart(2, '0')}
                     </span>
                     <span
                       aria-hidden="true"
                       className={cn(
-                        'absolute inset-x-0 bottom-0 h-0.5 origin-left bg-(--home-field-green) transition-transform duration-300',
+                        'absolute inset-x-0 -bottom-px hidden h-0.5 origin-left bg-(--home-field-green) transition-transform duration-500 ease-out lg:block',
                         active ? 'scale-x-100' : 'scale-x-0',
                       )}
                     />
@@ -227,18 +231,18 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
                 );
               })}
             </div>
+          </div>
 
-            <div className="flex max-w-[34ch] flex-col items-start gap-2 text-[16px] leading-normal">
-              <p className="m-0 font-semibold">Une autre démarche ?</p>
-              <p className="m-0 text-on-action/75">Posez votre question : l’assistant cherche dans toutes les fiches du service public.</p>
-              <button
-                type="button"
-                onClick={onAskOther}
-                className="ui-press inline-flex min-h-11 items-center font-semibold text-on-action underline underline-offset-4 hover:no-underline"
-              >
-                Poser ma question
-              </button>
-            </div>
+          <div className="order-last flex max-w-[34ch] flex-col items-start gap-2 text-[16px] leading-normal lg:order-none lg:col-span-4 lg:row-start-2">
+            <p className="m-0 font-semibold">Une autre démarche ?</p>
+            <p className="m-0 text-on-action/75">Posez votre question : l’assistant cherche dans toutes les fiches du service public.</p>
+            <button
+              type="button"
+              onClick={onAskOther}
+              className="ui-press inline-flex min-h-11 items-center font-semibold text-on-action underline underline-offset-4 hover:no-underline"
+            >
+              Poser ma question
+            </button>
           </div>
 
           <div
@@ -246,30 +250,39 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
             role="tabpanel"
             id="theme-panel"
             aria-labelledby={`theme-tab-${selected}`}
-            className="min-w-0 overflow-hidden rounded-[24px] bg-canvas text-ink lg:col-span-8"
+            className="min-w-0 overflow-hidden rounded-[24px] bg-canvas text-ink lg:col-span-8 lg:col-start-5 lg:row-span-2 lg:row-start-1"
           >
-            {/* Re-mounted on tab change so the fan and the text enter again. */}
-            <div key={selected}>
-              <div aria-hidden="true" className="relative flex h-[200px] items-end justify-center overflow-hidden bg-sunken lg:h-[clamp(220px,30svh,320px)]">
-                {fan.map((item, i) => (
-                  <div
-                    key={item.name}
-                    style={{ animationDelay: `${i * 80}ms` }}
-                    className={cn(
-                      'relative aspect-[3/4] h-[88%] animate-[home-rise_600ms_var(--ui-ease-out)_both] transition-[translate,scale] duration-300 ease-out',
-                      i > 0 && '-ml-[6%]',
-                      FAN_ROTATIONS[fan.length === 2 && i === 1 ? 2 : i],
-                      lifted === i ? 'z-10 translate-y-[1%] scale-[1.08]' : 'translate-y-[8%]',
-                    )}
-                  >
-                    <div style={{ animationDelay: `${600 + i * 700}ms` }} className="relative size-full animate-[doc-float_5s_ease-in-out_infinite]">
-                      <DocumentArt kind={item.kind ?? theme.kind} className="size-full drop-shadow-md" />
-                      {i === 1 && <Stamp className="doc-stamp absolute -right-[8%] bottom-[12%] size-[44%] -rotate-12" />}
+            <div>
+              <div aria-hidden="true" className="relative h-[200px] overflow-hidden bg-sunken lg:h-[clamp(220px,30svh,320px)]">
+                {CATALOGUE.map((t, ti) => {
+                  const shown = ti === selected;
+                  const docs = t.items.slice(0, 3);
+                  return (
+                    <div
+                      key={t.title}
+                      className={cn('absolute inset-0 flex items-end justify-center transition-opacity duration-700 ease-in-out', shown ? 'opacity-100' : 'opacity-0')}
+                    >
+                      {docs.map((item, i) => (
+                        <div
+                          key={item.name}
+                          className={cn(
+                            'relative aspect-[3/4] h-[88%] transition-[translate,scale] duration-300 ease-out',
+                            i > 0 && '-ml-[6%]',
+                            FAN_ROTATIONS[docs.length === 2 && i === 1 ? 2 : i],
+                            shown && lifted === i ? 'z-10 translate-y-[1%] scale-[1.08]' : 'translate-y-[8%]',
+                          )}
+                        >
+                          <div style={{ animationDelay: `${i * 700}ms` }} className="relative size-full animate-[doc-float_5s_ease-in-out_infinite]">
+                            <DocumentArt kind={item.kind ?? t.kind} className="size-full drop-shadow-md" />
+                            {i === 1 && shown && <Stamp key={selected} className="doc-stamp absolute -right-[8%] bottom-[12%] size-[44%] -rotate-12" />}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-              <div className="chat-fade-in grid grid-cols-1 gap-8 p-6 md:grid-cols-2 md:gap-10 md:p-9">
+              <div key={selected} className="chat-fade-in grid grid-cols-1 gap-8 p-6 md:grid-cols-2 md:gap-10 md:p-9">
                 <div className="flex flex-col items-start gap-4">
                   <h3 className="m-0 font-display text-[28px] font-extrabold leading-[1.1] tracking-[-0.03em]">{theme.title}</h3>
                   <p className="m-0 text-[16px] leading-normal text-ink-muted">{theme.description}</p>

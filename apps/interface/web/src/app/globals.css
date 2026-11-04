@@ -233,14 +233,6 @@ html:has([data-home])::-webkit-scrollbar {
   }
 }
 
-@keyframes home-pan {
-  from {
-    background-position: 46% var(--fy, 50%);
-  }
-  to {
-    background-position: 54% var(--fy, 50%);
-  }
-}
 @keyframes doc-float {
   0%,
   100% {
