@@ -28,7 +28,7 @@ function Select({ label, children, ...props }: { label: string; children: ReactN
 
 /**
  * Create (`official` null: `POST /officials`) or edit (`PUT /officials/{id}`: administration, role, active) an official.
- * Only offered with `officials:manage`. Only a super admin picks another administration or the super_admin role.
+ * Create is opened only by a super admin. Edit needs `officials:manage`. Only a super admin picks another administration or the super_admin role.
  */
 export function OfficialForm({
   official,
@@ -123,10 +123,9 @@ export function OfficialForm({
             <option value="" disabled>
               Choisir une administration
             </option>
-            {administrations.map((candidate) => (
-              <option key={candidate.id} value={candidate.id} disabled={!isConnected(candidate)}>
+            {administrations.filter(isConnected).map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
                 {candidate.name}
-                {isConnected(candidate) ? '' : ' (non connectée)'}
               </option>
             ))}
           </Select>

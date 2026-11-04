@@ -41,7 +41,7 @@ describe('ConsoleProvider administration rule', () => {
   it('defaults a super admin to the first connected administration and sends it as scope', async () => {
     stubConsole({ me: SUPER_ME, administrations: [SANTE, JUSTICE, ANIP] });
     renderProbe(null);
-    await waitFor(() => expect(screen.getByTestId('p')).toHaveTextContent('justice|true|justice|sante,justice,anip'));
+    await waitFor(() => expect(screen.getByTestId('p')).toHaveTextContent(/^justice\|true\|justice\|justice,anip$/));
   });
 
   it('honours the cookie for a super admin when connected', async () => {
@@ -59,7 +59,7 @@ describe('ConsoleProvider administration rule', () => {
   it('has no administration when none is connected', async () => {
     stubConsole({ me: SUPER_ME, administrations: [SANTE] });
     renderProbe(null);
-    await waitFor(() => expect(screen.getByTestId('p')).toHaveTextContent('none|true|-|sante'));
+    await waitFor(() => expect(screen.getByTestId('p')).toHaveTextContent(/^none\|true\|-\|$/));
   });
 
   it('exposes can() from the permissions of /me', async () => {

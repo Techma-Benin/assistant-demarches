@@ -17,7 +17,7 @@ Un officiel rattaché à une administration, qui traite les dossiers et gère le
 _Avoid_: administrateur (tout seul), super administrateur
 
 **Super administrateur**:
-Un officiel sans administration, qui voit toutes les administrations connectées et y affecte des officiels.
+Un officiel sans administration, qui voit les administrations connectées et y affecte des officiels. La console ne liste pas les administrations non connectées.
 _Avoid_: opérateur, admin
 
 **Opérateur**:

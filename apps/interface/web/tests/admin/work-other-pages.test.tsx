@@ -170,8 +170,17 @@ describe('Utilisateurs (A9)', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('offers create and edit with officials:manage', async () => {
+  it('offers edit but not create to an admin of an administration', async () => {
     resetConsole(ADMIN);
+    stubUsers();
+    render(<UsersList />);
+    await screen.findByText('Camille Agent');
+    expect(screen.queryByRole('button', { name: /Ajouter un agent/ })).toBeNull();
+    expect(screen.getAllByRole('button', { name: /Modifier/ })).toHaveLength(2);
+  });
+
+  it('offers create and edit to a super admin', async () => {
+    resetConsole(SUPER);
     stubUsers();
     render(<UsersList />);
     await screen.findByText('Camille Agent');
@@ -180,7 +189,7 @@ describe('Utilisateurs (A9)', () => {
   });
 
   it('creates an official and shows the temporary password once, with a copy button and a warning', async () => {
-    resetConsole(ADMIN);
+    resetConsole(SUPER);
     const { calls } = stubUsers();
     const user = userEvent.setup();
     render(<UsersList />);
@@ -219,7 +228,7 @@ describe('Utilisateurs (A9)', () => {
   });
 
   it('never logs the temporary password', async () => {
-    resetConsole(ADMIN);
+    resetConsole(SUPER);
     const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((method) => vi.spyOn(console, method).mockImplementation(() => undefined));
     stubUsers();
     const user = userEvent.setup();
@@ -236,7 +245,7 @@ describe('Utilisateurs (A9)', () => {
   });
 
   it('shows a creation problem (409 e-mail already used) and keeps the form open', async () => {
-    resetConsole(ADMIN);
+    resetConsole(SUPER);
     stubUsers(() => problem(409, 'CONFLICT', 'Cette adresse est déjà utilisée.'));
     const user = userEvent.setup();
     render(<UsersList />);
@@ -251,16 +260,17 @@ describe('Utilisateurs (A9)', () => {
     expect(screen.queryByRole('dialog', { name: 'Compte créé' })).toBeNull();
   });
 
-  it('limits the roles to agent and admin for a non super admin, and keeps their administration', async () => {
+  it('limits the roles to agent and admin for an admin of an administration, and keeps their administration', async () => {
     resetConsole(ADMIN);
     stubUsers();
     const user = userEvent.setup();
     render(<UsersList />);
     await screen.findByText('Camille Agent');
-    await user.click(screen.getByRole('button', { name: /Ajouter un agent/ }));
-    const roles = within(screen.getByLabelText('Rôle')).getAllByRole('option').map((o) => o.textContent);
-    expect(roles).toEqual(['Agent', 'Administrateur']);
-    expect(screen.queryByLabelText('Administration')).toBeNull();
+    await user.click(screen.getByRole('button', { name: /Modifier Camille Agent/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Modifier Camille Agent' });
+    const roles = within(dialog).getByLabelText('Rôle');
+    expect(within(roles).getAllByRole('option').map((o) => o.textContent)).toEqual(['Agent', 'Administrateur']);
+    expect(within(dialog).queryByLabelText('Administration')).toBeNull();
   });
 
   it('lets a super admin choose a connected administration and the super_admin role (administrationId null)', async () => {
@@ -271,7 +281,8 @@ describe('Utilisateurs (A9)', () => {
     await screen.findByText('Camille Agent');
     await user.click(screen.getByRole('button', { name: /Ajouter un agent/ }));
     const administrations = within(screen.getByLabelText('Administration')).getAllByRole('option') as HTMLOptionElement[];
-    expect(administrations.find((o) => o.textContent?.includes('Santé'))).toBeDisabled();
+    expect(administrations.map((option) => option.textContent)).toEqual(['Choisir une administration', 'Ministère de la Justice', 'ANIP']);
+    expect(administrations.find((o) => o.textContent?.includes('Santé'))).toBeUndefined();
     await user.type(screen.getByLabelText(/Adresse e-mail/), 'a@b.bj');
     await user.type(screen.getByLabelText(/Nom affiché/), 'A');
     await user.type(screen.getByLabelText(/Fonction/), 'B');

@@ -25,6 +25,12 @@ describe('administration cookie', () => {
     expect(cookie).toContain('SameSite=Lax');
   });
 
+  it('treats localhost and 127.0.0.1 as the same origin', async () => {
+    const response = await switchAdministration(post({ administrationId: 'anip' }, 'http://127.0.0.1'));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ administrationId: 'anip' });
+  });
+
   it('refuses a foreign origin, a missing id, bad JSON and a department id', async () => {
     expect((await switchAdministration(post({ administrationId: 'justice' }, 'https://evil.example'))).status).toBe(403);
     expect((await switchAdministration(post({ administrationId: 'justice' }, null))).status).toBe(403);

@@ -20,8 +20,9 @@ const LIMIT = 50;
 type Editing = { kind: 'create' } | { kind: 'edit'; official: Official } | null;
 
 function Users({ administrationId }: { administrationId: string | undefined }) {
-  const { administrations, administrationId: selectedId, can } = useConsole();
+  const { administrations, administrationId: selectedId, can, isSuperAdmin } = useConsole();
   const canManage = can('officials:manage');
+  const canCreate = canManage && isSuperAdmin;
   const names = new Map(administrations.map((a) => [a.id, a.name]));
   const [refresh, setRefresh] = useState(0);
   const [editing, setEditing] = useState<Editing>(null);
@@ -75,11 +76,13 @@ function Users({ administrationId }: { administrationId: string | undefined }) {
   return (
     <div className="flex flex-col gap-4">
       {canManage ? (
-        <div className="flex items-center justify-between gap-3">
-          <Button onClick={() => setEditing({ kind: 'create' })}>
-            <UserPlus aria-hidden="true" className="size-4" />
-            Ajouter un agent
-          </Button>
+        <div className={`flex items-center gap-3 ${canCreate ? 'justify-between' : 'justify-end'}`}>
+          {canCreate ? (
+            <Button onClick={() => setEditing({ kind: 'create' })}>
+              <UserPlus aria-hidden="true" className="size-4" />
+              Ajouter un agent
+            </Button>
+          ) : null}
           <Toast message={toast.message} onDismiss={toast.dismiss} />
         </div>
       ) : null}

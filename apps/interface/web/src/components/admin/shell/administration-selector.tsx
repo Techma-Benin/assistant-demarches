@@ -6,7 +6,7 @@ import { MenuSelect } from './menu-select';
 
 /**
  * Top-of-sidebar administration selector « Justice ▾ », only for a super admin (`administrations:all`);
- * static text for everyone else. Administrations that are not connected are listed but not selectable.
+ * static text for everyone else. Only connected administrations are listed.
  */
 export function AdministrationSelector() {
   const { administrations, administration, administrationId, isSuperAdmin, selectAdministration, loading } = useConsole();
@@ -38,17 +38,9 @@ export function AdministrationSelector() {
             </>
           }
           checkedId={administrationId}
-          options={administrations.map((candidate) => ({
+          options={administrations.filter(isConnected).map((candidate) => ({
             id: candidate.id,
-            disabled: !isConnected(candidate),
-            content: (
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-sm font-semibold">{candidate.name}</span>
-                {isConnected(candidate) ? null : (
-                  <span className="text-xs text-ink-muted">Non connectée</span>
-                )}
-              </span>
-            ),
+            content: <span className="truncate text-sm font-semibold">{candidate.name}</span>,
           }))}
           onSelect={(id) => void selectAdministration(id)}
         />

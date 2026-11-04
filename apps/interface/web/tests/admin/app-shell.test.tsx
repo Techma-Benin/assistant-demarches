@@ -137,16 +137,14 @@ describe('administration selector', () => {
     expect(screen.getByRole('button', { name: 'ANIP' })).toBeInTheDocument();
   });
 
-  it('shows a not connected administration as « Non connectée » and does not let it be selected', async () => {
+  it('does not list a not connected administration', async () => {
     const { calls } = stubConsole({ me: SUPER_ME, administrations: [JUSTICE, SANTE] });
     renderShell();
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Ministère de la Justice' }));
     const menu = screen.getByRole('menu', { name: 'Changer d’administration' });
-    const sante = within(menu).getByRole('menuitemradio', { name: /Santé/ });
-    expect(sante).toHaveTextContent('Non connectée');
-    expect(sante).toBeDisabled();
-    await user.click(sante);
+    expect(within(menu).queryByRole('menuitemradio', { name: /Santé/ })).toBeNull();
+    expect(within(menu).getByRole('menuitemradio', { name: 'Ministère de la Justice' })).toBeEnabled();
     expect(calls.some((call) => call.method === 'POST')).toBe(false);
   });
 
