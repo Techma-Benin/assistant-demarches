@@ -16,7 +16,10 @@ test('model reply keeps exact validated provenance and safe conversation copy', 
   assert.equal(presentModelReply('```json\n' + text('Données fictives.', [procedure.source]) + '\n```', evidence)[0].sources[0].url, procedure.source.url);
   assert.deepEqual(presentModelReply('Le tarif est de 500 FCFA.', evidence)[0].sources, [procedure.source]);
   assert.throws(() => presentModelReply('Le tarif est de 500 FCFA.', { sources: [], requests: [] }));
-  assert.throws(() => presentModelReply('Voir https://invented.example/x pour le tarif.', evidence));
+  // A foreign URL in the text is removed instead of refusing the whole reply (an unknown PS id still is refused).
+  assert.equal(presentModelReply('Voir https://invented.example/x pour le tarif.', evidence)[0].text, 'Voir pour le tarif.');
+  assert.throws(() => presentModelReply('https://invented.example/x', evidence), /vide/);
+  assert.throws(() => presentModelReply('La démarche PS99999 est possible.', evidence));
   assert.throws(() => presentModelReply(text('Données fictives.', [{ ...procedure.source, url: 'https://invented.example/x' }]), evidence));
   assert.throws(() => presentModelReply('{"blocks":[]}', evidence));
   assert.throws(() => presentModelReply('{"blocks":[{"type":"text","text":"","sources":[]}]}', evidence));
