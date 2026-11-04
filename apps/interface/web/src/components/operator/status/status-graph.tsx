@@ -22,6 +22,7 @@ import {
   statusGraphHeight,
   statusGraphLayoutWidth,
   statusGraphNodeExtent,
+  statusGraphTranslateExtent,
 } from './status-graph-layout';
 import { statusGraphNodeTypes, type BranchNodeData } from './status-graph-nodes';
 import './status-graph.css';
@@ -55,23 +56,20 @@ function connectedAdministrations(administrations: Administration[]): Administra
   return administrations.filter((administration) => administration.connection.status === 'connected');
 }
 
-const FIT_VIEW_OPTIONS = {
-  padding: { top: 0.02, right: 0.06, bottom: 0.12, left: 0.06 },
-  minZoom: 1,
-  maxZoom: 1,
-} as const;
+const INITIAL_VIEWPORT = { x: 0, y: 0, zoom: 1 } as const;
 
-function FitViewWhenReady({ layoutKey }: { layoutKey: string }) {
-  const { fitView } = useReactFlow();
+/** Top-align the tree after layout changes; avoid fitView centering in a tall flex pane. */
+function AlignViewportTopWhenReady({ layoutKey }: { layoutKey: string }) {
+  const { setViewport } = useReactFlow();
   const seenLayoutKey = useRef<string | null>(null);
   useEffect(() => {
     if (seenLayoutKey.current === layoutKey) return;
     seenLayoutKey.current = layoutKey;
     const id = requestAnimationFrame(() => {
-      void fitView({ ...FIT_VIEW_OPTIONS, duration: 0 });
+      void setViewport(INITIAL_VIEWPORT, { duration: 0 });
     });
     return () => cancelAnimationFrame(id);
-  }, [fitView, layoutKey]);
+  }, [layoutKey, setViewport]);
   return null;
 }
 
@@ -258,9 +256,13 @@ function StatusGraphFlow({
     setEdges(layoutEdges);
   }, [contentKey, layoutKey, layoutNodesEdges, setEdges, setNodes]);
 
-  const dragExtent = useMemo(
+  const nodeDragExtent = useMemo(
     () => statusGraphNodeExtent(width, height, adminHasChips),
     [adminHasChips, height, width],
+  );
+  const viewportExtent = useMemo(
+    () => statusGraphTranslateExtent(width, height),
+    [height, width],
   );
 
   return (
@@ -278,14 +280,17 @@ function StatusGraphFlow({
       zoomOnScroll={false}
       zoomOnPinch={false}
       zoomOnDoubleClick={false}
+      minZoom={1}
+      maxZoom={1}
+      defaultViewport={INITIAL_VIEWPORT}
       autoPanOnNodeDrag={false}
       preventScrolling
-      nodeExtent={dragExtent}
-      translateExtent={dragExtent}
+      nodeExtent={nodeDragExtent}
+      translateExtent={viewportExtent}
       nodeDragThreshold={3}
       proOptions={{ hideAttribution: true }}
     >
-      <FitViewWhenReady layoutKey={layoutKey} />
+      <AlignViewportTopWhenReady layoutKey={layoutKey} />
     </ReactFlow>
   );
 }
@@ -299,8 +304,6 @@ export function StatusGraph({
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(960);
-  const [paneHeight, setPaneHeight] = useState(456);
-
   const connected = useMemo(
     () => connectedAdministrations(status.administrations),
     [status.administrations],
@@ -308,6 +311,7 @@ export function StatusGraph({
   const adminHasChips = connected.length > 0;
   const layoutWidth = statusGraphLayoutWidth(width);
   const minHeight = statusGraphHeight(layoutWidth, adminHasChips);
+  const [paneHeight, setPaneHeight] = useState(minHeight);
 
   useEffect(() => {
     const el = shellRef.current;

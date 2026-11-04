@@ -71,6 +71,17 @@ export function statusGraphNodeExtent(
   ];
 }
 
+/** Viewport pan bounds: full pane so the tree stays visible with empty drag space below. */
+export function statusGraphTranslateExtent(
+  paneWidth: number,
+  paneHeight: number,
+): [[number, number], [number, number]] {
+  return [
+    [0, 0],
+    [Math.max(1, paneWidth), Math.max(1, paneHeight)],
+  ];
+}
+
 type BranchPayload = {
   id: (typeof CHILD_IDS)[number];
   data: BranchNodeData;
