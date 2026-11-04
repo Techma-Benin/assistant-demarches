@@ -31,6 +31,7 @@ import { presentModelReply, mergeSystemBlocks, MODEL_UNAVAILABLE_BLOCKS, UNAVAIL
 import type { TranscriptionPort } from "./transcription.js";
 import { LiveReply } from "./live-reply.js";
 import { visibleText } from "./text-deltas.js";
+import { readModelSecret } from "./secrets.js";
 
 const MODEL_REPLY_ATTEMPTS = 3;
 const CATALOGUE_LOOKUP = /casier|passeport|carte\s+d['’]?identit|extrait(?:\s+d['’]acte)?|quels?\s+documents|documents?\s+requis|comment\s+faire|je\s+veux\s+(?:demander|faire|obtenir|déposer)|pièces\s+(?:pour|à|demand)/i;
@@ -531,7 +532,7 @@ export class Agent {
     try {
     while (state.step < 8) {
       if (!state.pending) {
-        const { reply, blocks } = await this.generateUsable(state, advertised, live, conversation);
+        const { reply, blocks } = await this.generateUsable(state, advertised, live, conversation, administrationId);
         await live.settle();
         if (!reply) {
           if (isGenericRefusal(blocks))
@@ -851,6 +852,7 @@ export class Agent {
     tools: ToolDefinition[],
     live: LiveReply,
     conversation: OwnedConversation,
+    administrationId: string,
   ): Promise<{ reply?: ModelReply; blocks?: Schemas["AgentMessage"]["blocks"] }> {
     let fallback = MODEL_UNAVAILABLE_BLOCKS;
     const question = [...state.history].reverse().find((turn) => turn.role === "user")?.content ?? "";
@@ -894,6 +896,7 @@ export class Agent {
           onTextDelta: listener.onTextDelta,
           onToolCall: listener.onToolCall,
           structuredOutput,
+          apiKey: await readModelSecret(this.pool, administrationId, state.config.id),
           ...(requireTool && searchName ? { toolChoice: "required" } : {}),
         });
       }

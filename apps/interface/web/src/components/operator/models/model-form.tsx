@@ -42,12 +42,13 @@ export function ModelForm({
     event.preventDefault();
     setFailure(null);
     const base = model ?? { id: makeId(values.label, existingIds), active: false };
-    const result = validateModelForm(values, base);
+    const result = validateModelForm(values, base, { requireKey: !model });
     setErrors(result.errors);
     if (!result.model) return;
     setSaving(true);
     try {
-      const saved = model ? await operatorApi.updateModel(result.model) : await operatorApi.createModel(result.model);
+      const payload = result.apiKey ? { ...result.model, apiKey: result.apiKey } : result.model;
+      const saved = model ? await operatorApi.updateModel(payload) : await operatorApi.createModel(payload);
       onSaved(saved);
     } catch (error) {
       setFailure(describeError(error));
@@ -94,15 +95,23 @@ export function ModelForm({
         onChange={(e) => set('model')(e.target.value)}
       />
       <TextField
-        label="Clé d’accès (apiKeyRef)"
-        required
-        type="text"
-        autoComplete="off"
+        label="Clé d’accès"
+        required={!model}
+        type="password"
+        name="model-access-secret"
+        autoComplete="new-password"
         spellCheck={false}
-        hint="Nom de la variable d’environnement qui contient la clé, jamais la clé elle-même."
-        value={values.apiKeyRef}
-        error={errors.apiKeyRef}
-        onChange={(e) => set('apiKeyRef')(e.target.value)}
+        className="select-none"
+        hint={
+          model
+            ? 'Laissez vide pour conserver la clé actuelle. Elle n’est jamais réaffichée.'
+            : 'La clé est enregistrée chiffrée. Elle ne sera plus visible ensuite.'
+        }
+        value={values.apiKey}
+        error={errors.apiKey}
+        onCopy={(event) => event.preventDefault()}
+        onCut={(event) => event.preventDefault()}
+        onChange={(e) => set('apiKey')(e.target.value)}
       />
       <TextField
         label="Température"

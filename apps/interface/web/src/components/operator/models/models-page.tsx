@@ -132,8 +132,10 @@ export function ModelsPage() {
                       <dd className="inline break-all">{model.baseUrl}</dd>
                     </div>
                     <div>
-                      <dt className="inline font-semibold">Variable de la clé : </dt>
-                      <dd className="inline font-mono break-all">{model.apiKeyRef}</dd>
+                      <dt className="inline font-semibold">Clé : </dt>
+                      <dd className="inline select-none font-mono tracking-widest" aria-label="Clé enregistrée">
+                        ••••••••
+                      </dd>
                     </div>
                     <div>
                       <dt className="inline font-semibold">Température : </dt>

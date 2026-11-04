@@ -79,8 +79,9 @@ const enc = encodeURIComponent;
 
 export const operatorApi = {
   listModels: (signal?: AbortSignal) => listAll<ModelConfig>('/models', signal),
-  createModel: (model: ModelConfig) => request<ModelConfig>('POST', '/models', model),
-  updateModel: (model: ModelConfig) => request<ModelConfig>('PUT', `/models/${enc(model.id)}`, model),
+  createModel: (model: ModelConfig & { apiKey?: string }) => request<ModelConfig>('POST', '/models', model),
+  updateModel: (model: ModelConfig & { apiKey?: string }) =>
+    request<ModelConfig>('PUT', `/models/${enc(model.id)}`, model),
   deleteModel: (id: string) => request<void>('DELETE', `/models/${enc(id)}`),
 
   listServers: (signal?: AbortSignal) => listAll<McpServer>('/mcp-servers', signal),
