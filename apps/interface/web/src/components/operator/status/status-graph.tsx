@@ -1,11 +1,11 @@
 'use client';
 
 import { Cpu, Landmark, Plug, type LucideIcon } from 'lucide-react';
-import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { OperatorStatus } from '@/lib/operator/api';
 import { formatDate } from '../ui';
+import { AssistantMark } from './assistant-mark';
 import './status-graph.css';
 
 type Administration = OperatorStatus['administrations'][number];
@@ -68,14 +68,9 @@ export function StatusGraph({ status }: { status: OperatorStatus }) {
     <section aria-label="Schéma des connexions" className="op-status-chain">
       <div className="op-status-cluster">
         <div className="op-status-hub">
-          <Image
-            src="/operateur/assistant-mark.jpg"
-            alt="Assistant"
-            width={88}
-            height={88}
-            className="op-status-hub-mark"
-            priority
-          />
+          <span className="op-status-hub-mark" role="img" aria-label="Assistant">
+            <AssistantMark />
+          </span>
           <span className="op-status-hub-name">Assistant</span>
           <span className="op-status-hub-stamp">Vérifié à l’instant</span>
         </div>
