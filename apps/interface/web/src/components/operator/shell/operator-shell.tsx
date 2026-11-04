@@ -52,15 +52,8 @@ function readStoredCollapsed(): boolean {
   }
 }
 
-function NavIcon({ icon: Icon, active }: { icon: LucideIcon; active: boolean }) {
-  return (
-    <Icon
-      aria-hidden="true"
-      className="size-5 shrink-0"
-      strokeWidth={active ? 0 : 1.75}
-      fill={active ? 'currentColor' : 'none'}
-    />
-  );
+function NavIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return <Icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.75} fill="none" />;
 }
 
 function ShellThemeControl({ collapsed }: { collapsed: boolean }) {
@@ -212,7 +205,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
         collapsed ? 'md:grid-cols-[4.25rem_minmax(0,1fr)]' : 'md:grid-cols-[15rem_minmax(0,1fr)]',
       )}
     >
-      <aside className="border-b border-line-subtle bg-shell md:sticky md:top-0 md:h-dvh md:border-r md:border-b-0">
+      <aside className="bg-shell md:sticky md:top-0 md:h-dvh">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-3 md:flex md:h-full md:flex-col md:flex-nowrap md:items-stretch md:justify-start md:gap-0 md:p-0">
           <div
             className={cn(
@@ -238,9 +231,9 @@ export function OperatorShell({ children }: { children: ReactNode }) {
 
           <nav
             aria-label="Navigation principale"
-            className="order-last w-full md:order-none md:w-full md:flex-none md:pt-1"
+            className="order-last w-full md:order-none md:w-full md:flex-none md:pt-3"
           >
-            <div className="relative w-full max-md:border-t max-md:border-line-subtle max-md:px-3 max-md:pt-2">
+            <div className="relative w-full max-md:px-3 max-md:pt-2">
               <div
                 aria-hidden="true"
                 data-nav-indicator=""
@@ -254,8 +247,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                   height: indicator.height || undefined,
                 }}
               >
-                <span className="absolute inset-y-0 left-0 w-[3px] bg-action" />
-                <span className="absolute inset-0 bg-sunken/90 dark:bg-sunken/80" />
+                <span className="absolute inset-0 bg-canvas" />
               </div>
               <ul ref={listRef} className="relative z-10 flex gap-1 md:flex-col md:gap-0">
                 {NAV.map(({ href, label, icon }) => {
@@ -267,11 +259,13 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                       data-nav-active={active ? 'true' : undefined}
                       className={cn(
                         'flex min-h-11 w-full items-center justify-center gap-2 rounded-none px-2 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:min-h-10 md:justify-start md:gap-3 md:px-3',
-                        active ? 'text-ink max-md:bg-sunken' : 'text-ink-muted hover:bg-sunken hover:text-ink',
+                        active
+                          ? 'text-ink max-md:bg-canvas md:bg-transparent'
+                          : 'text-ink-muted hover:bg-sunken/80 hover:text-ink dark:hover:bg-sunken/60',
                         collapsed && 'md:justify-center md:px-0',
                       )}
                     >
-                      <NavIcon icon={icon} active={active} />
+                      <NavIcon icon={icon} />
                       <span
                         className={cn(
                           'transition-opacity duration-[220ms] ease-(--ui-ease-drawer)',
