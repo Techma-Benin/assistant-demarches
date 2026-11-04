@@ -1,11 +1,12 @@
 'use client';
 
-import { Button, InlineAlert, Toast } from '@techma/ui';
+import { Button, Dialog, DialogContent, InlineAlert } from '@techma/ui';
+import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { describeError, operatorApi, type McpServer } from '@/lib/operator/api';
-import { PageHeader, useToast } from '../ui';
+import { PageHeader, ToastViewport, useToast } from '../ui';
 import { ServerCard } from './server-card';
-import { ServerForm } from './server-form';
+import { SERVER_FORM_TITLE, ServerForm } from './server-form';
 
 export function McpPage() {
   const [servers, setServers] = useState<McpServer[] | null>(null);
@@ -32,28 +33,13 @@ export function McpPage() {
     <div className="ui-rise">
       <PageHeader
         title="Connexions MCP"
-        description="Ajoutez un serveur par son adresse, découvrez ses outils, puis activez-les un par un. Les outils nouveaux ou modifiés sont désactivés par défaut."
+        description="Les outils d’un serveur sont désactivés par défaut : activez-les un par un."
         actions={
-          adding ? null : (
-            <Button onClick={() => setAdding(true)} disabled={!servers}>
-              Ajouter un serveur
-            </Button>
-          )
+          <Button leadingIcon={<Plus aria-hidden="true" className="size-5" />} onClick={() => setAdding(true)} disabled={!servers}>
+            Ajouter un serveur
+          </Button>
         }
       />
-      {adding && servers ? (
-        <div className="mb-6">
-          <ServerForm
-            existingIds={servers.map((s) => s.id)}
-            onCancel={() => setAdding(false)}
-            onSaved={(saved) => {
-              setAdding(false);
-              void load();
-              toast.show(`« ${saved.name} » est ajouté. Lancez la découverte des outils.`);
-            }}
-          />
-        </div>
-      ) : null}
       {loadError ? (
         <div className="flex max-w-xl flex-col items-start gap-4">
           <InlineAlert>{loadError}</InlineAlert>
@@ -79,9 +65,25 @@ export function McpPage() {
           ))}
         </div>
       )}
-      <div className="fixed inset-x-4 bottom-4 z-30 flex justify-center">
-        <Toast message={toast.message} onDismiss={toast.dismiss} />
-      </div>
+      {servers ? (
+        <Dialog open={adding} onOpenChange={setAdding}>
+          <DialogContent
+            title={SERVER_FORM_TITLE}
+            description="Indiquez son adresse, puis lancez la découverte de ses outils."
+            onInteractOutside={(event) => event.preventDefault()}
+          >
+            <ServerForm
+              existingIds={servers.map((s) => s.id)}
+              onSaved={(saved) => {
+                setAdding(false);
+                void load();
+                toast.show(`« ${saved.name} » est ajouté. Lancez la découverte des outils.`);
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      ) : null}
+      <ToastViewport toast={toast} />
     </div>
   );
 }

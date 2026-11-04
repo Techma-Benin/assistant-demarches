@@ -26,8 +26,35 @@ describe('Modèles', () => {
     expect(within(items[0]).queryByRole('button', { name: /Activer/ })).not.toBeInTheDocument();
     expect(within(items[1]).queryByText('Actif')).not.toBeInTheDocument();
     expect(within(items[1]).getByRole('button', { name: 'Activer Mistral Small' })).toBeInTheDocument();
-    expect(within(items[0]).getByLabelText('Clé enregistrée')).toHaveTextContent('••••••••');
-    expect(within(items[0]).queryByText('GROQ_API_KEY')).not.toBeInTheDocument();
+    expect(within(items[0]).getByText('Groq Llama')).toBeInTheDocument();
+    expect(within(items[0]).getByText('llama-3.3-70b-versatile')).toBeInTheDocument();
+  });
+
+  it('keeps technical details out of the list', async () => {
+    stubOperator(list());
+    render(<ModelsPage />);
+    for (const item of await screen.findAllByRole('listitem')) {
+      expect(item).not.toHaveTextContent(/api\.(groq|mistral)\.|chat-completions|responses|API_KEY|••••|température/i);
+    }
+  });
+
+  it('names the icon actions with a tooltip on hover', async () => {
+    stubOperator(list());
+    render(<ModelsPage />);
+    await userEvent.hover(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Modifier');
+  });
+
+  it('shows the technical details only in the edit dialog', async () => {
+    stubOperator(list());
+    render(<ModelsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
+    const dialog = screen.getByRole('dialog', { name: 'Modifier Groq Llama' });
+    expect(within(dialog).getByLabelText(/Adresse du service/)).toHaveValue('https://api.groq.com/openai/v1');
+    expect(within(dialog).getByLabelText(/Protocole/)).toHaveValue('chat-completions');
+    expect(within(dialog).getByLabelText(/Clé d’accès/)).toHaveValue('');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('shows the load error and retries', async () => {
@@ -149,6 +176,28 @@ describe('Modèles', () => {
       expect(within(items[0]).queryByText('Actif')).not.toBeInTheDocument();
     });
     expect(screen.getByText('« Mistral Small » est le modèle actif.')).toBeInTheDocument();
+  });
+
+  it('offers to undo an activation by putting the previous model back', async () => {
+    let activeId = 'groq-llama';
+    const calls = stubOperator(
+      (call) => {
+        if (call.method === 'PUT') {
+          activeId = (call.body as { id: string }).id;
+          return json(call.body);
+        }
+      },
+      (call) =>
+        call.method === 'GET' ? json({ items: [groq, mistral].map((m) => ({ ...m, active: m.id === activeId })), nextCursor: null }) : undefined,
+    );
+    render(<ModelsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Activer Mistral Small' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(2));
+    const undo = calls.filter((c) => c.method === 'PUT')[1];
+    expect(undo.path).toBe('/models/groq-llama');
+    expect(undo.body).toEqual({ ...groq, active: true });
+    expect(await screen.findByText('« Groq Llama » est le modèle actif.')).toBeInTheDocument();
   });
 
   it('asks for confirmation before deleting, and can cancel', async () => {

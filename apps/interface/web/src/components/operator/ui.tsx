@@ -1,27 +1,50 @@
 'use client';
 
-import { VisuallyHidden, cn } from '@techma/ui';
+import { Toast, VisuallyHidden, cn } from '@techma/ui';
 import { useCallback, useId, useState, type ReactNode, type SelectHTMLAttributes } from 'react';
 
 export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
   return (
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div className="flex min-w-0 flex-col gap-2">
-        <h1 className="font-display text-[clamp(30px,4vw,44px)] leading-[1] font-extrabold tracking-[-0.04em] break-words">
+    <header className="mb-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0 flex-1 basis-80">
+        <h1 className="font-display text-[clamp(26px,3vw,34px)] leading-[1.05] font-extrabold tracking-[-0.03em] break-words">
           {title}
         </h1>
-        {description ? <p className="max-w-[640px] text-base text-ink-muted">{description}</p> : null}
+        {description ? <p className="mt-1.5 text-[15px] text-ink-muted">{description}</p> : null}
       </div>
       {actions ? <div className="shrink-0">{actions}</div> : null}
     </header>
   );
 }
 
-/** Message for the `Toast`; `dismiss` is stable (the Toast timer depends on it). */
+export type ToastAction = { label: string; onClick: () => void };
+
+/** Message for the `Toast`, with an optional way back; `show` and `dismiss` are stable (the Toast timer depends on `dismiss`). */
 export function useToast() {
-  const [message, setMessage] = useState<string | null>(null);
-  const dismiss = useCallback(() => setMessage(null), []);
-  return { message, show: setMessage, dismiss };
+  const [state, setState] = useState<{ message: string; action?: ToastAction } | null>(null);
+  const show = useCallback((message: string, action?: ToastAction) => setState({ message, action }), []);
+  const dismiss = useCallback(() => setState(null), []);
+  return { message: state?.message ?? null, action: state?.action, show, dismiss };
+}
+
+export function ToastViewport({ toast }: { toast: ReturnType<typeof useToast> }) {
+  return (
+    <div className="pointer-events-none fixed inset-x-4 bottom-4 z-40 flex justify-center *:pointer-events-auto">
+      <Toast message={toast.message} action={toast.action} onDismiss={toast.dismiss} />
+    </div>
+  );
+}
+
+/** Open state of a dialog plus its target, kept while the dialog fades out. */
+export function useDialogTarget<T>() {
+  const [target, setTarget] = useState<T | null>(null);
+  const [open, setOpen] = useState(false);
+  const show = useCallback((next: T) => {
+    setTarget(next);
+    setOpen(true);
+  }, []);
+  const close = useCallback(() => setOpen(false), []);
+  return { target, open, show, close, onOpenChange: setOpen };
 }
 
 type SelectFieldProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, 'children'> & {

@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, InlineAlert, TextField } from '@techma/ui';
+import { Button, DialogBody, DialogClose, DialogFooter, InlineAlert, TextField } from '@techma/ui';
 import { useState, type FormEvent } from 'react';
 import { describeError, operatorApi, type ModelConfig } from '@/lib/operator/api';
 import {
@@ -18,17 +18,18 @@ const PROTOCOLS = [
   { value: 'responses', label: 'Responses' },
 ] as const;
 
+export const modelFormTitle = (model?: ModelConfig) => (model ? `Modifier ${model.label}` : 'Ajouter un modèle');
+
+/** Body and footer of the add/edit dialog (the dialog itself provides the title). */
 export function ModelForm({
   model,
   existingIds,
   onSaved,
-  onCancel,
 }: {
   /** Absent: creation. */
   model?: ModelConfig;
   existingIds: readonly string[];
   onSaved: (saved: ModelConfig) => void;
-  onCancel: () => void;
 }) {
   const [values, setValues] = useState<ModelFormValues>(model ? modelToForm(model) : emptyModelForm);
   const [errors, setErrors] = useState<ModelFormErrors>({});
@@ -57,83 +58,85 @@ export function ModelForm({
     }
   }
 
-  const title = model ? `Modifier ${model.label}` : 'Ajouter un modèle';
   return (
-    <form
-      onSubmit={submit}
-      noValidate
-      aria-label={title}
-      className="flex flex-col gap-4 rounded-card border border-line bg-surface p-4 md:p-6"
-    >
-      <h2 className="font-display text-xl font-extrabold">{title}</h2>
-      {failure ? <InlineAlert>{failure}</InlineAlert> : null}
-      <TextField label="Nom" required value={values.label} error={errors.label} onChange={(e) => set('label')(e.target.value)} />
-      <TextField
-        label="Adresse du service (baseUrl)"
-        required
-        type="url"
-        inputMode="url"
-        autoComplete="off"
-        hint="Point d’accès compatible OpenAI, par exemple https://api.groq.com/openai/v1."
-        value={values.baseUrl}
-        error={errors.baseUrl}
-        onChange={(e) => set('baseUrl')(e.target.value)}
-      />
-      <SelectField
-        label="Protocole"
-        required
-        value={values.protocol}
-        options={PROTOCOLS}
-        onChange={(e) => set('protocol')(e.target.value as ModelFormValues['protocol'])}
-      />
-      <TextField
-        label="Modèle"
-        required
-        autoComplete="off"
-        value={values.model}
-        error={errors.model}
-        onChange={(e) => set('model')(e.target.value)}
-      />
-      <TextField
-        label="Clé d’accès"
-        required={!model}
-        type="password"
-        name="model-access-secret"
-        autoComplete="new-password"
-        spellCheck={false}
-        className="select-none"
-        hint={
-          model
-            ? 'Laissez vide pour conserver la clé actuelle. Elle n’est jamais réaffichée.'
-            : 'La clé est enregistrée chiffrée. Elle ne sera plus visible ensuite.'
-        }
-        value={values.apiKey}
-        error={errors.apiKey}
-        onCopy={(event) => event.preventDefault()}
-        onCut={(event) => event.preventDefault()}
-        onChange={(e) => set('apiKey')(e.target.value)}
-      />
-      <TextField
-        label="Température"
-        required
-        type="number"
-        inputMode="decimal"
-        min={0}
-        max={2}
-        step={0.1}
-        hint="Entre 0 (précis) et 2 (créatif)."
-        value={values.temperature}
-        error={errors.temperature}
-        onChange={(e) => set('temperature')(e.target.value)}
-      />
-      <div className="flex flex-wrap gap-3">
+    <form onSubmit={submit} noValidate aria-label={modelFormTitle(model)} className="flex min-h-0 flex-1 flex-col">
+      <DialogBody className="grid gap-4 py-3 sm:grid-cols-2">
+        {failure ? <InlineAlert className="sm:col-span-2">{failure}</InlineAlert> : null}
+        <TextField label="Nom" required value={values.label} error={errors.label} onChange={(e) => set('label')(e.target.value)} />
+        <TextField
+          label="Modèle"
+          required
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="ex. llama-3.3-70b-versatile"
+          value={values.model}
+          error={errors.model}
+          onChange={(e) => set('model')(e.target.value)}
+        />
+        <div className="sm:col-span-2">
+          <TextField
+            label="Adresse du service (baseUrl)"
+            required
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            hint="Point d’accès compatible OpenAI, par exemple https://api.groq.com/openai/v1."
+            value={values.baseUrl}
+            error={errors.baseUrl}
+            onChange={(e) => set('baseUrl')(e.target.value)}
+          />
+        </div>
+        <SelectField
+          label="Protocole"
+          required
+          hint="Chat Completions : le plus courant."
+          value={values.protocol}
+          options={PROTOCOLS}
+          onChange={(e) => set('protocol')(e.target.value as ModelFormValues['protocol'])}
+        />
+        <TextField
+          label="Température"
+          required
+          type="number"
+          inputMode="decimal"
+          min={0}
+          max={2}
+          step={0.1}
+          hint="Entre 0 (précis) et 2 (créatif)."
+          value={values.temperature}
+          error={errors.temperature}
+          onChange={(e) => set('temperature')(e.target.value)}
+        />
+        <div className="sm:col-span-2">
+          <TextField
+            label="Clé d’accès"
+            required={!model}
+            type="password"
+            name="model-access-secret"
+            autoComplete="new-password"
+            spellCheck={false}
+            className="select-none"
+            hint={
+              model
+                ? 'Laissez vide pour conserver la clé actuelle. Elle n’est jamais réaffichée.'
+                : 'La clé est enregistrée chiffrée. Elle ne sera plus visible ensuite.'
+            }
+            value={values.apiKey}
+            error={errors.apiKey}
+            onCopy={(event) => event.preventDefault()}
+            onCut={(event) => event.preventDefault()}
+            onChange={(e) => set('apiKey')(e.target.value)}
+          />
+        </div>
+      </DialogBody>
+      <DialogFooter>
+        <DialogClose asChild>
+          <Button variant="outline">Annuler</Button>
+        </DialogClose>
         <Button type="submit" disabled={saving}>
           {saving ? 'Enregistrement…' : 'Enregistrer'}
         </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Annuler
-        </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }

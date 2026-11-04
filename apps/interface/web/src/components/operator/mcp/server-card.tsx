@@ -1,8 +1,24 @@
 'use client';
 
-import { Badge, Button, InlineAlert, Switch, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from '@techma/ui';
+import {
+  Badge,
+  Button,
+  IconButton,
+  InlineAlert,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  Tooltip,
+  cn,
+} from '@techma/ui';
+import { Radar, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { describeError, operatorApi, type McpServer, type McpTool } from '@/lib/operator/api';
+import { ConfirmDialog } from '../confirm-dialog';
 import { formatDate } from '../ui';
 
 export function ServerCard({
@@ -96,26 +112,37 @@ export function ServerCard({
           <p className="mt-1 text-sm break-all text-ink-muted">{server.url}</p>
           {discoveredAt ? <p className="mt-1 text-xs text-ink-muted">Dernière découverte : {formatDate(discoveredAt)}</p> : null}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="secondary" aria-label={`Découvrir les outils de ${server.name}`} disabled={discovering} onClick={() => void discover()}>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-label={`Découvrir les outils de ${server.name}`}
+            disabled={discovering}
+            leadingIcon={<Radar aria-hidden="true" className={cn('size-4', discovering && 'animate-pulse motion-reduce:animate-none')} />}
+            onClick={() => void discover()}
+          >
             {discovering ? 'Découverte…' : 'Découvrir les outils'}
           </Button>
-          <Button size="sm" variant="outline" aria-label={`Supprimer ${server.name}`} disabled={busy} onClick={() => setConfirming(true)}>
-            Supprimer
-          </Button>
+          <Tooltip label="Supprimer">
+            <IconButton
+              label={`Supprimer ${server.name}`}
+              disabled={busy}
+              className="hover:bg-danger-soft hover:text-danger"
+              onClick={() => setConfirming(true)}
+            >
+              <Trash2 aria-hidden="true" className="size-[18px]" />
+            </IconButton>
+          </Tooltip>
         </div>
       </div>
-      {confirming ? (
-        <div role="group" aria-label={`Confirmer la suppression de ${server.name}`} className="mt-4 flex flex-wrap items-center gap-3 rounded-field bg-danger-soft p-3">
-          <p className="text-sm font-semibold text-danger">Supprimer « {server.name} » et ses outils ? Cette action est définitive.</p>
-          <Button size="sm" disabled={busy} onClick={() => void remove()}>
-            Confirmer la suppression
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setConfirming(false)}>
-            Annuler
-          </Button>
-        </div>
-      ) : null}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={`Supprimer « ${server.name} » ?`}
+        description="Ses outils seront supprimés aussi. Cette action est définitive."
+        busy={busy}
+        onConfirm={() => void remove()}
+      />
       {error ? <InlineAlert className="mt-4">{error}</InlineAlert> : null}
       <div className="mt-4">
         {!tools ? (

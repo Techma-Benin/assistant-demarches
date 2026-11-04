@@ -94,7 +94,7 @@ L'usager fait sa démarche administrative en entier dans une conversation : il s
 |---|---|---|
 | O1 | Modèles d'IA | Créer, modifier, activer un modèle ; l'assistant l'utilise sans redémarrer |
 | O2 | MCP par URL | Ajouter une URL, découvrir les outils réels, activer chaque outil, choisir si un consentement est requis |
-| O3 | État des connexions | Statut du modèle, des MCP et des administrations connectées |
+| O3 | Statut | État du modèle, des MCP et des administrations connectées ; première page de la console |
 
 ## 9. X-Road simulé
 

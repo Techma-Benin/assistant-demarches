@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import OperatorLayout from '@/app/operateur/layout';
 
@@ -43,9 +43,11 @@ describe('operator layout gate', () => {
     render(await OperatorLayout({ children: <p>contenu</p> }));
     expect(screen.getByText('contenu')).toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: 'Navigation principale' });
-    expect(nav).toHaveTextContent('Modèles');
-    expect(screen.getByRole('link', { name: 'Connexions MCP' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'État' })).toHaveAttribute('href', '/operateur/etat');
+    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual(['Statut', 'Modèles', 'Connexions']);
+    expect(screen.getByRole('link', { name: 'Statut' })).toHaveAttribute('href', '/operateur');
+    expect(screen.getByRole('link', { name: 'Modèles' })).toHaveAttribute('href', '/operateur/modeles');
+    expect(screen.getByRole('link', { name: 'Connexions' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Statut' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: 'Se déconnecter' }).closest('form')).toHaveAttribute('action', '/auth/logout');
     expect(screen.getByRole('button', { name: /Thème/ })).toBeInTheDocument();
   });

@@ -6,7 +6,7 @@ import { assertContract, json, problem, status, stubOperator } from './helpers';
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('État', () => {
+describe('Statut', () => {
   it('fixture conforms to the v2 contract', () => assertContract('OperatorStatus', status));
 
   it('shows the model, the MCP servers with tool counts and the administrations', async () => {
@@ -27,6 +27,17 @@ describe('État', () => {
     const [justice, anip] = within(admins).getAllByRole('listitem');
     expect(within(justice).getByText('Connectée')).toBeInTheDocument();
     expect(within(anip).getByText('Non connectée')).toBeInTheDocument();
+  });
+
+  it('summarises what needs attention', async () => {
+    stubOperator((call) => (call.path === '/status' ? json(status) : undefined));
+    const { unmount } = render(<StatusPage />);
+    // The enabled server "Autre serveur" is unreachable.
+    expect(await screen.findByText('1 point à vérifier.')).toBeInTheDocument();
+    unmount();
+    stubOperator((call) => (call.path === '/status' ? json({ ...status, mcpServers: [status.mcpServers[0]] }) : undefined));
+    render(<StatusPage />);
+    expect(await screen.findByText('Tout est opérationnel.')).toBeInTheDocument();
   });
 
   it('says when no model is active', async () => {

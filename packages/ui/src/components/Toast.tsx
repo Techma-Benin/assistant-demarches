@@ -9,16 +9,19 @@ export type ToastProps = {
   message: string | null;
   onDismiss: () => void;
   duration?: number;
+  /** Retour arrière proposé dans le message (ex. « Annuler ») ; le clic ferme aussi le message. */
+  action?: { label: string; onClick: () => void };
   className?: string;
 };
 
-/** Transient confirmation. Auto-dismisses after `duration` ms. */
-export function Toast({ message, onDismiss, duration = 3200, className }: ToastProps) {
+/** Transient confirmation. Auto-dismisses after `duration` ms (a bit longer when it offers an action). */
+export function Toast({ message, onDismiss, duration, action, className }: ToastProps) {
+  const delay = duration ?? (action ? 6500 : 3200);
   useEffect(() => {
     if (message === null) return;
-    const timer = setTimeout(onDismiss, duration);
+    const timer = setTimeout(onDismiss, delay);
     return () => clearTimeout(timer);
-  }, [message, duration, onDismiss]);
+  }, [message, delay, onDismiss]);
 
   if (message === null) return null;
   return (
@@ -32,6 +35,18 @@ export function Toast({ message, onDismiss, duration = 3200, className }: ToastP
     >
       <Check className="size-[18px] shrink-0 text-trust" strokeWidth={2.6} aria-hidden="true" />
       {message}
+      {action ? (
+        <button
+          type="button"
+          className="-my-1 -mr-2 ml-1 shrink-0 cursor-pointer rounded-pill px-3 py-1 font-bold underline underline-offset-2 transition-colors duration-(--ui-dur-press) hover:bg-on-action/15"
+          onClick={() => {
+            action.onClick();
+            onDismiss();
+          }}
+        >
+          {action.label}
+        </button>
+      ) : null}
     </div>
   );
 }
