@@ -54,16 +54,14 @@ describe('operator layout gate', () => {
     expect(activeLink.className).not.toContain('rounded-field');
     expect(activeLink.className).toContain('rounded-none');
     expect(activeLink.className).toContain('w-full');
-    expect(activeLink.className).toContain('max-md:bg-canvas');
+    expect(activeLink.className).toContain('bg-canvas');
+    expect(activeLink.className).not.toContain('md:bg-transparent');
     expect(activeLink.className).toContain('md:min-h-12');
     expect(activeLink.className).toContain('md:py-3.5');
     const aside = container.querySelector('aside')!;
     expect(aside.className).not.toMatch(/border-r/);
     expect(aside.className).not.toMatch(/border-b/);
-    const indicator = nav.querySelector('[data-nav-indicator]')!;
-    expect(indicator).toBeTruthy();
-    expect(indicator.innerHTML).toContain('bg-canvas');
-    expect(indicator.innerHTML).not.toContain('bg-action');
+    expect(nav.querySelector('[data-nav-indicator]')).toBeNull();
     const statutIcon = screen.getByRole('link', { name: 'Statut' }).querySelector('svg')!;
     const connexionsIcon = activeLink.querySelector('svg')!;
     expect(statutIcon.getAttribute('fill')).toBe('none');
@@ -95,15 +93,15 @@ describe('operator layout gate', () => {
     expect(shell.className).toContain('md:grid-cols-[4.25rem_minmax(0,1fr)]');
     expect(shell).toHaveAttribute('data-collapsed', '');
     const activeLink = screen.getByRole('link', { name: 'Connexions' });
-    expect(activeLink.className).toContain('md:size-12');
-    expect(activeLink.className).toContain('md:mx-auto');
+    expect(activeLink.className).toContain('bg-canvas');
+    expect(activeLink.className).toContain('md:w-full');
+    expect(activeLink.className).toContain('md:aspect-square');
+    expect(activeLink.className).not.toContain('md:size-12');
+    expect(activeLink.className).not.toContain('md:mx-auto');
+    expect(activeLink.className).not.toContain('md:bg-transparent');
     const nav = screen.getByRole('navigation', { name: 'Navigation principale' });
-    const indicator = nav.querySelector('[data-nav-indicator]') as HTMLElement;
-    const width = Number.parseFloat(indicator.style.width);
-    const height = Number.parseFloat(indicator.style.height);
-    if (width > 0 && height > 0) {
-      expect(width).toBe(height);
-    }
-    expect(container.querySelector('[data-nav-indicator]')).toBeTruthy();
+    expect(nav.querySelector('[data-nav-indicator]')).toBeNull();
+    const statutLink = screen.getByRole('link', { name: 'Statut' });
+    expect(statutLink.className).not.toContain('bg-canvas');
   });
 });

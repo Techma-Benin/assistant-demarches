@@ -4,14 +4,7 @@ import { BrandMark, Button, THEME_STORAGE_KEY, Tooltip, cn } from '@techma/ui';
 import { Activity, ChevronsLeft, ChevronsRight, Cpu, LogOut, Monitor, Moon, Plug, Sun, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { OperatorLogomark } from './operator-logomark';
 
 export const OPERATOR_NAV_COLLAPSED_KEY = 'operator-nav-collapsed';
@@ -136,64 +129,10 @@ function ShellLogoutControl({ collapsed }: { collapsed: boolean }) {
 export function OperatorShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const listRef = useRef<HTMLUListElement>(null);
-  const [indicator, setIndicator] = useState({
-    top: 0,
-    left: 0,
-    width: 0,
-    height: 0,
-    visible: false,
-    fullWidth: true,
-  });
 
   useEffect(() => {
     setCollapsed(readStoredCollapsed());
   }, []);
-
-  const measureIndicator = useCallback(() => {
-    const list = listRef.current;
-    if (!list) return;
-    const activeEl = list.querySelector<HTMLElement>('[data-nav-active="true"]');
-    if (!activeEl) {
-      setIndicator((prev) => ({ ...prev, visible: false }));
-      return;
-    }
-    const listRect = list.getBoundingClientRect();
-    const itemRect = activeEl.getBoundingClientRect();
-    const top = itemRect.top - listRect.top;
-
-    if (collapsed) {
-      const size = Math.min(itemRect.width, itemRect.height);
-      const left = itemRect.left - listRect.left + (itemRect.width - size) / 2;
-      setIndicator({
-        top,
-        left,
-        width: size,
-        height: size,
-        visible: true,
-        fullWidth: false,
-      });
-      return;
-    }
-
-    setIndicator({
-      top,
-      left: 0,
-      width: 0,
-      height: itemRect.height,
-      visible: true,
-      fullWidth: true,
-    });
-  }, [collapsed]);
-
-  useLayoutEffect(() => {
-    measureIndicator();
-  }, [pathname, collapsed, measureIndicator]);
-
-  useEffect(() => {
-    window.addEventListener('resize', measureIndicator);
-    return () => window.removeEventListener('resize', measureIndicator);
-  }, [measureIndicator]);
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -261,31 +200,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
             className="order-last w-full md:order-none md:w-full md:flex-none md:pt-8"
           >
             <div className="relative w-full max-md:px-3 max-md:pt-2">
-              <div
-                aria-hidden="true"
-                data-nav-indicator=""
-                className={cn(
-                  'pointer-events-none absolute z-0 hidden md:block motion-reduce:transition-none',
-                  indicator.fullWidth && 'inset-x-0',
-                  'transition-[transform,width,height] duration-[220ms] ease-(--ui-ease-drawer)',
-                  indicator.visible ? 'opacity-100' : 'opacity-0',
-                )}
-                style={
-                  indicator.fullWidth
-                    ? {
-                        transform: `translateY(${indicator.top}px)`,
-                        height: indicator.height || undefined,
-                      }
-                    : {
-                        transform: `translate(${indicator.left}px, ${indicator.top}px)`,
-                        width: indicator.width || undefined,
-                        height: indicator.height || undefined,
-                      }
-                }
-              >
-                <span className="absolute inset-0 bg-canvas" />
-              </div>
-              <ul ref={listRef} className="relative z-10 flex gap-1 md:flex-col md:gap-1">
+              <ul className="relative flex gap-1 md:flex-col md:gap-1">
                 {NAV.map(({ href, label, icon }) => {
                   const active = isActive(href, pathname);
                   const link = (
@@ -296,10 +211,10 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                       className={cn(
                         'flex min-h-12 w-full items-center justify-center gap-2 rounded-none px-2 py-3 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:min-h-12 md:justify-start md:gap-3 md:px-3 md:py-3.5',
                         active
-                          ? 'text-ink max-md:bg-canvas md:bg-transparent'
+                          ? 'bg-canvas text-ink'
                           : 'text-ink-muted hover:bg-sunken/80 hover:text-ink dark:hover:bg-sunken/60',
                         collapsed &&
-                          'md:mx-auto md:size-12 md:min-h-12 md:max-h-12 md:min-w-12 md:max-w-12 md:justify-center md:px-0 md:py-0',
+                          'md:aspect-square md:w-full md:min-h-0 md:max-h-none md:min-w-0 md:justify-center md:px-0 md:py-0',
                       )}
                     >
                       <NavIcon icon={icon} />
@@ -317,7 +232,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                   return (
                     <li
                       key={href}
-                      className={cn('flex-1 md:flex-none md:w-full', collapsed && 'md:flex md:justify-center')}
+                      className="flex-1 md:flex-none md:w-full"
                     >
                       {collapsed ? (
                         <Tooltip label={label} side="right">
