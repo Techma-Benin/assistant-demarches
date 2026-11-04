@@ -133,4 +133,10 @@ export function buildStatusGraphElements(
   return { nodes, edges };
 }
 
+/** Buckets container width so ResizeObserver sub-pixel jitter does not relayout. */
+export function statusGraphLayoutWidth(containerWidth: number): number {
+  if (containerWidth <= 0) return STACK_BREAK;
+  return Math.max(CARD_WIDTH, Math.round(containerWidth / 32) * 32);
+}
+
 export { ADMIN_CHIPS_EXTRA, CARD_HEIGHT, CARD_WIDTH, HUB_HEIGHT, STACK_BREAK };

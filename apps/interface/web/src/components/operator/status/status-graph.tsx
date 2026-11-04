@@ -19,6 +19,7 @@ import {
   CARD_HEIGHT,
   buildStatusGraphElements,
   statusGraphHeight,
+  statusGraphLayoutWidth,
 } from './status-graph-layout';
 import { statusGraphNodeTypes, type BranchNodeData } from './status-graph-nodes';
 import './status-graph.css';
@@ -52,11 +53,20 @@ function connectedAdministrations(administrations: Administration[]): Administra
   return administrations.filter((administration) => administration.connection.status === 'connected');
 }
 
+const FIT_VIEW_OPTIONS = {
+  padding: { top: 0.02, right: 0.06, bottom: 0.12, left: 0.06 },
+  minZoom: 1,
+  maxZoom: 1,
+} as const;
+
 function FitViewWhenReady({ layoutKey }: { layoutKey: string }) {
   const { fitView } = useReactFlow();
+  const seenLayoutKey = useRef<string | null>(null);
   useEffect(() => {
+    if (seenLayoutKey.current === layoutKey) return;
+    seenLayoutKey.current = layoutKey;
     const id = requestAnimationFrame(() => {
-      void fitView({ padding: { top: 0.02, right: 0.06, bottom: 0.12, left: 0.06 }, duration: 0, minZoom: 1, maxZoom: 1 });
+      void fitView({ ...FIT_VIEW_OPTIONS, duration: 0 });
     });
     return () => cancelAnimationFrame(id);
   }, [fitView, layoutKey]);
@@ -64,9 +74,24 @@ function FitViewWhenReady({ layoutKey }: { layoutKey: string }) {
 }
 
 function StatusGraphFlow({ status, width }: { status: OperatorStatus; width: number }) {
-  const connected = connectedAdministrations(status.administrations);
+  const layoutWidth = statusGraphLayoutWidth(width);
+  const connected = useMemo(
+    () => connectedAdministrations(status.administrations),
+    [status.administrations],
+  );
   const mcpOk = status.mcpServers.every((server) => !server.enabled || server.reachable);
   const adminHasChips = connected.length > 0;
+  const connectedAdminKey = useMemo(
+    () => connected.map((administration) => administration.id).join(','),
+    [connected],
+  );
+  const mcpSummaryKey = useMemo(
+    () =>
+      status.mcpServers
+        .map((server) => `${server.id}:${server.enabled}:${server.reachable}:${server.toolCount}`)
+        .join('|'),
+    [status.mcpServers],
+  );
 
   const branches = useMemo(() => {
     const modelBody = (
@@ -158,18 +183,45 @@ function StatusGraphFlow({ status, width }: { status: OperatorStatus; width: num
         data: { labelledBy: 'op-status-admins', children: adminBody } satisfies BranchNodeData,
       },
     ];
-  }, [adminHasChips, connected, mcpOk, status]);
+  }, [adminHasChips, connected, mcpOk, status.model, status.mcpServers]);
 
   const layoutNodesEdges = useMemo(
-    () => buildStatusGraphElements(width, branches),
-    [branches, width],
+    () => buildStatusGraphElements(layoutWidth, branches),
+    [branches, layoutWidth],
   );
 
-  const layoutKey = `${width}-${adminHasChips}-${status.model?.id ?? 'none'}-${status.mcpServers.length}`;
+  const layoutKey = useMemo(
+    () =>
+      `${layoutWidth}-${adminHasChips}-${status.model?.id ?? 'none'}-${status.mcpServers.length}`,
+    [adminHasChips, layoutWidth, status.model?.id, status.mcpServers.length],
+  );
+
+  const contentKey = useMemo(
+    () =>
+      [
+        status.model?.id ?? 'none',
+        status.model?.reachable ?? 'none',
+        status.model?.label ?? 'none',
+        mcpSummaryKey,
+        mcpOk,
+        connectedAdminKey,
+        adminHasChips,
+      ].join(':'),
+    [
+      adminHasChips,
+      connectedAdminKey,
+      mcpOk,
+      mcpSummaryKey,
+      status.model?.id,
+      status.model?.label,
+      status.model?.reachable,
+    ],
+  );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodesEdges.nodes as Node[]);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutNodesEdges.edges as Edge[]);
   const layoutKeyRef = useRef<string | null>(null);
+  const contentKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     const layoutNodes = layoutNodesEdges.nodes as Node[];
@@ -177,10 +229,14 @@ function StatusGraphFlow({ status, width }: { status: OperatorStatus; width: num
 
     if (layoutKeyRef.current !== layoutKey) {
       layoutKeyRef.current = layoutKey;
+      contentKeyRef.current = contentKey;
       setNodes(layoutNodes);
       setEdges(layoutEdges);
       return;
     }
+
+    if (contentKeyRef.current === contentKey) return;
+    contentKeyRef.current = contentKey;
 
     setNodes((current) =>
       layoutNodes.map((layoutNode) => {
@@ -189,7 +245,7 @@ function StatusGraphFlow({ status, width }: { status: OperatorStatus; width: num
       }),
     );
     setEdges(layoutEdges);
-  }, [layoutKey, layoutNodesEdges, setEdges, setNodes]);
+  }, [contentKey, layoutKey, layoutNodesEdges, setEdges, setNodes]);
 
   return (
     <ReactFlow
@@ -209,12 +265,6 @@ function StatusGraphFlow({ status, width }: { status: OperatorStatus; width: num
       preventScrolling={false}
       nodeDragThreshold={3}
       proOptions={{ hideAttribution: true }}
-      fitView
-      fitViewOptions={{
-        padding: { top: 0.02, right: 0.06, bottom: 0.12, left: 0.06 },
-        minZoom: 1,
-        maxZoom: 1,
-      }}
     >
       <FitViewWhenReady layoutKey={layoutKey} />
     </ReactFlow>
@@ -225,18 +275,26 @@ export function StatusGraph({ status }: { status: OperatorStatus }) {
   const shellRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(960);
 
-  const connected = connectedAdministrations(status.administrations);
-  const height = statusGraphHeight(width, connected.length > 0);
+  const connected = useMemo(
+    () => connectedAdministrations(status.administrations),
+    [status.administrations],
+  );
+  const layoutWidth = statusGraphLayoutWidth(width);
+  const height = statusGraphHeight(layoutWidth, connected.length > 0);
 
   useEffect(() => {
     const el = shellRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
+    const applyWidth = (raw: number) => {
+      const next = statusGraphLayoutWidth(raw);
+      setWidth((current) => (current === next ? current : next));
+    };
     const observer = new ResizeObserver((entries) => {
       const next = entries[0]?.contentRect.width;
-      if (next && next > 0) setWidth(next);
+      if (next && next > 0) applyWidth(next);
     });
     observer.observe(el);
-    setWidth(el.getBoundingClientRect().width || 960);
+    applyWidth(el.getBoundingClientRect().width || 960);
     return () => observer.disconnect();
   }, []);
 
