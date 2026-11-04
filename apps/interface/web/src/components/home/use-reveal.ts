@@ -11,7 +11,6 @@ export function useReveal<T extends HTMLElement>() {
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof IntersectionObserver === 'undefined') return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     el.dataset.reveal = 'pending';
     const io = new IntersectionObserver(
       (entries) => {

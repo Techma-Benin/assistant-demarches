@@ -76,17 +76,11 @@ describe('How it works demos', () => {
     expect(screen.getByText('Prêt à valider')).toBeInTheDocument();
   });
 
-  it('renders the final frames immediately under reduced motion', () => {
+  it('still plays under reduced motion', () => {
     mockEnv(true);
-    const ask = render(<AskDemo />);
+    render(<AskDemo />);
+    expect(screen.queryByText('Reçu')).not.toBeInTheDocument();
+    advance(600 + 3000);
     expect(screen.getByText('Reçu')).toBeInTheDocument();
-    expect(screen.getByText('Je consulte la fiche officielle…')).toBeInTheDocument();
-    ask.unmount();
-    const prep = render(<PrepareDemo />);
-    expect(screen.getByText('Demande créée')).toBeInTheDocument();
-    expect(screen.getByText('Dossier reçu')).toBeInTheDocument();
-    prep.unmount();
-    render(<ValidateDemo />);
-    expect(screen.getByText('Déposée')).toBeInTheDocument();
   });
 });

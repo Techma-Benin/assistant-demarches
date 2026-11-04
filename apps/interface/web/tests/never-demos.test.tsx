@@ -40,7 +40,7 @@ describe('NeverShowcase', () => {
 
     it('lists the refusals and the citation line, chat is hidden and inert', () => {
       const { container } = render(<NeverShowcase />);
-      for (const t of ['Vous demander votre NPI dans la conversation', 'Vous demander un code SMS', 'Payer à votre place', 'Agir sans votre accord'])
+      for (const t of ['Voir votre NPI', 'Vous demander un code SMS', 'Répondre sans source', 'Agir sans votre accord'])
         expect(screen.getByRole('button', { name: new RegExp(t) })).toBeInTheDocument();
       expect(screen.getByText(/Chaque information administrative cite sa fiche officielle/)).toBeInTheDocument();
       const chat = container.querySelector('[aria-hidden="true"][inert]');
@@ -50,26 +50,26 @@ describe('NeverShowcase', () => {
     it('plays scene 1, then advances through 2, 3, 4 and loops', () => {
       render(<NeverShowcase />);
       advance(3000);
-      expect(screen.getByText(/Non, gardez-le/)).toBeInTheDocument();
+      expect(screen.getByText(/Pas ici\. Vous vous identifiez/)).toBeInTheDocument();
       expect(screen.getByText('JAMAIS')).toBeInTheDocument();
       advance(SCENE_MS);
       expect(screen.getByText(/Surtout pas/)).toBeInTheDocument();
       expect(screen.getByText('JAMAIS')).toBeInTheDocument();
       advance(SCENE_MS);
-      expect(screen.getByText(/c’est vous qui payez, sur la plateforme de paiement/)).toBeInTheDocument();
+      expect(screen.getByText(/tarif de la fiche officielle/)).toBeInTheDocument();
       advance(SCENE_MS);
       expect(screen.getByText(/L’assistant peut agir sur votre demande/)).toBeInTheDocument();
       expect(screen.getByText(/ACCORD\s+REQUIS/)).toBeInTheDocument();
       advance(SCENE_MS);
-      expect(screen.getByText(/Non, gardez-le/)).toBeInTheDocument();
+      expect(screen.getByText(/Pas ici\. Vous vous identifiez/)).toBeInTheDocument();
     });
 
     it('jumps to a scene on click', () => {
       render(<NeverShowcase />);
-      fireEvent.click(screen.getByRole('button', { name: /Payer à votre place/ }));
-      expect(screen.getByRole('button', { name: /Payer à votre place/ })).toHaveAttribute('aria-pressed', 'true');
+      fireEvent.click(screen.getByRole('button', { name: /Répondre sans source/ }));
+      expect(screen.getByRole('button', { name: /Répondre sans source/ })).toHaveAttribute('aria-pressed', 'true');
       advance(3000);
-      expect(screen.getByText(/c’est vous qui payez/)).toBeInTheDocument();
+      expect(screen.getByText(/tarif de la fiche officielle/)).toBeInTheDocument();
     });
   });
 
@@ -79,14 +79,19 @@ describe('NeverShowcase', () => {
       mockEnv(true);
     });
 
-    it('shows the final frame, never advances, and switches on click', () => {
+    it('still plays the scenes', () => {
       render(<NeverShowcase />);
-      expect(screen.getByText(/Non, gardez-le/)).toBeInTheDocument();
-      advance(SCENE_MS * 2);
-      expect(screen.getByText(/Non, gardez-le/)).toBeInTheDocument();
+      advance(3000);
+      expect(screen.getByText(/Pas ici\. Vous vous identifiez/)).toBeInTheDocument();
+      advance(SCENE_MS);
+      expect(screen.getByText(/Surtout pas/)).toBeInTheDocument();
+    });
+
+    it('switches to a scene on click', () => {
+      render(<NeverShowcase />);
       fireEvent.click(screen.getByRole('button', { name: /Agir sans votre accord/ }));
+      advance(3000);
       expect(screen.getByText(/L’assistant peut agir sur votre demande/)).toBeInTheDocument();
-      expect(screen.getByText(/ACCORD\s+REQUIS/)).toBeInTheDocument();
     });
   });
 });
