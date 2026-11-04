@@ -45,7 +45,7 @@ function ModelRow({
   return (
     <li
       className={cn(
-        'ui-rise flex flex-wrap items-center gap-x-4 gap-y-3 rounded-card border p-4 transition-[background-color,border-color] md:px-5',
+        'ui-rise flex flex-wrap items-center gap-x-6 gap-y-3 rounded-card border p-4 transition-[background-color,border-color] duration-(--ui-dur-press) ease-(--ui-ease-out) md:px-6',
         model.active
           ? 'border-trust-line bg-trust-soft hover:border-trust'
           : 'border-line bg-surface hover:border-line-strong hover:bg-sunken',

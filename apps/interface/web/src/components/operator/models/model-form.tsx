@@ -129,7 +129,7 @@ export function ModelForm({
           />
         </div>
       </DialogBody>
-      <DialogFooter>
+      <DialogFooter className="w-full justify-end">
         <DialogClose asChild>
           <Button variant="outline">Annuler</Button>
         </DialogClose>

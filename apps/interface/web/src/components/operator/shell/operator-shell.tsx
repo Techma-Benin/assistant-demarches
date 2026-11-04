@@ -64,7 +64,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </aside>
-      <main className="mx-auto w-full max-w-5xl px-4 py-6 md:px-10 md:py-10">{children}</main>
+      <main className="min-w-0 w-full px-4 py-6 md:px-8 md:py-8 xl:px-10">{children}</main>
     </div>
   );
 }

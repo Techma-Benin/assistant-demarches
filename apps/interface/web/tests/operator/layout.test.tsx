@@ -50,5 +50,9 @@ describe('operator layout gate', () => {
     expect(screen.getByRole('link', { name: 'Statut' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: 'Se déconnecter' }).closest('form')).toHaveAttribute('action', '/auth/logout');
     expect(screen.getByRole('button', { name: /Thème/ })).toBeInTheDocument();
+    const main = screen.getByRole('main');
+    expect(main.className).toContain('w-full');
+    expect(main.className).not.toContain('max-w-5xl');
+    expect(main.className).not.toContain('mx-auto');
   });
 });
