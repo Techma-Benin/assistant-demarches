@@ -8,6 +8,7 @@
   --color-surface: var(--ui-surface);
   --color-sunken: var(--ui-sunken);
   --color-shell: var(--ui-shell);
+  --color-shell-rail: var(--ui-shell-rail);
   --color-line: var(--ui-border);
   --color-line-subtle: var(--ui-border-subtle);
   --color-line-strong: var(--ui-border-strong);

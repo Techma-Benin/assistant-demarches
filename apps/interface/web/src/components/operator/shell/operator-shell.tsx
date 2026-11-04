@@ -205,7 +205,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
         collapsed ? 'md:grid-cols-[4.25rem_minmax(0,1fr)]' : 'md:grid-cols-[15rem_minmax(0,1fr)]',
       )}
     >
-      <aside className="bg-shell md:sticky md:top-0 md:h-dvh">
+      <aside className="bg-shell-rail md:sticky md:top-0 md:h-dvh">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-3 md:flex md:h-full md:flex-col md:flex-nowrap md:items-stretch md:justify-start md:gap-0 md:p-0">
           <div
             className={cn(
@@ -231,7 +231,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
 
           <nav
             aria-label="Navigation principale"
-            className="order-last w-full md:order-none md:w-full md:flex-none md:pt-3"
+            className="order-last w-full md:order-none md:w-full md:flex-none md:pt-8"
           >
             <div className="relative w-full max-md:px-3 max-md:pt-2">
               <div

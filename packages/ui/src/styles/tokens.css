@@ -6,6 +6,7 @@
   --ui-surface: #ffffff;
   --ui-sunken: #f3f3f1;
   --ui-shell: #fafaf8;
+  --ui-shell-rail: #eceef2;
   --ui-border: #dcdcd8;
   --ui-border-subtle: #ebebe8;
   --ui-border-strong: #c4c4c0;
@@ -56,6 +57,7 @@
   --ui-surface: #17171a;
   --ui-sunken: #1e1e22;
   --ui-shell: #131316;
+  --ui-shell-rail: #16161a;
   --ui-border: rgba(255, 255, 255, 0.14);
   --ui-border-subtle: rgba(255, 255, 255, 0.08);
   --ui-border-strong: rgba(255, 255, 255, 0.28);
@@ -92,6 +94,7 @@
     --ui-surface: #17171a;
     --ui-sunken: #1e1e22;
     --ui-shell: #131316;
+    --ui-shell-rail: #16161a;
     --ui-border: rgba(255, 255, 255, 0.14);
     --ui-border-subtle: rgba(255, 255, 255, 0.08);
     --ui-border-strong: rgba(255, 255, 255, 0.28);
