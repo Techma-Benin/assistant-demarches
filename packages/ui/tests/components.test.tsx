@@ -54,6 +54,15 @@ describe('IconButton', () => {
     );
     expect(screen.getByRole('button', { name: 'Envoyer' })).toHaveAttribute('aria-label', 'Envoyer');
   });
+
+  it('uses pointer cursor when enabled', () => {
+    render(
+      <IconButton label="Envoyer">
+        <svg />
+      </IconButton>,
+    );
+    expect(screen.getByRole('button', { name: 'Envoyer' }).className).toContain('cursor-pointer');
+  });
 });
 
 describe('Chip', () => {

@@ -43,6 +43,9 @@ describe('Modèles', () => {
     render(<ModelsPage />);
     await userEvent.hover(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Modifier');
+    await userEvent.unhover(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
+    await userEvent.hover(await screen.findByRole('button', { name: 'Supprimer Groq Llama' }));
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('Supprimer'));
   });
 
   it('shows the technical details only in the edit dialog', async () => {

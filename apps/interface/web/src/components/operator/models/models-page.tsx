@@ -45,8 +45,10 @@ function ModelRow({
   return (
     <li
       className={cn(
-        'ui-rise flex flex-wrap items-center gap-x-4 gap-y-3 rounded-card border p-4 md:px-5',
-        model.active ? 'border-trust-line bg-trust-soft' : 'border-line bg-surface',
+        'ui-rise flex flex-wrap items-center gap-x-4 gap-y-3 rounded-card border p-4 transition-[background-color,border-color] md:px-5',
+        model.active
+          ? 'border-trust-line bg-trust-soft hover:border-trust'
+          : 'border-line bg-surface hover:border-line-strong hover:bg-sunken',
       )}
     >
       <span
@@ -73,7 +75,11 @@ function ModelRow({
           </Button>
         )}
         <Tooltip label="Modifier">
-          <IconButton label={`Modifier ${model.label}`} onClick={onEdit}>
+          <IconButton
+            label={`Modifier ${model.label}`}
+            className="text-ink-muted hover:bg-sunken hover:text-ink"
+            onClick={onEdit}
+          >
             <Pencil aria-hidden="true" className="size-[18px]" />
           </IconButton>
         </Tooltip>
@@ -81,7 +87,7 @@ function ModelRow({
           <IconButton
             label={`Supprimer ${model.label}`}
             disabled={busy}
-            className="hover:bg-danger-soft hover:text-danger"
+            className="text-ink-muted hover:bg-danger-soft hover:text-danger"
             onClick={onDelete}
           >
             <Trash2 aria-hidden="true" className="size-[18px]" />
