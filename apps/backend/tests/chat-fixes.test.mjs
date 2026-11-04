@@ -526,3 +526,101 @@ test("a model button over the label limit is dropped, the reply stays", async ()
   ] }), { sources: [], requests: [] });
   assert.deepEqual(blocks.map((block) => block.type), ["text"]);
 });
+
+// ---------------------------------------------------------------- F. prepare button
+
+const modelButtons = { type: "buttons", items: [{ id: "commencer", label: "Commencer la demande" }] };
+/** A model that reads the fiche, then answers citing `sources` and offering its own button. */
+const readsThenAnswers = (sources, extra = []) => ({
+  async generate(_config, history) {
+    if (!history.some((turn) => turn.role === "tool")) return toolCall("procedures.get", { procedureId: procedure.id });
+    return { text: JSON.stringify({ blocks: [{ type: "text", text: "Voici les étapes de la démarche.", sources }, modelButtons, ...extra] }), calls: [] };
+  },
+});
+
+test("F: a reply citing one filable procedure gets the prepare button, the model buttons are removed", async (t) => {
+  const h = await harness(t);
+  const conversation = await h.conversations.create(h.user, { locale: "fr" }, identifier("key"));
+  await h.send(h.user, conversation.id, { type: "text", text: "Que faut-il pour le casier judiciaire ?" });
+  await h.process(readsThenAnswers([procedure.source]), conversation.id);
+  const buttons = (await h.lastBlocks(conversation.id)).filter((block) => block.type === "buttons");
+  assert.equal(buttons.length, 1);
+  assert.deepEqual(buttons[0].items, [{ id: "request.prepare." + procedure.id, label: "Préparer ma demande" }]);
+});
+
+test("F: a procedure without filing never gets the prepare button", async (t) => {
+  const h = await harness(t);
+  const withoutFiling = { ...procedure, filing: null };
+  const base = h.tooling.call;
+  h.tooling.call = async (url, auth, name, ...rest) => {
+    if (name === "procedures.get") { const result = await base(url, auth, name, ...rest); return { ...result, structuredContent: withoutFiling }; }
+    return base(url, auth, name, ...rest);
+  };
+  const conversation = await h.conversations.create(h.user, { locale: "fr" }, identifier("key"));
+  await h.send(h.user, conversation.id, { type: "text", text: "Que faut-il pour le casier judiciaire ?" });
+  await h.process(readsThenAnswers([procedure.source]), conversation.id);
+  const blocks = await h.lastBlocks(conversation.id);
+  assert.equal(blocks.some((block) => block.type === "text" && block.text === "Voici les étapes de la démarche."), true);
+  assert.equal(blocks.some((block) => block.items?.some((item) => item.id.startsWith("request.prepare."))), false);
+});
+
+test("F: two procedures cited, no prepare button", async (t) => {
+  const h = await harness(t);
+  const other = { ...procedure, id: "PS00999", source: { ...procedure.source, procedureId: "PS00999", url: "https://service-public.bj/public/services/service/PS00999" } };
+  const base = h.tooling.call;
+  h.tooling.call = async (url, auth, name, args, ...rest) => {
+    const result = await base(url, auth, name, args, ...rest);
+    return name === "procedures.get" && args.procedureId === other.id ? { ...result, structuredContent: other } : result;
+  };
+  const conversation = await h.conversations.create(h.user, { locale: "fr" }, identifier("key"));
+  await h.send(h.user, conversation.id, { type: "text", text: "Que faut-il pour le casier judiciaire ?" });
+  let turn = 0;
+  const model = { async generate() {
+    turn++;
+    if (turn === 1) return toolCall("procedures.get", { procedureId: procedure.id });
+    if (turn === 2) return toolCall("procedures.get", { procedureId: other.id });
+    return { text: JSON.stringify({ blocks: [{ type: "text", text: "Voici les étapes de ces démarches.", sources: [procedure.source, other.source] }] }), calls: [] };
+  } };
+  await h.process(model, conversation.id);
+  const blocks = await h.lastBlocks(conversation.id);
+  assert.equal(blocks.some((block) => block.type === "text" && block.sources.length === 2), true);
+  assert.equal(blocks.some((block) => block.items?.some((item) => item.id.startsWith("request.prepare."))), false);
+});
+
+test("F: a draft already present, no prepare button", async (t) => {
+  const h = await harness(t);
+  const { conversation } = await h.withCard(h.user);
+  await h.send(h.user, conversation.id, { type: "text", text: "Que faut-il pour le casier judiciaire ?" });
+  await h.process(readsThenAnswers([procedure.source]), conversation.id);
+  const blocks = await h.lastBlocks(conversation.id);
+  assert.equal(blocks.some((block) => block.type === "text" && block.text === "Voici les étapes de la démarche."), true);
+  assert.equal(blocks.some((block) => block.items?.some((item) => item.id.startsWith("request.prepare."))), false);
+});
+
+test("F: the click sends request.create once with that procedureId, without the model", async (t) => {
+  const h = await harness(t);
+  const conversation = await h.conversations.create(h.user, { locale: "fr" }, identifier("key"));
+  await h.mandate(conversation.id);
+  await h.send(h.user, conversation.id, { type: "interaction", actionId: "request.prepare." + procedure.id, value: null });
+  await h.process({ async generate() { return final("Votre dossier est en préparation."); } }, conversation.id);
+  assert.equal(h.called("request.create").length, 1);
+  assert.deepEqual(h.called("request.create")[0].args, { procedureId: procedure.id });
+});
+
+test("F: a model cannot produce a request.prepare button", async () => {
+  const dropped = presentModelReply(JSON.stringify({ blocks: [
+    { type: "text", text: "Voici la suite.", sources: [] },
+    { type: "buttons", items: [{ id: "request.prepare.PS00373", label: "Préparer" }] },
+  ] }), empty);
+  assert.deepEqual(dropped.map((block) => block.type), ["text"]);
+});
+
+test("a reply written after reading a fiche keeps its source, even without a stated fact", async () => {
+  const { presentModelReply } = await import("../dist/apps/backend/src/model-reply.js");
+  const source = { procedureId: "PS00373", url: "https://service-public.bj/fiche", retrievedAt: "2026-11-01T00:00:00.000Z" };
+  const reply = (text) => JSON.stringify({ blocks: [{ type: "text", text, sources: [] }] });
+  const evidence = { sources: [source], requests: [] };
+  assert.deepEqual(presentModelReply(reply("Les documents à fournir incluent notamment un formulaire."), evidence)[0].sources, [source]);
+  assert.deepEqual(presentModelReply(reply("Je n’ai pas trouvé de démarche validée."), evidence)[0].sources, []);
+  assert.deepEqual(presentModelReply(reply("Les documents à fournir incluent notamment un formulaire."), { sources: [], requests: [] })[0].sources, []);
+});

@@ -29,7 +29,7 @@ import {
 } from "./tooling.js";
 import { redact, type ModelPort, type ModelReply, type Turn } from "./model.js";
 import type { Consent } from "./consent.js";
-import { presentModelReply, mergeSystemBlocks, PAYMENT_CONFIRM_PREFIX, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS, FORMAT_REMINDER, ModelReplyError, logRejectedReply, hasActionSystemBlocks, isGenericRefusal, honestReplyFromSystemBlocks, bindUploadedFile, fileReceivedInstruction, parseReceivedPiece } from "./model-reply.js";
+import { presentModelReply, mergeSystemBlocks, PAYMENT_CONFIRM_PREFIX, PREPARE_REQUEST_PREFIX, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS, FORMAT_REMINDER, ModelReplyError, logRejectedReply, hasActionSystemBlocks, isGenericRefusal, honestReplyFromSystemBlocks, bindUploadedFile, fileReceivedInstruction, parseReceivedPiece } from "./model-reply.js";
 import type { TranscriptionPort } from "./transcription.js";
 import { LiveReply } from "./live-reply.js";
 import { visibleText } from "./text-deltas.js";
@@ -181,6 +181,8 @@ type State = {
   activeProcedureId?: string;
   /** requestId the user confirmed paying with the payment button. */
   paymentConfirmed?: string;
+  /** procedureId the user chose to prepare with the Backend's prepare button. */
+  prepareProcedure?: string;
   paymentPrompt?: { requestId: string; label: string };
 };
 export class Agent {
@@ -445,10 +447,13 @@ export class Agent {
     }
     let formValues: Record<string, unknown> | undefined;
     let confirmedPayment: string | undefined;
+    let preparedProcedure: string | undefined;
     if (input.content.type === "interaction") {
       formValues = parseFormValues(input.content.value);
       if (input.content.actionId.startsWith(PAYMENT_CONFIRM_PREFIX))
         confirmedPayment = input.content.actionId.slice(PAYMENT_CONFIRM_PREFIX.length);
+      if (input.content.actionId.startsWith(PREPARE_REQUEST_PREFIX))
+        preparedProcedure = input.content.actionId.slice(PREPARE_REQUEST_PREFIX.length);
       input = {
         ...input,
         content: { type: "text", text: interactionPrompt(input.content) },
@@ -545,6 +550,7 @@ export class Agent {
       };
       if (formValues) state.formValues = formValues;
       if (confirmedPayment) state.paymentConfirmed = confirmedPayment;
+      if (preparedProcedure) state.prepareProcedure = preparedProcedure;
       const cards = new Map<string, NonNullable<State["openRequest"]> & { status: string }>();
       for (const row of previous)
         if (row.body.data.kind === "message.sent")
@@ -612,7 +618,7 @@ export class Agent {
         if (!reply.calls.length) {
           if (blocks!.some(block => block.type === "text" && /Je n[’']ai pas trouvé de démarche validée|Je ne peux répondre qu[’']aux questions sur les démarches administratives|Aucune action disponible/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "missing_source");
           else if (state.toolFailed && blocks!.some(block => block.type === "text" && /L[’']outil n[’']a pas pu|Action refusée/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "tool_failure");
-          const sent = this.withSystem(state, blocks!);
+          const sent = this.withSystem(state, this.offerPreparation(state, blocks!));
           await this.finish(conversation, input, sent, traceparent, false, state.assistantMessageId);
           return;
         }
@@ -890,6 +896,18 @@ export class Agent {
   private withSystem(state: State, blocks: Schemas["AgentMessage"]["blocks"]) {
     return mergeSystemBlocks(blocks, state.systemBlocks ?? []);
   }
+  /** Only the Backend knows whether a procedure can be filed: it offers the prepare button itself. */
+  private offerPreparation(state: State, blocks: Schemas["AgentMessage"]["blocks"]): Schemas["AgentMessage"]["blocks"] {
+    if (state.requests.length || state.openRequest || state.activeProcedureId) return blocks;
+    if (hasActionSystemBlocks(state.systemBlocks)) return blocks;
+    if (blocks.some((block) => block.type === "form")) return blocks;
+    const cited = new Set(blocks.flatMap((block) => block.type === "text" ? block.sources.map((source) => source.procedureId) : []));
+    if (cited.size !== 1) return blocks;
+    const [procedureId] = [...cited];
+    if (!state.procedures?.some((item) => item.id === procedureId && item.filing)) return blocks;
+    this.pushBlock(state, { type: "buttons", items: [{ id: PREPARE_REQUEST_PREFIX + procedureId, label: "Préparer ma demande" }] });
+    return blocks.filter((block) => block.type !== "buttons");
+  }
   private pushBlock(state: State, block: Schemas["AgentMessage"]["blocks"][number]) {
     state.systemBlocks ??= [];
     // One card per request or case in a message: the latest state replaces the earlier one.
@@ -1010,6 +1028,8 @@ export class Agent {
     const payName = requestPayName(tools);
     if (state.paymentConfirmed && payName && !calledTool(state, payName))
       return { reply: { text: "", calls: [{ id: identifier("call"), name: payName, arguments: JSON.stringify({ requestId: state.paymentConfirmed }) }] } };
+    if (state.prepareProcedure && createName && !calledTool(state, createName))
+      return { reply: { text: "", calls: [{ id: identifier("call"), name: createName, arguments: JSON.stringify({ procedureId: state.prepareProcedure }) }] } };
     const piece = parseReceivedPiece(question);
     if (piece && attachName && !calledTool(state, attachName)) {
       return {

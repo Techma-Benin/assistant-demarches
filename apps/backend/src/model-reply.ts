@@ -145,6 +145,8 @@ export type ReplyEvidence = {
 };
 
 export const PAYMENT_CONFIRM_PREFIX = "payment.confirm.";
+export const PREPARE_REQUEST_PREFIX = "request.prepare.";
+const NOT_FOUND = /Je n[’']ai pas trouvé/;
 const MODEL_BUTTON_LABEL_MAX = 24;
 const BACKEND_BLOCK_TYPES = new Set(["fileRequest", "loginRequired", "consent", "requestCard", "caseCard"]);
 const MODEL_BLOCK_TYPES = new Set(["text", "buttons", "form"]);
@@ -184,15 +186,19 @@ export function presentModelReply(replyText: string, evidence: ReplyEvidence): S
         if (draftCitesOutside(cleaned.text, evidence.sources)) reject("unobserved_source", "Source non observée.");
         const sources = cited.length
           ? cited.map((source: unknown) => bindObservedSource(source, evidence.sources))
-          : hasAdministrativeFact(cleaned.text)
-            ? (evidence.sources.length ? evidence.sources : reject("admin_fact_without_source", "Fait administratif sans source."))
-            : [];
+          : evidence.sources.length && !NOT_FOUND.test(cleaned.text)
+            // A reply written after reading a fiche rests on it, even when the wording escapes ADMIN_FACT.
+            ? evidence.sources
+            : hasAdministrativeFact(cleaned.text)
+              ? reject("admin_fact_without_source", "Fait administratif sans source.")
+              : [];
         return { ...block, text: redact(cleaned.text), sources };
       }
       // Payment confirmation buttons are built by the Backend only: a model copy could pay behind any label.
+      // The prepare button is built by the Backend only, from Procedure.filing: a model copy is dropped too.
       // A label over the contract limit loses the button, not the whole reply.
       if (block.type === "buttons" && Array.isArray(block.items))
-        return { ...block, items: block.items.filter((item: { id?: unknown; label?: unknown }) => !(typeof item?.id === "string" && item.id.startsWith(PAYMENT_CONFIRM_PREFIX)) && !(typeof item?.label === "string" && item.label.length > MODEL_BUTTON_LABEL_MAX)) };
+        return { ...block, items: block.items.filter((item: { id?: unknown; label?: unknown }) => !(typeof item?.id === "string" && (item.id.startsWith(PAYMENT_CONFIRM_PREFIX) || item.id.startsWith(PREPARE_REQUEST_PREFIX))) && !(typeof item?.label === "string" && item.label.length > MODEL_BUTTON_LABEL_MAX)) };
       return block;
     }).filter((block: any) => block.type !== "buttons" || !Array.isArray(block.items) || block.items.length > 0) as Schemas["AgentMessage"]["blocks"];
     if (!blocks.length) reject("empty_reply", "Réponse modèle vide après retrait des actions réservées.");
