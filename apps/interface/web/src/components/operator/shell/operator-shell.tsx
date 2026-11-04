@@ -138,20 +138,20 @@ export function OperatorShell({ children }: { children: ReactNode }) {
   const activeIndex = navActiveIndex(pathname);
   const [collapsed, setCollapsed] = useState(false);
   const [indicatorTransition, setIndicatorTransition] = useState(true);
+  const [navMetrics, setNavMetrics] = useState<{ height: number; step: number } | null>(null);
   const navTrackRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
   const syncNavMetrics = useCallback(() => {
     const list = listRef.current;
-    const track = navTrackRef.current;
-    if (!list || !track) return;
+    if (!list) return;
     const firstItem = list.querySelector('li');
     if (!firstItem) return;
     const height = firstItem.getBoundingClientRect().height;
     if (height <= 0) return;
     const gap = Number.parseFloat(getComputedStyle(list).rowGap || getComputedStyle(list).gap) || 0;
-    track.style.setProperty('--nav-item-height', `${height}px`);
-    track.style.setProperty('--nav-item-step', `${height + gap}px`);
+    const step = height + gap;
+    setNavMetrics((prev) => (prev?.height === height && prev.step === step ? prev : { height, step }));
   }, []);
 
   useEffect(() => {
@@ -192,6 +192,12 @@ export function OperatorShell({ children }: { children: ReactNode }) {
 
   const navTrackStyle = {
     '--nav-active-index': activeIndex,
+    ...(navMetrics
+      ? {
+          '--nav-item-height': `${navMetrics.height}px`,
+          '--nav-item-step': `${navMetrics.step}px`,
+        }
+      : {}),
   } as CSSProperties;
 
   const collapseToggle = (
