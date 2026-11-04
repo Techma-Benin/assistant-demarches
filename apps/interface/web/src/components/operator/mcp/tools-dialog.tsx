@@ -1,11 +1,8 @@
 'use client';
 
 import {
-  Button,
   Dialog,
-  DialogClose,
   DialogContent,
-  DialogFooter,
   InlineAlert,
   Switch,
   Table,
@@ -17,6 +14,8 @@ import {
 } from '@techma/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { describeError, operatorApi, type McpServer, type McpTool } from '@/lib/operator/api';
+
+const controlColumnClass = 'w-0 whitespace-nowrap px-3 text-center';
 
 export function ToolsDialog({
   server,
@@ -85,12 +84,15 @@ export function ToolsDialog({
         ) : tools.length === 0 ? (
           <p className="text-sm text-ink-muted">Aucun outil. Lancez la découverte pour lire les outils du serveur.</p>
         ) : (
-          <Table aria-label={`Outils de ${server.name}`}>
+          <Table
+            aria-label={`Outils de ${server.name}`}
+            wrapperClassName="rounded-none border-0 bg-transparent"
+          >
             <TableHead>
               <TableRow>
                 <TableHeaderCell>Outil</TableHeaderCell>
-                <TableHeaderCell>Activé</TableHeaderCell>
-                <TableHeaderCell>Consentement requis</TableHeaderCell>
+                <TableHeaderCell className={controlColumnClass}>Activé</TableHeaderCell>
+                <TableHeaderCell className={controlColumnClass}>Consentement requis</TableHeaderCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -100,33 +102,32 @@ export function ToolsDialog({
                     <p className="font-mono text-[13px] font-semibold break-all">{tool.name}</p>
                     {tool.description ? <p className="mt-0.5 text-[13px] text-ink-muted">{tool.description}</p> : null}
                   </TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={tool.enabled}
-                      disabled={pendingTool === tool.name}
-                      aria-label={`Activé : ${tool.name}`}
-                      onCheckedChange={(enabled) => void toggle(tool, { enabled })}
-                    />
+                  <TableCell className={controlColumnClass}>
+                    <div className="flex justify-center">
+                      <Switch
+                        checked={tool.enabled}
+                        disabled={pendingTool === tool.name}
+                        aria-label={`Activé : ${tool.name}`}
+                        onCheckedChange={(enabled) => void toggle(tool, { enabled })}
+                      />
+                    </div>
                   </TableCell>
-                  <TableCell>
-                    <Switch
-                      tone="ink"
-                      checked={tool.requiresMandate}
-                      disabled={pendingTool === tool.name}
-                      aria-label={`Consentement requis : ${tool.name}`}
-                      onCheckedChange={(requiresMandate) => void toggle(tool, { requiresMandate })}
-                    />
+                  <TableCell className={controlColumnClass}>
+                    <div className="flex justify-center">
+                      <Switch
+                        tone="ink"
+                        checked={tool.requiresMandate}
+                        disabled={pendingTool === tool.name}
+                        aria-label={`Consentement requis : ${tool.name}`}
+                        onCheckedChange={(requiresMandate) => void toggle(tool, { requiresMandate })}
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         )}
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline">Fermer</Button>
-          </DialogClose>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
