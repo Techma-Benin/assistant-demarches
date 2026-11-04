@@ -246,7 +246,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                 data-nav-indicator=""
                 className={cn(
                   'pointer-events-none absolute inset-x-0 z-0 hidden md:block motion-reduce:transition-none',
-                  'transition-[transform,height,opacity] duration-[220ms] ease-(--ui-ease-drawer)',
+                  'transition-[transform,height] duration-[220ms] ease-(--ui-ease-drawer)',
                   indicator.visible ? 'opacity-100' : 'opacity-0',
                 )}
                 style={{
