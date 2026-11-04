@@ -1,7 +1,7 @@
 'use client';
 
-import { Badge, FlagGlyph } from '@techma/ui';
-import { Building2, CircleCheck, CircleX, Cpu, Plug, type LucideIcon } from 'lucide-react';
+import { FlagGlyph } from '@techma/ui';
+import { Cpu, Landmark, Plug, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { OperatorStatus } from '@/lib/operator/api';
@@ -11,14 +11,9 @@ import './status-graph.css';
 type Administration = OperatorStatus['administrations'][number];
 type McpServer = OperatorStatus['mcpServers'][number];
 
-const Reachability = ({ ok }: { ok: boolean }) => (
-  <Badge
-    tone={ok ? 'trust' : 'danger'}
-    icon={ok ? <CircleCheck aria-hidden="true" className="size-3.5" /> : <CircleX aria-hidden="true" className="size-3.5" />}
-  >
-    {ok ? 'Joignable' : 'Injoignable'}
-  </Badge>
-);
+function StatusBadge({ ok = true, children }: { ok?: boolean; children: ReactNode }) {
+  return <span className={ok ? 'op-status-badge' : 'op-status-badge is-bad'}>{children}</span>;
+}
 
 function Tile({ kind, icon: Icon }: { kind: 'model' | 'mcp' | 'admin'; icon: LucideIcon }) {
   return (
@@ -34,12 +29,12 @@ function BranchCard({
   children,
 }: {
   href?: string;
-  labelledBy: string;
+  labelledBy?: string;
   children: ReactNode;
 }) {
   if (href) {
     return (
-      <Link href={href} className="op-status-card" aria-labelledby={labelledBy}>
+      <Link href={href} className="op-status-card">
         {children}
       </Link>
     );
@@ -79,13 +74,13 @@ export function StatusGraph({ status }: { status: OperatorStatus }) {
       <span className="op-status-root-wire" aria-hidden="true" />
       <ul className="op-status-branches">
         <li>
-          <BranchCard href="/operateur/modeles" labelledBy="op-status-model">
+          <BranchCard href="/operateur/modeles">
             <div className="op-status-head">
               <Tile kind="model" icon={Cpu} />
               <div className="op-status-main">
                 <div className="op-status-title-row">
                   <h2 id="op-status-model">Modèle</h2>
-                  {status.model ? <Reachability ok={status.model.reachable} /> : null}
+                  {status.model ? <StatusBadge ok={status.model.reachable}>{status.model.reachable ? 'Joignable' : 'Injoignable'}</StatusBadge> : null}
                 </div>
                 <p className="op-status-sub">{status.model ? status.model.label : 'Aucun modèle actif.'}</p>
               </div>
@@ -93,13 +88,13 @@ export function StatusGraph({ status }: { status: OperatorStatus }) {
           </BranchCard>
         </li>
         <li>
-          <BranchCard href="/operateur/mcp" labelledBy="op-status-mcp">
+          <BranchCard href="/operateur/mcp">
             <div className="op-status-head">
               <Tile kind="mcp" icon={Plug} />
               <div className="op-status-main">
                 <div className="op-status-title-row">
                   <h2 id="op-status-mcp">Serveurs MCP</h2>
-                  {status.mcpServers.length > 0 ? <Reachability ok={mcpOk} /> : null}
+                  {status.mcpServers.length > 0 ? <StatusBadge ok={mcpOk}>{mcpOk ? 'Joignable' : 'Injoignable'}</StatusBadge> : null}
                 </div>
                 <p className="op-status-sub">{mcpCopy(status.mcpServers)}</p>
               </div>
@@ -109,14 +104,14 @@ export function StatusGraph({ status }: { status: OperatorStatus }) {
         <li>
           <BranchCard labelledBy="op-status-admins">
             <div className="op-status-head">
-              <Tile kind="admin" icon={Building2} />
+              <Tile kind="admin" icon={Landmark} />
               <div className="op-status-main">
                 <div className="op-status-title-row">
                   <h2 id="op-status-admins">Administrations</h2>
                   {connected.length > 0 ? (
-                    <Badge tone="trust" icon={<CircleCheck aria-hidden="true" className="size-3.5" />}>
+                    <StatusBadge>
                       {connected.length} connectée{connected.length > 1 ? 's' : ''}
-                    </Badge>
+                    </StatusBadge>
                   ) : null}
                 </div>
                 <p className="op-status-sub">

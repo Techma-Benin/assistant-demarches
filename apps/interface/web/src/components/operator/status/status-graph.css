@@ -1,11 +1,12 @@
-/* Connection schema restored from the operator-console maquette (Assistant → branches). */
+/* Connection schema from the operator-console maquette (Assistant → branches). */
 .op-status-chain {
+  container-type: inline-size;
   display: flex;
   align-items: center;
 }
 
 .op-status-root {
-  display: none;
+  display: flex;
   flex: none;
   width: 92px;
   flex-direction: column;
@@ -31,7 +32,7 @@
 }
 
 .op-status-root-wire {
-  display: none;
+  display: block;
   flex: none;
   width: 18px;
   height: 2px;
@@ -50,11 +51,40 @@
 
 .op-status-branches > li {
   position: relative;
-  padding: 0 0 10px;
+  padding: 0 0 12px 22px;
 }
 
 .op-status-branches > li:last-child {
   padding-bottom: 0;
+}
+
+.op-status-branches > li::before {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  width: 22px;
+  height: 2px;
+  background: var(--ui-trust-line);
+  content: '';
+}
+
+.op-status-branches > li::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--ui-trust-line);
+  content: '';
+}
+
+.op-status-branches > li:first-child::after {
+  top: 32px;
+}
+
+.op-status-branches > li:last-child::after {
+  bottom: auto;
+  height: 34px;
 }
 
 .op-status-card {
@@ -68,6 +98,7 @@
 }
 
 a.op-status-card {
+  cursor: pointer;
   transition:
     background-color var(--ui-dur-press) var(--ui-ease-out),
     border-color var(--ui-dur-press) var(--ui-ease-out);
@@ -75,6 +106,11 @@ a.op-status-card {
 
 a.op-status-card:hover {
   background: var(--ui-sunken);
+}
+
+a.op-status-card:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
 }
 
 a.op-status-card:active {
@@ -139,6 +175,37 @@ a.op-status-card:active {
   color: var(--ui-on-action);
 }
 
+.op-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  background: var(--ui-trust-soft);
+  color: var(--ui-trust-text);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.op-status-badge::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ui-trust);
+  content: '';
+}
+
+.op-status-badge.is-bad {
+  background: var(--ui-danger-soft);
+  color: var(--ui-danger-text);
+}
+
+.op-status-badge.is-bad::before {
+  background: var(--ui-danger-text);
+}
+
 .op-status-chips {
   display: flex;
   flex-wrap: wrap;
@@ -159,6 +226,7 @@ a.op-status-card:active {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
+  white-space: nowrap;
 }
 
 .op-status-chip::before {
@@ -169,50 +237,23 @@ a.op-status-card:active {
   content: '';
 }
 
-@media (min-width: 768px) {
-  .op-status-root {
-    display: flex;
-  }
-
+@container (max-width: 560px) {
+  .op-status-root,
   .op-status-root-wire {
-    display: block;
+    display: none;
   }
 
   .op-status-branches > li {
-    padding: 0 0 12px 22px;
+    padding: 0 0 10px;
   }
 
   .op-status-branches > li:last-child {
     padding-bottom: 0;
   }
 
-  .op-status-branches > li::before {
-    position: absolute;
-    top: 32px;
-    left: 0;
-    width: 22px;
-    height: 2px;
-    background: var(--ui-trust-line);
-    content: '';
-  }
-
+  .op-status-branches > li::before,
   .op-status-branches > li::after {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 2px;
-    background: var(--ui-trust-line);
-    content: '';
-  }
-
-  .op-status-branches > li:first-child::after {
-    top: 32px;
-  }
-
-  .op-status-branches > li:last-child::after {
-    bottom: auto;
-    height: 34px;
+    display: none;
   }
 }
 
