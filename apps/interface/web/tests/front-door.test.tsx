@@ -33,20 +33,24 @@ describe('FrontDoor', () => {
     expect(passport).toHaveAttribute('aria-pressed', 'false');
     await user.click(passport);
     expect(passport).toHaveAttribute('aria-pressed', 'true');
-    await user.click(screen.getByRole('button', { name: 'Demander à l’assistant' }));
+    // The showcase button comes first; the catalogue has its own.
+    await user.click(screen.getAllByRole('button', { name: 'Demander à l’assistant' })[0]!);
     expect(onAsk).toHaveBeenCalledExactlyOnceWith('Comment renouveler mon passeport ?');
   });
 
   it('a catalogue item calls onAsk with its question', async () => {
     const onAsk = vi.fn();
     render(<FrontDoor onAsk={onAsk} config={base} />);
-    await userEvent.setup().click(screen.getByRole('button', { name: /Légalisation de signature/ }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: /Justice/ }));
+    await user.click(screen.getByRole('button', { name: /Légalisation de signature/ }));
     expect(onAsk).toHaveBeenCalledExactlyOnceWith('Comment faire légaliser une signature ?');
   });
 
   it('lists the residence certificate in the showcase and the catalogue', async () => {
     const onAsk = vi.fn();
     render(<FrontDoor onAsk={onAsk} config={base} />);
+    // The catalogue shows the Identité theme first.
     expect(screen.getAllByRole('button', { name: /Certificat de résidence/ }).length).toBeGreaterThanOrEqual(2);
     await userEvent.setup().click(screen.getAllByRole('button', { name: /Certificat de résidence/ }).at(-1)!);
     expect(onAsk).toHaveBeenCalledExactlyOnceWith('Comment obtenir un certificat de résidence ?');
@@ -54,7 +58,7 @@ describe('FrontDoor', () => {
 
   it('shows the trust board', () => {
     render(<FrontDoor onAsk={() => {}} config={base} />);
-    expect(screen.getByText('Vous demander votre NPI dans la conversation')).toBeInTheDocument();
+    expect(screen.getByText('Voir votre NPI')).toBeInTheDocument();
     expect(screen.getAllByText(/Chaque information administrative cite sa fiche officielle/).length).toBeGreaterThan(0);
   });
 
@@ -73,7 +77,7 @@ describe('FrontDoor', () => {
       expect(screen.getByLabelText('Votre question')).toHaveFocus();
     });
 
-    it('the closing button without a WhatsApp number does the same', async () => {
+    it('the closing button does the same', async () => {
       render(<FrontDoor onAsk={() => {}} config={base} />);
       const buttons = screen.getAllByRole('button', { name: 'Poser ma question' });
       await userEvent.setup().click(buttons.at(-1)!);
@@ -97,34 +101,25 @@ describe('FrontDoor', () => {
     expect(onResume).toHaveBeenCalledOnce();
   });
 
-  it('closing button links to wa.me when a number is configured', () => {
-    render(<FrontDoor onAsk={() => {}} config={{ ...base, whatsappNumber: '+229 01 02 03 04' }} />);
-    const link = screen.getByRole('link', { name: 'Ouvrir WhatsApp' });
-    expect(link).toHaveAttribute('href', 'https://wa.me/22901020304');
-    expect(link).toHaveAttribute('target', '_blank');
-  });
-
   it('does nothing when disabled', async () => {
     const onAsk = vi.fn();
     render(<FrontDoor onAsk={onAsk} disabled config={base} />);
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Renouveler mon passeport' }));
+    await user.click(screen.getByRole('tab', { name: /Justice/ }));
     await user.click(screen.getByRole('button', { name: /Légalisation de signature/ }));
-    expect(screen.getByRole('button', { name: 'Demander à l’assistant' })).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Demander à l’assistant' }).every((b) => b.hasAttribute('disabled'))).toBe(true);
     expect(screen.getByRole('button', { name: /Légalisation de signature/ })).toBeDisabled();
     await user.type(screen.getByLabelText('Votre question'), 'abc{Enter}');
     expect(onAsk).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Envoyer' })).toBeDisabled();
   });
 
-  it('shows the WhatsApp number only when configured, never the placeholder', () => {
-    const { unmount } = render(<FrontDoor onAsk={() => {}} config={base} />);
-    expect(document.body.textContent).not.toContain('Écrivez au');
-    expect(document.body.textContent).not.toContain('[+229');
-    unmount();
+  it('no longer mentions WhatsApp, whatever the config', () => {
     render(<FrontDoor onAsk={() => {}} config={{ ...base, whatsappNumber: '+229 01 02 03 04' }} />);
-    expect(screen.getByText(/Écrivez au \+229 01 02 03 04/)).toBeInTheDocument();
-    expect(document.body.textContent).not.toContain('[+229 numéro');
+    expect(document.body.textContent).not.toContain('WhatsApp');
+    expect(document.querySelector('#whatsapp')).toBeNull();
+    expect(document.querySelector('#commencer')).not.toBeNull();
   });
 
   it('renders report/privacy links only when configured', () => {
@@ -158,9 +153,9 @@ describe('FrontDoor', () => {
   it('credits every photo in the footer', () => {
     render(<FrontDoor onAsk={() => {}} config={base} />);
     const footer = document.querySelector('footer') as HTMLElement;
-    expect(footer).toHaveTextContent('Photos :');
+    expect(within(footer).getByText('Crédits photos').closest('details')).not.toHaveAttribute('open');
     const links = within(footer).getAllByRole('link', { name: /^«.*»$/ });
-    expect(links).toHaveLength(5);
+    expect(links).toHaveLength(4);
     expect(links[0]).toHaveAttribute('href', 'https://commons.wikimedia.org/wiki/File:Le_monument_de_l%27Amazone.jpg');
   });
 

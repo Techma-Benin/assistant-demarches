@@ -114,6 +114,25 @@
     transform: translateY(24px);
   }
 }
+/* Catalogue headline: the photo showing through the letters drifts slowly. */
+@keyframes home-pan {
+  from {
+    background-position: 50% 15%;
+  }
+  to {
+    background-position: 50% 85%;
+  }
+}
+/* Closing document: a slow float, ±6px. */
+@keyframes home-float {
+  0%,
+  100% {
+    transform: translateY(-6px);
+  }
+  50% {
+    transform: translateY(6px);
+  }
+}
 @media (prefers-reduced-motion: no-preference) {
   [data-reveal='pending'] [data-r] {
     opacity: 0;
