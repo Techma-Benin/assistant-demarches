@@ -192,15 +192,25 @@ export class AdminConsoleController {
     await this.official(req);
     const limit = Number(req.query.limit ?? "20");
     const cursor = req.query.cursor;
+    const status = req.query.status;
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw new Problem(400, "INVALID_REQUEST", "Pagination invalide.");
     if (cursor !== undefined && (typeof cursor !== "string" || !cursor))
       throw new Problem(400, "INVALID_REQUEST", "Curseur invalide.");
+    if (status !== undefined && status !== "open" && status !== "resolved")
+      throw new Problem(400, "INVALID_REQUEST", "status doit valoir open ou resolved.");
     const after = cursor ?? "";
+    const params: unknown[] = [after];
+    const clauses = ["id>$1"];
+    if (status) {
+      params.push(status);
+      clauses.push(`status=$${params.length}`);
+    }
+    params.push(limit + 1);
     const rows = (
       await this.runtime.pool.query(
-        "SELECT * FROM backend_unanswered WHERE id>$1 ORDER BY id LIMIT $2",
-        [after, limit + 1],
+        `SELECT * FROM backend_unanswered WHERE ${clauses.join(" AND ")} ORDER BY id LIMIT $${params.length}`,
+        params,
       )
     ).rows;
     const page = rows.slice(0, limit);
