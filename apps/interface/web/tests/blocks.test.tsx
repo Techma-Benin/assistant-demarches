@@ -185,6 +185,17 @@ describe('requestCard block', () => {
     expect(screen.getByText(exampleRequest.title)).toBeInTheDocument();
     expect(screen.getByText(/Tout est prêt pour le dépôt/)).toBeInTheDocument();
   });
+
+  it('says the dossier is filed once submitted, even with nothing missing', () => {
+    show(requestCardBlock({ ...exampleRequest, status: 'submitted', missing: [] }));
+    expect(screen.getByText('Dossier déposé. Détail dans « Vos informations ».')).toBeInTheDocument();
+    expect(screen.queryByText(/Tout est prêt/)).toBeNull();
+  });
+
+  it('says the request is cancelled', () => {
+    show(requestCardBlock({ ...exampleRequest, status: 'cancelled', missing: [] }));
+    expect(screen.getByText('Demande annulée.')).toBeInTheDocument();
+  });
 });
 
 describe('caseCard block', () => {

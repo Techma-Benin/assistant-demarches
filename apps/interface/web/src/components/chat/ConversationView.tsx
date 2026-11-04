@@ -2,14 +2,14 @@
 
 import { Fragment, useEffect, useId, useState } from 'react';
 import { BrandMark, Button, Chip, FlagGlyph, InlineAlert, SourceList, ThemeToggle, TypingIndicator, cn } from '@techma/ui';
-import { ArrowDown, FilePlus2, Plus } from 'lucide-react';
+import { ArrowDown, Plus } from 'lucide-react';
 import { AccountMenu } from '@/components/app/AccountMenu';
 import { BlockRenderer } from '@/components/blocks/BlockRenderer';
 import { useThreadScroll } from '@/hooks/use-thread-scroll';
 import { useUnreadTitle } from '@/hooks/use-unread-title';
 import type { useConversation } from '@/hooks/use-conversation';
 import { WAITING_LABEL, type TimelineEntry } from '@/lib/conversation-state';
-import { fileRequestKey, latestFileRequestSlots, latestRequest, lastTextSources, openFileRequests, receivedFileRequests, prepareRequestAction, toSourceInfo, type DraftRequest } from '@/lib/dossier';
+import { fileRequestKey, latestFileRequestSlots, latestRequest, lastTextSources, openFileRequests, receivedFileRequests, toSourceInfo, type DraftRequest } from '@/lib/dossier';
 import { dayKey, formatDayLabel, formatTime } from '@/lib/format-time';
 import { revealDelays } from '@/lib/reveal';
 import { TextBlock } from '@/components/blocks/TextBlock';
@@ -173,7 +173,6 @@ export function ConversationView({
     agentCount += 1;
   });
   useUnreadTitle(agentCount);
-  const prepareAction = state.status === 'ready' && !waitingForAgent ? prepareRequestAction(state.timeline) : null;
   const firstQuestion = state.timeline.find((entry) => entry.kind === 'user' && !entry.attachment);
   const title = firstQuestion?.kind === 'user' ? firstQuestion.display : null;
 
@@ -456,14 +455,6 @@ export function ConversationView({
                               revealDelay={delays?.[blockIndex]}
                             />
                           ))}
-                          {prepareAction && index === lastAgentIndex && (
-                            <div>
-                              <Chip onClick={() => sendText(`Je veux préparer ma demande pour cette démarche (${prepareAction.procedureId}).`)}>
-                                <FilePlus2 aria-hidden="true" className="size-4" />
-                                Préparer ma demande
-                              </Chip>
-                            </div>
-                          )}
                           <div className="-mt-3.5 -ml-2.5">
                             <MessageActions message={entry.message} alwaysVisible={index === lastAgentIndex} />
                           </div>
