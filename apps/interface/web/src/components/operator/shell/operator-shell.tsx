@@ -1,10 +1,11 @@
 'use client';
 
 import { BrandMark, Tooltip, cn } from '@techma/ui';
-import { Activity, ChevronsLeft, ChevronsRight, Cpu, Plug, type LucideIcon } from 'lucide-react';
+import { Activity, Cpu, Plug, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { RAIL_CONTENT_CLASS, RailEdgeShadow, RailGrip, railFrameClass, useSharedRailWidth } from '@/components/shell/rail-resize';
 import { OperatorAccountMenu } from './operator-account-menu';
 import { OperatorLogomark } from './operator-logomark';
 
@@ -61,14 +62,21 @@ export function OperatorShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [indicatorTransition, setIndicatorTransition] = useState(true);
   const [navMetrics, setNavMetrics] = useState<{ height: number; step: number } | null>(null);
+  const [trackTop, setTrackTop] = useState<number | null>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
   const navTrackRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
   const syncNavMetrics = useCallback(() => {
     const list = listRef.current;
+    const shell = shellRef.current;
     if (!list) return;
     const firstItem = list.querySelector('li');
     if (!firstItem) return;
+    if (shell) {
+      const top = Math.round(firstItem.getBoundingClientRect().top - shell.getBoundingClientRect().top);
+      setTrackTop((prev) => (prev === top ? prev : top));
+    }
     const height = firstItem.getBoundingClientRect().height;
     if (height <= 0) return;
     const gap = Number.parseFloat(getComputedStyle(list).rowGap || getComputedStyle(list).gap) || 0;
@@ -99,63 +107,37 @@ export function OperatorShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('resize', onResize);
   }, [syncNavMetrics]);
 
-  function toggleCollapsed() {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try {
-        if (next) window.localStorage.setItem(OPERATOR_NAV_COLLAPSED_KEY, 'true');
-        else window.localStorage.removeItem(OPERATOR_NAV_COLLAPSED_KEY);
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  }
+  const commitCollapsed = useCallback((next: boolean) => {
+    setCollapsed(next);
+    try {
+      if (next) window.localStorage.setItem(OPERATOR_NAV_COLLAPSED_KEY, 'true');
+      else window.localStorage.removeItem(OPERATOR_NAV_COLLAPSED_KEY);
+    } catch {
+      // ignore
+    }
+  }, []);
+  const rail = useSharedRailWidth(collapsed, commitCollapsed);
 
-  const navTrackStyle = {
+  const navVars = {
     '--nav-active-index': activeIndex,
+    ...(trackTop != null ? { '--nav-track-top': `${trackTop}px` } : {}),
     ...(navMetrics
       ? {
           '--nav-item-height': `${navMetrics.height}px`,
           '--nav-item-step': `${navMetrics.step}px`,
         }
       : {}),
+    '--rail-cut-top': 'calc(var(--nav-track-top, 0px) + var(--nav-active-index, 0) * var(--nav-item-step, 0px))',
   } as CSSProperties;
 
-  const collapseToggle = collapsed ? (
-    <button
-      type="button"
-      onClick={toggleCollapsed}
-      aria-expanded={false}
-      aria-label="Déplier le menu latéral"
-      className="group hidden size-9 shrink-0 cursor-pointer place-items-center rounded-none text-ink-muted transition-colors duration-(--ui-dur-press) hover:bg-sunken hover:text-ink focus-visible:bg-sunken focus-visible:text-ink md:grid"
-    >
-      <OperatorLogomark className="col-start-1 row-start-1 transition-opacity duration-(--ui-dur-press) group-hover:opacity-0 group-focus:opacity-0 group-focus-visible:opacity-0 motion-reduce:transition-none" />
-      <ChevronsRight
-        aria-hidden="true"
-        strokeWidth={2}
-        className="col-start-1 row-start-1 size-4 opacity-0 transition-opacity duration-(--ui-dur-press) group-hover:opacity-100 group-focus:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
-      />
-    </button>
-  ) : (
-    <button
-      type="button"
-      onClick={toggleCollapsed}
-      aria-expanded
-      aria-label="Replier le menu latéral"
-      className="hidden size-9 shrink-0 cursor-pointer items-center justify-center rounded-none text-ink-muted transition-colors duration-(--ui-dur-press) hover:bg-sunken hover:text-ink md:inline-flex"
-    >
-      <ChevronsLeft aria-hidden="true" className="size-4" strokeWidth={2} />
-    </button>
-  );
+  const navTrackStyle = navVars;
 
   return (
     <div
+      ref={shellRef}
       data-collapsed={collapsed ? '' : undefined}
-      className={cn(
-        'min-h-dvh md:grid md:transition-[grid-template-columns] md:duration-[220ms] md:ease-(--ui-ease-drawer)',
-        collapsed ? 'md:grid-cols-[4.25rem_minmax(0,1fr)]' : 'md:grid-cols-[12.5rem_minmax(0,1fr)]',
-      )}
+      style={{ '--rail-width': rail.column, ...navVars } as CSSProperties}
+      className={railFrameClass(rail.dragging)}
     >
       <aside className="bg-shell-rail md:sticky md:top-0 md:h-dvh">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-3 md:flex md:h-full md:flex-col md:flex-nowrap md:items-stretch md:justify-start md:gap-0 md:p-0">
@@ -170,16 +152,13 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                 <span className="md:hidden">
                   <OperatorLogomark />
                 </span>
-                {collapseToggle}
+                <OperatorLogomark className="hidden md:inline-block" />
               </>
             ) : (
-              <>
-                <div className="min-w-0 flex-1">
-                  <BrandMark />
-                  <p className="mt-1 text-xs leading-tight font-semibold text-ink-muted">Console opérateur</p>
-                </div>
-                {collapseToggle}
-              </>
+              <div className="min-w-0 flex-1">
+                <BrandMark />
+                <p className="mt-1 text-xs leading-tight font-semibold text-ink-muted">Console opérateur</p>
+              </div>
             )}
           </div>
 
@@ -261,8 +240,17 @@ export function OperatorShell({ children }: { children: ReactNode }) {
             <OperatorAccountMenu collapsed={collapsed} />
           </div>
         </div>
+        <RailGrip
+          collapsed={collapsed}
+          width={rail.width}
+          max={rail.max}
+          onProposed={rail.applyProposed}
+          onNudge={rail.nudge}
+          onDraggingChange={rail.setDragging}
+        />
       </aside>
-      <main className="min-w-0 w-full px-4 py-6 md:px-8 md:py-8 xl:px-10">{children}</main>
+      <RailEdgeShadow cutout={!collapsed && trackTop != null} />
+      <main className={RAIL_CONTENT_CLASS}>{children}</main>
     </div>
   );
 }

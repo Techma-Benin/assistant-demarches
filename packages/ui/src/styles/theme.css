@@ -48,6 +48,13 @@
   --radius-pill: var(--ui-radius-pill);
 
   --shadow-prompt: var(--ui-shadow-prompt);
+  --shadow-rail: var(--ui-rail-shadow);
+}
+
+@property --rail-cut-top {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
 }
 
 @layer base {

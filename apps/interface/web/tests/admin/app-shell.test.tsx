@@ -1,10 +1,11 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConsoleProvider } from '@/components/admin/console/console-context';
 import { PageHeader } from '@/components/admin/page-header';
 import { ReportActiveCaseStatus } from '@/components/admin/shell/active-case-status';
 import { AppShell } from '@/components/admin/shell/app-shell';
+import { RAIL_COLLAPSED, RAIL_WIDTH_KEY } from '@/components/shell/rail-resize';
 import type { CaseStatus } from '@/lib/admin/api';
 import { ADMIN, AGENT, ANIP, JUSTICE, SANTE, SUPER, SUPER_ME, me, stubConsole } from './helpers/fixtures';
 
@@ -122,30 +123,23 @@ describe('AppShell navigation', () => {
     expect(screen.queryByText('Console d’administration')).toBeNull();
     const account = await screen.findByRole('button', { name: 'Agent Justice' });
     expect(account.parentElement).toHaveClass('md:mt-auto');
-    const collapse = screen.getByRole('button', { name: 'Replier le menu latéral' });
-    expect(collapse).toHaveAttribute('aria-expanded', 'true');
-    expect(collapse.querySelector('svg[width="28"]')).toBeNull();
+    const grip = screen.getByRole('separator', { name: 'Redimensionner le menu latéral' });
+    expect(grip.className).toContain('top-1/2');
+    expect(grip.className).toContain('right-0.5');
+    expect(grip.closest('aside')).toBeTruthy();
+    expect(container.querySelector('[data-rail-shadow]')).toHaveAttribute('data-rail-cutout', '');
+    expect(screen.queryByRole('button', { name: 'Replier le menu latéral' })).toBeNull();
 
-    await ui.click(collapse);
+    grip.focus();
+    await ui.keyboard('{ArrowLeft}');
     expect(localStorage.getItem('admin-nav-collapsed')).toBe('true');
-    const expand = screen.getByRole('button', { name: 'Déplier le menu latéral' });
-    expect(expand).toHaveAttribute('aria-expanded', 'false');
-    const flags = expand.querySelectorAll('svg[width="28"]');
-    expect(flags).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Déplier le menu latéral' })).toBeNull();
     expect(container.querySelectorAll('svg[width="28"]')).toHaveLength(1);
-    const flag = flags[0];
-    const arrow = expand.querySelector('svg.size-4');
-    expect(flag.getAttribute('class')).not.toMatch(/(^|\s)opacity-0(\s|$)/);
-    expect(flag.getAttribute('class')).toContain('group-hover:opacity-0');
-    expect(flag.getAttribute('class')).toContain('group-focus:opacity-0');
-    expect(flag.getAttribute('class')).toContain('group-focus-visible:opacity-0');
-    expect(arrow!.getAttribute('class')).toMatch(/(^|\s)opacity-0(\s|$)/);
-    expect(arrow!.getAttribute('class')).toContain('group-hover:opacity-100');
-    expect(arrow!.getAttribute('class')).toContain('group-focus:opacity-100');
-    expect(arrow!.getAttribute('class')).toContain('group-focus-visible:opacity-100');
-    const shell = screen.getByText('contenu').closest('.min-h-dvh')!;
-    expect(shell.className).toContain('md:grid-cols-[4.25rem_minmax(0,1fr)]');
-    expect(shell.className).not.toContain('12.5rem');
+    expect(container.querySelector('aside svg.lucide-chevrons-left, aside svg.lucide-chevrons-right')).toBeNull();
+    const shell = screen.getByText('contenu').closest('.min-h-dvh') as HTMLElement;
+    expect(shell.style.getPropertyValue('--rail-width')).toBe(RAIL_COLLAPSED);
+    expect(container.querySelector('[data-rail-shadow]')).not.toHaveAttribute('data-rail-cutout');
+    expect(screen.getByRole('main').className).not.toContain('shadow-rail');
     expect(shell).toHaveAttribute('data-collapsed', '');
     const topCorner = container.querySelector('[data-nav-corner="top"] span') as HTMLElement;
     const bottomCorner = container.querySelector('[data-nav-corner="bottom"] span') as HTMLElement;
@@ -153,6 +147,40 @@ describe('AppShell navigation', () => {
     expect(bottomCorner.className).toContain('rounded-tr-full');
     expect(screen.getByRole('button', { name: 'Agent Justice' }).parentElement).toHaveClass('md:mt-auto');
     expect(screen.queryByText('Console d’administration')).toBeNull();
+  });
+
+  it('resizes the same shared rail width and collapses under the minimum', async () => {
+    stubConsole({ me: me(AGENT) });
+    localStorage.setItem(RAIL_WIDTH_KEY, '264');
+    const ui = userEvent.setup();
+    renderShell();
+    const shell = (await screen.findByText('contenu')).closest('.min-h-dvh') as HTMLElement;
+    const grip = screen.getByRole('separator', { name: 'Redimensionner le menu latéral' });
+    expect(grip.querySelectorAll('[data-rail-stroke]')).toHaveLength(2);
+    expect(grip.className).toContain('cursor-col-resize');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe('264px');
+    expect(screen.queryByText('Console d’administration')).toBeNull();
+    expect(screen.getByRole('main').className).toContain('z-10');
+
+    grip.focus();
+    await ui.keyboard('{ArrowLeft}');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe('248px');
+    fireEvent.pointerDown(grip, { button: 0, clientX: 248, pointerId: 1 });
+    fireEvent.pointerMove(grip, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerUp(grip, { clientX: 100, pointerId: 1 });
+    expect(shell).toHaveAttribute('data-collapsed', '');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe(RAIL_COLLAPSED);
+    expect(shell.querySelector('[data-rail-shadow]')).not.toHaveAttribute('data-rail-cutout');
+    expect(screen.queryByRole('button', { name: 'Déplier le menu latéral' })).toBeNull();
+
+    fireEvent.pointerDown(grip, { button: 0, clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(grip, { clientX: 180, pointerId: 1 });
+    fireEvent.pointerUp(grip, { clientX: 180, pointerId: 1 });
+    expect(shell).not.toHaveAttribute('data-collapsed');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe('248px');
+    expect(localStorage.getItem(RAIL_WIDTH_KEY)).toBe('248');
+    expect(await screen.findByRole('button', { name: 'Agent Justice' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Agent Justice' }).parentElement).toHaveClass('md:mt-auto');
   });
 
   it('toggles the mobile menu with aria-expanded', async () => {

@@ -44,6 +44,7 @@
 
   --ui-shadow-pop: 0 8px 24px rgb(23 32 26 / 0.1), 0 2px 6px rgb(23 32 26 / 0.06);
   --ui-shadow-prompt: 0 24px 60px rgb(13 13 15 / 0.1), 0 2px 6px rgb(13 13 15 / 0.06);
+  --ui-rail-shadow: -8px 0 16px -8px rgb(13 13 15 / 0.28);
 
   --ui-dur-fast: 120ms;
   --ui-dur-base: 200ms;
@@ -91,6 +92,7 @@
   --ui-viz-3: #fcd116;
   --ui-shadow-pop: 0 8px 24px rgb(0 0 0 / 0.4), 0 2px 6px rgb(0 0 0 / 0.3);
   --ui-shadow-prompt: 0 24px 60px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
+  --ui-rail-shadow: -8px 0 20px -6px rgb(0 0 0 / 0.72);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -131,5 +133,6 @@
     --ui-viz-3: #fcd116;
     --ui-shadow-pop: 0 8px 24px rgb(0 0 0 / 0.4), 0 2px 6px rgb(0 0 0 / 0.3);
     --ui-shadow-prompt: 0 24px 60px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
+  --ui-rail-shadow: -8px 0 20px -6px rgb(0 0 0 / 0.72);
   }
 }
