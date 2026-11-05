@@ -6,6 +6,8 @@ export const examples: Record<string, any> = {
   MessageInput: { id: `msg_${suffix}`, content: { type: "text", text: "Quels documents faut-il pour cette démarche ?" }, sentAt: "2026-10-26T12:00:00.000Z" },
   AttachInput: { guestToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.guest" },
   ConsentInput: { challengeId: `chl_${suffix}`, accepted: true },
+  NpiChallengeInput: { npi: "1234567890" },
+  NpiVerifyInput: { challengeToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.challenge", code: "123456" },
 };
 
 type Help = { summary: string; tag: string; before: string; action: string; expected: string; next: string; errors: string };
@@ -15,6 +17,8 @@ const owner = user + " Utiliser une conversation créée par cet usager ; rempla
 export const operationHelp: Record<string, Help> = {
   getHome: help("Page d’accueil catalogue", "Conversations", "Jeton invité ou usager. X-Road configuré.", "GET /v1/home. Pas de corps.", "200 : procédures et administrations affichables.", "Créer une conversation ou une session invitée.", "401 : jeton ; 503 : X-Road."),
   createGuestSession: help("Créer une session invitée", "Conversations", "Aucune authentification. Signature Backend configurée.", "POST /v1/guest-sessions.", "201 : token et expiresAt.", "Créer une conversation avec ce jeton, puis attach après connexion.", "429 : trop de sessions ; 503 : signature absente."),
+  createNpiChallenge: help("Connexion par NPI, étape 1 (simulée)", "Conversations", "Aucune authentification. Disponible seulement si NPI_SIMULATED_LOGIN=on.", "POST /v1/identity/npi avec npi (chiffres seulement).", "201 : challengeToken (5 minutes), expiresAt, simulated.", "Appeler verifyNpiChallenge avec le défi et le code.", "404 : connexion simulée désactivée ; 429 : trop de tentatives ; 400 : NPI non numérique."),
+  verifyNpiChallenge: help("Connexion par NPI, étape 2 (simulée)", "Conversations", "Défi obtenu par createNpiChallenge, non expiré. Disponible seulement si NPI_SIMULATED_LOGIN=on.", "POST /v1/identity/npi/verify avec challengeToken et code (chiffres seulement). En simulation, tout code passe.", "200 : token usager connecté (12 heures), expiresAt, simulated.", "Utiliser token comme Bearer ; attach pour reprendre une conversation invitée.", "401 : défi expiré ou invalide ; 404 : connexion simulée désactivée ; 400 : code non numérique."),
   listConversations: help("Lister ses conversations", "Conversations", owner, "GET paginé cursor/limit.", "200 : ConversationPage.", "Ouvrir une conversation existante ou en créer une.", "401/403 : identité."),
   attachConversation: help("Rattacher une session invitée", "Conversations", "JWT Keycloak citizen. Jeton invité encore valide, usage unique.", "POST …/attach avec guestToken. Connexion obligatoire.", "200 : Conversation désormais authentifiée.", "Rejouer le même attach est idempotent ; un autre rattachement du même invité est 409.", "401 : invité ; 409 : déjà rattaché ; 400 : jeton non invité."),
   listEvents: help("3. Lire les événements et la réponse", "Conversations", owner, "Premier appel : laisser cursor vide (max 64 caractères). Les appels suivants reprennent nextCursor.", "200 : items et nextCursor. Chercher bj.techma.message.received.v2 puis bj.techma.message.sent.v2.", "Poursuivre avec nextCursor ou demander un ticket WebSocket.", "410 : curseur expiré ; 400 : curseur trop long."),

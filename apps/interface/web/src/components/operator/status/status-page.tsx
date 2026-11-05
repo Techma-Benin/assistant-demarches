@@ -1,20 +1,29 @@
 'use client';
 
-import { Badge, Button, InlineAlert } from '@techma/ui';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Button, InlineAlert, cn } from '@techma/ui';
+import { CircleAlert, CircleCheck, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { describeError, operatorApi, type OperatorStatus } from '@/lib/operator/api';
-import { PageHeader, formatDate } from '../ui';
+import { PageHeader } from '../ui';
+import { StatusGraph } from './status-graph';
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/** Answer at a glance: what needs attention is the active model and the enabled MCP servers. */
+function Summary({ status }: { status: OperatorStatus }) {
+  const issues = (status.model?.reachable ? 0 : 1) + status.mcpServers.filter((server) => server.enabled && !server.reachable).length;
+  const ok = issues === 0;
   return (
-    <section className="rounded-card border border-line bg-surface p-4 md:p-5">
-      <h2 className="mb-3 font-display text-xl font-extrabold">{title}</h2>
-      {children}
-    </section>
+    <p
+      role="status"
+      className={cn(
+        'mb-5 flex items-center gap-3 rounded-card px-5 py-4 text-base font-semibold',
+        ok ? 'bg-trust-soft text-trust-text' : 'bg-danger-soft text-danger',
+      )}
+    >
+      {ok ? <CircleCheck aria-hidden="true" className="size-6 shrink-0" /> : <CircleAlert aria-hidden="true" className="size-6 shrink-0" />}
+      {ok ? 'Tout est opérationnel.' : `${issues} point${issues > 1 ? 's' : ''} à vérifier.`}
+    </p>
   );
 }
-
-const Reachability = ({ ok }: { ok: boolean }) => <Badge tone={ok ? 'trust' : 'danger'}>{ok ? 'Joignable' : 'Injoignable'}</Badge>;
 
 export function StatusPage() {
   const [status, setStatus] = useState<OperatorStatus | null>(null);
@@ -40,12 +49,17 @@ export function StatusPage() {
   }, [load]);
 
   return (
-    <div className="ui-rise">
+    <div className="ui-rise flex min-h-[calc(100dvh-3rem)] flex-col md:min-h-[calc(100dvh-4rem)]">
       <PageHeader
-        title="État des connexions"
+        title="Statut"
         description="Modèle actif, serveurs MCP et administrations connectées."
         actions={
-          <Button variant="outline" disabled={loading} onClick={() => void load()}>
+          <Button
+            variant="outline"
+            disabled={loading}
+            leadingIcon={<RefreshCw aria-hidden="true" className={cn('size-4', loading && 'animate-spin motion-reduce:animate-none')} />}
+            onClick={() => void load()}
+          >
             Actualiser
           </Button>
         }
@@ -58,63 +72,10 @@ export function StatusPage() {
           </p>
         ) : null
       ) : (
-        <div className="flex flex-col gap-4">
-          <Section title="Modèle">
-            {status.model ? (
-              <p className="flex flex-wrap items-center gap-3">
-                <span className="font-semibold">{status.model.label}</span>
-                <Reachability ok={status.model.reachable} />
-              </p>
-            ) : (
-              <p className="text-ink-muted">Aucun modèle actif.</p>
-            )}
-          </Section>
-          <Section title="Serveurs MCP">
-            {status.mcpServers.length === 0 ? (
-              <p className="text-ink-muted">Aucun serveur MCP.</p>
-            ) : (
-              <ul className="flex flex-col divide-y divide-line">
-                {status.mcpServers.map((server) => (
-                  <li key={server.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0">
-                    <div className="min-w-0">
-                      <p className="font-semibold break-words">
-                        {server.name}
-                        {server.enabled ? null : <span className="font-normal text-ink-muted"> (désactivé)</span>}
-                      </p>
-                      <p className="text-sm text-ink-muted">
-                        {server.toolCount} outil{server.toolCount > 1 ? 's' : ''}
-                        {server.checkedAt ? ` · vérifié le ${formatDate(server.checkedAt)}` : ''}
-                      </p>
-                    </div>
-                    <Reachability ok={server.reachable} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-          <Section title="Administrations">
-            {status.administrations.length === 0 ? (
-              <p className="text-ink-muted">Aucune administration.</p>
-            ) : (
-              <ul className="flex flex-col divide-y divide-line">
-                {status.administrations.map((admin) => {
-                  const connected = admin.connection.status === 'connected';
-                  return (
-                    <li key={admin.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0">
-                      <div className="min-w-0">
-                        <p className="font-semibold break-words">{admin.name}</p>
-                        {connected && admin.connection.since ? (
-                          <p className="text-sm text-ink-muted">Depuis le {formatDate(admin.connection.since)}</p>
-                        ) : null}
-                      </div>
-                      <Badge tone={connected ? 'trust' : 'warning'}>{connected ? 'Connectée' : 'Non connectée'}</Badge>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Section>
-        </div>
+        <>
+          <Summary status={status} />
+          <StatusGraph status={status} className="min-h-[28rem] flex-1" />
+        </>
       )}
     </div>
   );

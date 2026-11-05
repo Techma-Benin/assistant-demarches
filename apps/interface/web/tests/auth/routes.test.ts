@@ -57,20 +57,25 @@ describe('/api/admin', () => {
 
 describe('GET /api/session', () => {
   it('returns null without a user', async () => {
-    expect(await (await sessionGet()).json()).toEqual({ user: null });
+    expect(await (await sessionGet()).json()).toEqual({ user: null, signIn: 'oidc' });
   });
 
   it('returns name and roles, never a token', async () => {
     await writeSession({ user: user(['official']) });
     const text = await (await sessionGet()).text();
-    expect(JSON.parse(text)).toEqual({ user: { name: 'Awa Diallo', roles: ['official'] } });
+    expect(JSON.parse(text)).toEqual({ user: { name: 'Awa Diallo', roles: ['official'] }, signIn: 'oidc' });
     expect(text).not.toContain('tok');
     expect(text).not.toContain('id-tok');
   });
 
   it('returns null once the refresh token has expired', async () => {
     await writeSession({ user: { ...user(['official']), refreshExpiresAt: Date.now() - 1 } });
-    expect(await (await sessionGet()).json()).toEqual({ user: null });
+    expect(await (await sessionGet()).json()).toEqual({ user: null, signIn: 'oidc' });
+  });
+
+  it('announces the NPI sign-in when the option is on', async () => {
+    vi.stubEnv('NPI_SIMULATED_LOGIN', 'on');
+    expect(await (await sessionGet()).json()).toEqual({ user: null, signIn: 'npi' });
   });
 });
 
@@ -102,6 +107,15 @@ describe('POST /auth/logout', () => {
     await writeSession({ user: user(['official']) });
     const location = new URL((await post(PUBLIC_URL)).headers.get('location')!);
     expect(location.searchParams.get('id_token_hint')).toBe('id-tok-1');
+  });
+
+  it('does not go through Keycloak for an NPI session', async () => {
+    await writeSession({ user: { ...user(['citizen']), refreshToken: '', provider: 'npi' } });
+    const response = await post(PUBLIC_URL);
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe(`${PUBLIC_URL}/`);
+    expect(servers.calls).toHaveLength(0);
+    expect(jar.size).toBe(0);
   });
 
   it('omits id_token_hint without a session', async () => {

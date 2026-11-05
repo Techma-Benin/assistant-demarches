@@ -44,6 +44,7 @@ Source unique : `src/styles/tokens.css` (préfixe `--ui-`). Clair sur `:root` ; 
 | danger-soft | #FDECEE | #3A1714 | fond d’erreur |
 | warning-text | #0D0D0F | #0D0D0F | encre sur fond jaune |
 | warning-soft | #FCD116 | #FCD116 | fond d’avertissement (= sun) |
+| warning-pending | #C2410C | #C2410C | orange d’attente : pastille à texte blanc (le jaune `sun` ne contraste pas) |
 | focus | #0D0D0F | #FCD116 | anneau de focus |
 | viz-1 | #0D0D0F | #F5F5F2 | visualisation : Web |
 | viz-2 | #00855A | #2FBF7A | visualisation : WhatsApp |
@@ -78,7 +79,7 @@ Dans la feuille globale de l’application (Tailwind v4) :
 
 Avec Next.js : `transpilePackages: ['@techma/ui']`, polices via `next/font/google` : Inter Tight 600–900 (`--font-inter-tight`, titres), Inter 400–700 (`--font-inter`, texte), et JetBrains Mono 400–600 (`--font-jetbrains-mono`, identifiants) dans la console admin uniquement, `<ThemeScript />` dans `<head>` et `suppressHydrationWarning` sur `<html>`.
 
-Utilitaires générés : couleurs `canvas surface sunken line line-strong field ink ink-muted ink-subtle action action-hover on-action trust trust-text trust-soft trust-line on-trust sun danger danger-soft warning warning-soft focus viz-1 viz-2 viz-3`, rayons `rounded-field rounded-card rounded-tile rounded-pill`, ombre `shadow-prompt`, polices `font-display font-sans font-mono`, animation `.ui-glyph-pop`. Pas de couleur brute dans les composants.
+Utilitaires générés : couleurs `canvas surface sunken line line-strong field ink ink-muted ink-subtle action action-hover on-action trust trust-text trust-soft trust-line on-trust sun danger danger-soft warning warning-soft warning-pending focus viz-1 viz-2 viz-3`, rayons `rounded-field rounded-card rounded-tile rounded-pill`, ombre `shadow-prompt`, polices `font-display font-sans font-mono`, animation `.ui-glyph-pop`. Pas de couleur brute dans les composants.
 
 Échelle typographique : légende 13 px, corps 16 px, lead 18 px, titre 22 px/800, display 28 px/800 `tracking-tight`.
 

@@ -1,19 +1,23 @@
 'use client';
 
-import { Fragment, useEffect, useId, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { BrandMark, Button, Chip, FlagGlyph, InlineAlert, SourceList, ThemeToggle, TypingIndicator, cn } from '@techma/ui';
-import { ArrowDown, FilePlus2, Plus } from 'lucide-react';
+import { ArrowDown, Plus } from 'lucide-react';
+import { AccountMenu } from '@/components/app/AccountMenu';
 import { BlockRenderer } from '@/components/blocks/BlockRenderer';
 import { useThreadScroll } from '@/hooks/use-thread-scroll';
 import { useUnreadTitle } from '@/hooks/use-unread-title';
-import type { useConversation } from '@/hooks/use-conversation';
+import type { FollowUp, useConversation } from '@/hooks/use-conversation';
+import { formInteraction } from '@/lib/interactions';
 import { WAITING_LABEL, type TimelineEntry } from '@/lib/conversation-state';
-import { latestRequest, lastTextSources, prepareRequestAction, toSourceInfo, type DraftRequest } from '@/lib/dossier';
+import { fileRequestKey, latestFileRequestSlots, latestRequest, lastTextSources, openFileRequests, receivedFileRequests, toSourceInfo, type DraftRequest } from '@/lib/dossier';
 import { dayKey, formatDayLabel, formatTime } from '@/lib/format-time';
 import { revealDelays } from '@/lib/reveal';
 import { TextBlock } from '@/components/blocks/TextBlock';
 import { AgentActivity } from './AgentActivity';
 import { Composer } from './Composer';
+import { CONTRACT_MIME_TYPES } from '@/lib/files';
+import { fileKey, useStagedFiles } from '@/hooks/use-staged-files';
 import { ConnectionNotice } from './ConnectionNotice';
 import { DossierSheet } from './DossierSheet';
 import { MessageActions } from './MessageActions';
@@ -140,6 +144,17 @@ export function ConversationView({
   onHome?: () => void;
 }) {
   const { state, connection, loadingHistory, sendText, sendButton, sendForm, sendFiles, retry, consent } = conversation;
+  // Files chosen from a request card wait in the composer; each keeps the line it answers.
+  const staged = useStagedFiles(CONTRACT_MIME_TYPES);
+  const stagedFor = useRef(new Map<string, { slot: string; documentType: string }>());
+  const [sentFor, setSentFor] = useState<Map<string, { name: string; size: number }>>(new Map());
+  const composerRef = useRef<HTMLDivElement>(null);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const pendingFor = new Map<string, { name: string; size: number }>();
+  for (const file of staged.files) {
+    const link = stagedFor.current.get(fileKey(file));
+    if (link) pendingFor.set(link.slot, { name: file.name, size: file.size });
+  }
   const [confirmingRestart, setConfirmingRestart] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const drawerSide = useMediaQuery('(min-width: 768px)') ? 'right' : 'bottom';
@@ -148,6 +163,61 @@ export function ConversationView({
   useEffect(() => {
     if (panelInGutter) setSheetOpen(false);
   }, [panelInGutter]);
+  // Forget links of files removed from the staging area.
+  useEffect(() => {
+    const keys = new Set(staged.files.map(fileKey));
+    for (const key of stagedFor.current.keys()) if (!keys.has(key)) stagedFor.current.delete(key);
+  }, [staged.files]);
+
+  function stageForRequest(files: File[], block: { requestId: string; documentType: string }) {
+    for (const file of files) stagedFor.current.set(fileKey(file), { slot: fileRequestKey(block), documentType: block.documentType });
+    staged.add(files);
+    setFocusRequest((n) => n + 1);
+  }
+  // Focus once the card input is disabled, or the browser would drop the focus on the body.
+  useEffect(() => {
+    if (focusRequest > 0) composerRef.current?.querySelector<HTMLElement>('textarea')?.focus();
+  }, [focusRequest]);
+
+  // One send per requested document: the text goes with the last group.
+  // `followUp` (a form answer) goes after the last file, as the text does.
+  function sendStaged(
+    files: File[],
+    note?: string,
+    voice?: { durationMs: number; waveform: number[] },
+    followUp?: FollowUp,
+  ) {
+    const groups = new Map<string | null, File[]>();
+    for (const file of files) {
+      const type = stagedFor.current.get(fileKey(file))?.documentType ?? null;
+      groups.set(type, [...(groups.get(type) ?? []), file]);
+    }
+    const sentNow = new Map(sentFor);
+    for (const file of files) {
+      const link = stagedFor.current.get(fileKey(file));
+      if (link) sentNow.set(link.slot, { name: file.name, size: file.size });
+    }
+    const entries = [...groups];
+    entries.forEach(([type, group], i) => {
+      const last = i === entries.length - 1;
+      const args = [group, last ? note : undefined, last ? voice : undefined, type] as const;
+      if (last && followUp) sendFiles(...args, followUp);
+      else sendFiles(...args);
+    });
+    for (const file of files) stagedFor.current.delete(fileKey(file));
+    setSentFor(sentNow);
+  }
+
+  // « Continuer » also sends the files waiting in the composer; the composer text stays in its field.
+  function submitForm(formId: string, values: Record<string, string>, summary: string) {
+    if (staged.files.length === 0) {
+      sendForm(formId, values, summary);
+      return;
+    }
+    sendStaged(staged.files, undefined, undefined, { content: formInteraction(formId, values), display: summary });
+    staged.clear();
+  }
+
   // Entries present at mount are history: they never animate. Only what arrives afterwards is "live".
   const [seenAtMount] = useState(() => new Set(state.timeline.map(entryId)));
 
@@ -172,11 +242,17 @@ export function ConversationView({
     agentCount += 1;
   });
   useUnreadTitle(agentCount);
-  const prepareAction = state.status === 'ready' && !waitingForAgent ? prepareRequestAction(state.timeline) : null;
   const firstQuestion = state.timeline.find((entry) => entry.kind === 'user' && !entry.attachment);
   const title = firstQuestion?.kind === 'user' ? firstQuestion.display : null;
 
   const request = latestRequest(state.timeline);
+  // A requested document stays addable from its own line while it is missing, on its most recent block only.
+  const openRequests = openFileRequests(state.timeline);
+  const receivedRequests = receivedFileRequests(state.timeline);
+  const requestSlots = latestFileRequestSlots(state.timeline);
+  // A form of the last agent message can still be submitted: it sends the staged files too.
+  const lastAgent = state.timeline[lastAgentIndex];
+  const formActive = lastAgent?.kind === 'agent' && lastAgent.message.blocks.some((b) => b.type === 'form');
   const sources = lastTextSources(state.timeline).map((source, index) => toSourceInfo(source, index, true));
   const panelLabel = request !== null ? 'Vos informations' : sources.length > 0 ? `Sources (${sources.length})` : null;
 
@@ -213,7 +289,7 @@ export function ConversationView({
             <button
               type="button"
               onClick={() => setSheetOpen(true)}
-              className="ui-press inline-flex min-h-11 items-center rounded-pill border border-line bg-surface px-4 text-sm font-semibold text-ink transition-[background-color,transform] duration-(--ui-dur-press) ease-(--ui-ease-out) hover:bg-sunken min-[1440px]:hidden"
+              className="ui-press inline-flex min-h-11 items-center whitespace-nowrap rounded-pill border border-line bg-surface px-4 text-sm font-semibold text-ink transition-[background-color,transform] duration-(--ui-dur-press) ease-(--ui-ease-out) hover:bg-sunken min-[1440px]:hidden"
             >
               {panelLabel}
             </button>
@@ -228,6 +304,7 @@ export function ConversationView({
             {/* Icon only on phones so the header stays on one line. */}
             <span className="max-sm:sr-only">Nouvelle question</span>
           </Button>
+          {!embedded && <AccountMenu />}
           {/* Phones follow the system theme: one line of header matters more than the toggle there. */}
           <ThemeToggle className="max-sm:hidden" />
         </div>
@@ -436,22 +513,23 @@ export function ConversationView({
                               key={blockIndex}
                               block={block}
                               interactive={index === lastAgentIndex}
+                              fileRequestActive={
+                                block.type === 'fileRequest' &&
+                                openRequests.has(fileRequestKey(block)) &&
+                                requestSlots.get(fileRequestKey(block)) === `${index}:${blockIndex}`
+                              }
+                              fileRequestReceived={block.type === 'fileRequest' && receivedRequests.has(fileRequestKey(block))}
                               onButton={sendButton}
-                              onForm={sendForm}
-                              onFiles={(files, documentType) => sendFiles(files, undefined, undefined, documentType)}
+                              onForm={submitForm}
+                              fileRequestPending={block.type === 'fileRequest' ? pendingFor.get(fileRequestKey(block)) : undefined}
+                              fileRequestFormActive={formActive}
+                              fileRequestSent={block.type === 'fileRequest' ? sentFor.get(fileRequestKey(block)) : undefined}
+                              onFiles={(files) => block.type === 'fileRequest' && stageForRequest(files, block)}
                               consent={consent}
                               conversationId={state.conversationId}
                               revealDelay={delays?.[blockIndex]}
                             />
                           ))}
-                          {prepareAction && index === lastAgentIndex && (
-                            <div>
-                              <Chip onClick={() => sendText(`Je veux préparer ma demande pour cette démarche (${prepareAction.procedureId}).`)}>
-                                <FilePlus2 aria-hidden="true" className="size-4" />
-                                Préparer ma demande
-                              </Chip>
-                            </div>
-                          )}
                           <div className="-mt-3.5 -ml-2.5">
                             <MessageActions message={entry.message} alwaysVisible={index === lastAgentIndex} />
                           </div>
@@ -521,7 +599,9 @@ export function ConversationView({
         <div className="overflow-y-hidden [scrollbar-gutter:stable]">
           <div className={column}>
             <div className="pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
-              <Composer disabled={!canSend} onSend={sendText} onFiles={sendFiles} />
+              <div ref={composerRef}>
+                <Composer disabled={!canSend} onSend={sendText} onFiles={sendStaged} staged={staged} />
+              </div>
             </div>
           </div>
         </div>

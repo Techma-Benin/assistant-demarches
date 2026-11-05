@@ -22,6 +22,12 @@ describe('HeroSlideshow', () => {
     vi.useRealTimers();
   });
 
+  it('has five photos, the Porte du non-retour by day', () => {
+    expect(HERO_PHOTOS).toHaveLength(5);
+    expect(HERO_PHOTOS.map((p) => p.src)).toContain('/photos/porte-non-retour-ouidah.jpg');
+    expect(HERO_PHOTOS.map((p) => p.src)).not.toContain('/photos/porte-non-retour-ouidah-nuit.jpg');
+  });
+
   it('renders every photo, only the first one exposed', () => {
     render(<HeroSlideshow />);
     expect(all()).toHaveLength(HERO_PHOTOS.length);

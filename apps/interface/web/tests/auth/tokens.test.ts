@@ -91,6 +91,25 @@ describe('getUserAccessToken', () => {
   });
 });
 
+describe('NPI session', () => {
+  const npi = (overrides: Partial<UserSession> = {}) =>
+    user({ refreshToken: '', provider: 'npi', accessToken: 'npi-tok', roles: ['citizen'], ...overrides });
+
+  it('is used while valid', async () => {
+    await writeSession({ user: npi({ accessExpiresAt: Date.now() + 3600_000, refreshExpiresAt: Date.now() + 3600_000 }) });
+    expect(await getUserAccessToken()).toBe('npi-tok');
+  });
+
+  it('is removed without any refresh close to its expiry, keeping the guest', async () => {
+    const guest = { token: 'g', expiresAt: new Date(Date.now() + 3600_000).toISOString() };
+    await writeSession({ guest, user: npi({ accessExpiresAt: Date.now() + 10_000, refreshExpiresAt: Date.now() + 10_000 }) });
+    expect(await getUserAccessToken()).toBeNull();
+    expect(refreshCalls()).toHaveLength(0);
+    expect(servers.calls).toHaveLength(0);
+    expect(await readSession()).toEqual({ guest });
+  });
+});
+
 describe('getBackendToken', () => {
   it('prefers the user token', async () => {
     await writeSession({ user: user() });

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { SignJWT, type CryptoKey, type JWTPayload } from "jose";
 import { identifier, Problem } from "./domain.js";
@@ -21,6 +21,23 @@ const guestHits = new Map<string, { count: number; reset: number }>();
 function guestLimit(): number {
   const value = Number(process.env.GUEST_SESSIONS_PER_HOUR);
   return Number.isInteger(value) && value >= 1 ? value : 300;
+}
+
+const npiHits = new Map<string, { count: number; reset: number }>();
+// Separate counter from guestHits: same flood guard per source address, tuned with NPI_ATTEMPTS_PER_HOUR.
+function npiLimit(): number {
+  const value = Number(process.env.NPI_ATTEMPTS_PER_HOUR);
+  return Number.isInteger(value) && value >= 1 ? value : 300;
+}
+const NPI_CHALLENGE_SECONDS = 300;
+const NPI_SESSION_SECONDS = 43_200;
+/**
+ * Decides whether the code typed by the user is right for this challenge.
+ * Simulation: any code the schema accepts passes. This is where the real verification
+ * plugs in (compare with the code sent by SMS, per-challenge attempt limit and validity window).
+ */
+function acceptsCode(_challengeSubject: string, _code: string): boolean {
+  return true;
 }
 
 export class Identities {
@@ -53,6 +70,54 @@ export class Identities {
       .setExpirationTime(Math.floor(now / 1000) + 86_400)
       .sign(signing.key);
     return { token, expiresAt };
+  }
+  async issueNpiChallenge(
+    signing: { key: CryptoKey; kid: string; issuer: string },
+    ip: string,
+    npi: string,
+    subjectKey: Uint8Array,
+  ): Promise<{ challengeToken: string; expiresAt: string; simulated: true }> {
+    const now = Date.now();
+    const slot = npiHits.get(ip);
+    if (!slot || slot.reset < now) npiHits.set(ip, { count: 1, reset: now + 3_600_000 });
+    else if (slot.count >= npiLimit())
+      throw new Problem(429, "RATE_LIMITED", "Trop de tentatives de connexion depuis cette adresse.");
+    else slot.count += 1;
+    // The NPI is never stored or signed in clear: only this keyed digest identifies the person.
+    const subject = createHmac("sha256", subjectKey).update(npi).digest("hex");
+    const challengeToken = await new SignJWT({ token_use: "npi_challenge" })
+      .setProtectedHeader({ alg: "RS256", kid: signing.kid })
+      .setIssuer(signing.issuer)
+      .setAudience("techma-backend")
+      .setSubject(subject)
+      .setIssuedAt()
+      .setExpirationTime(Math.floor(now / 1000) + NPI_CHALLENGE_SECONDS)
+      .sign(signing.key);
+    return {
+      challengeToken,
+      expiresAt: new Date(now + NPI_CHALLENGE_SECONDS * 1000).toISOString(),
+      simulated: true,
+    };
+  }
+  async verifyNpiChallenge(
+    signing: { key: CryptoKey; kid: string; issuer: string },
+    payload: JWTPayload,
+    code: string,
+  ): Promise<{ token: string; expiresAt: string; simulated: true }> {
+    if (payload.token_use !== "npi_challenge" || typeof payload.sub !== "string")
+      throw new Problem(401, "UNAUTHORIZED", "Défi de connexion invalide ou expiré.");
+    if (!acceptsCode(payload.sub, code))
+      throw new Problem(401, "UNAUTHORIZED", "Code incorrect.");
+    const now = Date.now();
+    const token = await new SignJWT({ token_use: "npi", scope: "citizen" })
+      .setProtectedHeader({ alg: "RS256", kid: signing.kid })
+      .setIssuer(signing.issuer)
+      .setAudience("techma-backend")
+      .setSubject(payload.sub)
+      .setIssuedAt()
+      .setExpirationTime(Math.floor(now / 1000) + NPI_SESSION_SECONDS)
+      .sign(signing.key);
+    return { token, expiresAt: new Date(now + NPI_SESSION_SECONDS * 1000).toISOString(), simulated: true };
   }
   async resolve(payload: JWTPayload): Promise<User> {
     const permissions = scopes(payload);

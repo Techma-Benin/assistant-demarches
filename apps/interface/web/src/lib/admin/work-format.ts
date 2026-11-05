@@ -1,4 +1,4 @@
-import type { ActivityEntry, Case, CaseAction, CaseStatus, CaseStep, CaseView, UnansweredEntry } from './api';
+import type { ActivityEntry, Case, CaseAction, CaseStatus, CaseStep, CaseView } from './api';
 import { formatInteger } from './format';
 
 const MINUTE = 60_000;
@@ -105,10 +105,11 @@ export function completedByLabel(item: Pick<Case, 'completedBy'>): string | null
   return null;
 }
 
-/** Actions an agent may take, by status (§8). The server decides in the end. */
-export function allowedActions(status: CaseStatus): CaseAction[] {
+/** Actions an agent may take, by status and claim (§8). The server decides in the end. */
+export function allowedActions(item: Pick<Case, 'status' | 'claimedBy'>): CaseAction[] {
+  const { status, claimedBy } = item;
   const actions: CaseAction[] = [];
-  if (status === 'received' || status === 'in_review') actions.push('claim');
+  if ((status === 'received' || status === 'in_review') && !claimedBy) actions.push('claim');
   if (status === 'in_review') actions.push('request_information', 'approve');
   if (status === 'in_review' || status === 'information_requested') actions.push('reject');
   return actions;
@@ -154,13 +155,6 @@ export const ACTIVITY_LABELS: Record<ActivityEntry['action'], string> = {
   'case.approved': 'Dossier approuvé',
   'case.rejected': 'Dossier rejeté',
   'document.issued': 'Document délivré',
-};
-
-export const UNANSWERED_REASONS: Record<UnansweredEntry['reason'], string> = {
-  no_procedure_found: 'Aucune démarche trouvée',
-  no_source: 'Aucune source disponible',
-  model_unavailable: 'Assistant indisponible',
-  tool_failed: 'Un outil a échoué',
 };
 
 /** « Agent 3F7K2M » when the name is unknown (no `officials:read`). */

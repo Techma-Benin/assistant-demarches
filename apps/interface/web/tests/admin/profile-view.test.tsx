@@ -27,21 +27,23 @@ function setup(profile = me(AGENT), onWrite?: (method: string, url: string, init
 }
 
 describe('Profil (A10)', () => {
-  it('shows name, function, e-mail, role, administration and permissions', async () => {
+  it('shows the name, role and e-mail, without function, administration or permissions', async () => {
     setup();
     expect(await screen.findByText('Agent Justice', { selector: 'p' })).toBeInTheDocument();
-    expect(screen.getByText('Agent instructeur', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByText('Agent')).toBeInTheDocument();
     expect(screen.getByText('agent.justice@demo.techma.bj')).toBeInTheDocument();
-    expect(screen.getByText('Ministère de la Justice')).toBeInTheDocument();
-    const list = screen.getByRole('list', { name: 'Permissions' });
-    expect(list).toHaveTextContent('cases:read');
-    expect(list).toHaveTextContent('cases:act');
+    expect(screen.queryByText('Agent instructeur')).toBeNull();
+    expect(screen.queryByText('Ministère de la Justice')).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Permissions' })).toBeNull();
+    expect(screen.queryByLabelText(/Fonction/)).toBeNull();
   });
 
-  it('shows « Toutes les administrations » for a super admin', async () => {
+  it('shows the super admin role without an administration name', async () => {
     setup(SUPER_ME);
-    expect(await screen.findByText('Toutes les administrations')).toBeInTheDocument();
-    expect(screen.getByText('Super administrateur')).toBeInTheDocument();
+    expect(await screen.findByText('Super administrateur')).toBeInTheDocument();
+    expect(screen.getByText('Sam Super', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.queryByText('Toutes les administrations')).toBeNull();
+    expect(screen.queryByText('Ministère de la Justice')).toBeNull();
     expect(SUPER).toContain('administrations:all');
   });
 
@@ -53,34 +55,36 @@ describe('Profil (A10)', () => {
 
   it('shows initials without a photo', async () => {
     setup();
-    await screen.findByText('Agent instructeur', { selector: 'p' });
+    await screen.findByText('agent.justice@demo.techma.bj');
     expect(screen.queryByRole('img')).toBeNull();
     expect(screen.getByText('AJ')).toBeInTheDocument();
   });
 
-  it('saves the name and function with PUT /me and shows the new values', async () => {
-    const writes = setup(me(AGENT), () => json(official({ displayName: 'Camille Dossou', jobTitle: 'Cheffe de service' })));
+  it('saves the display name with PUT /me and leaves the function unchanged', async () => {
+    const writes = setup(me(AGENT), () => json(official({ displayName: 'Camille Dossou' })));
     const user = userEvent.setup();
-    const save = await screen.findByRole('button', { name: 'Enregistrer' });
+    expect(screen.queryByRole('button', { name: 'Enregistrer' })).toBeNull();
+    await user.click(await screen.findByRole('button', { name: 'Modifier' }));
+    const save = screen.getByRole('button', { name: 'Enregistrer' });
     expect(save).toBeDisabled();
+    expect(screen.queryByLabelText(/Fonction/)).toBeNull();
     await user.clear(screen.getByLabelText(/Nom affiché/));
     await user.type(screen.getByLabelText(/Nom affiché/), 'Camille Dossou');
-    await user.clear(screen.getByLabelText(/Fonction/));
-    await user.type(screen.getByLabelText(/Fonction/), 'Cheffe de service');
     await user.click(save);
     expect(await screen.findByText('Profil enregistré.')).toBeInTheDocument();
     expect(writes).toHaveLength(1);
     expect(writes[0].method).toBe('PUT');
     expect(writes[0].path).toBe('/api/admin/v1/admin/me');
-    expect(writes[0].body).toEqual({ displayName: 'Camille Dossou', jobTitle: 'Cheffe de service' });
-    expect(screen.getByText('Cheffe de service', { selector: 'p' })).toBeInTheDocument();
+    expect(writes[0].body).toEqual({ displayName: 'Camille Dossou', jobTitle: 'Agent instructeur' });
     expect(screen.getByText('Camille Dossou', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('shows a refused update as a message', async () => {
     setup(me(AGENT), () => problem(400, 'INVALID_REQUEST', 'Nom trop long'));
     const user = userEvent.setup();
-    await user.type(await screen.findByLabelText(/Nom affiché/), 'x');
+    await user.click(await screen.findByRole('button', { name: 'Modifier' }));
+    await user.type(screen.getByLabelText(/Nom affiché/), 'x');
     await user.click(screen.getByRole('button', { name: 'Enregistrer' }));
     expect(await screen.findByText('Données refusées : Nom trop long')).toBeInTheDocument();
   });

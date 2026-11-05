@@ -11,6 +11,17 @@ const nextConfig: NextConfig = {
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [640, 750, 828, 1080, 1200, 1440, 1680, 1920, 2048, 2400, 2880, 3840],
   },
+  // Back-office pages must never be framed (clickjacking); /embed stays frameable.
+  async headers() {
+    const headers = [
+      { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+      { key: 'X-Frame-Options', value: 'DENY' },
+    ];
+    return [
+      { source: '/admin/:path*', headers },
+      { source: '/operateur/:path*', headers },
+    ];
+  },
 };
 
 export default nextConfig;

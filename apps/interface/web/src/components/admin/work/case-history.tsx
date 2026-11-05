@@ -28,8 +28,8 @@ export function CaseHistory({
   );
   const { data, status, error, reload } = useRemote(load);
   return (
-    <section aria-label="Historique du dossier" className="flex flex-col gap-4">
-      <h2 className="font-display text-2xl font-extrabold tracking-[-0.035em]">Historique</h2>
+    <section aria-label="Historique du dossier" className="flex flex-col gap-4 rounded-card border border-line bg-surface p-5">
+      <h2 className="text-[17px] leading-tight font-semibold tracking-[-0.02em] text-ink">Historique</h2>
       {status === 'loading' && !data ? <Skeleton lines={2} /> : null}
       {status === 'error' ? <RemoteError error={error} noun="l’historique" onRetry={reload} /> : null}
       {data && data.items.length === 0 ? <p className="text-ink-muted">Aucune entrée.</p> : null}

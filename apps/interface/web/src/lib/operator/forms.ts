@@ -38,7 +38,7 @@ export interface ModelFormValues {
   baseUrl: string;
   protocol: ModelConfig['protocol'];
   model: string;
-  apiKeyRef: string;
+  apiKey: string;
   temperature: string;
 }
 
@@ -49,9 +49,17 @@ export const emptyModelForm: ModelFormValues = {
   baseUrl: '',
   protocol: 'chat-completions',
   model: '',
-  apiKeyRef: '',
+  apiKey: '',
   temperature: '0.2',
 };
+
+export const API_KEY_ERROR = 'Indiquez la clé d’accès du fournisseur.';
+
+/** Internal env-shaped name kept on the contract. The operator never types it. */
+export function modelKeyRef(id: string): string {
+  const slug = id.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'MODEL';
+  return `MDL_${slug}`.slice(0, 101);
+}
 
 export function modelToForm(model: ModelConfig): ModelFormValues {
   return {
@@ -59,32 +67,35 @@ export function modelToForm(model: ModelConfig): ModelFormValues {
     baseUrl: model.baseUrl,
     protocol: model.protocol,
     model: model.model,
-    apiKeyRef: model.apiKeyRef,
+    apiKey: '',
     temperature: String(model.temperature),
   };
 }
 
 export function validateModelForm(
   values: ModelFormValues,
-  base: { id: string; active: boolean },
-): { errors: ModelFormErrors; model?: ModelConfig } {
+  base: { id: string; active: boolean; apiKeyRef?: string },
+  options: { requireKey: boolean },
+): { errors: ModelFormErrors; model?: ModelConfig; apiKey?: string } {
   const errors: ModelFormErrors = {};
   const label = values.label.trim();
   const baseUrl = values.baseUrl.trim();
   const model = values.model.trim();
-  const apiKeyRef = values.apiKeyRef.trim();
+  const apiKey = values.apiKey.trim();
   const temperature = Number(values.temperature.trim().replace(',', '.'));
   if (!label || label.length > 200) errors.label = 'Indiquez un nom (200 caractères au plus).';
   if (!isHttpUrl(baseUrl)) errors.baseUrl = 'Indiquez une adresse valide, par exemple https://api.groq.com/openai/v1.';
   if (!model || model.length > 200) errors.model = 'Indiquez l’identifiant du modèle (200 caractères au plus).';
-  if (!ENV_NAME.test(apiKeyRef)) errors.apiKeyRef = ENV_NAME_ERROR;
+  if (options.requireKey && !apiKey) errors.apiKey = API_KEY_ERROR;
   if (values.temperature.trim() === '' || !Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
     errors.temperature = 'Indiquez un nombre entre 0 et 2.';
   }
   if (!ID.test(base.id)) errors.label = 'Nom inutilisable : choisissez des lettres ou des chiffres.';
+  const apiKeyRef = base.apiKeyRef && ENV_NAME.test(base.apiKeyRef) ? base.apiKeyRef : modelKeyRef(base.id);
   if (Object.keys(errors).length > 0) return { errors };
   return {
     errors,
+    apiKey: apiKey || undefined,
     model: {
       id: base.id,
       label,
@@ -125,6 +136,23 @@ export const emptyServerForm: ServerFormValues = {
   clientSecretRef: '',
   scope: '',
 };
+
+export function serverToForm(server: McpServer): ServerFormValues {
+  const base: ServerFormValues = { ...emptyServerForm, name: server.name, url: server.url };
+  const auth = server.auth;
+  if (auth.type === 'bearer') return { ...base, authType: 'bearer', secretRef: auth.secretRef };
+  if (auth.type === 'oauth-client-credentials') {
+    return {
+      ...base,
+      authType: 'oauth-client-credentials',
+      tokenUrl: auth.tokenUrl,
+      clientId: auth.clientId,
+      clientSecretRef: auth.clientSecretRef,
+      scope: auth.scope ?? '',
+    };
+  }
+  return base;
+}
 
 export function validateServerForm(
   values: ServerFormValues,

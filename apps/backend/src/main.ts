@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createLocalJWKSet, importPKCS8 } from "jose";
 import { createBackend } from "./app.js";
@@ -40,7 +41,7 @@ const stopAgent = new AbortController();
 let agentLoop: Promise<void> | undefined;
 let app: Awaited<ReturnType<typeof createBackend>> | undefined;
 try {
-  const { runtime, agent, tokens } = await loadRuntime(pool, auth, allowedMcpUrls, signing);
+  const { runtime, agent, tokens } = await loadRuntime(pool, auth, allowedMcpUrls, signing, createHmac("sha256", pem).update("npi-subject").digest());
   agentLoop = agent.watch(stopAgent.signal);
   const readiness = {
     pool,
@@ -61,6 +62,8 @@ try {
   });
   await app.listen(port, process.env.HOST ?? "127.0.0.1");
   console.log(`Backend listening on port ${port}.`);
+  if (process.env.NPI_SIMULATED_LOGIN === "on")
+    console.warn("Connexion NPI simulée active : tout code est accepté, aucun SMS n’est envoyé. Ne pas utiliser avec de vraies données.");
   await probeReadiness(readiness)
     .then(logReadiness)
     .catch((error) =>

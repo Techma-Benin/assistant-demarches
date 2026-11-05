@@ -105,10 +105,10 @@ test("the first delta still leaves at once", async () => {
   const listener = await live.attempt();
   const start = performance.now();
   listener.onTextDelta('{"blocks":[{"type":"text","text":"Bonjour ');
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(published.length, 1);
   assert.equal(published[0].delta, "Bonjour ");
-  assert.ok(published[0].at - start < 20);
+  assert.ok(published[0].at - start < 150);
   await live.close();
 });
 

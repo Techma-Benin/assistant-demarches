@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PaginatedTable, type Column } from '@/components/admin/paginated-table';
@@ -121,6 +121,35 @@ describe('PaginatedTable filter', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Charger plus' }));
     expect(await screen.findByText('c')).toBeInTheDocument();
     expect(seen.at(-1)).toHaveLength(3);
+  });
+
+  it('sorts the loaded rows on the client and reverses on a second click', async () => {
+    const load = vi.fn(async () => ({
+      items: [
+        { id: 'z', name: 'Zèbre' },
+        { id: 'a', name: 'Abeille' },
+      ],
+      nextCursor: null,
+    }));
+    const columns: Column<{ id: string; name: string }>[] = [
+      { header: 'Nom', cell: (row) => row.name, sortValue: (row) => row.name },
+      { header: 'Rien', cell: () => '—' },
+    ];
+    render(
+      <PaginatedTable label="Test" noun="les lignes" columns={columns} rowKey={(row) => row.id} load={load} />,
+    );
+    await screen.findByText('Zèbre');
+    const order = () =>
+      screen.getAllByRole('row').slice(1).map((row) => within(row).getAllByRole('cell')[0].textContent);
+    expect(within(screen.getByRole('columnheader', { name: 'Rien' })).queryByRole('button')).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Nom' }));
+    expect(screen.getByRole('columnheader', { name: 'Nom' })).toHaveAttribute('aria-sort', 'ascending');
+    expect(order()).toEqual(['Abeille', 'Zèbre']);
+    await user.click(screen.getByRole('button', { name: 'Nom' }));
+    expect(screen.getByRole('columnheader', { name: 'Nom' })).toHaveAttribute('aria-sort', 'descending');
+    expect(order()).toEqual(['Zèbre', 'Abeille']);
+    expect(load).toHaveBeenCalledTimes(1);
   });
 
   it('says so when the filter hides everything that was loaded', async () => {

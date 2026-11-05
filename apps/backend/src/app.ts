@@ -30,10 +30,9 @@ import {
   type Principal,
   type Resource,
   configId,
-  validate,
 } from "./domain.js";
 import { McpConnections, type McpServer } from "./mcp-connections.js";
-import { Settings } from "./settings.js";
+import { Settings, takeModelWrite } from "./settings.js";
 import { idempotencyKey } from "./transactions.js";
 import {
   ConversationController,
@@ -277,8 +276,8 @@ class AdminController {
   async create(@Param("resource") value: string, @Body() body: Config, @Req() req: AdminRequest) {
     const principal = await this.principal(req);
     const kind = resource(value);
-    validate("ModelConfig", body);
-    return this.settings.mutate(principal, kind, configId(body), body, this.key(req), req.get("traceparent")!, "POST");
+    const write = takeModelWrite(body);
+    return this.settings.mutate(principal, kind, configId(write.model), write.model, this.key(req), req.get("traceparent")!, "POST", write.apiKey);
   }
   @Delete(":resource/:id")
   @HttpCode(204)
@@ -296,13 +295,15 @@ class AdminController {
     @Req() req: AdminRequest,
   ) {
     const principal = await this.principal(req);
+    const write = takeModelWrite(body);
     return this.settings.update(
       principal,
       resource(value),
       id,
-      body,
+      write.model,
       this.key(req),
       req.get("traceparent")!,
+      write.apiKey,
     );
   }
 }

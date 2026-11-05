@@ -17,8 +17,8 @@ type Scene = {
   stamp: StampKind;
 };
 
-// Each scene must match the contract: identity comes from the sign-in, never the chat (§6-7); fees are paid by the
-// assistant only through `request.pay` after the user's mandate (§7.3), so payment belongs to « Agir sans votre accord ».
+// Each scene must match the contract: identity (NPI, SMS code) is asked in a separate sign-in card, never in the chat;
+// fees are paid by the assistant only through `request.pay` after the user's mandate, so payment belongs to « Agir sans votre accord ».
 const SCENES: Scene[] = [
   {
     title: 'Voir votre NPI',
@@ -30,9 +30,9 @@ const SCENES: Scene[] = [
   },
   {
     title: 'Vous demander un code SMS',
-    note: 'L’assistant n’en a jamais besoin : ne donnez ce code à personne.',
+    note: 'S’il faut confirmer votre identité, un encart à part vous le demande : l’assistant ne le voit jamais.',
     user: 'J’ai reçu un code par SMS, je vous l’envoie ?',
-    agent: 'Surtout pas : je n’en ai jamais besoin. Ne donnez ce code à personne.',
+    agent: 'Pas dans la conversation. S’il faut confirmer votre identité, un encart à part vous le demande et je ne le vois pas. Ne donnez ce code à personne d’autre.',
     icon: MessageSquareLock,
     stamp: 'never',
   },

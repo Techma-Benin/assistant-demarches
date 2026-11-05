@@ -28,7 +28,7 @@ L'usager fait sa démarche administrative en entier dans une conversation : il s
 | Usager WhatsApp | Numéro vérifié par Meta, qui vaut connexion | Mêmes capacités, par messages |
 | Agent de ministère | Compte Keycloak, affecté à un ministère dans le X-Road simulé | Traite les dossiers de son ministère |
 | Admin de ministère | Idem, rôle `admin` | Agent + gère les agents de son ministère |
-| Super admin | Idem, rôle `super_admin`, sans ministère | Voit tous les ministères, crée et affecte les agents |
+| Super admin | Idem, rôle `super_admin`, sans ministère | Voit les administrations connectées, crée et affecte les agents |
 | Opérateur technique | Compte Keycloak, rôle `operator` | Configure le modèle et les MCP, dans un écran séparé |
 
 ## 4. Parcours de démonstration
@@ -83,9 +83,9 @@ L'usager fait sa démarche administrative en entier dans une conversation : il s
 | A6 | Complété | Dossiers terminés, par l'assistant ou un agent |
 | A7 | Sans réponse | Questions non traitées : thème et motif, sans le texte ; marquer comme résolu |
 | A8 | Journal | Qui a fait quoi sur quel dossier, quand ; pas de texte de conversation |
-| A9 | Utilisateurs | L'admin voit ses agents ; le super admin crée un agent, l'affecte ou le désactive |
+| A9 | Utilisateurs | L'admin voit ses agents et peut changer rôle ou actif ; le super admin crée un agent, l'affecte ou le désactive |
 | A10 | Profil | Nom, fonction, photo |
-| A11 | Super admin | Sélecteur de ministère, mêmes écrans ; administrations non connectées visibles comme telles |
+| A11 | Super admin | Sélecteur des administrations connectées, mêmes écrans. Les non connectées n'apparaissent pas dans la console (aucune action pour les connecter) |
 | A12 | Cloisonnement | Un agent ne voit que son ministère, refus côté serveur |
 
 ## 8. Écran opérateur
@@ -94,7 +94,7 @@ L'usager fait sa démarche administrative en entier dans une conversation : il s
 |---|---|---|
 | O1 | Modèles d'IA | Créer, modifier, activer un modèle ; l'assistant l'utilise sans redémarrer |
 | O2 | MCP par URL | Ajouter une URL, découvrir les outils réels, activer chaque outil, choisir si un consentement est requis |
-| O3 | État des connexions | Statut du modèle, des MCP et des administrations connectées |
+| O3 | Statut | État du modèle, des MCP et des administrations connectées ; première page de la console |
 
 ## 9. X-Road simulé
 

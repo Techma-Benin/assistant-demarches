@@ -3,6 +3,7 @@
 import { ArrowRight, MessageSquare } from 'lucide-react';
 import { useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 import { BrandMark, Chip, FlagGlyph, ThemeToggle, cn } from '@techma/ui';
+import { AccountMenu } from '@/components/app/AccountMenu';
 import { Composer } from '@/components/chat/Composer';
 import { useStagedFiles } from '@/hooks/use-staged-files';
 import { CONTRACT_MIME_TYPES } from '@/lib/files';
@@ -129,6 +130,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               </a>
             ))}
           </nav>
+          <AccountMenu />
           <ThemeToggle />
         </div>
       </header>

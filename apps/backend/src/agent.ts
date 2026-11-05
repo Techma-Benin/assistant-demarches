@@ -15,6 +15,8 @@ import {
   envelope,
   type OwnedConversation,
   type MessageInput,
+  RESUME_AFTER_CONSENT,
+  RESUME_AFTER_LOGIN,
 } from "./conversations.js";
 import { transaction } from "./transactions.js";
 import {
@@ -27,10 +29,12 @@ import {
 } from "./tooling.js";
 import { redact, type ModelPort, type ModelReply, type Turn } from "./model.js";
 import type { Consent } from "./consent.js";
-import { presentModelReply, mergeSystemBlocks, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS, FORMAT_REMINDER, ModelReplyError, logRejectedReply, hasActionSystemBlocks, isGenericRefusal, honestReplyFromSystemBlocks, bindUploadedFile, fileReceivedInstruction, parseReceivedPiece } from "./model-reply.js";
+import { presentModelReply, mergeSystemBlocks, PAYMENT_CONFIRM_PREFIX, PREPARE_REQUEST_PREFIX, PAYMENT_LATER_PREFIX, SUBMIT_REQUEST_PREFIX, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS, FORMAT_REMINDER, ModelReplyError, logRejectedReply, hasActionSystemBlocks, isGenericRefusal, honestReplyFromSystemBlocks, bindUploadedFile, fileReceivedInstruction, parseReceivedPiece } from "./model-reply.js";
 import type { TranscriptionPort } from "./transcription.js";
 import { LiveReply } from "./live-reply.js";
 import { visibleText } from "./text-deltas.js";
+import { readModelSecret } from "./secrets.js";
+import { coerceFieldValue, parseFormValues } from "./form-values.js";
 
 const MODEL_REPLY_ATTEMPTS = 3;
 const CATALOGUE_LOOKUP = /casier|passeport|carte\s+d['’]?identit|extrait(?:\s+d['’]acte)?|quels?\s+documents|documents?\s+requis|comment\s+faire|je\s+veux\s+(?:demander|faire|obtenir|déposer)|pièces\s+(?:pour|à|demand)/i;
@@ -39,6 +43,29 @@ const PROCEDURE_DETAILS = /documents?\s+requis|quels?\s+documents|comment\s+fair
 export function needsCatalogueLookup(text: string): boolean {
   return CATALOGUE_LOOKUP.test(text);
 }
+
+const CASE_LIST_QUESTION = /o[uù]\s+en\s+(?:est|sont)\s+(?:ma|mes|mon)\b|statuts?\s+(?:de|d['’]?)\s*(?:ma|mes|mon|l['’]?)\s*(?:demandes?|dossiers?)|\bmes\s+(?:demandes|dossiers)\b|(?:mon|ma)\s+(?:dossier|demande)\s+en\s+est\s+o[uù]|suivi\s+de\s+(?:ma|mes|mon)\s+(?:demandes?|dossiers?)/i;
+
+/** The user asks where their requests stand: answered from their case list, never from memory. */
+export function needsCaseList(text: string): boolean {
+  return CASE_LIST_QUESTION.test(text);
+}
+
+const PAYMENT_QUESTION = /\bpayer\b|\bje\s+paie\b|\br[ée]gler\b|\bpaiement\b/i;
+
+/** The user says they want to pay: the Backend answers with the confirmation button, never with a payment. */
+export function needsPayment(text: string): boolean {
+  return PAYMENT_QUESTION.test(text);
+}
+
+/** Backend tool without MCP server: lists the signed-in user's cases through X-Road. */
+export const CASES_LIST_TOOL: ToolDefinition = {
+  name: "cases.list",
+  description: "Liste les dossiers de l’usager connecté (référence, intitulé, statut, paiement, dernière mise à jour). À appeler pour savoir où en sont ses demandes, y compris dans une nouvelle conversation.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  _meta: { "bj.techma/kind": "read", "bj.techma/requiresLogin": true },
+};
+const CASE_CARDS = 3;
 
 export function needsProcedureDetails(text: string): boolean {
   return PROCEDURE_DETAILS.test(text);
@@ -62,6 +89,18 @@ function requestCreateName(tools: ToolDefinition[]): string | undefined {
 
 function calledTool(state: State, name: string | undefined): boolean {
   return Boolean(name && state.history.some((turn) => turn.role === "assistant" && turn.calls?.some((call) => call.name === name || call.name.endsWith("." + name))));
+}
+
+function requestUpdateName(tools: ToolDefinition[]): string | undefined {
+  return tools.find((tool) => tool.name === "request.update" || tool.name.endsWith(".request.update"))?.name;
+}
+
+function requestSubmitName(tools: ToolDefinition[]): string | undefined {
+  return tools.find((tool) => tool.name === "request.submit" || tool.name.endsWith(".request.submit"))?.name;
+}
+
+function requestPayName(tools: ToolDefinition[]): string | undefined {
+  return tools.find((tool) => tool.name === "request.pay" || tool.name.endsWith(".request.pay"))?.name;
 }
 
 function wantsFiling(text: string): boolean {
@@ -88,6 +127,7 @@ function modelData(value: unknown): string {
     "requestId",
     "procedureId",
     "fileId",
+    "reference",
     "url",
     "officialLink",
     "version",
@@ -127,6 +167,30 @@ function toolErrorCode(result: ToolResult): string {
     return "TOOL_ERROR";
   }
 }
+const DETAIL_CODES = new Set(["INVALID_REQUEST", "REQUEST_INCOMPLETE", "PAYMENT_CONFIRMATION_REQUIRED"]);
+/** What the model may read about a failure: the Tooling detail for correctable errors, a fixed sentence otherwise. */
+function toolErrorDetail(result: ToolResult): string {
+  if (DETAIL_CODES.has(toolErrorCode(result))) {
+    try {
+      const detail = JSON.parse(result.content.find((item) => item.type === "text")?.text ?? "{}").detail;
+      if (typeof detail === "string" && detail.trim()) return detail.slice(0, 300);
+    } catch { /* fall through to the generic sentence */ }
+  }
+  return "L’outil a échoué.";
+}
+function formatFcfa(amount: number): string {
+  return Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f") + "\u00a0FCFA";
+}
+const PAYMENT_BUTTON_LABEL_MAX = 24;
+/** Label of the payment confirmation button: the amount when it fits the contract limit, a generic one otherwise. */
+function paymentButtonLabel(amount: unknown): string {
+  if (Number.isInteger(amount) && (amount as number) >= 0) {
+    const label = "Confirmer " + formatFcfa(amount as number);
+    if (label.length <= PAYMENT_BUTTON_LABEL_MAX) return label;
+  }
+  return "Confirmer le paiement";
+}
+const BLOCKING_CODES = new Set(["LOGIN_REQUIRED", "MANDATE_MISSING", "MANDATE_EXPIRED"]);
 type State = {
   history: Turn[];
   step: number;
@@ -143,6 +207,31 @@ type State = {
   systemBlocks?: Schemas["AgentMessage"]["blocks"];
   config: ModelConfig;
   assistantMessageId?: string;
+  /** Action that waited for a login or a consent: replayed once when the resume message arrives. */
+  replay?: { name: string; arguments: string };
+  replayDone?: boolean;
+  blockedRecorded?: boolean;
+  /** Values the user submitted with a form interaction (JSON object). */
+  formValues?: Record<string, unknown>;
+  /** Latest draft or ready request shown in this conversation. */
+  openRequest?: { id: string; procedureId: string; fieldNames: string[] };
+  /** Procedure of the latest request shown in this conversation, whatever its status. */
+  activeProcedureId?: string;
+  /** cases.list ran in this turn: the reply may report what the connector returned. */
+  connectorData?: boolean;
+  /** requestId the user confirmed paying with the payment button. */
+  paymentConfirmed?: string;
+  /** Request of this conversation whose latest known case card awaits payment. */
+  payableRequest?: string;
+  /** cases.list showed a case awaiting payment that belongs to another conversation: the Backend tells where to pay. */
+  payElsewhere?: boolean;
+  /** procedureId the user chose to prepare with the Backend's prepare button. */
+  prepareProcedure?: string;
+  /** requestId the user chose to file with the Backend's submit button. */
+  submitRequest?: string;
+  /** request.submit succeeded in this turn: no submit question is asked again. */
+  submitted?: boolean;
+  paymentPrompt?: { requestId: string; label: string };
 };
 export class Agent {
   constructor(
@@ -152,6 +241,7 @@ export class Agent {
     private tooling: ToolingPort,
     private consent?: Consent,
     private transcriber?: TranscriptionPort,
+    private listCases?: (userRef: string) => Promise<unknown>,
   ) {}
   watch(signal: AbortSignal): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -404,23 +494,65 @@ export class Agent {
       );
       return;
     }
+    if (
+      input.content.type === "interaction" &&
+      input.content.actionId.startsWith(PAYMENT_LATER_PREFIX)
+    ) {
+      // "Later" pays nothing and needs no model: the request stays awaiting payment.
+      await this.finish(
+        conversation,
+        input,
+        [
+          {
+            type: "text",
+            text: "D’accord, rien n’a été payé. Votre dossier reste en attente de paiement. Quand vous serez prêt, écrivez « je veux payer » dans cette conversation.",
+            sources: [],
+          },
+        ],
+        traceparent,
+      );
+      return;
+    }
+    let formValues: Record<string, unknown> | undefined;
+    let confirmedPayment: string | undefined;
+    let preparedProcedure: string | undefined;
+    let submittedRequest: string | undefined;
     if (input.content.type === "interaction") {
+      formValues = parseFormValues(input.content.value);
+      if (input.content.actionId.startsWith(PAYMENT_CONFIRM_PREFIX))
+        confirmedPayment = input.content.actionId.slice(PAYMENT_CONFIRM_PREFIX.length);
+      if (input.content.actionId.startsWith(PREPARE_REQUEST_PREFIX))
+        preparedProcedure = input.content.actionId.slice(PREPARE_REQUEST_PREFIX.length);
+      if (input.content.actionId.startsWith(SUBMIT_REQUEST_PREFIX))
+        submittedRequest = input.content.actionId.slice(SUBMIT_REQUEST_PREFIX.length);
       input = {
         ...input,
         content: { type: "text", text: interactionPrompt(input.content) },
       };
     }
+    let mergedNoteId: string | undefined;
     if (input.content.type === "file") {
       // Composer often sends documentType null; bind to the oldest unmet fileRequest when one is pending.
       const bound = await this.bindFileUpload(conversation.id, input.id, input.content.documentType ?? null);
-      if (bound)
+      if (bound) {
+        // The Interface posts "a file + a text" as two messages: answer them in one turn, one message.sent.
+        const note = await this.attachedNote(conversation.id, input.id, input.sentAt);
+        if (note) mergedNoteId = note.id;
+        // A form answer sent right after the piece is answered in the same turn.
+        if (note?.values) formValues = note.values;
         input = {
           ...input,
           content: {
             type: "text",
-            text: fileReceivedInstruction(bound.requestId, bound.documentType, input.content.fileId),
+            text: fileReceivedInstruction(bound.requestId, bound.documentType, input.content.fileId) + (note?.text ? "\nMessage joint par l’usager : " + redact(note.text) : ""),
           },
         };
+        if (note)
+          await this.pool.query(
+            "UPDATE backend_messages SET processed_at=now() WHERE conversation_id=$1 AND id=$2 AND processed_at IS NULL",
+            [conversation.id, note.id],
+          );
+      }
     }
     if (input.content.type !== "text") {
       await this.finish(
@@ -460,8 +592,8 @@ export class Agent {
         );
       const previous = (
         await this.pool.query(
-          "SELECT e.body,m.body AS input FROM backend_conversation_events e LEFT JOIN backend_messages m ON m.conversation_id=e.conversation_id AND m.id=e.body->'data'->>'messageId' WHERE e.conversation_id=$1 AND e.expires_at>now() AND (e.body->'data'->>'kind'='message.sent' OR (e.body->'data'->>'kind'='message.received' AND m.id<>$2)) ORDER BY e.seq DESC LIMIT 20",
-          [conversation.id, input.id],
+          "SELECT e.body,m.body AS input FROM backend_conversation_events e LEFT JOIN backend_messages m ON m.conversation_id=e.conversation_id AND m.id=e.body->'data'->>'messageId' WHERE e.conversation_id=$1 AND e.expires_at>now() AND (e.body->'data'->>'kind'='message.sent' OR (e.body->'data'->>'kind'='message.received' AND m.id<>ALL($2::text[]))) ORDER BY e.seq DESC LIMIT 20",
+          [conversation.id, mergedNoteId ? [input.id, mergedNoteId] : [input.id]],
         )
       ).rows.reverse();
       const history: Turn[] = previous
@@ -499,7 +631,39 @@ export class Agent {
         systemBlocks: [],
         config: configs[0].body,
       };
+      if (formValues) state.formValues = formValues;
+      if (confirmedPayment) state.paymentConfirmed = confirmedPayment;
+      // Latest known status per request, from the case cards of this conversation: a newer card cancels an older one.
+      const caseStatus = new Map<string, string>();
+      for (const row of previous)
+        if (row.body.data.kind === "message.sent")
+          for (const block of row.body.data.message.blocks as Schemas["AgentMessage"]["blocks"])
+            if (block.type === "caseCard" && state.requestProcedures?.[block.case.requestId]) {
+              caseStatus.delete(block.case.requestId);
+              caseStatus.set(block.case.requestId, block.case.status);
+            }
+      state.payableRequest = [...caseStatus].reverse().find(([, status]) => status === "awaiting_payment")?.[0];
+      if (preparedProcedure) state.prepareProcedure = preparedProcedure;
+      if (submittedRequest) state.submitRequest = submittedRequest;
+      const cards = new Map<string, NonNullable<State["openRequest"]> & { status: string }>();
+      for (const row of previous)
+        if (row.body.data.kind === "message.sent")
+          for (const block of row.body.data.message.blocks as Schemas["AgentMessage"]["blocks"])
+            if (block.type === "requestCard" && block.request.conversationId === conversation.id)
+              cards.set(block.request.id, { id: block.request.id, procedureId: block.request.procedureId, fieldNames: block.request.fields.map((field) => field.name), status: block.request.status });
+      state.activeProcedureId = [...cards.values()].pop()?.procedureId;
+      const open = [...cards.values()].filter((card) => card.status === "draft" || card.status === "ready").pop();
+      if (open) state.openRequest = { id: open.id, procedureId: open.procedureId, fieldNames: open.fieldNames };
+      const resumed = input.content.text === RESUME_AFTER_CONSENT || input.content.text === RESUME_AFTER_LOGIN;
+      if (resumed) {
+        const waiting = (await this.pool.query("SELECT pending_action FROM backend_conversations WHERE id=$1", [conversation.id])).rows[0]?.pending_action;
+        if (waiting && typeof waiting.name === "string" && typeof waiting.arguments === "string") {
+          state.replay = { name: waiting.name, arguments: waiting.arguments };
+          if (waiting.formValues && typeof waiting.formValues === "object") state.formValues = waiting.formValues;
+        }
+      }
       await this.save(conversation.id, input.id, state);
+      if (resumed) await this.pool.query("UPDATE backend_conversations SET pending_action=NULL WHERE id=$1", [conversation.id]);
     }
     if (!state.assistantMessageId) {
       state.assistantMessageId = identifier("msg");
@@ -526,16 +690,18 @@ export class Agent {
         advertised.push({...definition,name});
       }
     }
+    if (this.listCases) advertised.push(CASES_LIST_TOOL);
     // Deltas go out while the model generates; every path below settles them before writing message.sent.
     const live = new LiveReply(this.conversations, conversation.id, state.assistantMessageId, traceparent);
     try {
     while (state.step < 8) {
       if (!state.pending) {
-        const { reply, blocks } = await this.generateUsable(state, advertised, live, conversation);
+        const { reply, blocks } = await this.generateUsable(state, advertised, live, conversation, administrationId);
         await live.settle();
         if (!reply) {
           if (isGenericRefusal(blocks))
-            await this.unanswered(conversation.id, input.id, administrationId, state.toolFailed ? "tool_failure" : blocks === UNAVAILABLE_BLOCKS ? "missing_source" : "invalid_reply");
+            await this.unanswered(conversation.id, input.id, administrationId, state.toolFailed ? "tool_failure" : state.sources.length > 0 || blocks !== UNAVAILABLE_BLOCKS ? "invalid_reply" : "missing_source");
+          this.offerPayElsewhere(state);
           await this.finish(conversation, input, this.withSystem(state, blocks!), traceparent, false, state.assistantMessageId);
           return;
         }
@@ -546,9 +712,13 @@ export class Agent {
           ...(reply.rawOutput ? { rawOutput: reply.rawOutput } : {}),
         });
         if (!reply.calls.length) {
-          if (blocks!.some(block => block.type === "text" && /Je n[’']ai pas trouvé de démarche validée|Aucune action disponible/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "missing_source");
+          if (blocks!.some(block => block.type === "text" && /Je n[’']ai pas trouvé de démarche validée|Je ne peux répondre qu[’']aux questions sur les démarches administratives|Aucune action disponible/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "missing_source");
           else if (state.toolFailed && blocks!.some(block => block.type === "text" && /L[’']outil n[’']a pas pu|Action refusée/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "tool_failure");
-          const sent = this.withSystem(state, blocks!);
+          const offered = this.offerForm(state, blocks!);
+          this.offerPayment(state);
+          this.offerPayElsewhere(state);
+          this.offerSubmit(state);
+          const sent = this.withSystem(state, this.offerPreparation(state, offered));
           await this.finish(conversation, input, sent, traceparent, false, state.assistantMessageId);
           return;
         }
@@ -584,6 +754,12 @@ export class Agent {
         if (cached) result = cached.result;
         else {
           try {
+            // cases.list has no MCP binding: the Backend answers it from X-Road, scoped to the conversation's user.
+            if (call.name === CASES_LIST_TOOL.name && this.listCases) {
+              if (!conversation.authenticated)
+                throw new Problem(401, "LOGIN_REQUIRED", "Connexion requise pour cette action.");
+              result = await this.runCasesList(state, conversation.userRef);
+            } else {
             const binding=bindings.get(call.name);
             if (!binding)
               throw new Problem(403, "FORBIDDEN", "Outil non activé.");
@@ -596,6 +772,32 @@ export class Agent {
             let argumentsValue: Record<string,unknown>;
             try {argumentsValue=JSON.parse(call.arguments);} catch {throw new Problem(400,"INVALID_REQUEST","Arguments outil JSON invalides.");}
             if(!compileMcpSchema(binding.definition.inputSchema)(argumentsValue))throw new Problem(400,"INVALID_REQUEST","Arguments outil invalides.");
+            if (binding.name === "request.update" && typeof argumentsValue.requestId === "string" && Array.isArray(argumentsValue.fields)) {
+              // The form schema decides the type of each value (a form sends "2", the schema wants 2).
+              const procedureId = state.requestProcedures?.[argumentsValue.requestId] ?? (state.openRequest?.id === argumentsValue.requestId ? state.openRequest.procedureId : undefined);
+              let known = procedureId ? state.procedures?.find((item) => item.id === procedureId) : undefined;
+              const reader = [...bindings.values()].find((item) => item.name === "procedures.get");
+              if (!known && procedureId && reader) {
+                try {
+                  const read = await this.tooling.call(reader.server.url, reader.server.auth, reader.name, { procedureId }, { ...context, external: reader.server.policy !== "techma" }, operationKey + "-procedure", reader.definition);
+                  const loaded = read.isError ? undefined : read.structuredContent as any;
+                  if (loaded) {
+                    validate("Procedure", loaded);
+                    if (loaded.source.procedureId === loaded.id) {
+                      state.sources.push(loaded.source);
+                      state.procedures ??= [];
+                      state.procedures.push(loaded);
+                      known = loaded;
+                    }
+                  }
+                } catch { /* Without the procedure the values go through unchanged. */ }
+              }
+              const properties = (known?.filing?.formSchema as { properties?: Record<string, unknown> } | undefined)?.properties;
+              if (properties)
+                for (const field of argumentsValue.fields as { name?: unknown; value?: unknown }[])
+                  if (field && typeof field.name === "string" && Object.hasOwn(properties, field.name))
+                    field.value = coerceFieldValue(field.value, properties[field.name]);
+            }
             if (requiresLogin && !conversation.authenticated)
               throw new Problem(401, "LOGIN_REQUIRED", "Connexion requise pour cette action.");
             if (
@@ -629,6 +831,24 @@ export class Agent {
                 "MANDATE_MISSING",
                 "Autorisation explicite requise.",
               );
+            if (binding.name === "request.pay" && typeof argumentsValue.requestId === "string" && state.paymentConfirmed !== argumentsValue.requestId) {
+              // The amount is announced first; only the user's own click on the payment button lets request.pay through.
+              let label = "Confirmer le paiement";
+              let detail = "Le montant n’a pas pu être lu. Invitez l’usager à confirmer le paiement avec le bouton.";
+              const statusReader = [...bindings.values()].find((item) => item.name === "case.status");
+              if (statusReader) {
+                try {
+                  const read = await this.tooling.call(statusReader.server.url, statusReader.server.auth, statusReader.name, { requestId: argumentsValue.requestId }, { ...context, external: statusReader.server.policy !== "techma" }, operationKey + "-amount", statusReader.definition);
+                  const amount = read.isError ? undefined : (read.structuredContent as any)?.payment?.amountFcfa;
+                  if (Number.isInteger(amount) && amount >= 0) {
+                    detail = `Montant à payer : ${formatFcfa(amount)}. Annoncez-le à l’usager et invitez-le à confirmer avec le bouton.`;
+                    label = paymentButtonLabel(amount);
+                  }
+                } catch { /* The prompt stays generic when the amount cannot be read. */ }
+              }
+              state.paymentPrompt = { requestId: argumentsValue.requestId, label };
+              throw new Problem(409, "PAYMENT_CONFIRMATION_REQUIRED", detail);
+            }
             const fingerprint = canonical({ name: call.name, arguments: argumentsValue });
             const isWrite = binding.definition._meta?.["bj.techma/kind"] !== "read";
             const previousAction = isWrite ? state.successfulActions?.find(action => action.fingerprint === fingerprint) : undefined;
@@ -651,6 +871,7 @@ export class Agent {
             if (isWrite && !result.isError && !previousAction) {
               state.successfulActions ??= [];
               state.successfulActions.push({ fingerprint, operationKey });
+            }
             }
           } catch (error) {
             if (!(error instanceof Problem) || error.status >= 500) throw error;
@@ -691,6 +912,7 @@ export class Agent {
           });
         }
         const selected=bindings.get(call.name);
+        if (selected?.name === "request.submit" && !result.isError) state.submitted = true;
         if (selected && selected.definition._meta?.["bj.techma/kind"] !== "read" && !result.isError) {
           try {
             const fingerprint = canonical({ name: call.name, arguments: JSON.parse(call.arguments) });
@@ -701,10 +923,29 @@ export class Agent {
         if (result.isError) {
           state.toolFailed = true;
           const code = toolErrorCode(result);
+          if (BLOCKING_CODES.has(code) && !state.blockedRecorded) {
+            state.blockedRecorded = true;
+            await this.pool.query("UPDATE backend_conversations SET pending_action=$2 WHERE id=$1", [
+              conversation.id,
+              { name: call.name, arguments: call.arguments, ...(state.formValues ? { formValues: state.formValues } : {}) },
+            ]);
+          }
+          if (code === "PAYMENT_CONFIRMATION_REQUIRED") {
+            let requestId: unknown;
+            try { requestId = JSON.parse(call.arguments).requestId; } catch { /* no prompt without a request */ }
+            if (typeof requestId === "string")
+              this.pushBlock(state, {
+                type: "buttons",
+                items: [
+                  { id: PAYMENT_CONFIRM_PREFIX + requestId, label: state.paymentPrompt?.requestId === requestId ? state.paymentPrompt.label : "Confirmer le paiement" },
+                  { id: PAYMENT_LATER_PREFIX + requestId, label: "Plus tard" },
+                ],
+              });
+          }
           if (code === "LOGIN_REQUIRED")
             this.pushBlock(state, {
               type: "loginRequired",
-              reason: "Connectez-vous pour préparer ou déposer cette démarche.",
+              reason: call.name === CASES_LIST_TOOL.name ? "Connectez-vous pour consulter vos demandes." : "Connectez-vous pour préparer ou déposer cette démarche.",
             });
           else if (code === "MANDATE_MISSING" || code === "MANDATE_EXPIRED")
             await this.appendConsent(state, conversation, selected, call.arguments, operationKey, traceparent);
@@ -728,7 +969,7 @@ export class Agent {
             ? {
                 isError: true,
                 code: toolErrorCode(result),
-                detail: "L’outil a échoué.",
+                detail: toolErrorDetail(result),
               }
             : { isError: false, result: result.structuredContent ?? result.content.filter(c=>c.type==="text").map(c=>c.text).join("\n") },
         );
@@ -762,11 +1003,119 @@ export class Agent {
       await live.close();
     }
   }
+  /** Calls X-Road for the user's cases; shows the latest ones as cards and hands the model a short summary. */
+  private async runCasesList(state: State, userRef: string): Promise<ToolResult> {
+    const page = (await this.listCases!(userRef)) as { items?: unknown };
+    const cases: Schemas["Case"][] = [];
+    for (const item of Array.isArray(page?.items) ? page.items : []) {
+      try {
+        validate("Case", item);
+        cases.push(item as Schemas["Case"]);
+      } catch { /* Anything that is not a full Case never becomes a card. */ }
+    }
+    cases.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    state.connectorData = true;
+    const latest = cases.slice(0, CASE_CARDS);
+    for (const item of latest) this.pushBlock(state, { type: "caseCard", case: item });
+    // request.pay is bound to the conversation the request was made in: elsewhere, the user is sent back there.
+    const elsewhere = (item: Schemas["Case"]) => item.status === "awaiting_payment" && !state.requestProcedures?.[item.requestId];
+    if (latest.some(elsewhere)) state.payElsewhere = true;
+    const summary = {
+      total: cases.length,
+      cases: latest.map((item) => ({
+        reference: item.reference,
+        title: item.title,
+        status: item.status,
+        payment: { status: item.payment.status, amountFcfa: item.payment.amountFcfa },
+        updatedAt: item.updatedAt,
+        ...(elsewhere(item) ? { nextStep: "Le paiement se fait dans la conversation d’origine de cette demande, à rouvrir depuis Mes démarches." } : {}),
+      })),
+    };
+    return { structuredContent: summary, content: [{ type: "text", text: JSON.stringify(summary) }] };
+  }
   private withSystem(state: State, blocks: Schemas["AgentMessage"]["blocks"]) {
     return mergeSystemBlocks(blocks, state.systemBlocks ?? []);
   }
+  /** A draft with empty fields always comes with its form: the Backend builds it, the model's own forms are dropped. */
+  private offerForm(state: State, blocks: Schemas["AgentMessage"]["blocks"]): Schemas["AgentMessage"]["blocks"] {
+    const request = state.requests.at(-1);
+    if (!request || (request.status !== "draft" && request.status !== "ready")) return blocks;
+    if (state.systemBlocks?.some((block) => block.type === "loginRequired" || block.type === "consent")) return blocks;
+    const empty = request.fields.filter((field) => field.value === null || field.value === undefined || (typeof field.value === "string" && field.value.trim() === ""));
+    if (!empty.length) return blocks;
+    const schema = state.procedures?.find((item) => item.id === request.procedureId)?.filing?.formSchema as { properties?: Record<string, { type?: unknown; format?: unknown } | undefined>; required?: unknown } | undefined;
+    const required = Array.isArray(schema?.required) ? schema.required : undefined;
+    const fieldType = (name: string): "text" | "number" | "date" => {
+      const property = schema?.properties?.[name];
+      const types = Array.isArray(property?.type) ? property.type : [property?.type];
+      if (types.includes("integer") || types.includes("number")) return "number";
+      return property?.format === "date" ? "date" : "text";
+    };
+    this.pushBlock(state, {
+      type: "form",
+      id: "request.form." + request.id,
+      fields: empty.map((field) => ({
+        name: field.name.slice(0, 100),
+        label: (field.label || field.name).slice(0, 200),
+        required: schema ? Boolean(required?.includes(field.name)) : true,
+        type: fieldType(field.name),
+      })),
+    });
+    return blocks.filter((block) => block.type !== "form");
+  }
+  /** A case awaiting payment in this conversation always comes with the question and two buttons; only the confirmation click pays. */
+  private offerPayment(state: State) {
+    const card = [...(state.systemBlocks ?? [])].reverse().find((block) => block.type === "caseCard" && block.case.status === "awaiting_payment");
+    if (card?.type !== "caseCard" || !state.requestProcedures?.[card.case.requestId]) return;
+    if (state.systemBlocks?.some((block) => block.type === "buttons" && block.items.some((item) => item.id.startsWith(PAYMENT_CONFIRM_PREFIX)))) return;
+    const amount = card.case.payment.amountFcfa;
+    this.pushBlock(state, {
+      type: "text",
+      text: Number.isInteger(amount) && (amount as number) >= 0
+        ? `Il reste à payer ${formatFcfa(amount as number)}. Voulez-vous payer maintenant ?`
+        : "Il reste des frais à payer. Voulez-vous payer maintenant ?",
+      sources: [],
+    });
+    this.pushBlock(state, {
+      type: "buttons",
+      items: [
+        { id: PAYMENT_CONFIRM_PREFIX + card.case.requestId, label: paymentButtonLabel(amount) },
+        { id: PAYMENT_LATER_PREFIX + card.case.requestId, label: "Plus tard" },
+      ],
+    });
+  }
+  /** A case awaiting payment in another conversation cannot be paid here: the Backend says where to go, once. */
+  private offerPayElsewhere(state: State) {
+    if (!state.payElsewhere) return;
+    this.pushBlock(state, { type: "text", text: "Pour payer, rouvrez la conversation de cette demande depuis « Mes démarches », puis écrivez « je veux payer ».", sources: [] });
+  }
+  /** A complete request that was not filed in this turn is never left hanging: the Backend asks, the click files. */
+  private offerSubmit(state: State) {
+    const request = state.requests.at(-1);
+    if (!request || request.status !== "ready" || request.missing.length > 0 || state.submitted) return;
+    if (state.systemBlocks?.some((block) => block.type === "loginRequired" || block.type === "consent")) return;
+    this.pushBlock(state, { type: "text", text: "Votre dossier est complet. Voulez-vous le déposer ?", sources: [] });
+    this.pushBlock(state, { type: "buttons", items: [{ id: SUBMIT_REQUEST_PREFIX + request.id, label: "Déposer mon dossier" }] });
+  }
+  /** Only the Backend knows whether a procedure can be filed: it offers the prepare button itself. */
+  private offerPreparation(state: State, blocks: Schemas["AgentMessage"]["blocks"]): Schemas["AgentMessage"]["blocks"] {
+    if (state.requests.length || state.openRequest || state.activeProcedureId) return blocks;
+    if (hasActionSystemBlocks(state.systemBlocks)) return blocks;
+    if (blocks.some((block) => block.type === "form")) return blocks;
+    const cited = new Set(blocks.flatMap((block) => block.type === "text" ? block.sources.map((source) => source.procedureId) : []));
+    if (cited.size !== 1) return blocks;
+    const [procedureId] = [...cited];
+    if (!state.procedures?.some((item) => item.id === procedureId && item.filing)) return blocks;
+    this.pushBlock(state, { type: "buttons", items: [{ id: PREPARE_REQUEST_PREFIX + procedureId, label: "Préparer ma demande" }] });
+    return blocks.filter((block) => block.type !== "buttons");
+  }
   private pushBlock(state: State, block: Schemas["AgentMessage"]["blocks"][number]) {
     state.systemBlocks ??= [];
+    // One card per request or case in a message: the latest state replaces the earlier one.
+    if (block.type === "requestCard")
+      state.systemBlocks = state.systemBlocks.filter((existing) => !(existing.type === "requestCard" && existing.request.id === block.request.id));
+    if (block.type === "caseCard")
+      state.systemBlocks = state.systemBlocks.filter((existing) => !(existing.type === "caseCard" && existing.case.id === block.case.id));
     if (!state.systemBlocks.some((existing) => existing.type === block.type && JSON.stringify(existing) === JSON.stringify(block)))
       state.systemBlocks.push(block);
   }
@@ -851,7 +1200,13 @@ export class Agent {
     tools: ToolDefinition[],
     live: LiveReply,
     conversation: OwnedConversation,
+    administrationId: string,
   ): Promise<{ reply?: ModelReply; blocks?: Schemas["AgentMessage"]["blocks"] }> {
+    if (state.replay && !state.replayDone) {
+      // The action that waited for a login or a consent goes through the whole pipeline again, without the model.
+      state.replayDone = true;
+      return { reply: { text: "", calls: [{ id: identifier("call"), name: state.replay.name, arguments: state.replay.arguments }] } };
+    }
     let fallback = MODEL_UNAVAILABLE_BLOCKS;
     const question = [...state.history].reverse().find((turn) => turn.role === "user")?.content ?? "";
     const searchName = catalogueSearchName(tools);
@@ -859,6 +1214,33 @@ export class Agent {
     const attachName = documentsAttachName(tools);
     const createName = requestCreateName(tools);
     const needsCatalogue = Boolean(searchName) && needsCatalogueLookup(question) && !state.history.some((turn) => turn.role === "tool");
+    const updateName = requestUpdateName(tools);
+    if (state.formValues && updateName && !calledTool(state, updateName)) {
+      const draft = [...state.requests].reverse().find((item) => item.status === "draft" || item.status === "ready")
+        ?? (state.openRequest ? { id: state.openRequest.id, fields: state.openRequest.fieldNames.map((name) => ({ name })) } : undefined);
+      if (draft) {
+        const known = new Set(draft.fields.map((field) => field.name));
+        const fields = Object.entries(state.formValues)
+          .filter(([name, value]) => known.has(name) && value !== null && value !== undefined && (typeof value === "number" || typeof value === "boolean" || (typeof value === "string" && value.trim() !== "")))
+          .map(([name, value]) => ({ name, value, source: "answer" }));
+        if (fields.length)
+          return { reply: { text: "", calls: [{ id: identifier("call"), name: updateName, arguments: JSON.stringify({ requestId: draft.id, fields }) }] } };
+      }
+    }
+    const payName = requestPayName(tools);
+    if (state.paymentConfirmed && payName && !calledTool(state, payName))
+      return { reply: { text: "", calls: [{ id: identifier("call"), name: payName, arguments: JSON.stringify({ requestId: state.paymentConfirmed }) }] } };
+    if (state.payableRequest && payName && needsPayment(question) && !calledTool(state, payName))
+      return { reply: { text: "", calls: [{ id: identifier("call"), name: payName, arguments: JSON.stringify({ requestId: state.payableRequest }) }] } };
+    const submitName = requestSubmitName(tools);
+    if (state.submitRequest && submitName && !calledTool(state, submitName))
+      return { reply: { text: "", calls: [{ id: identifier("call"), name: submitName, arguments: JSON.stringify({ requestId: state.submitRequest }) }] } };
+    if (state.prepareProcedure && createName && !calledTool(state, createName))
+      return { reply: { text: "", calls: [{ id: identifier("call"), name: createName, arguments: JSON.stringify({ procedureId: state.prepareProcedure }) }] } };
+    // "I want to pay" in a chat with no request of its own: the case list tells whether a payment waits in another conversation.
+    const payFromNewChat = needsPayment(question) && !state.payableRequest && !state.requests.length && !state.activeProcedureId;
+    if (tools.some((tool) => tool.name === CASES_LIST_TOOL.name) && (needsCaseList(question) || payFromNewChat) && !calledTool(state, CASES_LIST_TOOL.name))
+      return { reply: { text: "", calls: [{ id: identifier("call"), name: CASES_LIST_TOOL.name, arguments: "{}" }] } };
     const piece = parseReceivedPiece(question);
     if (piece && attachName && !calledTool(state, attachName)) {
       return {
@@ -868,6 +1250,12 @@ export class Agent {
         },
       };
     }
+    // Sources are observed per turn: a reply refused for lack of one reads the fiche of the current request, then is redone.
+    const missingFiche = (): ModelReply | undefined => {
+      const procedureId = state.requests.at(-1)?.procedureId ?? state.activeProcedureId;
+      if (!getName || !procedureId || state.sources.length || calledTool(state, getName)) return undefined;
+      return { text: "", calls: [{ id: identifier("call"), name: getName, arguments: JSON.stringify({ procedureId }) }] };
+    };
     const forcedSearch = (): ModelReply => ({
       text: "",
       calls: [{ id: identifier("call"), name: searchName!, arguments: JSON.stringify({ query: question.slice(0, 500) || "démarche" }) }],
@@ -877,6 +1265,16 @@ export class Agent {
       const procedureId = (state.procedures.find((item) => item.filing) ?? state.procedures[0]).id;
       return { text: "", calls: [{ id: identifier("call"), name: getName, arguments: JSON.stringify({ procedureId }) }] };
     };
+    const guestCreate = (): Schemas["Procedure"] | undefined => {
+      const procedure = state.procedures?.find((item) => item.filing) ?? state.procedures?.[0];
+      return !conversation.authenticated
+        && createName
+        && procedure
+        && wantsFiling(question)
+        && !state.history.some((turn) => turn.role === "assistant" && turn.calls?.some((call) => call.name === createName))
+        ? procedure
+        : undefined;
+    };
     let requireTool = false;
     for (let attempt = 0; attempt < MODEL_REPLY_ATTEMPTS; attempt++) {
       // No tool is run in this retry loop. Successfully checkpointed tool results
@@ -885,7 +1283,8 @@ export class Agent {
         ...state.history,
         { role: "user", content: FORMAT_REMINDER },
       ];
-      const listener = await live.attempt(state.sources);
+      // Text that is certain to be dropped for a forced call stays silent from the start.
+      const listener = await live.attempt(state.sources, { hold: needsCatalogue || Boolean(forcedGet()) || Boolean(guestCreate()) || Boolean(missingFiche()) });
       // json_schema + tools makes Groq/Gemini skip or reject function calls (400 / prose without tools).
       const structuredOutput = !tools.length;
       let reply: ModelReply;
@@ -894,6 +1293,7 @@ export class Agent {
           onTextDelta: listener.onTextDelta,
           onToolCall: listener.onToolCall,
           structuredOutput,
+          apiKey: await readModelSecret(this.pool, administrationId, state.config.id),
           ...(requireTool && searchName ? { toolChoice: "required" } : {}),
         });
       }
@@ -939,14 +1339,8 @@ export class Agent {
       }
       try {
         const blocks = presentModelReply(reply.text, state);
-        const procedure = state.procedures?.find((item) => item.filing) ?? state.procedures?.[0];
-        if (
-          !conversation.authenticated
-          && createName
-          && procedure
-          && wantsFiling(question)
-          && !state.history.some((turn) => turn.role === "assistant" && turn.calls?.some((call) => call.name === createName))
-        ) {
+        const procedure = guestCreate();
+        if (procedure && createName) {
           listener.reject();
           return {
             reply: {
@@ -978,6 +1372,8 @@ export class Agent {
         const forced = missCatalogue();
         if (forced === "retry") continue;
         if (forced) return { reply: forced };
+        const fiche = error instanceof ModelReplyError && (error.reason === "admin_fact_without_source" || error.reason === "unobserved_source") ? missingFiche() : undefined;
+        if (fiche) return { reply: fiche };
         if (!(error instanceof ModelReplyError) || error.reason !== "invalid_json") fallback = UNAVAILABLE_BLOCKS;
       }
     }
@@ -991,9 +1387,40 @@ export class Agent {
   }
   private honestFallback(state: State): Schemas["AgentMessage"]["blocks"] | undefined {
     const system = state.systemBlocks ?? [];
+    if (state.connectorData && system.some((block) => block.type === "caseCard"))
+      return [{ type: "text", text: "Voici où en sont vos demandes.", sources: [] }];
     const evidence = state.sources.length > 0 || state.requests.length > 0 || state.history.some((turn) => turn.role === "tool");
     if (!hasActionSystemBlocks(system) || !evidence) return undefined;
     return honestReplyFromSystemBlocks(system);
+  }
+  /**
+   * The text or form answer sent right after a file (next message of the conversation, processed or not, so a replay finds it too).
+   * Waits up to 1 s for it, as the Interface posts it once the file is accepted; another file ends the wait.
+   */
+  private async attachedNote(conversationId: string, messageId: string, sentAt: string): Promise<{ id: string; text?: string; values?: Record<string, unknown> } | undefined> {
+    const current = (await this.pool.query("SELECT seq FROM backend_messages WHERE conversation_id=$1 AND id=$2", [conversationId, messageId])).rows[0];
+    if (!current) return undefined;
+    for (let waited = 0; ; waited += 200) {
+      const next = (
+        await this.pool.query(
+          "SELECT id, body FROM backend_messages WHERE conversation_id=$1 AND seq>$2 ORDER BY seq ASC LIMIT 1",
+          [conversationId, current.seq],
+        )
+      ).rows[0];
+      if (next) {
+        const content = next.body?.content;
+        const gap = Math.abs(Date.parse(next.body?.sentAt) - Date.parse(sentAt));
+        const text = content?.type === "text" && typeof content.text === "string" ? content.text : "";
+        // A form answer (interaction carrying a JSON object) merges as well; a bare button click keeps its own turn.
+        const values = content?.type === "interaction" ? parseFormValues(content.value) : undefined;
+        if (!(gap < 5000)) return undefined;
+        if (values) return { id: next.id, values };
+        if (!text.trim() || text === RESUME_AFTER_CONSENT || text === RESUME_AFTER_LOGIN) return undefined;
+        return { id: next.id, text };
+      }
+      if (waited >= 1000) return undefined;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
   }
   private async bindFileUpload(conversationId: string, messageId: string, documentType: string | null) {
     const requests = (

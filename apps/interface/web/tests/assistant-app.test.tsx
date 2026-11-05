@@ -1,7 +1,8 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssistantApp } from '@/components/app/AssistantApp';
+import { loadConversation } from '@/lib/conversation-persistence';
 import { initialState, type ConversationState } from '@/lib/conversation-state';
 import { fakeConversation, type Conversation } from './conversation-helper';
 
@@ -78,5 +79,52 @@ describe('AssistantApp', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Renouveler mon passeport' }));
     expect(window.location.pathname).toBe('/conversation');
     expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
+  });
+});
+
+describe('AssistantApp, new tab', () => {
+  const stubFetch = (user: unknown, conversations: unknown) => {
+    const fetchMock = vi.fn(async (url: string) =>
+      String(url).startsWith('/api/session')
+        ? new Response(JSON.stringify({ user }), { status: 200 })
+        : new Response(JSON.stringify(conversations), { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  };
+  const newest = { id: 'cnv_01JD0000000000000000000009', channel: 'web', locale: 'fr', authenticated: true, createdAt: '2026-11-02T08:00:00Z', lastMessageAt: new Date(Date.now() - 5 * 60_000).toISOString() };
+
+  beforeEach(() => {
+    hook.current = build({ status: 'idle', conversationId: null });
+    window.sessionStorage.clear();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('offers the newest conversation of a signed-in person, and resumes it', async () => {
+    const fetchMock = stubFetch({ name: 'Awa', roles: [] }, { items: [newest], nextCursor: null });
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign });
+    render(<AssistantApp />);
+    expect(await screen.findByText(/Conversation en cours/, undefined, { timeout: 4000 })).toHaveTextContent('il y a 5 min');
+    expect(String(fetchMock.mock.calls.find(([url]) => String(url).includes('/v1/conversations'))![0])).toContain('limit=1');
+    await userEvent.click(screen.getByRole('button', { name: 'Reprendre' }));
+    expect(loadConversation()).toEqual({ conversationId: newest.id });
+    expect(assign).toHaveBeenCalledWith('/conversation');
+  });
+
+  it('falls back to the creation time when lastMessageAt is missing', async () => {
+    const createdAt = new Date(Date.now() - 10 * 60_000).toISOString();
+    stubFetch({ name: 'Awa', roles: [] }, { items: [{ ...newest, createdAt, lastMessageAt: null }], nextCursor: null });
+    render(<AssistantApp />);
+    expect(await screen.findByText(/Conversation en cours/, undefined, { timeout: 4000 })).toHaveTextContent('il y a 10 min');
+  });
+
+  it('never asks the Backend for conversations when the visitor is a guest', async () => {
+    const fetchMock = stubFetch(null, { items: [newest], nextCursor: null });
+    render(<AssistantApp />);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/session'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/v1/conversations'))).toBe(false);
+    expect(screen.queryByText(/Conversation en cours/)).toBeNull();
   });
 });

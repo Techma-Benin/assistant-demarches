@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "X-Road simulé — administrations, catalogue, dossiers, annuaire",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "description": "Simulation déclarée : chaque dossier porte simulated: true et une référence SIM-…. Jetons de service Keycloak : client tooling (scope xroad:apply) et client backend (scopes xroad:apply et xroad:administer). Une ressource hors de portée répond 404."
   },
   "servers": [

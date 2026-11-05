@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { CaseStatus } from '@/lib/admin/api';
 import { can, roleLabel } from '@/lib/admin/permissions';
 import {
   ACTIVITY_LABELS,
@@ -50,11 +51,20 @@ describe('tabs (§8)', () => {
 });
 
 describe('allowedActions', () => {
+  const item = (status: CaseStatus, claimedBy: string | null = null) => ({ status, claimedBy });
+
   it('follows the transitions of §8', () => {
-    expect(allowedActions('received')).toEqual(['claim']);
-    expect(allowedActions('in_review')).toEqual(['claim', 'request_information', 'approve', 'reject']);
-    expect(allowedActions('information_requested')).toEqual(['reject']);
-    for (const status of ['awaiting_payment', 'completed', 'rejected'] as const) expect(allowedActions(status)).toEqual([]);
+    expect(allowedActions(item('received'))).toEqual(['claim']);
+    expect(allowedActions(item('in_review'))).toEqual(['claim', 'request_information', 'approve', 'reject']);
+    expect(allowedActions(item('information_requested'))).toEqual(['reject']);
+    for (const status of ['awaiting_payment', 'completed', 'rejected'] as const) {
+      expect(allowedActions(item(status))).toEqual([]);
+    }
+  });
+
+  it('omits claim once the case is already claimed', () => {
+    expect(allowedActions(item('in_review', OFFICIAL_ID))).toEqual(['request_information', 'approve', 'reject']);
+    expect(allowedActions(item('received', OFFICIAL_ID))).toEqual([]);
   });
 });
 

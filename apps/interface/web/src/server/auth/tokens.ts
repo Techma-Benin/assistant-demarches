@@ -27,6 +27,11 @@ async function currentUser(): Promise<UserSession | null> {
   if (!user) return null;
   const now = Date.now();
   if (user.accessExpiresAt - now > REFRESH_MARGIN_MS) return user;
+  if (user.provider === 'npi') {
+    // No refresh token: close to expiry the user is signed out.
+    await writeSession({ ...session, user: undefined });
+    return null;
+  }
   if (user.refreshExpiresAt <= now) {
     await writeSession({ ...session, user: undefined });
     return null;
