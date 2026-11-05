@@ -8,7 +8,7 @@ Interface unique (Next.js 16, React 19, Tailwind v4) : site public, conversation
 | `/conversation` | conversation pleine page (contrat v2) |
 | `/demarches` | « Mes démarches » : dossiers déposés (`GET /v1/cases`) ; `/demarches/{caseId}` : un dossier |
 | `/embed` | chat intégrable, voir « Chat intégrable » |
-| `/admin` | console d'administration (vue d'ensemble, à vérifier, complété, sans réponse, journal, utilisateurs, profil) |
+| `/admin` | console d'administration (vue d'ensemble, à vérifier, complété, journal, utilisateurs, profil) |
 
 ## Lancer en local
 

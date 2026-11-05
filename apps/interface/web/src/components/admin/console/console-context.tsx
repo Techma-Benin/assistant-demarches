@@ -51,6 +51,9 @@ const MAX_OFFICIAL_PAGES = 5;
 export const isConnected = (administration: Administration): boolean =>
   administration.connection.status === 'connected';
 
+/** Administrations the console can work in. Unconnected ones have no data and no connect action. */
+export const connectedAdministrations = (list: Administration[]): Administration[] => list.filter(isConnected);
+
 async function postJson(path: string, body: unknown): Promise<Response> {
   return fetch(path, {
     method: 'POST',
@@ -112,10 +115,10 @@ export function ConsoleProvider({
   }, [actionError]);
 
   const isSuperAdmin = hasPermission(profile, 'administrations:all');
-  const administrations = useMemo(
-    () => (isSuperAdmin ? allAdministrations : profile?.administration ? [profile.administration] : []),
-    [isSuperAdmin, allAdministrations, profile],
-  );
+  const administrations = useMemo(() => {
+    const visible = isSuperAdmin ? allAdministrations : profile?.administration ? [profile.administration] : [];
+    return isSuperAdmin ? connectedAdministrations(visible) : visible;
+  }, [isSuperAdmin, allAdministrations, profile]);
   const administration = useMemo<Administration | null>(() => {
     if (!isSuperAdmin) return profile?.administration ?? null;
     // Only connected administrations hold data: a stale cookie falls back to the first of them.

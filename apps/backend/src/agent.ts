@@ -33,6 +33,7 @@ import { presentModelReply, mergeSystemBlocks, PAYMENT_CONFIRM_PREFIX, PREPARE_R
 import type { TranscriptionPort } from "./transcription.js";
 import { LiveReply } from "./live-reply.js";
 import { visibleText } from "./text-deltas.js";
+import { readModelSecret } from "./secrets.js";
 import { coerceFieldValue, parseFormValues } from "./form-values.js";
 
 const MODEL_REPLY_ATTEMPTS = 3;
@@ -695,7 +696,7 @@ export class Agent {
     try {
     while (state.step < 8) {
       if (!state.pending) {
-        const { reply, blocks } = await this.generateUsable(state, advertised, live, conversation);
+        const { reply, blocks } = await this.generateUsable(state, advertised, live, conversation, administrationId);
         await live.settle();
         if (!reply) {
           if (isGenericRefusal(blocks))
@@ -1199,6 +1200,7 @@ export class Agent {
     tools: ToolDefinition[],
     live: LiveReply,
     conversation: OwnedConversation,
+    administrationId: string,
   ): Promise<{ reply?: ModelReply; blocks?: Schemas["AgentMessage"]["blocks"] }> {
     if (state.replay && !state.replayDone) {
       // The action that waited for a login or a consent goes through the whole pipeline again, without the model.
@@ -1291,6 +1293,7 @@ export class Agent {
           onTextDelta: listener.onTextDelta,
           onToolCall: listener.onToolCall,
           structuredOutput,
+          apiKey: await readModelSecret(this.pool, administrationId, state.config.id),
           ...(requireTool && searchName ? { toolChoice: "required" } : {}),
         });
       }

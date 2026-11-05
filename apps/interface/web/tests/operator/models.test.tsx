@@ -26,8 +26,38 @@ describe('Modèles', () => {
     expect(within(items[0]).queryByRole('button', { name: /Activer/ })).not.toBeInTheDocument();
     expect(within(items[1]).queryByText('Actif')).not.toBeInTheDocument();
     expect(within(items[1]).getByRole('button', { name: 'Activer Mistral Small' })).toBeInTheDocument();
-    // The reference is displayed as a plain name, not masked.
-    expect(within(items[0]).getByText('GROQ_API_KEY')).toBeInTheDocument();
+    expect(within(items[0]).getByText('Groq Llama')).toBeInTheDocument();
+    expect(within(items[0]).getByText('llama-3.3-70b-versatile')).toBeInTheDocument();
+  });
+
+  it('keeps technical details out of the list', async () => {
+    stubOperator(list());
+    render(<ModelsPage />);
+    for (const item of await screen.findAllByRole('listitem')) {
+      expect(item).not.toHaveTextContent(/api\.(groq|mistral)\.|chat-completions|responses|API_KEY|••••|température/i);
+    }
+  });
+
+  it('names the icon actions with a tooltip on hover', async () => {
+    stubOperator(list());
+    render(<ModelsPage />);
+    await userEvent.hover(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Modifier');
+    await userEvent.unhover(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
+    await userEvent.hover(await screen.findByRole('button', { name: 'Supprimer Groq Llama' }));
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('Supprimer'));
+  });
+
+  it('shows the technical details only in the edit dialog', async () => {
+    stubOperator(list());
+    render(<ModelsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
+    const dialog = screen.getByRole('dialog', { name: 'Modifier Groq Llama' });
+    expect(within(dialog).getByLabelText(/Adresse du service/)).toHaveValue('https://api.groq.com/openai/v1');
+    expect(within(dialog).getByLabelText(/Protocole/)).toHaveValue('chat-completions');
+    expect(within(dialog).getByLabelText(/Clé d’accès/)).toHaveValue('');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('shows the load error and retries', async () => {
@@ -48,12 +78,14 @@ describe('Modèles', () => {
     render(<ModelsPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'Ajouter un modèle' }));
     const form = screen.getByRole('form', { name: 'Ajouter un modèle' });
-    expect(within(form).getByText('Nom de la variable d’environnement qui contient la clé, jamais la clé elle-même.')).toBeInTheDocument();
+    expect(within(form).getByText('La clé est enregistrée chiffrée. Elle ne sera plus visible ensuite.')).toBeInTheDocument();
     await userEvent.type(within(form).getByLabelText(/^Nom/), 'Mistral Été');
     await userEvent.type(within(form).getByLabelText(/Adresse du service/), 'https://api.mistral.ai/v1');
     await userEvent.selectOptions(within(form).getByLabelText(/Protocole/), 'responses');
     await userEvent.type(within(form).getByLabelText(/^Modèle/), 'mistral-small-latest');
-    await userEvent.type(within(form).getByLabelText(/Clé d’accès/), 'MISTRAL_API_KEY');
+    const key = within(form).getByLabelText(/Clé d’accès/);
+    expect(key).toHaveAttribute('type', 'password');
+    await userEvent.type(key, 'sk-test-operator-key');
     await userEvent.clear(within(form).getByLabelText(/Température/));
     await userEvent.type(within(form).getByLabelText(/Température/), '0.5');
     await userEvent.click(within(form).getByRole('button', { name: 'Enregistrer' }));
@@ -66,16 +98,19 @@ describe('Modèles', () => {
       baseUrl: 'https://api.mistral.ai/v1',
       protocol: 'responses',
       model: 'mistral-small-latest',
-      apiKeyRef: 'MISTRAL_API_KEY',
+      apiKeyRef: 'MDL_MISTRAL_ETE',
+      apiKey: 'sk-test-operator-key',
       temperature: 0.5,
       active: false,
     });
-    assertContract('ModelConfig', post.body);
+    const { apiKey, ...config } = post.body as { apiKey: string };
+    expect(apiKey).toBe('sk-test-operator-key');
+    assertContract('ModelConfig', config);
     expect(await screen.findByText('« Mistral Été » est enregistré.')).toBeInTheDocument();
     expect(screen.queryByRole('form')).not.toBeInTheDocument();
   });
 
-  it('never accepts a key value in apiKeyRef and ties the error to the field', async () => {
+  it('requires a key on create and ties the error to the field', async () => {
     const calls = stubOperator(list([groq]));
     render(<ModelsPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'Ajouter un modèle' }));
@@ -83,14 +118,13 @@ describe('Modèles', () => {
     await userEvent.type(within(form).getByLabelText(/^Nom/), 'Test');
     await userEvent.type(within(form).getByLabelText(/Adresse du service/), 'https://x.example/v1');
     await userEvent.type(within(form).getByLabelText(/^Modèle/), 'm');
-    const ref = within(form).getByLabelText(/Clé d’accès/);
-    expect(ref).toHaveAttribute('type', 'text');
-    await userEvent.type(ref, 'sk-abc123secret');
+    const key = within(form).getByLabelText(/Clé d’accès/);
+    expect(key).toHaveAttribute('type', 'password');
     await userEvent.click(within(form).getByRole('button', { name: 'Enregistrer' }));
-    expect(ref).toHaveAttribute('aria-invalid', 'true');
-    const describedBy = ref.getAttribute('aria-describedby')!.split(' ');
+    expect(key).toHaveAttribute('aria-invalid', 'true');
+    const describedBy = key.getAttribute('aria-describedby')!.split(' ');
     const errorId = describedBy.find((id) => id.endsWith('-error'))!;
-    expect(document.getElementById(errorId)).toHaveTextContent('Ne collez jamais la clé elle-même');
+    expect(document.getElementById(errorId)).toHaveTextContent('Indiquez la clé d’accès du fournisseur');
     expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
   });
 
@@ -118,7 +152,7 @@ describe('Modèles', () => {
     await userEvent.type(within(form).getByLabelText(/^Nom/), 'Test');
     await userEvent.type(within(form).getByLabelText(/Adresse du service/), 'https://x.example/v1');
     await userEvent.type(within(form).getByLabelText(/^Modèle/), 'm');
-    await userEvent.type(within(form).getByLabelText(/Clé d’accès/), 'TEST_KEY');
+    await userEvent.type(within(form).getByLabelText(/Clé d’accès/), 'sk-test-key');
     await userEvent.click(within(form).getByRole('button', { name: 'Enregistrer' }));
     expect(await within(form).findByRole('alert')).toHaveTextContent('Adresse refusée');
   });
@@ -145,6 +179,28 @@ describe('Modèles', () => {
       expect(within(items[0]).queryByText('Actif')).not.toBeInTheDocument();
     });
     expect(screen.getByText('« Mistral Small » est le modèle actif.')).toBeInTheDocument();
+  });
+
+  it('offers to undo an activation by putting the previous model back', async () => {
+    let activeId = 'groq-llama';
+    const calls = stubOperator(
+      (call) => {
+        if (call.method === 'PUT') {
+          activeId = (call.body as { id: string }).id;
+          return json(call.body);
+        }
+      },
+      (call) =>
+        call.method === 'GET' ? json({ items: [groq, mistral].map((m) => ({ ...m, active: m.id === activeId })), nextCursor: null }) : undefined,
+    );
+    render(<ModelsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Activer Mistral Small' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(2));
+    const undo = calls.filter((c) => c.method === 'PUT')[1];
+    expect(undo.path).toBe('/models/groq-llama');
+    expect(undo.body).toEqual({ ...groq, active: true });
+    expect(await screen.findByText('« Groq Llama » est le modèle actif.')).toBeInTheDocument();
   });
 
   it('asks for confirmation before deleting, and can cancel', async () => {

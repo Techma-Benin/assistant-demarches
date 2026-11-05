@@ -15,6 +15,19 @@ import {
   type Resource,
 } from "./domain.js";
 import { deactivateOtherModels, modelsLockKey } from "./model-env.js";
+import { deleteModelSecret, upsertModelSecret } from "./secrets.js";
+
+export function takeModelWrite(body: unknown): { model: Config; apiKey?: string } {
+  if (!body || typeof body !== "object") throw new Problem(400, "INVALID_REQUEST", "Corps non conforme au contrat.");
+  const record = { ...(body as Record<string, unknown>) };
+  const raw = record.apiKey;
+  delete record.apiKey;
+  if (raw !== undefined && typeof raw !== "string")
+    throw new Problem(400, "INVALID_REQUEST", "Clé d’accès invalide.");
+  validate("ModelConfig", record);
+  const apiKey = typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
+  return { model: record as Config, apiKey };
+}
 
 export class Settings {
   constructor(
@@ -70,8 +83,8 @@ export class Settings {
     return result.rows[0].body;
   }
 
-  async update(principal: Principal, resource: Resource, id: string, body: Config, key: string, traceparent: string) {
-    return this.mutate(principal, resource, id, body, key, traceparent, "PUT");
+  async update(principal: Principal, resource: Resource, id: string, body: Config, key: string, traceparent: string, apiKey?: string) {
+    return this.mutate(principal, resource, id, body, key, traceparent, "PUT", apiKey);
   }
 
   async mutate(
@@ -82,6 +95,7 @@ export class Settings {
     key: string,
     traceparent: string,
     method: "POST" | "PUT" | "DELETE",
+    apiKey?: string,
   ) {
     if (body !== null) {
       validate("ModelConfig", body);
@@ -95,7 +109,7 @@ export class Settings {
       resource,
       id,
     ]);
-    const digest = fingerprint(body);
+    const digest = fingerprint(body === null ? null : { body, apiKey: apiKey ?? "" });
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -134,8 +148,12 @@ export class Settings {
         if (!inserted.rowCount) throw new Problem(409, "INVALID_TRANSITION", "Configuration déjà existante.");
       } else if (method === "PUT")
         await client.query("UPDATE backend_configurations SET body=$4,updated_at=now() WHERE administration_id=$1 AND resource=$2 AND resource_id=$3", [principal.administrationId,resource,id,body]);
-      else
+      else {
         await client.query("DELETE FROM backend_configurations WHERE administration_id=$1 AND resource=$2 AND resource_id=$3", [principal.administrationId,resource,id]);
+        await deleteModelSecret(client, principal.administrationId, id);
+      }
+      if (method !== "DELETE" && resource === "models" && apiKey)
+        await upsertModelSecret(client, principal.administrationId, id, apiKey);
       if (method !== "DELETE" && body && "active" in body && body.active)
         await deactivateOtherModels(client, principal.administrationId, id);
       const event = {

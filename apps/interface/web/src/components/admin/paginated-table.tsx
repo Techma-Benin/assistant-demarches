@@ -9,14 +9,22 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  cn,
 } from '@techma/ui';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AdminError } from '@/lib/admin/errors';
 
 export interface Column<T> {
   header: string;
   cell: (item: T) => ReactNode;
+  /** Layout classes for the column: applied to the header and the cell. */
   className?: string;
+  /**
+   * Comparable value for client-side sorting of the rows already loaded.
+   * Omit it when the column has nothing to sort (the header stays plain text).
+   */
+  sortValue?: (item: T) => string | number | null | undefined;
 }
 
 export interface PagedPage<T> {
@@ -41,6 +49,24 @@ export interface PaginatedTableProps<T> {
 }
 
 type Status = 'loading' | 'idle' | 'error';
+type SortDir = 'asc' | 'desc';
+
+function compareSortValues(
+  left: string | number | null | undefined,
+  right: string | number | null | undefined,
+): number {
+  if (typeof left === 'number' && typeof right === 'number') return left - right;
+  return String(left ?? '').localeCompare(String(right ?? ''), 'fr', { numeric: true, sensitivity: 'base' });
+}
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ArrowUpDown aria-hidden="true" className="size-3.5 text-ink-subtle" />;
+  return dir === 'asc' ? (
+    <ArrowUp aria-hidden="true" className="size-3.5 text-ink" />
+  ) : (
+    <ArrowDown aria-hidden="true" className="size-3.5 text-ink" />
+  );
+}
 
 export function errorMessage(error: unknown, noun: string): string {
   if (error instanceof AdminError && (error.status === 401 || error.status === 403)) {
@@ -163,7 +189,21 @@ export function PaginatedTable<T>({
     changed.current?.(items);
   }, [items]);
 
-  const visible = filter ? items.filter(filter) : items;
+  const [sort, setSort] = useState<{ header: string; dir: SortDir } | null>(null);
+  const onSort = useCallback((header: string) => {
+    setSort((current) =>
+      current?.header === header ? { header, dir: current.dir === 'asc' ? 'desc' : 'asc' } : { header, dir: 'asc' },
+    );
+  }, []);
+
+  const visible = useMemo(() => {
+    const filtered = filter ? items.filter(filter) : items;
+    const column = sort ? columns.find((candidate) => candidate.header === sort.header) : undefined;
+    if (!sort || !column?.sortValue) return filtered;
+    const sign = sort.dir === 'asc' ? 1 : -1;
+    const valueOf = column.sortValue;
+    return [...filtered].sort((a, b) => sign * compareSortValues(valueOf(a), valueOf(b)));
+  }, [columns, filter, items, sort]);
   const firstLoad = items.length === 0;
 
   return (
@@ -171,9 +211,31 @@ export function PaginatedTable<T>({
       <Table aria-label={label} aria-busy={status === 'loading'} className={className}>
         <TableHead className="bg-shell">
           <TableRow className="border-line-subtle">
-            {columns.map((column) => (
-              <TableHeaderCell key={column.header}>{column.header}</TableHeaderCell>
-            ))}
+            {columns.map((column) =>
+              column.sortValue ? (
+                <TableHeaderCell
+                  key={column.header}
+                  aria-sort={sort?.header === column.header ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                  className={column.className}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onSort(column.header)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-md text-[13px] font-medium transition-colors duration-(--ui-dur-press) ease-(--ui-ease-out) hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
+                      sort?.header === column.header ? 'text-ink' : 'text-ink-muted',
+                    )}
+                  >
+                    {column.header}
+                    <SortIcon active={sort?.header === column.header} dir={sort?.dir ?? 'asc'} />
+                  </button>
+                </TableHeaderCell>
+              ) : (
+                <TableHeaderCell key={column.header} className={column.className}>
+                  {column.header}
+                </TableHeaderCell>
+              ),
+            )}
           </TableRow>
         </TableHead>
         <TableBody>

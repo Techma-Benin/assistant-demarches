@@ -26,6 +26,12 @@ describe('Button', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
+  it('shows a pointer cursor so the control looks clickable', () => {
+    render(<Button>Ok</Button>);
+    expect(screen.getByRole('button', { name: 'Ok' }).className).toContain('cursor-pointer');
+    expect(screen.getByRole('button', { name: 'Ok' }).className).toContain('disabled:cursor-not-allowed');
+  });
+
   it('does not fire when disabled', async () => {
     const onClick = vi.fn();
     render(
@@ -47,6 +53,15 @@ describe('IconButton', () => {
       </IconButton>,
     );
     expect(screen.getByRole('button', { name: 'Envoyer' })).toHaveAttribute('aria-label', 'Envoyer');
+  });
+
+  it('uses pointer cursor when enabled', () => {
+    render(
+      <IconButton label="Envoyer">
+        <svg />
+      </IconButton>,
+    );
+    expect(screen.getByRole('button', { name: 'Envoyer' }).className).toContain('cursor-pointer');
   });
 });
 
@@ -70,6 +85,7 @@ describe('TextField', () => {
     const describedBy = input.getAttribute('aria-describedby') ?? '';
     expect(document.getElementById(describedBy.split(' ')[1])).toHaveTextContent('Champ invalide');
     expect(screen.getByText('(obligatoire)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('*', { exact: false })).toHaveClass('text-danger');
   });
 
   it('has no aria-invalid without error', () => {

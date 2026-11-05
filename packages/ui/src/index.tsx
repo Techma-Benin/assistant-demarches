@@ -22,6 +22,16 @@ export { SegmentedControl, type SegmentedControlProps } from './components/Segme
 export { StepTracker, type Step } from './components/StepTracker';
 export { Toast, type ToastProps } from './components/Toast';
 export {
+  Dialog,
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogBody,
+  DialogFooter,
+  type DialogContentProps,
+} from './components/Dialog';
+export { Tooltip, type TooltipProps } from './components/Tooltip';
+export {
   Table,
   TableHead,
   TableBody,

@@ -1,0 +1,24 @@
+/* Registered lengths so the translate eases when the active slice changes. */
+@property --slice-x {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --slice-y {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+/* Offset is a custom property so a reduced-motion query can drop it without fighting an inline transform. */
+.status-donut-slice {
+  transform: translate(var(--slice-x, 0px), var(--slice-y, 0px));
+  transition: transform var(--ui-dur-press) var(--ui-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-donut-slice {
+    transform: none;
+    transition: none;
+  }
+}

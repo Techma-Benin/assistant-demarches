@@ -358,15 +358,39 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
   await t.test(
     "strict inputs, PUT existing semantics, secret references and MCP allowlist",
     async () => {
-      for (const body of [
-        { ...model, apiKey: "never-store-me" },
-        { ...model, temperature: 4 },
-      ])
-        assert.equal(
-          (await request("/v1/operator/models/primary", { method: "PUT", body }))
-            .status,
-          400,
-        );
+      assert.equal(
+        (
+          await request("/v1/operator/models/primary", {
+            method: "PUT",
+            body: { ...model, temperature: 4 },
+          })
+        ).status,
+        400,
+      );
+      const stored = await request("/v1/operator/models/primary", {
+        method: "PUT",
+        body: { ...model, apiKey: "never-store-me" },
+        key: "secret-key-0001",
+      });
+      assert.equal(stored.status, 200);
+      assert.equal(stored.value.apiKey, undefined);
+      assert.deepEqual(stored.value, model);
+      validate("ModelConfig", stored.value);
+      const listed = JSON.stringify((await request("/v1/operator/models")).value);
+      assert.equal(listed.includes("never-store-me"), false);
+      const secret = (
+        await pool.query(
+          "SELECT ciphertext FROM backend_secrets WHERE resource_id='primary'",
+        )
+      ).rows[0];
+      assert.ok(secret.ciphertext);
+      assert.equal(String(secret.ciphertext).includes("never-store-me"), false);
+      const body = (
+        await pool.query(
+          "SELECT body FROM backend_configurations WHERE resource_id='primary'",
+        )
+      ).rows[0].body;
+      assert.equal(JSON.stringify(body).includes("never-store-me"), false);
       assert.equal(
         (
           await request("/v1/operator/models/unknown", {
@@ -468,7 +492,10 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
     assert.equal((await request(path, { method: "POST", body, key: "crud-recreate" })).status, 201);
     assert.equal((await request(detail, { method: "DELETE", key: "crud-delete" })).status, 204);
     assert.deepEqual((await request(detail)).value, body, "replayed DELETE must not remove recreated configuration");
-    assert.equal((await request("/v1/operator/models", { method: "POST", body: { ...model, id: "bad", apiKey: "secret" } })).status, 400);
+    const withKey = await request("/v1/operator/models", { method: "POST", body: { ...model, id: "bad", apiKey: "secret" } });
+    assert.equal(withKey.status, 201);
+    assert.equal(withKey.value.apiKey, undefined);
+    assert.equal(JSON.stringify(withKey.value).includes("secret"), false);
     assert.equal((await request("/v1/operator/models", { method: "POST", body: { ...model, id: "missing-key" }, key: "" })).status, 400);
     assert.equal((await request("/v1/operator/models/primary", { method: "DELETE", key: "" })).status, 400);
     const optional = { ...model, id: "optional-key" };

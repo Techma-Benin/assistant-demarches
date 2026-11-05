@@ -8,6 +8,7 @@
   --color-surface: var(--ui-surface);
   --color-sunken: var(--ui-sunken);
   --color-shell: var(--ui-shell);
+  --color-shell-rail: var(--ui-shell-rail);
   --color-line: var(--ui-border);
   --color-line-subtle: var(--ui-border-subtle);
   --color-line-strong: var(--ui-border-strong);
@@ -23,12 +24,15 @@
   --color-trust-soft: var(--ui-trust-soft);
   --color-trust-line: var(--ui-trust-line);
   --color-on-trust: var(--ui-on-trust);
+  --color-web: var(--ui-web);
+  --color-web-soft: var(--ui-web-soft);
   --color-sun: var(--ui-sun);
   --color-flag-red: var(--ui-flag-red);
   --color-danger: var(--ui-danger-text);
   --color-danger-soft: var(--ui-danger-soft);
   --color-warning: var(--ui-warning-text);
   --color-warning-soft: var(--ui-warning-soft);
+  --color-warning-pending: var(--ui-warning-pending);
   --color-focus: var(--ui-focus);
   --color-viz-1: var(--ui-viz-1);
   --color-viz-2: var(--ui-viz-2);
@@ -66,6 +70,12 @@
   :focus-visible {
     outline: 2px solid var(--ui-focus);
     outline-offset: 2px;
+  }
+
+  /* Text fields already have a border; the black focus ring sits outside it. */
+  :is(input, textarea, select):focus,
+  :is(input, textarea, select):focus-visible {
+    outline: none;
   }
 }
 
@@ -242,8 +252,68 @@
   animation: ui-glyph-pop 350ms var(--ui-ease-out);
 }
 
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ui-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ui-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+@keyframes ui-dialog-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+@keyframes ui-tooltip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* Boîte de dialogue : le fond s'estompe, la boîte monte de 8px (Radix attend la fin de l'animation avant de démonter). */
+.ui-dialog-overlay[data-state='open'] {
+  animation: ui-fade-in var(--ui-dur-base) var(--ui-ease-out);
+}
+.ui-dialog-overlay[data-state='closed'] {
+  animation: ui-fade-out var(--ui-dur-exit) ease forwards;
+}
+.ui-dialog[data-state='open'] {
+  animation: ui-dialog-in var(--ui-dur-base) var(--ui-ease-out);
+}
+.ui-dialog[data-state='closed'] {
+  animation: ui-dialog-out var(--ui-dur-exit) ease forwards;
+}
+
+/* Info-bulle : apparition rapide, disparition immédiate. */
+.ui-tooltip {
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+}
+.ui-tooltip[data-state='delayed-open'] {
+  animation: ui-tooltip-in var(--ui-dur-fast) var(--ui-ease-out);
+}
+
 /* Mouvement réduit : plus de déplacement ni de flou, l'opacité et les couleurs restent animées. */
 @media (prefers-reduced-motion: reduce) {
+  .ui-dialog[data-state='open'] {
+    animation-name: ui-fade-in;
+  }
+  .ui-dialog[data-state='closed'] {
+    animation-name: ui-fade-out;
+  }
+  .ui-tooltip[data-state='delayed-open'] {
+    animation: none;
+  }
   .ui-enter {
     animation: none;
   }
