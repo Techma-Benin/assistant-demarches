@@ -96,7 +96,8 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
     if (!el) return;
     event.preventDefault();
     const box = el.getBoundingClientRect();
-    const top = window.scrollY + box.top - Math.max(0, (window.innerHeight - box.height) / 2);
+    const visible = window.innerHeight - 104;
+    const top = window.scrollY + box.top - Math.max(0, (visible - box.height) / 2);
     window.scrollTo({ top, behavior: 'smooth' });
     window.history.replaceState(null, '', `#${id}`);
   };
@@ -190,26 +191,26 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
       </div>
 
       <main>
-        <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
+        <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip lg:flex lg:min-h-[calc(100svh-104px)] lg:flex-col lg:justify-center lg:py-[clamp(12px,3svh,40px)]')}>
           <div className="mx-auto mb-8 flex max-w-[1320px] flex-wrap items-end justify-between gap-x-8 gap-y-2 px-5 md:mb-10 md:px-8">
             <h2 {...rv(0)} id="documents-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
               Un document ? Voici comment l’obtenir.
             </h2>
-            <p {...rv(1)} className="m-0 max-w-[40ch] text-[17px] text-ink-muted">
+            <p {...rv(1)} className="m-0 max-w-[40ch] lg:max-w-none text-[17px] text-ink-muted">
               Choisissez-en un : l’assistant vous accompagne jusqu’au dépôt.
             </p>
           </div>
           <div {...rv(2)}>
             <DocumentCarousel items={SHOWCASE} disabled={disabled} onAsk={ask} />
           </div>
-          <Bridge to="fonctionnement" className="mt-8 text-ink">
+          <Bridge to="fonctionnement" className="mt-8 text-ink lg:mt-[clamp(8px,2.5svh,32px)]">
             Vous savez ce qu’il vous faut ? Voyez comment l’assistant s’en occupe
           </Bridge>
         </section>
 
-        <section id="fonctionnement" ref={howRef} aria-labelledby="how-title" className={cn(sectionPad, 'lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
+        <section id="fonctionnement" ref={howRef} aria-labelledby="how-title" className={cn(sectionPad, 'lg:flex lg:min-h-[calc(100svh-104px)] lg:flex-col lg:justify-center lg:py-[clamp(12px,3svh,40px)]')}>
           <div className="mx-auto max-w-[1320px] px-5 md:px-8">
-            <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-10">
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-10 lg:mb-[clamp(12px,3svh,40px)]">
               <h2 {...rv(0)} id="how-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
                 Trois étapes. Vous décidez à chaque fois.
               </h2>
@@ -225,7 +226,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
                     className={cn(
                       'relative overflow-hidden rounded-card',
                       ['h-[320px]', 'h-[480px]', 'h-[440px]'][i],
-                      'md:h-[clamp(440px,52svh,520px)]',
+                      'md:h-[clamp(440px,52svh,520px)] lg:h-[clamp(180px,calc(100svh-560px),520px)]',
                       i === 2 ? 'bg-(--home-field-green)' : 'bg-sunken',
                     )}
                   >
@@ -249,7 +250,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
                 </li>
               ))}
             </ol>
-            <Bridge to="themes" className="mt-8 text-ink">
+            <Bridge to="themes" className="mt-8 text-ink lg:mt-[clamp(8px,2.5svh,32px)]">
               Prêt ? Trouvez votre démarche
             </Bridge>
           </div>
@@ -257,7 +258,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
         <CatalogueSection disabled={disabled} onAsk={ask} />
 
-        <section id="garanties" ref={trustRef} aria-labelledby="trust-title" className={sectionPad}>
+        <section id="garanties" ref={trustRef} aria-labelledby="trust-title" className={cn(sectionPad, 'lg:flex lg:min-h-[calc(100svh-104px)] lg:flex-col lg:justify-center lg:py-[clamp(12px,3svh,40px)]')}>
           <NeverShowcase />
         </section>
 
