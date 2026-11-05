@@ -27,8 +27,10 @@ describe('Modèles', () => {
     expect(within(items[1]).queryByText('Actif')).not.toBeInTheDocument();
     expect(within(items[1]).getByRole('button', { name: 'Activer Mistral Small' })).toBeInTheDocument();
     expect(within(items[0]).getByText('Groq Llama')).toBeInTheDocument();
-    expect(within(items[0]).getByText('Discussion')).toBeInTheDocument();
-    expect(within(items[1]).getByText('Discussion')).toBeInTheDocument();
+    expect(within(items[0]).queryByText('Discussion')).not.toBeInTheDocument();
+    expect(within(items[1]).queryByText('Discussion')).not.toBeInTheDocument();
+    expect(items[0].querySelector('[data-model-mark="discussion"] svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(items[1].querySelector('[data-model-mark="discussion"] svg')).toBeTruthy();
     expect(within(items[0]).getByText('llama-3.3-70b-versatile')).toBeInTheDocument();
   });
 
@@ -230,7 +232,10 @@ describe('Modèles', () => {
         call.method === 'GET' ? json({ items: [groq, { ...whisper, active: voiceActive }], nextCursor: null }) : undefined,
     );
     render(<ModelsPage />);
-    expect(await screen.findByText('Transcription')).toBeInTheDocument();
+    const voiceRow = (await screen.findAllByRole('listitem')).find((item) => within(item).queryByText('Whisper'))!;
+    expect(within(voiceRow).getByRole('heading', { name: 'Whisper' })).toBeInTheDocument();
+    expect(within(voiceRow).queryByText('Transcription')).not.toBeInTheDocument();
+    expect(voiceRow.querySelector('[data-model-mark="transcription"] svg')).toHaveAttribute('aria-hidden', 'true');
     await userEvent.click(await screen.findByRole('button', { name: 'Activer Whisper' }));
     await waitFor(() => expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(1));
     expect(calls.find((c) => c.method === 'PUT')!.body).toEqual({ ...whisper, active: true });
