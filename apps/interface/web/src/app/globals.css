@@ -285,6 +285,31 @@ html:has([data-home]) {
   }
 }
 
+/* Right-hand queue filter: one flat translucent gray, blurred. No gradient. */
+.queue-filter-glass {
+  color: var(--ui-text);
+  background: rgb(120 128 138 / 0.48);
+  -webkit-backdrop-filter: blur(22px);
+  backdrop-filter: blur(22px);
+  border: 1px solid rgb(255 255 255 / 0.38);
+  animation: queue-filter-in 220ms var(--ui-ease-drawer);
+}
+.queue-filter-glass input[type='date']:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+@keyframes queue-filter-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .queue-filter-glass {
+    animation: none;
+  }
+}
+
 @keyframes bridge-nudge {
   0%,
   100% {
