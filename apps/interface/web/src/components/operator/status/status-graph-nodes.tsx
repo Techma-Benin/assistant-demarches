@@ -1,7 +1,7 @@
 'use client';
 
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import Link from 'next/link';
 import { AssistantMark } from './assistant-mark';
 
@@ -36,8 +36,24 @@ export function HubNode(_props: NodeProps) {
 
 export function BranchNode({ data }: NodeProps) {
   const { href, labelledBy, children } = data as BranchNodeData;
+  const dragged = useRef(false);
   const body = href ? (
-    <Link href={href} className="op-status-card">
+    <Link
+      href={href}
+      className="op-status-card"
+      draggable={false}
+      onPointerDown={() => {
+        dragged.current = false;
+      }}
+      onPointerMove={(event) => {
+        if (event.buttons !== 0 && (event.movementX !== 0 || event.movementY !== 0)) {
+          dragged.current = true;
+        }
+      }}
+      onClick={(event) => {
+        if (dragged.current) event.preventDefault();
+      }}
+    >
       {children}
     </Link>
   ) : (

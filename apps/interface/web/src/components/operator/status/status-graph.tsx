@@ -12,19 +12,19 @@ import {
 import '@xyflow/react/dist/style.css';
 import { cn } from '@techma/ui';
 import { Cpu, Landmark, Plug, type LucideIcon } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { OperatorStatus } from '@/lib/operator/api';
 import { formatDate } from '../ui';
 import {
   ADMIN_CHIPS_EXTRA,
   CARD_HEIGHT,
+  CARD_WIDTH,
   buildStatusGraphElements,
   STATUS_GRAPH_FLOW_MIN_REM,
   statusGraphFlowMinHeight,
   statusGraphHeight,
-  statusGraphLayoutWidth,
   statusGraphNodeExtent,
-  statusGraphTranslateExtent,
+  STACK_BREAK,
 } from './status-graph-layout';
 import { statusGraphNodeTypes, type BranchNodeData } from './status-graph-nodes';
 import './status-graph.css';
@@ -86,7 +86,7 @@ function StatusGraphFlow({
   height: number;
   adminHasChips: boolean;
 }) {
-  const layoutWidth = statusGraphLayoutWidth(width);
+  const layoutWidth = Math.max(CARD_WIDTH, Math.floor(width));
   const connected = useMemo(
     () => connectedAdministrations(status.administrations),
     [status.administrations],
@@ -203,8 +203,8 @@ function StatusGraphFlow({
 
   const layoutKey = useMemo(
     () =>
-      `${layoutWidth}-${adminHasChips}-${status.model?.id ?? 'none'}-${status.mcpServers.length}`,
-    [adminHasChips, layoutWidth, status.model?.id, status.mcpServers.length],
+      `${width < STACK_BREAK ? 'stack' : 'row'}-${adminHasChips}-${status.model?.id ?? 'none'}-${status.mcpServers.length}`,
+    [adminHasChips, status.mcpServers.length, status.model?.id, width],
   );
 
   const contentKey = useMemo(
@@ -258,14 +258,7 @@ function StatusGraphFlow({
     setEdges(layoutEdges);
   }, [contentKey, layoutKey, layoutNodesEdges, setEdges, setNodes]);
 
-  const nodeDragExtent = useMemo(
-    () => statusGraphNodeExtent(width, height, adminHasChips),
-    [adminHasChips, height, width],
-  );
-  const viewportExtent = useMemo(
-    () => statusGraphTranslateExtent(width, height),
-    [height, width],
-  );
+  const nodeDragExtent = useMemo(() => statusGraphNodeExtent(width, height), [height, width]);
 
   return (
     <ReactFlow
@@ -289,7 +282,6 @@ function StatusGraphFlow({
       autoPanOnNodeDrag={false}
       preventScrolling
       nodeExtent={nodeDragExtent}
-      translateExtent={viewportExtent}
       nodeDragThreshold={3}
       proOptions={{ hideAttribution: true }}
     >
@@ -307,35 +299,43 @@ export function StatusGraph({
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(960);
+  const [flowReady, setFlowReady] = useState(false);
   const connected = useMemo(
     () => connectedAdministrations(status.administrations),
     [status.administrations],
   );
   const adminHasChips = connected.length > 0;
-  const layoutWidth = statusGraphLayoutWidth(width);
-  const layoutHeight = statusGraphHeight(layoutWidth, adminHasChips);
+  const layoutHeight = statusGraphHeight(width, adminHasChips);
   const flowMinHeight = statusGraphFlowMinHeight(layoutHeight);
   const [paneHeight, setPaneHeight] = useState(flowMinHeight);
+
+  const applySize = useCallback((rawWidth: number, rawHeight: number) => {
+    const nextWidth = Math.max(1, Math.floor(rawWidth || 960));
+    setWidth((current) => (current === nextWidth ? current : nextWidth));
+    const nextHeight = Math.max(flowMinHeight, Math.round(rawHeight));
+    setPaneHeight((current) => (current === nextHeight ? current : nextHeight));
+  }, [flowMinHeight]);
+
+  useLayoutEffect(() => {
+    const el = shellRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      applySize(rect.width, rect.height);
+    }
+    setFlowReady(true);
+  }, [applySize]);
 
   useEffect(() => {
     const el = shellRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const applySize = (rawWidth: number, rawHeight: number) => {
-      const nextWidth = statusGraphLayoutWidth(rawWidth);
-      setWidth((current) => (current === nextWidth ? current : nextWidth));
-      const nextHeight = Math.max(flowMinHeight, Math.round(rawHeight));
-      setPaneHeight((current) => (current === nextHeight ? current : nextHeight));
-    };
     const observer = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
-      if (!rect || rect.width <= 0) return;
+      if (!rect || rect.width < 32) return;
       applySize(rect.width, rect.height);
     });
     observer.observe(el);
-    const rect = el.getBoundingClientRect();
-    applySize(rect.width || 960, rect.height);
     return () => observer.disconnect();
-  }, [flowMinHeight]);
+  }, [applySize]);
 
   const flowHeight = Math.max(flowMinHeight, paneHeight);
   const flowMinCss = `max(${layoutHeight}px, ${STATUS_GRAPH_FLOW_MIN_REM}rem)`;
@@ -351,14 +351,16 @@ export function StatusGraph({
         className="op-status-flow"
         style={{ minHeight: flowMinCss, height: flowHeight }}
       >
-        <ReactFlowProvider>
-          <StatusGraphFlow
-            status={status}
-            width={layoutWidth}
-            height={flowHeight}
-            adminHasChips={adminHasChips}
-          />
-        </ReactFlowProvider>
+        {flowReady ? (
+          <ReactFlowProvider>
+            <StatusGraphFlow
+              status={status}
+              width={width}
+              height={flowHeight}
+              adminHasChips={adminHasChips}
+            />
+          </ReactFlowProvider>
+        ) : null}
       </div>
     </section>
   );

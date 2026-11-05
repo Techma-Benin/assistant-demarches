@@ -56,29 +56,13 @@ export function statusGraphHeight(containerWidth: number, adminHasChips: boolean
   return HUB_HEIGHT + STEM + CARD_HEIGHT + ROW_GAP + CARD_HEIGHT + ROW_GAP + adminHeight + FLOW_BOTTOM_PAD;
 }
 
-const NODE_EXTENT_PAD = 8;
-
-/** Clamp draggable nodes inside the visible flow pane (top-left origin). */
+/**
+ * Visible flow pane in flow coordinates (top-left origin).
+ * Pass the raw rectangle — xyflow already subtracts each node's measured size
+ * when clamping, so shrinking this box by CARD_WIDTH would trap the rightmost
+ * card in the middle of the canvas.
+ */
 export function statusGraphNodeExtent(
-  paneWidth: number,
-  paneHeight: number,
-  adminHasChips: boolean,
-): [[number, number], [number, number]] {
-  const maxNodeHeight = adminHasChips ? CARD_HEIGHT + ADMIN_CHIPS_EXTRA : CARD_HEIGHT;
-  const maxNodeWidth = CARD_WIDTH;
-  const pad = NODE_EXTENT_PAD;
-  const innerW = Math.max(0, paneWidth - pad * 2);
-  const innerH = Math.max(0, paneHeight - pad * 2);
-  const maxX = Math.max(pad, pad + innerW - maxNodeWidth);
-  const maxY = Math.max(pad, pad + innerH - maxNodeHeight);
-  return [
-    [pad, pad],
-    [maxX, maxY],
-  ];
-}
-
-/** Viewport pan bounds: full pane so the tree stays visible with empty drag space below. */
-export function statusGraphTranslateExtent(
   paneWidth: number,
   paneHeight: number,
 ): [[number, number], [number, number]] {
@@ -171,10 +155,10 @@ export function buildStatusGraphElements(
   return { nodes, edges };
 }
 
-/** Buckets container width so ResizeObserver sub-pixel jitter does not relayout. */
+/** Buckets container width so ResizeObserver jitter does not reset dragged nodes. Never larger than the pane. */
 export function statusGraphLayoutWidth(containerWidth: number): number {
   if (containerWidth <= 0) return STACK_BREAK;
-  return Math.max(CARD_WIDTH, Math.round(containerWidth / 32) * 32);
+  return Math.max(CARD_WIDTH, Math.floor(containerWidth / 32) * 32);
 }
 
 export { ADMIN_CHIPS_EXTRA, CARD_HEIGHT, CARD_WIDTH, HUB_HEIGHT, STACK_BREAK };

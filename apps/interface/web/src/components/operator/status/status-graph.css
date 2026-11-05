@@ -13,9 +13,7 @@
   flex: 1 1 auto;
   flex-direction: column;
   width: 100%;
-  max-width: 980px;
   min-height: max(var(--op-status-flow-min, 28rem), 28rem);
-  align-self: center;
 }
 
 .op-status-flow .react-flow {
@@ -29,6 +27,12 @@
 
 .op-status-flow .react-flow__pane {
   cursor: default;
+}
+
+.op-status-flow .react-flow__node a,
+.op-status-flow .react-flow__node .op-status-card {
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .op-status-flow .react-flow__node.draggable {
