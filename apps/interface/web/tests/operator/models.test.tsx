@@ -82,7 +82,7 @@ describe('Modèles', () => {
     render(<ModelsPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'Ajouter un modèle' }));
     const form = screen.getByRole('form', { name: 'Ajouter un modèle' });
-    expect(within(form).getByText('La clé est enregistrée chiffrée. Elle ne sera plus visible ensuite.')).toBeInTheDocument();
+    expect(within(form).queryByText(/chiffrée|conserver la clé|Discussion répond|le plus courant|compatible OpenAI/)).not.toBeInTheDocument();
     await userEvent.type(within(form).getByLabelText(/^Nom/), 'Mistral Été');
     await userEvent.type(within(form).getByLabelText(/Adresse du service/), 'https://api.mistral.ai/v1');
     await userEvent.selectOptions(within(form).getByLabelText(/Protocole/), 'responses');

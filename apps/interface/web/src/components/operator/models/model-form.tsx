@@ -85,7 +85,6 @@ export function ModelForm({
             type="url"
             inputMode="url"
             autoComplete="off"
-            hint="Point d’accès compatible OpenAI, par exemple https://api.groq.com/openai/v1."
             value={values.baseUrl}
             error={errors.baseUrl}
             onChange={(e) => set('baseUrl')(e.target.value)}
@@ -94,7 +93,6 @@ export function ModelForm({
         <SelectField
           label="Protocole"
           required
-          hint="Chat Completions : le plus courant."
           value={values.protocol}
           options={PROTOCOLS}
           onChange={(e) => set('protocol')(e.target.value as ModelFormValues['protocol'])}
@@ -102,7 +100,6 @@ export function ModelForm({
         <SelectField
           label="Rôle"
           required
-          hint="Discussion répond. Transcription transcrit la voix."
           value={values.role}
           error={errors.role}
           options={ROLES}
@@ -117,11 +114,6 @@ export function ModelForm({
             autoComplete="new-password"
             spellCheck={false}
             className="select-none"
-            hint={
-              model
-                ? 'Laissez vide pour conserver la clé actuelle. Elle n’est jamais réaffichée.'
-                : 'La clé est enregistrée chiffrée. Elle ne sera plus visible ensuite.'
-            }
             value={values.apiKey}
             error={errors.apiKey}
             onCopy={(event) => event.preventDefault()}
