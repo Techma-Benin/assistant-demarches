@@ -30,10 +30,11 @@ import {
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { Button, cn } from '@techma/ui';
 import { DocumentArt, Stamp, type DocumentKind } from './DocumentArt';
+import { Bridge } from './Bridge';
 import { FitWord } from './FitWord';
 import { useReveal } from './use-reveal';
 
-type Theme = {
+export type CatalogueTheme = {
   title: string;
   description: string;
   kind: DocumentKind;
@@ -41,7 +42,7 @@ type Theme = {
   items: { name: string; about: string; question: string; icon: LucideIcon; kind?: DocumentKind }[];
 };
 
-const CATALOGUE: Theme[] = [
+export const CATALOGUE: CatalogueTheme[] = [
   {
     title: 'Identité',
     backdrop: { src: '/photos/fond-identite.jpg', size: 'cover', y: '50%' },
@@ -198,7 +199,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
             Toutes les démarches
           </h2>
           <p {...rv(2)} className="m-0 text-[clamp(17px,1.5vw,20px)] leading-normal text-on-action/85 lg:col-span-12">
-            Six thèmes, d’après les fiches officielles : choisissez une démarche, l’assistant vous dit quoi fournir.
+            Trouvez la vôtre en un clic, d’après les fiches officielles du service public.
           </p>
         </div>
 
@@ -344,6 +345,9 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
             </div>
           </div>
         </div>
+        <Bridge to="garanties" className="mt-6 text-on-action">
+          Et vos données, dans tout ça ?
+        </Bridge>
       </div>
     </section>
   );

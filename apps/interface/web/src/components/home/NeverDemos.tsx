@@ -206,13 +206,12 @@ export function NeverShowcase(): ReactNode {
   const { ref, animated, running, scene, nonce, select } = useSceneLoop();
   return (
     <div className="mx-auto grid max-w-[1320px] grid-cols-1 gap-y-8 px-5 md:px-8 lg:grid-cols-12 lg:grid-rows-[auto_1fr_auto] lg:gap-x-8 lg:gap-y-0">
-      <h2
-        id="trust-title"
-        {...rv(0)}
-        className="m-0 font-display text-[clamp(36px,4vw,52px)] font-extrabold leading-[1.02] tracking-[-0.04em] lg:col-span-5"
-      >
-        Ce que l’assistant ne fera jamais.
-      </h2>
+      <div {...rv(0)} className="lg:col-span-5">
+        <p className="m-0 mb-3 text-[14px] font-semibold uppercase tracking-[0.08em] text-trust-text">Ce que l’assistant ne fera jamais</p>
+        <h2 id="trust-title" className="m-0 font-display text-[clamp(36px,4vw,52px)] font-extrabold leading-[1.02] tracking-[-0.04em]">
+          Vos données restent à vous.
+        </h2>
+      </div>
       <div
         {...rv(1)}
         ref={ref}

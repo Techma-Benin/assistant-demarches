@@ -14,7 +14,11 @@ import { HERO_PHOTOS, HeroSlideshow } from './HeroSlideshow';
 import { AskDemo, PrepareDemo, ValidateDemo } from './HowItWorksDemos';
 import { NeverShowcase } from './NeverDemos';
 import { PromptDock } from './PromptDock';
+import { Bridge } from './Bridge';
 import { CATALOGUE_PHOTO_CREDITS, CatalogueSection } from './CatalogueSection';
+import { GuidedStart } from './GuidedStart';
+import { LiveSearch } from './LiveSearch';
+import { StickyNav, type NavLink } from './StickyNav';
 import { useReveal } from './use-reveal';
 
 export type FrontDoorProps = {
@@ -25,6 +29,14 @@ export type FrontDoorProps = {
   /** A saved conversation the visitor can go back to; shown after mount only. */
   resume?: { title: string | null; at: string; onResume: () => void };
 };
+
+const SECTIONS: NavLink[] = [
+  { id: 'commencer', label: 'Commencer' },
+  { id: 'documents', label: 'Exemples' },
+  { id: 'fonctionnement', label: 'Comment ça marche' },
+  { id: 'themes', label: 'Toutes les démarches' },
+  { id: 'garanties', label: 'Vos garanties' },
+];
 
 const SUGGESTIONS = ['Comment obtenir un casier judiciaire ?', 'Renouveler mon passeport', 'Déclarer une naissance', 'Créer mon entreprise'];
 
@@ -106,9 +118,11 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
           </a>
           <div className="flex min-w-0 items-center gap-1">
             <nav aria-label="Navigation principale" className="hidden items-center gap-1 md:flex">
-              <a href="#documents" className={navLink}>Exemples</a>
-              <a href="#fonctionnement" className={navLink}>Comment ça marche</a>
-              <a href="#themes" className={navLink}>Toutes les démarches</a>
+              {SECTIONS.slice(0, 4).map((s) => (
+                <a key={s.id} href={`#${s.id}`} className={navLink}>
+                  {s.label}
+                </a>
+              ))}
             </nav>
             <ThemeToggle />
           </div>
@@ -125,7 +139,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
             <span className="hero-word" style={{ '--d': 180 } as CSSProperties}>simplement.</span>
           </h1>
           <p style={{ '--d': 320 } as CSSProperties} className="hero-in m-0 mt-3 font-display text-[clamp(17px,min(2vw,2.6svh),24px)] font-semibold tracking-[-0.02em] text-ink-muted">
-            Quelle que soit votre démarche, commencez ici.
+            Posez votre question : l’assistant vous dit quoi fournir, combien ça coûte et où déposer.
           </p>
         </div>
 
@@ -144,6 +158,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               disabled={disabled}
               className="w-full text-left"
             />
+            <LiveSearch query={draft} disabled={disabled} onPick={submitDraft} />
           </div>
         </div>
 
@@ -170,28 +185,46 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
       </div>
 
       <main>
+        <section id="commencer" aria-labelledby="start-title" className="bg-sunken py-12 md:py-16">
+          <div className="mx-auto max-w-[1320px] px-5 md:px-8">
+            <div className="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-8">
+              <h2 id="start-title" className={cn(h2Class, 'text-[clamp(28px,3vw,42px)]')}>
+                Pas sûr de quoi demander ?
+              </h2>
+              <p className="m-0 text-[17px] text-ink-muted">Trouvez votre démarche en trois clics.</p>
+            </div>
+            <GuidedStart disabled={disabled} onAsk={ask} />
+            <Bridge to="documents" className="mt-6 text-ink">
+              Ou voyez les documents les plus demandés
+            </Bridge>
+          </div>
+        </section>
+
         <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
           <div className="mx-auto mb-8 flex max-w-[1320px] flex-wrap items-end justify-between gap-x-8 gap-y-2 px-5 md:mb-10 md:px-8">
             <h2 {...rv(0)} id="documents-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
-              Une démarche, un document.
+              Un document ? Voici comment l’obtenir.
             </h2>
             <p {...rv(1)} className="m-0 max-w-[40ch] text-[17px] text-ink-muted">
-              Choisissez un document : l’assistant vous accompagne jusqu’au dépôt.
+              Choisissez-en un : l’assistant vous accompagne jusqu’au dépôt.
             </p>
           </div>
           <div {...rv(2)}>
             <DocumentCarousel items={SHOWCASE} disabled={disabled} onAsk={ask} />
           </div>
+          <Bridge to="fonctionnement" className="mt-8 text-ink">
+            Vous savez ce qu’il vous faut ? Voyez comment l’assistant s’en occupe
+          </Bridge>
         </section>
 
         <section id="fonctionnement" ref={howRef} aria-labelledby="how-title" className={cn(sectionPad, 'lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
           <div className="mx-auto max-w-[1320px] px-5 md:px-8">
             <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-10">
               <h2 {...rv(0)} id="how-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
-                Comment ça marche
+                Trois étapes. Vous décidez à chaque fois.
               </h2>
               <p {...rv(1)} className="m-0 max-w-[40ch] text-[17px] text-ink-muted">
-                Trois étapes. Vous gardez la main à chacune.
+                Vous demandez, l’assistant prépare, vous validez.
               </p>
             </div>
             <ol className="m-0 grid list-none grid-cols-1 gap-x-4 gap-y-8 p-0 md:grid-cols-3">
@@ -226,6 +259,9 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
                 </li>
               ))}
             </ol>
+            <Bridge to="themes" className="mt-8 text-ink">
+              Prêt ? Trouvez votre démarche
+            </Bridge>
           </div>
         </section>
 
@@ -291,6 +327,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               <p className="m-0 text-[13px] font-semibold uppercase tracking-[0.08em] text-on-action/60">Sur cette page</p>
               <ul className="m-0 mt-3 list-none p-0">
                 {[
+                  ['#commencer', 'Trouver ma démarche'],
                   ['#documents', 'Documents'],
                   ['#fonctionnement', 'Comment ça marche'],
                   ['#themes', 'Toutes les démarches'],
@@ -348,6 +385,8 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
           <div className="flex-1 bg-flag-red" />
         </div>
       </footer>
+
+      <StickyNav links={SECTIONS} brandFlag={brandFlag} onAsk={goToQuestion} />
 
       <PromptDock
         anchor={heroPrompt}
