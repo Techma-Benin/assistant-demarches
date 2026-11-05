@@ -205,12 +205,14 @@
   }
 }
 
-html:has([data-home]) {
+* {
   scrollbar-width: none;
-  scroll-behavior: smooth;
 }
-html:has([data-home])::-webkit-scrollbar {
+*::-webkit-scrollbar {
   display: none;
+}
+html:has([data-home]) {
+  scroll-behavior: smooth;
 }
 
 .footer-word {
