@@ -213,21 +213,21 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
   };
 
   return (
-    <section id="themes" ref={ref} data-theme="light" aria-labelledby="themes-title" className={cn(sectionPad, 'overflow-x-clip bg-action text-on-action lg:flex lg:min-h-[calc(100svh-104px)] lg:flex-col lg:justify-center lg:py-[clamp(10px,2.5svh,32px)]')}>
+    <section id="themes" ref={ref} data-theme="light" aria-labelledby="themes-title" className={cn(sectionPad, 'overflow-x-clip bg-action text-on-action lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-8')}>
       <div className="mx-auto max-w-[1320px] px-5 md:px-8">
         {/* Decorative: the chosen theme's photo shows through the letters, fixed to the screen while the page scrolls. */}
         <div {...rv(0)}>
           <FitWord
             word="DÉMARCHES"
             max={240}
-            maxScreenHeight={0.085}
+            maxScreenHeight={0.17}
             fills={visible.map((t) => ({ backgroundImage: `url(${t.backdrop.src})`, backgroundSize: t.backdrop.size, backgroundPosition: `50% ${t.backdrop.y}` }))}
             active={selected}
             className="type-photo bg-fixed"
           />
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-4 lg:mt-[clamp(6px,1.2svh,20px)] lg:grid-cols-12 lg:items-end lg:gap-x-8">
+        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-end lg:gap-x-8">
           <div {...rv(2)} className="lg:col-span-12">
             <h2 id="themes-title" className="sr-only">
               Trouver ma démarche
@@ -238,10 +238,10 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
           </div>
         </div>
 
-        <div className="mt-8 grid grid-cols-1 gap-8 lg:mt-[clamp(12px,2.5svh,32px)] lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:gap-x-12 lg:gap-y-6">
+        <div className="mt-8 grid grid-cols-1 gap-8 lg:mt-8 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:gap-x-12 lg:gap-y-6">
           <div {...rv(3)} className="min-w-0 lg:col-span-4">
-            <div role="group" aria-label="Vous êtes" className="mb-4 flex flex-wrap items-center gap-1.5 lg:mb-[clamp(8px,1.5svh,16px)]">
-              <span className="mr-1 text-[14px] font-semibold text-on-action/70">Vous êtes</span>
+            <p className="m-0 mb-2 text-[14px] font-semibold text-on-action/70">Vous êtes</p>
+            <div role="group" aria-label="Vous êtes" className="mb-4 flex flex-wrap items-center gap-1.5">
               {AUDIENCES.map((a) => {
                 const on = audience === a.key;
                 return (
@@ -289,7 +289,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
                     onFocus={() => choose(i)}
                     className={cn(
                       'ui-press relative flex min-h-11 shrink-0 items-center justify-between gap-6 whitespace-nowrap rounded-pill border px-4 text-left text-[15px] font-semibold transition-colors duration-200',
-                      'lg:min-h-0 lg:rounded-none lg:border-0 lg:border-b lg:border-on-action/20 lg:px-0 lg:py-[clamp(4px,0.8svh,11px)] lg:font-display lg:text-[clamp(18px,min(1.7vw,2.7svh),26px)] lg:leading-[1.15] lg:tracking-[-0.03em]',
+                      'lg:rounded-none lg:border-0 lg:border-b lg:border-on-action/20 lg:px-0 lg:py-[clamp(5px,0.9svh,11px)] lg:font-display lg:text-[clamp(20px,1.7vw,26px)] lg:leading-[1.15] lg:tracking-[-0.03em]',
                       active
                         ? 'border-on-action bg-on-action text-action lg:bg-transparent lg:font-extrabold lg:text-on-action'
                         : 'border-on-action/25 text-on-action/75 hover:text-on-action lg:text-on-action/60',
@@ -336,7 +336,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
             className="min-w-0 overflow-hidden rounded-[24px] bg-canvas text-ink lg:col-span-8 lg:col-start-5 lg:row-span-2 lg:row-start-1"
           >
             <div className="grid min-h-full grid-cols-1 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-              <div aria-hidden="true" className="relative h-[220px] overflow-hidden bg-sunken md:h-auto md:min-h-[clamp(200px,30svh,420px)]">
+              <div aria-hidden="true" className="relative h-[220px] overflow-hidden bg-sunken md:h-auto md:min-h-[clamp(300px,40svh,420px)]">
                 {visible.map((t, ti) => {
                   const shown = ti === selected;
                   const docs = t.items.slice(0, 3);
@@ -403,7 +403,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
             </div>
           </div>
         </div>
-        <Bridge to="garanties" className="mt-6 text-on-action lg:mt-[clamp(2px,1svh,24px)] lg:[&>a]:min-h-8">
+        <Bridge to="garanties" className="mt-6 text-on-action">
           Et vos données, dans tout ça ?
         </Bridge>
       </div>

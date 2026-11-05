@@ -40,7 +40,7 @@ function Card({ item, field, onField }: { item: CarouselItem; field: string; onF
           {item.name}
         </p>
         <p className={cn('m-0 mt-1.5 text-[15px] leading-snug', onField ? 'text-on-trust/85' : 'text-ink-muted')}>{item.detail}</p>
-        <ul className="m-0 mt-4 flex list-none flex-col gap-2 p-0 md:mt-6 md:gap-2.5 lg:mt-[clamp(10px,2svh,24px)] lg:grid lg:grid-cols-2">
+        <ul className="m-0 mt-4 flex list-none flex-col gap-2 p-0 md:mt-6 md:gap-2.5">
           {CHECKLIST.map((c) => (
             <li
               key={c.label}
@@ -145,7 +145,7 @@ export function DocumentCarousel({ items, disabled, onAsk }: { items: CarouselIt
               aria-hidden={offset === 0 ? undefined : true}
               style={style}
               className={cn(
-                'aspect-[4/5] w-[min(84vw,760px)] justify-self-center [grid-area:s] sm:aspect-[16/10] lg:aspect-auto lg:h-[clamp(240px,calc(100svh-500px),428px)]',
+                'aspect-[4/5] w-[min(84vw,760px)] justify-self-center [grid-area:s] sm:aspect-[16/10] lg:aspect-[16/9]',
                 'transition-[transform,opacity,filter] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
                 offset !== 0 && 'blur-[2px] saturate-[0.7]',
                 distance > 1 && 'pointer-events-none',
