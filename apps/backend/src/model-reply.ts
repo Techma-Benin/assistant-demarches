@@ -20,7 +20,7 @@ export const SAFE_CONVERSATIONAL_TEXT: string[] = [];
 export const FORMAT_REMINDER =
   'Rappel de format : appelle uniquement les outils annoncés avec leur nom exact, ou fournis l’objet JSON {"blocks":[...]} dans le contenu texte assistant, sans appeler d’outil json ou final. Un texte sans fait administratif peut avoir sources: []. Tout tarif, pièce, délai ou lien doit citer une Source déjà observée (procedureId et url du résultat d’outil) ; n’invente aucune URL. Ne répète pas une action dont le résultat est déjà présent.';
 
-const ADMIN_FACT = /(?:FCFA|PS\d{5}|https?:\/\/|\d{2,}|\b(?:tarifs?|pièces|documents?|délais?|lien officiel)\b)/i;
+const ADMIN_FACT = /(?:F\s?CFA|XOF|PS\d{5}|https?:\/\/|\b\d[\d\s.,]*\s*(?:francs?|jours?|semaines?|mois|heures?)\b|\b(?:pièces?|documents?)\s+(?:requis(?:es)?|à\s+fournir|nécessaires?|exigée?s?)\s+(?:sont|:)|\bdélais?\s+(?:est|sont|:))/i;
 
 export class ModelReplyError extends Error {
   constructor(message: string, readonly reason: string) {
@@ -51,6 +51,10 @@ export function logRejectedReply(reason: string, context: Record<string, string 
     reason,
     ...Object.fromEntries(Object.entries(context).filter(([, value]) => value !== undefined)),
   }));
+}
+
+function logReplyUrlRemoved(count: number) {
+  console.error(JSON.stringify({ timestamp: new Date().toISOString(), level: "info", event: "model.reply_url_removed", count }));
 }
 
 function reject(reason: string, message: string): never {
@@ -96,6 +100,35 @@ export function draftCitesOutside(raw: string, observed: readonly Pick<Schemas["
   return false;
 }
 
+const URL_IN_TEXT = /https?:\/\/[^\s"'\\<>]+/gi;
+const MARKDOWN_LINK = /\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/gi;
+
+function removeForeignUrls(text: string, observed: readonly Pick<Schemas["Source"], "url">[]): { text: string; removed: number } {
+  const known = new Set(observed.map((item) => normalizeUrl(item.url)).filter((item): item is string => Boolean(item)));
+  const foreign = (raw: string) => {
+    const url = normalizeUrl(raw.replace(/[),.\]]+$/, ""));
+    return !url || !known.has(url);
+  };
+  let removed = 0;
+  let out = text.replace(MARKDOWN_LINK, (whole, label: string, url: string) => {
+    if (!foreign(url)) return whole;
+    removed++;
+    return label;
+  });
+  out = out.replace(URL_IN_TEXT, (match) => {
+    if (!foreign(match)) return match;
+    removed++;
+    return match.match(/[),.\]]+$/)?.[0] ?? "";
+  });
+  if (!removed) return { text, removed };
+  return { text: out.replace(/\(\s*\)/g, "").replace(/[ \t]{2,}/g, " ").trim(), removed };
+}
+
+/** Removes the URLs that are not an observed Source (a Markdown link keeps its label); observed URLs stay intact. */
+export function stripForeignUrls(text: string, observed: readonly Pick<Schemas["Source"], "url">[]): string {
+  return removeForeignUrls(text, observed).text;
+}
+
 /** Accept JSON envelopes and common fenced wrappers, never arbitrary prose. */
 export function parseModelBlocks(text: string): unknown[] {
   const payload = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
@@ -111,6 +144,11 @@ export type ReplyEvidence = {
   procedures?: Schemas["Procedure"][];
 };
 
+export const PAYMENT_CONFIRM_PREFIX = "payment.confirm.";
+export const PREPARE_REQUEST_PREFIX = "request.prepare.";
+const NOT_FOUND = /Je n[’']ai pas trouvé/;
+const MODEL_BUTTON_LABEL_MAX = 24;
+const BACKEND_BLOCK_TYPES = new Set(["fileRequest", "loginRequired", "consent", "requestCard", "caseCard"]);
 const MODEL_BLOCK_TYPES = new Set(["text", "buttons", "form"]);
 
 function parseOrWrap(replyText: string): unknown[] {
@@ -129,33 +167,52 @@ function parseOrWrap(replyText: string): unknown[] {
 
 /** Throws on malformed output or fabricated evidence so the caller can retry safely. */
 export function presentModelReply(replyText: string, evidence: ReplyEvidence): Schemas["AgentMessage"]["blocks"] {
+  let removedUrls = 0;
   try {
-    const blocks = parseOrWrap(replyText).map((block: any) => {
+    const parsed = parseOrWrap(replyText);
+    // The history shows the model the Backend's own cards, and it may copy them: they are dropped, never trusted.
+    const authored = parsed.filter((block: any) => !BACKEND_BLOCK_TYPES.has(block?.type));
+    if (!authored.length) reject("unsupported_block", "Le modèle ne produit que du texte, des boutons ou un formulaire.");
+    const blocks = authored.map((block: any) => {
       if (!MODEL_BLOCK_TYPES.has(block?.type))
         reject("unsupported_block", "Le modèle ne produit que du texte, des boutons ou un formulaire.");
       if (block.type === "text") {
-        if (typeof block.text !== "string" || !block.text.trim() || !Array.isArray(block.sources))
+        if (typeof block.text !== "string" || !block.text.trim() || (block.sources != null && !Array.isArray(block.sources)))
           reject("invalid_text_block", "Texte modèle invalide.");
         const cited = Array.isArray(block.sources) ? block.sources : [];
-        if (draftCitesOutside(block.text, evidence.sources)) reject("unobserved_source", "Source non observée.");
+        const cleaned = removeForeignUrls(block.text, evidence.sources);
+        removedUrls += cleaned.removed;
+        if (!cleaned.text.trim()) reject("empty_reply", "Réponse modèle vide après retrait des liens.");
+        if (draftCitesOutside(cleaned.text, evidence.sources)) reject("unobserved_source", "Source non observée.");
         const sources = cited.length
           ? cited.map((source: unknown) => bindObservedSource(source, evidence.sources))
-          : hasAdministrativeFact(block.text)
-            ? (evidence.sources.length ? evidence.sources : reject("admin_fact_without_source", "Fait administratif sans source."))
-            : [];
-        return { ...block, text: redact(block.text), sources };
+          : evidence.sources.length && !NOT_FOUND.test(cleaned.text)
+            // A reply written after reading a fiche rests on it, even when the wording escapes ADMIN_FACT.
+            ? evidence.sources
+            : hasAdministrativeFact(cleaned.text)
+              ? reject("admin_fact_without_source", "Fait administratif sans source.")
+              : [];
+        return { ...block, text: redact(cleaned.text), sources };
       }
+      // Payment confirmation buttons are built by the Backend only: a model copy could pay behind any label.
+      // The prepare button is built by the Backend only, from Procedure.filing: a model copy is dropped too.
+      // A label over the contract limit loses the button, not the whole reply.
+      if (block.type === "buttons" && Array.isArray(block.items))
+        return { ...block, items: block.items.filter((item: { id?: unknown; label?: unknown }) => !(typeof item?.id === "string" && (item.id.startsWith(PAYMENT_CONFIRM_PREFIX) || item.id.startsWith(PREPARE_REQUEST_PREFIX))) && !(typeof item?.label === "string" && item.label.length > MODEL_BUTTON_LABEL_MAX)) };
       return block;
-    }) as Schemas["AgentMessage"]["blocks"];
+    }).filter((block: any) => block.type !== "buttons" || !Array.isArray(block.items) || block.items.length > 0) as Schemas["AgentMessage"]["blocks"];
+    if (!blocks.length) reject("empty_reply", "Réponse modèle vide après retrait des actions réservées.");
+    if (removedUrls) logReplyUrlRemoved(removedUrls);
     return validatedBlocks(blocks);
   } catch (error) {
+    if (removedUrls) logReplyUrlRemoved(removedUrls);
     const reason = error instanceof ModelReplyError ? error.reason : error instanceof SyntaxError ? "invalid_json" : "invalid_reply";
     logRejectedReply(reason, { observedSourceCount: evidence.sources.length });
     throw error;
   }
 }
 
-const ACTION_SYSTEM_TYPES = new Set(["requestCard", "fileRequest", "consent", "loginRequired", "caseCard"]);
+const ACTION_SYSTEM_TYPES = new Set(["requestCard", "fileRequest", "consent", "loginRequired", "caseCard", "buttons"]);
 
 export function hasActionSystemBlocks(blocks: Schemas["AgentMessage"]["blocks"] = []): boolean {
   return blocks.some((block) => ACTION_SYSTEM_TYPES.has(block.type));
@@ -173,8 +230,12 @@ export function honestReplyFromSystemBlocks(systemBlocks: Schemas["AgentMessage"
   if (kinds.has("loginRequired")) text = "Une connexion est nécessaire pour continuer.";
   else if (kinds.has("consent")) text = "Une autorisation est requise pour continuer. Confirmez avec le bouton présenté par l’interface.";
   else if (kinds.has("fileRequest")) text = "Votre dossier est prêt à recevoir les pièces demandées. Ajoutez-les via le bouton prévu.";
-  else if (kinds.has("requestCard")) text = "Votre dossier a été préparé. Vérifiez la carte ci-dessous.";
+  else if (systemBlocks.some((block) => block.type === "buttons" && block.items.some((item) => item.id.startsWith(PAYMENT_CONFIRM_PREFIX))))
+    text = "Confirmez le paiement avec le bouton ci-dessous.";
+  else if (systemBlocks.some((block) => block.type === "requestCard" && block.request.status === "draft" && block.request.missing.length > 0))
+    text = "Votre dossier est en préparation. Il reste des éléments à compléter.";
   else if (kinds.has("caseCard")) text = "Le statut de votre dossier a été mis à jour.";
+  else if (kinds.has("requestCard")) text = "Votre dossier a été préparé. Vérifiez la carte ci-dessous.";
   return [{ type: "text", text, sources: [] }];
 }
 

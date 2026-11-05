@@ -59,6 +59,13 @@ export async function appendEvent(
       [event.id, conversationId, event],
     );
 }
+/** Keeps Conversation.lastMessageAt in step with the message events, in the same transaction. */
+async function touchLastMessage(db: Db, conversationId: string, time: string): Promise<void> {
+  await db.query(
+    "UPDATE backend_conversations SET body=jsonb_set(body,'{lastMessageAt}',to_jsonb($2::text),true) WHERE id=$1",
+    [conversationId, time],
+  );
+}
 export const RESUME_AFTER_CONSENT =
   "L’usager vient d’accorder l’autorisation demandée dans l’interface. Reprends l’action qui attendait cette autorisation, sans redemander ce qui a déjà été fourni.";
 export const RESUME_AFTER_LOGIN =
@@ -276,23 +283,21 @@ export class Conversations {
             "INSERT INTO backend_messages(conversation_id,id,fingerprint,body,traceparent) VALUES($1,$2,$3,$4,$5)",
             [conversationId, body.id, fingerprint(body), stored, traceparent],
           );
-          await appendEvent(
-            db,
-            conversationId,
-            envelope(
-              {
-                kind: "message.received",
-                conversationId,
-                message: {
-                  id: stored.id,
-                  content: stored.content,
-                  transcript: null,
-                  sentAt: stored.sentAt,
-                },
+          const received = envelope(
+            {
+              kind: "message.received",
+              conversationId,
+              message: {
+                id: stored.id,
+                content: stored.content,
+                transcript: null,
+                sentAt: stored.sentAt,
               },
-              traceparent,
-            ),
+            },
+            traceparent,
           );
+          await appendEvent(db, conversationId, received);
+          await touchLastMessage(db, conversationId, received.time);
         }
         return {
           messageId: body.id,
@@ -559,6 +564,7 @@ export class Conversations {
     validate("AgentMessage", message);
     const event = envelope({ kind: "message.sent", conversationId, message }, traceparent);
     await appendEvent(db, conversationId, event);
+    await touchLastMessage(db, conversationId, event.time);
     await db.query(
       "UPDATE backend_messages SET processed_at=now(),last_error=CASE WHEN $3 THEN last_error ELSE NULL END WHERE conversation_id=$1 AND id=$2",
       [conversationId, inputId, preserveError],

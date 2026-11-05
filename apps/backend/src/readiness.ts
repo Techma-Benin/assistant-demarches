@@ -2,6 +2,9 @@ import type { Pool } from "pg";
 import { providerReason } from "./diagnostics.js";
 import { catalog } from "./tooling.js";
 
+/** Model probe budget: a loaded machine needs more than 1.5 s. */
+const MODEL_PROBE_TIMEOUT_MS = 5000;
+
 export type ComponentStatus = { ok: boolean; detail: string };
 export type ReadyReport = {
   status: "ok" | "degraded";
@@ -53,7 +56,7 @@ async function probeProvider(
   try {
     const response = await fetch(modelsUrl, {
       redirect: "error",
-      signal: timeout(1500),
+      signal: timeout(MODEL_PROBE_TIMEOUT_MS),
       headers: apiKey ? { Authorization: "Bearer " + apiKey } : {},
     });
     let message: unknown;
