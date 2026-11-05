@@ -40,6 +40,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/identity/npi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Démarrer la connexion par NPI (simulée)
+         * @description Sans authentification. Disponible seulement si le Backend est lancé avec NPI_SIMULATED_LOGIN=on, sinon 404. Le NPI est transmis une seule fois ici, jamais dans la conversation. Le défi dure 5 minutes.
+         */
+        post: operations["createNpiChallenge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/identity/npi/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Vérifier le code reçu et ouvrir la session (simulée)
+         * @description Sans authentification (le défi tient lieu de jeton). Disponible seulement si NPI_SIMULATED_LOGIN=on, sinon 404. En simulation, tout code numérique est accepté. La session dure 12 h et compte comme un usager connecté.
+         */
+        post: operations["verifyNpiChallenge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/conversations": {
         parameters: {
             query?: never;
@@ -578,6 +618,29 @@ export interface components {
             /** Format: date-time */
             sentAt: string;
         };
+        NpiChallenge: {
+            /** @description Jeton de défi signé, valable 5 minutes. Ne donne accès à aucune route. */
+            challengeToken: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description Vrai tant que le code n’est pas réellement envoyé par SMS. */
+            simulated: boolean;
+        };
+        NpiChallengeInput: {
+            /** @description Numéro personnel d’identification, chiffres seulement. */
+            npi: string;
+        };
+        NpiSession: {
+            /** @description JWT usager connecté signé par le Backend, 12 h. */
+            token: string;
+            /** Format: date-time */
+            expiresAt: string;
+            simulated: boolean;
+        };
+        NpiVerifyInput: {
+            challengeToken: string;
+            code: string;
+        };
         OfficialId: string;
         Problem: {
             type: string;
@@ -722,6 +785,150 @@ export interface operations {
             };
             /** @description Requête invalide (INVALID_REQUEST). */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createNpiChallenge: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NpiChallengeInput"];
+            };
+        };
+        responses: {
+            /** @description Succès. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NpiChallenge"];
+                };
+            };
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Défi invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Connexion par NPI simulée désactivée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Trop de tentatives depuis cette adresse (RATE_LIMITED), avec Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    verifyNpiChallenge: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NpiVerifyInput"];
+            };
+        };
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NpiSession"];
+                };
+            };
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Défi expiré ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Connexion par NPI simulée désactivée (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Trop de tentatives depuis cette adresse (RATE_LIMITED), avec Retry-After. */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Conversation — Backend → Interface usager",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "description": "Jeton Bearer : jeton invité (POST /v1/guest-sessions) ou jeton usager Keycloak (rôle citizen, audience techma-backend). Les routes marquées « connexion requise » renvoient 401 LOGIN_REQUIRED avec un jeton invité."
   },
   "servers": [
@@ -96,6 +96,196 @@
           },
           "400": {
             "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/npi": {
+      "post": {
+        "operationId": "createNpiChallenge",
+        "summary": "Démarrer la connexion par NPI (simulée)",
+        "description": "Sans authentification. Disponible seulement si le Backend est lancé avec NPI_SIMULATED_LOGIN=on, sinon 404. Le NPI est transmis une seule fois ici, jamais dans la conversation. Le défi dure 5 minutes.",
+        "tags": [
+          "Conversation"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NpiChallengeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NpiChallenge"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Défi invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Connexion par NPI simulée désactivée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de tentatives depuis cette adresse (RATE_LIMITED), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/npi/verify": {
+      "post": {
+        "operationId": "verifyNpiChallenge",
+        "summary": "Vérifier le code reçu et ouvrir la session (simulée)",
+        "description": "Sans authentification (le défi tient lieu de jeton). Disponible seulement si NPI_SIMULATED_LOGIN=on, sinon 404. En simulation, tout code numérique est accepté. La session dure 12 h et compte comme un usager connecté.",
+        "tags": [
+          "Conversation"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NpiVerifyInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NpiSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Défi expiré ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Connexion par NPI simulée désactivée (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de tentatives depuis cette adresse (RATE_LIMITED), avec Retry-After.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2509,6 +2699,88 @@
           "id",
           "content",
           "sentAt"
+        ]
+      },
+      "NpiChallenge": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "challengeToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Jeton de défi signé, valable 5 minutes. Ne donne accès à aucune route."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "simulated": {
+            "type": "boolean",
+            "description": "Vrai tant que le code n’est pas réellement envoyé par SMS."
+          }
+        },
+        "required": [
+          "challengeToken",
+          "expiresAt",
+          "simulated"
+        ]
+      },
+      "NpiChallengeInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "npi": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Numéro personnel d’identification, chiffres seulement."
+          }
+        },
+        "required": [
+          "npi"
+        ]
+      },
+      "NpiSession": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "JWT usager connecté signé par le Backend, 12 h."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "simulated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt",
+          "simulated"
+        ]
+      },
+      "NpiVerifyInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "challengeToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$"
+          }
+        },
+        "required": [
+          "challengeToken",
+          "code"
         ]
       },
       "OfficialId": {

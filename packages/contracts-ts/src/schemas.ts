@@ -386,6 +386,29 @@ export interface components {
             /** Format: date-time */
             expiresAt: string;
         };
+        NpiChallengeInput: {
+            /** @description Numéro personnel d’identification, chiffres seulement. */
+            npi: string;
+        };
+        NpiChallenge: {
+            /** @description Jeton de défi signé, valable 5 minutes. Ne donne accès à aucune route. */
+            challengeToken: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description Vrai tant que le code n’est pas réellement envoyé par SMS. */
+            simulated: boolean;
+        };
+        NpiVerifyInput: {
+            challengeToken: string;
+            code: string;
+        };
+        NpiSession: {
+            /** @description JWT usager connecté signé par le Backend, 12 h. */
+            token: string;
+            /** Format: date-time */
+            expiresAt: string;
+            simulated: boolean;
+        };
         Conversation: {
             id: components["schemas"]["ConversationId"];
             channel: components["schemas"]["Channel"];
