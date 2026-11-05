@@ -141,10 +141,11 @@ describe('FrontDoor', () => {
     expect(container.querySelector('header a svg')).toBeNull();
   });
 
-  it('keeps the mandatory footer lines', () => {
+  it('keeps the page anonymous and without the AI disclaimer', () => {
     render(<FrontDoor onAsk={() => {}} config={base} />);
-    expect(screen.getByText('L’IA peut se tromper.')).toBeInTheDocument();
-    expect(screen.getByText(/Assistant Démarches est une proposition de Techma Bénin/)).toBeInTheDocument();
+    expect(screen.queryByText(/L’IA peut se tromper/)).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Techma/i);
+    expect(screen.getByText('© 2026 Assistant Démarches')).toBeInTheDocument();
   });
 
   it('credits every photo in the footer', () => {

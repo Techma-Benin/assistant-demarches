@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { CitationMark, FlagGlyph, cn } from '@techma/ui';
-import { ShieldCheck } from 'lucide-react';
+import { LockKeyhole, ShieldCheck } from 'lucide-react';
 
 type StampKind = 'never' | 'consent';
 const STAMP_TEXT: Record<StampKind, string> = { never: 'JAMAIS', consent: 'ACCORD\nREQUIS' };
@@ -127,15 +127,6 @@ function ProgressFill({ animated, running }: { animated: boolean; running: boole
   );
 }
 
-function AgentHeader() {
-  return (
-    <div className="flex items-center gap-2">
-      <FlagGlyph decorative width={22} height={16} className="shrink-0" />
-      <span className="text-[15px] font-semibold text-ink">Assistant Démarches</span>
-    </div>
-  );
-}
-
 function ActCard() {
   return (
     <div className="flex items-center gap-3 rounded-[18px] bg-white px-4 py-3 text-black shadow-[0_1px_2px_rgb(13_13_15/0.04)]">
@@ -153,15 +144,15 @@ function Stamp({ kind }: { kind: StampKind }) {
   return (
     <div
       className={cn(
-        'flex size-[150px] items-center justify-center rounded-full border-[6px] border-ink text-ink lg:size-[196px]',
-        consent ? 'bg-sun' : 'bg-surface/90',
+        'flex size-[112px] items-center justify-center rounded-full border-[5px] border-ink text-ink shadow-[0_10px_30px_rgb(0_0_0/0.18)] lg:size-[136px]',
+        consent ? 'bg-sun' : 'bg-surface',
       )}
     >
-      <div className="flex size-[122px] flex-col items-center justify-center gap-2 rounded-full border-2 border-ink lg:size-[160px]">
-        <span className="whitespace-pre-line text-center font-display text-[26px] font-extrabold uppercase leading-[1] tracking-[0.03em] lg:text-[34px]">
+      <div className="flex size-[90px] flex-col items-center justify-center gap-1.5 rounded-full border-2 border-ink lg:size-[110px]">
+        <span className="whitespace-pre-line text-center font-display text-[19px] font-extrabold uppercase leading-[1] tracking-[0.03em] lg:text-[23px]">
           {STAMP_TEXT[kind]}
         </span>
-        <span aria-hidden="true" className="block h-[3px] w-14 bg-current" />
+        <span aria-hidden="true" className="block h-[3px] w-10 bg-current" />
       </div>
     </div>
   );
@@ -173,24 +164,37 @@ function StampScene({ scene, animated, running }: { scene: Scene; animated: bool
     animated ? { animation: `${name} ${ms}ms ${ease} ${delay}ms both`, animationPlayState: play } : undefined;
   return (
     <div
-      className="relative h-full"
+      className="flex h-full flex-col overflow-hidden rounded-[28px] border border-line bg-sunken"
       style={animated ? { animation: `nv-out 300ms ease-out ${SCENE_MS - 400}ms both`, animationPlayState: play } : undefined}
     >
-      <div className="absolute right-0 top-0 max-w-[88%] lg:max-w-[470px]" style={anim('nv-hit', 90, 1450, 'ease-in-out')}>
-        <div
-          className="rounded-[34px] bg-sunken px-6 py-5 font-display text-[22px] font-semibold leading-[1.2] tracking-[-0.02em] lg:px-8 lg:py-6 lg:text-[30px]"
-          style={anim('nv-rise', 450, 300, 'ease-out')}
-        >
-          {scene.user}
+      <div className="flex items-center justify-between gap-3 border-b border-line bg-surface px-5 py-3.5">
+        <span className="flex items-center gap-2">
+          <FlagGlyph decorative width={22} height={16} className="shrink-0" />
+          <span className="text-[15px] font-semibold text-ink">Assistant Démarches</span>
+        </span>
+        <span className="flex items-center gap-1.5 rounded-pill bg-trust-soft px-3 py-1 text-[13px] font-semibold text-trust-text">
+          <LockKeyhole aria-hidden="true" className="size-3.5" />
+          Connexion sécurisée
+        </span>
+      </div>
+      <div className="relative flex flex-1 flex-col justify-end gap-6 px-5 pb-8 pt-24 lg:px-8 lg:pt-28">
+        <div className="relative ml-auto max-w-[78%]" style={anim('nv-hit', 90, 1450, 'ease-in-out')}>
+          <div
+            className="rounded-[24px] rounded-br-[8px] bg-action px-5 py-4 font-display text-[19px] font-semibold leading-[1.25] tracking-[-0.01em] text-on-action lg:text-[24px]"
+            style={anim('nv-rise', 450, 300, 'ease-out')}
+          >
+            {scene.user}
+          </div>
+          <div className="absolute -top-[116px] right-2 rotate-[12deg] lg:-top-[142px] lg:right-4" style={anim('nv-stamp', 260, 1200, 'cubic-bezier(0.3, 1.4, 0.5, 1)')}>
+            <Stamp kind={scene.stamp} />
+          </div>
         </div>
-      </div>
-      <div className="absolute right-3 top-[56px] -rotate-[14deg] lg:right-9 lg:top-[72px]" style={anim('nv-stamp', 260, 1200, 'cubic-bezier(0.3, 1.4, 0.5, 1)')}>
-        <Stamp kind={scene.stamp} />
-      </div>
-      <div className="absolute bottom-0 left-0 flex max-w-[520px] flex-col gap-3" style={anim('nv-rise', 450, 2100, 'ease-out')}>
-        <AgentHeader />
-        <p className="m-0 text-[18px] font-medium leading-[1.4] text-ink lg:text-[24px]">{scene.agent}</p>
-        {scene.extra && <ActCard />}
+        <div className="flex max-w-[88%] flex-col gap-3" style={anim('nv-rise', 450, 2100, 'ease-out')}>
+          <div className="rounded-[24px] rounded-bl-[8px] bg-surface px-5 py-4 text-[16px] font-medium leading-[1.45] text-ink shadow-[0_1px_3px_rgb(0_0_0/0.06)] lg:text-[19px]">
+            {scene.agent}
+          </div>
+          {scene.extra && <ActCard />}
+        </div>
       </div>
     </div>
   );

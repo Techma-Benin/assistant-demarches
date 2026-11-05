@@ -1,11 +1,11 @@
-const INK = 'var(--color-ink)';
-const MUTED = 'var(--color-ink-muted)';
-const PAPER = 'var(--color-surface)';
-const SUNKEN = 'var(--color-sunken)';
-const LINE = 'var(--color-line)';
-const TRUST = 'var(--color-trust)';
+const INK = 'var(--ui-text)';
+const MUTED = 'var(--ui-text-muted)';
+const PAPER = 'var(--ui-surface)';
+const SUNKEN = 'var(--ui-sunken)';
+const LINE = 'var(--ui-border)';
+const TRUST = 'var(--ui-trust)';
 
-const SUBTLE = 'var(--color-ink-subtle)';
+const SUBTLE = 'var(--ui-text-subtle)';
 
 export type DocumentKind = 'acte-naissance' | 'casier' | 'passeport' | 'cni' | 'entreprise' | 'permis' | 'residence';
 
@@ -380,7 +380,7 @@ function Divider({ y, label }: { y: number; label: string }) {
 /** Flat paper-document drawings; colours come from CSS variables so dark mode follows. */
 export function DocumentArt({ kind, className, stamped }: { kind: DocumentKind; className?: string; stamped?: boolean }) {
   return (
-    <svg viewBox="0 0 210 297" className={className} aria-hidden="true" focusable="false">
+    <svg viewBox="0 0 210 297" data-theme="light" className={className} aria-hidden="true" focusable="false">
       <Body kind={kind} />
       {stamped && (
         <g transform="translate(112 176) rotate(-12 50 50) scale(0.78)">

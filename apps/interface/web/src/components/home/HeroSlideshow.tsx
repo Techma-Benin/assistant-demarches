@@ -96,7 +96,7 @@ export function HeroSlideshow({ photos = HERO_PHOTOS, className }: { photos?: He
               src={photo.src}
               alt={photo.alt}
               fill
-              sizes="(min-width: 1320px) 740px, (min-width: 1024px) 58vw, (min-width: 768px) calc(100vw - 48px), calc(100vw - 24px)"
+              sizes="(min-width: 1200px) 1152px, (min-width: 768px) calc(100vw - 48px), calc(100vw - 24px)"
               quality={85}
               preload={i === 0}
               loading={i === 0 ? 'eager' : undefined}

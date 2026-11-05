@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, ArrowUp, ChevronLeft, ChevronRight, Mic, Pause, Paperclip, Play } from 'lucide-react';
+import { ArrowRight, Check, ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { Button, cn } from '@techma/ui';
 import { DocumentArt, type DocumentKind } from './DocumentArt';
@@ -20,65 +20,42 @@ function signedOffset(i: number, index: number, count: number) {
   return raw > count / 2 ? raw - count : raw;
 }
 
-function Card({ item, field, onField, onSend, disabled }: { item: CarouselItem; field: string; onField: boolean; onSend?: () => void; disabled?: boolean }) {
+const CHECKLIST = [
+  { label: 'Les pièces à fournir', dot: 'bg-(--home-field-green)' },
+  { label: 'Le coût', dot: 'bg-sun' },
+  { label: 'Le délai', dot: 'bg-flag-red' },
+  { label: 'Où déposer le dossier', dot: 'bg-ink' },
+];
+
+function Card({ item, field, onField }: { item: CarouselItem; field: string; onField: boolean }) {
   return (
     <div className={cn('relative size-full overflow-hidden rounded-[24px] md:rounded-[32px]', field)}>
       <div aria-hidden="true" className="absolute -right-[12%] top-1/2 aspect-square h-[120%] -translate-y-1/2 rounded-full bg-canvas/25" />
       <DocumentArt
         kind={item.kind}
-        className="absolute bottom-[20%] right-[10%] h-[52%] w-auto rotate-[4deg] drop-shadow-[0_18px_30px_rgb(0_0_0/0.18)] sm:bottom-auto sm:right-[8%] sm:top-[10%] sm:h-[78%]"
+        className="absolute bottom-[4%] right-[5%] h-[30%] w-auto rotate-[4deg] drop-shadow-[0_18px_30px_rgb(0_0_0/0.18)] sm:bottom-auto sm:top-[10%] sm:h-[78%]"
       />
-      <div className="absolute left-5 right-5 top-5 sm:right-auto sm:max-w-[52%] md:left-8 md:top-8">
+      <div className="absolute left-5 right-5 top-5 sm:right-auto sm:max-w-[50%] md:left-8 md:top-8">
         <p className={cn('m-0 font-display text-[clamp(24px,3vw,40px)] font-extrabold leading-[1.02] tracking-[-0.035em]', onField ? 'text-on-trust' : 'text-ink')}>
           {item.name}
         </p>
-        <p className={cn('m-0 mt-2 hidden text-[15px] leading-snug sm:block', onField ? 'text-on-trust/85' : 'text-ink-muted')}>{item.detail}</p>
-      </div>
-      <div
-        className={cn(
-          'absolute inset-x-4 bottom-4 flex items-center gap-2 rounded-[20px] bg-surface/95 p-2 pl-4 shadow-[0_10px_30px_rgb(0_0_0/0.14)] md:inset-x-auto md:bottom-8 md:left-8',
-          onSend ? 'md:w-[min(66%,500px)]' : 'md:w-[min(56%,420px)]',
-        )}
-      >
-        {onSend ? (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={onSend}
-            aria-label={`Envoyer à l’assistant : ${item.question}`}
-            className="m-0 min-h-11 min-w-0 flex-1 cursor-pointer truncate rounded-[12px] text-left text-[15px] text-ink underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed"
-          >
-            {item.question}
-          </button>
-        ) : (
-          <p className="m-0 min-w-0 flex-1 truncate text-[15px] text-ink">{item.question}</p>
-        )}
-        {!onSend && (
-          <>
-            <span aria-hidden="true" className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-ink-muted">
-              <Paperclip className="size-5" />
-            </span>
-            <span aria-hidden="true" className="hidden size-9 shrink-0 items-center justify-center rounded-full text-ink-muted sm:inline-flex">
-              <Mic className="size-5" />
-            </span>
-          </>
-        )}
-        {onSend ? (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={onSend}
-            aria-label={`Envoyer à l’assistant : ${item.question}`}
-            className="ui-press group inline-flex size-12 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-pill bg-action text-[15px] font-semibold text-on-action shadow-[0_6px_18px_rgb(0_0_0/0.22)] ring-4 ring-action/15 hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-5"
-          >
-            <span className="hidden sm:inline">Envoyer</span>
-            <ArrowUp aria-hidden="true" className="size-5 transition-transform duration-200 group-enabled:group-hover:-translate-y-0.5" />
-          </button>
-        ) : (
-          <span aria-hidden="true" className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-action text-on-action">
-            <ArrowUp className="size-5" />
-          </span>
-        )}
+        <p className={cn('m-0 mt-1.5 text-[15px] leading-snug', onField ? 'text-on-trust/85' : 'text-ink-muted')}>{item.detail}</p>
+        <ul className="m-0 mt-4 flex list-none flex-col gap-2 p-0 md:mt-6 md:gap-2.5">
+          {CHECKLIST.map((c) => (
+            <li
+              key={c.label}
+              className={cn(
+                'flex w-fit items-center gap-2.5 rounded-pill py-1.5 pl-1.5 pr-4 text-[14px] font-semibold md:text-[16px]',
+                onField ? 'bg-on-trust/15 text-on-trust' : 'bg-surface text-ink shadow-[0_2px_10px_rgb(0_0_0/0.06)]',
+              )}
+            >
+              <span aria-hidden="true" className={cn('inline-flex size-6 shrink-0 items-center justify-center rounded-full text-white', c.dot, c.dot === 'bg-ink' && 'text-canvas')}>
+                <Check className="size-3.5" strokeWidth={3} />
+              </span>
+              {c.label}
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );
@@ -185,13 +162,7 @@ export function DocumentCarousel({ items, disabled, onAsk }: { items: CarouselIt
                   <Card item={item} field={field} onField={field === FIELDS[0]} />
                 </button>
               ) : (
-                <Card
-                  item={item}
-                  field={field}
-                  onField={field === FIELDS[0]}
-                  disabled={disabled}
-                  onSend={offset === 0 ? () => onAsk(item.question) : undefined}
-                />
+                <Card item={item} field={field} onField={field === FIELDS[0]} />
               )}
             </div>
           );
@@ -215,9 +186,8 @@ export function DocumentCarousel({ items, disabled, onAsk }: { items: CarouselIt
       </div>
 
       <div className="mx-auto mt-6 flex w-[min(84vw,760px)] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-        <p aria-live="polite" className="m-0 min-w-0 text-[17px] leading-snug">
-          <span className="font-semibold">« {current.question} »</span>{' '}
-          <span className="text-ink-muted">Pièces, coût et délai, d’après la fiche officielle.</span>
+        <p aria-live="polite" className="m-0 min-w-0 text-[18px] font-semibold leading-snug md:truncate">
+          {current.question}
         </p>
         <Button
           disabled={disabled}

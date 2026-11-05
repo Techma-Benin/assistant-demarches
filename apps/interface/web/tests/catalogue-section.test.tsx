@@ -5,9 +5,8 @@ import { CatalogueSection } from '@/components/home/CatalogueSection';
 
 const setup = (disabled = false) => {
   const onAsk = vi.fn();
-  const onAskOther = vi.fn();
-  render(<CatalogueSection disabled={disabled} onAsk={onAsk} onAskOther={onAskOther} />);
-  return { onAsk, onAskOther, user: userEvent.setup() };
+  render(<CatalogueSection disabled={disabled} onAsk={onAsk} />);
+  return { onAsk, user: userEvent.setup() };
 };
 
 describe('CatalogueSection', () => {
@@ -26,7 +25,8 @@ describe('CatalogueSection', () => {
     await user.click(screen.getByRole('tab', { name: /Voyage/ }));
     expect(screen.getByRole('tab', { name: /Voyage/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: /Identité/ })).toHaveAttribute('aria-selected', 'false');
-    expect(screen.getByRole('heading', { level: 3 })).toHaveTextContent('Voyage');
+    expect(screen.getByRole('tabpanel')).toHaveTextContent(/Laissez-passer/);
+    expect(screen.queryByRole('heading', { level: 3 })).toBeNull();
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName(/Voyage/);
   });
 
@@ -67,9 +67,11 @@ describe('CatalogueSection', () => {
     expect(screen.getByRole('tab', { name: /Voyage/ })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('« Poser ma question » calls onAskOther', async () => {
-    const { user, onAskOther } = setup();
-    await user.click(screen.getByRole('button', { name: 'Poser ma question' }));
-    expect(onAskOther).toHaveBeenCalledOnce();
+  it('shows the description of the theme being pointed at', async () => {
+    const { user } = setup();
+    await user.hover(screen.getByRole('tab', { name: /Justice/ }));
+    expect(screen.getByText(/Prouver votre situation devant la loi/)).toBeInTheDocument();
+    await user.hover(screen.getByRole('button', { name: /Casier judiciaire/ }));
+    expect(screen.getByText(/Indique si vous avez des condamnations/)).toBeInTheDocument();
   });
 });

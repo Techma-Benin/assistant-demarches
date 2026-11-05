@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, Info, MessageSquare } from 'lucide-react';
+import { ArrowRight, MessageSquare } from 'lucide-react';
 import { useRef, useState, type CSSProperties } from 'react';
 import { BrandMark, Chip, FlagGlyph, ThemeToggle, cn } from '@techma/ui';
 import { Composer } from '@/components/chat/Composer';
@@ -26,7 +26,7 @@ export type FrontDoorProps = {
   resume?: { title: string | null; at: string; onResume: () => void };
 };
 
-const SUGGESTIONS = ['Obtenir un casier judiciaire', 'Renouveler mon passeport', 'Déclarer une naissance', 'Créer mon entreprise'];
+const SUGGESTIONS = ['Comment obtenir un casier judiciaire ?', 'Renouveler mon passeport', 'Déclarer une naissance', 'Créer mon entreprise'];
 
 const SHOWCASE: CarouselItem[] = [
   { name: 'Acte de naissance', kind: 'acte-naissance', detail: 'État civil', question: 'Comment obtenir un acte de naissance ?' },
@@ -114,73 +114,63 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
           </div>
         </header>
 
-      <section
-        id="top"
-        aria-labelledby="hero-title"
-        className="mx-auto flex w-full max-w-[1320px] flex-1 flex-col lg:grid lg:grid-cols-12 lg:gap-x-8 lg:px-8 lg:pb-6"
-      >
-        <div className="contents lg:col-span-5 lg:flex lg:flex-col lg:justify-center lg:py-6">
-          <div className="px-5 text-center lg:px-0 lg:text-left">
-            <h1
-              id="hero-title"
-              className="m-0 mt-2 font-display text-[clamp(40px,min(7vw,10svh),104px)] font-extrabold leading-[0.95] tracking-[-0.045em] md:mt-4 lg:mt-0 lg:text-[clamp(44px,min(4.6vw,8.5svh),70px)]"
-            >
-              <span className="block whitespace-nowrap">
-                <span className="hero-word">Vos</span>{' '}
-                <span className="hero-word" style={{ '--d': 90 } as CSSProperties}>démarches,</span>
-              </span>
-              <span className="block whitespace-nowrap">
-                <span className="hero-word" style={{ '--d': 180 } as CSSProperties}>simplement.</span>
-              </span>
-            </h1>
-            <p style={{ '--d': 320 } as CSSProperties} className="hero-in m-0 mt-3 font-display text-[clamp(17px,min(2vw,2.6svh),24px)] font-semibold tracking-[-0.02em] text-ink-muted lg:mt-4">
-              Quelle que soit votre démarche, commencez ici.
-            </p>
-          </div>
+      <section id="top" aria-labelledby="hero-title" className="flex flex-1 flex-col">
+        <div className="px-5 text-center md:px-10">
+          <h1
+            id="hero-title"
+            className="m-0 mt-2 text-balance font-display text-[clamp(40px,min(7vw,10svh),104px)] font-extrabold leading-[0.95] tracking-[-0.045em] md:mt-4"
+          >
+            <span className="hero-word">Vos</span>{' '}
+            <span className="hero-word" style={{ '--d': 90 } as CSSProperties}>démarches,</span>{' '}
+            <span className="hero-word" style={{ '--d': 180 } as CSSProperties}>simplement.</span>
+          </h1>
+          <p style={{ '--d': 320 } as CSSProperties} className="hero-in m-0 mt-3 font-display text-[clamp(17px,min(2vw,2.6svh),24px)] font-semibold tracking-[-0.02em] text-ink-muted">
+            Quelle que soit votre démarche, commencez ici.
+          </p>
+        </div>
 
-          <div className="mt-5 px-3 md:mt-7 md:px-6 lg:mt-7 lg:px-0">
-            <div ref={heroPrompt} style={{ '--d': 440 } as CSSProperties} className="hero-in relative z-10 mx-auto -mb-8 w-full max-w-[880px] md:-mb-9 lg:mb-0">
-              <Composer
-                variant="compact"
-                label="Votre question"
-                placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
-                value={draft}
-                onValueChange={setDraft}
-                onSend={submitDraft}
-                onFiles={onFiles}
-                staged={staged}
-                hint={false}
-                disabled={disabled}
-                className="w-full text-left"
-              />
-            </div>
-          </div>
-
-          <div className="order-last flex flex-col items-center gap-2 pb-4 pt-3 text-center lg:order-none lg:items-start lg:pb-0 lg:pt-5 lg:text-left">
-            {resume && <ResumeLine {...resume} />}
-            <div className="ui-scrollbar-none flex w-full max-w-full gap-2 overflow-x-auto px-5 md:flex-wrap md:justify-center md:overflow-visible lg:justify-start lg:px-0">
-              {SUGGESTIONS.map((s, i) => (
-                <Chip
-                  key={s}
-                  disabled={disabled}
-                  onClick={() => ask(s)}
-                  style={{ '--d': 560 + i * 70 } as CSSProperties}
-                  className="hero-in shrink-0"
-                >
-                  {s}
-                </Chip>
-              ))}
-            </div>
-            <p style={{ '--d': 860 } as CSSProperties} className="hero-in m-0 px-5 text-[14px] text-ink-muted md:text-[15px] lg:px-0">Sans connexion pour poser une question · Chaque information administrative cite sa fiche officielle</p>
+        <div className="mt-5 px-3 md:mt-7 md:px-6">
+          <div ref={heroPrompt} style={{ '--d': 440 } as CSSProperties} className="hero-in relative z-10 mx-auto -mb-8 w-full max-w-[880px] md:-mb-9">
+            <Composer
+              variant="compact"
+              label="Votre question"
+              placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
+              value={draft}
+              onValueChange={setDraft}
+              onSend={submitDraft}
+              onFiles={onFiles}
+              staged={staged}
+              hint={false}
+              disabled={disabled}
+              className="w-full text-left"
+            />
           </div>
         </div>
 
-        <HeroSlideshow className="min-h-[260px] flex-1 lg:col-span-7 lg:min-h-[420px] lg:px-0 lg:py-2" />
+        <HeroSlideshow className="min-h-[260px] flex-1 lg:min-h-[360px] lg:max-w-[1200px]" />
+
+        <div className="flex flex-col items-center gap-2 pb-4 pt-3 text-center md:px-10 md:pb-5">
+          {resume && <ResumeLine {...resume} />}
+          <div className="ui-scrollbar-none flex w-full max-w-full gap-2 overflow-x-auto px-5 md:flex-wrap md:justify-center md:overflow-visible md:px-0">
+            {SUGGESTIONS.map((s, i) => (
+              <Chip
+                key={s}
+                disabled={disabled}
+                onClick={() => ask(s)}
+                style={{ '--d': 560 + i * 70 } as CSSProperties}
+                className="hero-in shrink-0"
+              >
+                {s}
+              </Chip>
+            ))}
+          </div>
+          <p style={{ '--d': 860 } as CSSProperties} className="hero-in m-0 px-5 text-[14px] text-ink-muted md:text-[15px]">Sans connexion pour poser une question · Chaque information administrative cite sa fiche officielle</p>
+        </div>
       </section>
       </div>
 
       <main>
-        <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip')}>
+        <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
           <div className="mx-auto mb-8 flex max-w-[1320px] flex-wrap items-end justify-between gap-x-8 gap-y-2 px-5 md:mb-10 md:px-8">
             <h2 {...rv(0)} id="documents-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
               Une démarche, un document.
@@ -194,7 +184,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
           </div>
         </section>
 
-        <section id="fonctionnement" ref={howRef} aria-labelledby="how-title" className={sectionPad}>
+        <section id="fonctionnement" ref={howRef} aria-labelledby="how-title" className={cn(sectionPad, 'lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
           <div className="mx-auto max-w-[1320px] px-5 md:px-8">
             <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-10">
               <h2 {...rv(0)} id="how-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
@@ -208,6 +198,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               {STEPS.map((step, i) => (
                 <li key={step.name} {...rv(2 + i)} className="flex min-w-0 flex-col">
                   <div
+                    data-theme={i === 2 ? undefined : 'dark'}
                     className={cn(
                       'relative overflow-hidden rounded-card',
                       ['h-[320px]', 'h-[480px]', 'h-[440px]'][i],
@@ -238,7 +229,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
           </div>
         </section>
 
-        <CatalogueSection disabled={disabled} onAsk={ask} onAskOther={goToQuestion} />
+        <CatalogueSection disabled={disabled} onAsk={ask} />
 
         <section id="garanties" ref={trustRef} aria-labelledby="trust-title" className={sectionPad}>
           <NeverShowcase />
@@ -246,9 +237,27 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
       </main>
 
+      <section id="demander" aria-label="Poser ma question" className="cta-zoom overflow-x-clip bg-canvas pb-14 pt-2 md:pb-20">
+        <div className="mx-auto max-w-[1320px] px-5 md:px-8">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={goToQuestion}
+            aria-label="Poser ma question"
+            className="footer-cta group block w-full rounded-[24px] text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="flex items-center justify-between gap-4 text-[clamp(18px,2vw,26px)] font-semibold text-ink-muted">
+              Une démarche en tête ?
+              <span className="hidden text-[16px] font-medium text-ink-subtle md:inline">L’assistant vous répond, d’après la fiche officielle.</span>
+            </span>
+            <FitWord word="Demandez maintenant →" className="footer-word" />
+          </button>
+        </div>
+      </section>
+
       <footer id="site-footer" className="relative overflow-hidden bg-action text-on-action">
         <div className="mx-auto max-w-[1320px] px-5 pt-6 md:px-8 md:pt-10">
-          <div className="grid grid-cols-2 gap-x-8 gap-y-10 py-10 md:grid-cols-12 md:py-14">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-10 py-8 md:grid-cols-12 md:py-10">
             <div className="col-span-2 md:col-span-4">
               <p className="m-0 flex items-center gap-2 text-[20px] font-bold">
                 <FlagGlyph decorative width={26} height={19} className="shrink-0" />
@@ -259,7 +268,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               </p>
             </div>
 
-            <nav aria-label="Démarches fréquentes" className="min-w-0 md:col-span-3">
+            <nav aria-label="Démarches fréquentes" className="min-w-0 md:col-span-4">
               <p className="m-0 text-[13px] font-semibold uppercase tracking-[0.08em] text-on-action/60">Démarches fréquentes</p>
               <ul className="m-0 mt-3 list-none p-0">
                 {SHOWCASE.slice(0, 5).map((d) => (
@@ -278,7 +287,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               </ul>
             </nav>
 
-            <nav aria-label="Sur cette page" className="min-w-0 md:col-span-2">
+            <nav aria-label="Sur cette page" className="min-w-0 md:col-span-4">
               <p className="m-0 text-[13px] font-semibold uppercase tracking-[0.08em] text-on-action/60">Sur cette page</p>
               <ul className="m-0 mt-3 list-none p-0">
                 {[
@@ -310,21 +319,10 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               </ul>
             </nav>
 
-            <div className="col-span-2 md:col-span-3">
-              <div className="rounded-card bg-on-action/[0.07] p-5">
-                <p className="m-0 flex items-center gap-2 text-[16px] font-bold">
-                  <Info aria-hidden="true" className="size-5 shrink-0" />
-                  L’IA peut se tromper.
-                </p>
-                <p className="m-0 mt-2 text-[15px] leading-relaxed text-on-action/75">
-                  Vérifiez toujours les informations importantes sur le portail officiel avant de déposer.
-                </p>
-              </div>
-            </div>
           </div>
 
           <div className="flex flex-col gap-2 border-t border-on-action/15 py-5 text-[14px] text-on-action/70 md:flex-row md:items-start md:justify-between md:gap-8">
-            <p className="m-0 shrink-0 py-3">© 2026 Techma Bénin · Assistant Démarches est une proposition de Techma Bénin.</p>
+            <p className="m-0 shrink-0 py-3">© 2026 Assistant Démarches</p>
             <details className="group min-w-0 md:max-w-[56%] md:text-right">
               <summary className="inline-flex min-h-11 cursor-pointer list-none items-center font-semibold text-on-action/80 hover:text-on-action [&::-webkit-details-marker]:hidden">
                 Crédits photos
@@ -344,21 +342,6 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
           </div>
         </div>
 
-        <div className="mx-auto max-w-[1320px] px-5 pb-8 md:px-8 md:pb-10">
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={goToQuestion}
-            aria-label="Poser ma question"
-            className="footer-cta group block w-full rounded-[24px] text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-on-action disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="flex items-center justify-between gap-4 text-[clamp(18px,2vw,26px)] font-semibold text-on-action/80">
-              Une démarche en tête ?
-              <span className="hidden text-[16px] font-medium text-on-action/60 md:inline">L’assistant vous répond, d’après la fiche officielle.</span>
-            </span>
-            <FitWord word="Demandez maintenant →" className="footer-word" />
-          </button>
-        </div>
         <div aria-hidden="true" className="relative flex h-1.5">
           <div className="flex-1 bg-(--home-field-green)" />
           <div className="flex-1 bg-sun" />
@@ -368,7 +351,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
       <PromptDock
         anchor={heroPrompt}
-        hideNear={['site-footer']}
+        hideNear={['demander', 'site-footer']}
         value={draft}
         onValueChange={setDraft}
         onSubmit={submitDraft}
