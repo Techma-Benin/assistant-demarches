@@ -123,7 +123,8 @@ describe('operator layout gate', () => {
     expect(activeLink.className).toContain('md:bg-transparent');
     expect(activeLink.className.split(' ')).not.toContain('bg-canvas');
     expect(activeLink.className).toContain('md:w-full');
-    expect(activeLink.className).toContain('md:aspect-square');
+    expect(activeLink.className).toContain('md:min-h-12');
+    expect(activeLink.className).not.toContain('md:aspect-square');
     expect(activeLink.className).not.toContain('md:size-12');
     expect(activeLink.className).not.toContain('md:mx-auto');
     const nav = screen.getByRole('navigation', { name: 'Navigation principale' });

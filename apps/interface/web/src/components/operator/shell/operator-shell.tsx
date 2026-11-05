@@ -287,8 +287,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                         active
                           ? 'text-ink max-md:bg-canvas md:bg-transparent'
                           : 'text-ink-muted hover:bg-sunken/80 hover:text-ink dark:hover:bg-sunken/60',
-                        collapsed &&
-                          'md:aspect-square md:w-full md:min-h-0 md:max-h-none md:min-w-0 md:justify-center md:px-0 md:py-0',
+                        collapsed && 'md:w-full md:min-w-0 md:justify-center md:px-0',
                       )}
                     >
                       <NavIcon icon={icon} />
