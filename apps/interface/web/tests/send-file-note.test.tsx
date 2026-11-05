@@ -133,3 +133,49 @@ describe('sendFile with a note', () => {
     ]);
   });
 });
+
+describe('sendFiles with a form answer as follow-up', () => {
+  const answer = { content: { type: 'interaction' as const, actionId: 'identity', value: '{"a":"b"}' }, display: 'Formulaire envoyé' };
+  const user = (r: { current: ReturnType<typeof useConversation> }) =>
+    r.current.state.timeline as Extract<(typeof r.current.state.timeline)[number], { kind: 'user' }>[];
+
+  it('posts the file, then the answer after acceptance, in one batch; sentAt taken at send time', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-05T10:00:00Z'));
+    let release!: () => void;
+    const client = fakeClient({
+      uploadFile: vi.fn(async () => {
+        vi.setSystemTime(new Date('2026-11-05T10:00:30Z'));
+        return { id: 'fil_1', mimeType: 'application/pdf' };
+      }),
+      sendMessage: vi.fn((_c: string, input: { content: { type: string } }) =>
+        input.content.type === 'interaction' ? Promise.resolve({}) : new Promise((resolve) => (release = () => resolve({})))),
+    });
+    const { result } = await setup(client);
+    act(() => result.current.sendFiles([pdf()], undefined, undefined, 'acte', answer));
+    const [fileEntry, formEntry] = user(result);
+    expect(formEntry).toMatchObject({ display: 'Formulaire envoyé', sentAt: '2026-11-05T10:00:00.000Z' });
+    expect(formEntry.batchId).toBeDefined();
+    expect(formEntry.batchId).toBe(fileEntry.batchId);
+    await waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+    expect(contents(client)[0].content).toEqual({ type: 'file', fileId: 'fil_1', documentType: 'acte' });
+    act(() => release());
+    await waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(2));
+    expect(contents(client)[1]).toMatchObject({ id: formEntry.id, content: answer.content, sentAt: '2026-11-05T10:00:00.000Z' });
+    vi.useRealTimers();
+  });
+
+  it('keeps the answer waiting, not lost, when the upload fails, and posts it after a retry', async () => {
+    const client = fakeClient({
+      uploadFile: vi.fn().mockRejectedValueOnce(new Error('net')).mockResolvedValue({ id: 'fil_1', mimeType: 'application/pdf' }),
+    });
+    const { result } = await setup(client);
+    act(() => result.current.sendFiles([pdf()], undefined, undefined, 'acte', answer));
+    await waitFor(() => expect(user(result)[0]).toMatchObject({ delivery: 'uploadFailed' }));
+    expect(client.sendMessage).not.toHaveBeenCalled();
+    expect(user(result)[1]).toMatchObject({ display: 'Formulaire envoyé', delivery: 'sending' });
+    act(() => result.current.retry(user(result)[0].id));
+    await waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(2));
+    expect(contents(client)[1].content).toEqual(answer.content);
+  });
+});

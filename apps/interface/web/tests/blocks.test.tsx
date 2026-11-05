@@ -1,6 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BlockRenderer, type BlockRendererProps } from '@/components/blocks/BlockRenderer';
 import { navigate } from '@/lib/navigate';
 import { noopConsent } from '@/lib/consent';
@@ -109,7 +109,7 @@ describe('form block', () => {
 describe('fileRequest block', () => {
   const pdf = () => new File(['%PDF-1.4'], 'acte.pdf', { type: 'application/pdf' });
 
-  it('an add button per line sends the file with the documentType of the line', async () => {
+  it('an add button per line hands the file with the documentType of the line', async () => {
     const props = show(fileRequestBlock());
     const region = screen.getByText('Extrait d’acte de naissance').closest('[data-request-id]')!;
     expect(region).toHaveAttribute('data-request-id', exampleRequest.id);
@@ -117,6 +117,19 @@ describe('fileRequest block', () => {
     expect(input.accept).toBe('application/pdf,image/jpeg');
     await userEvent.upload(input, pdf());
     expect(props.onFiles).toHaveBeenCalledWith([expect.any(File)], 'extrait-acte-naissance');
+    // Nothing is received until the composer sends the file.
+    expect(screen.queryByText(/Reçue/)).toBeNull();
+  });
+
+  it('shows a file waiting in the composer, with nothing to add', () => {
+    show(fileRequestBlock(), { fileRequestPending: { name: 'acte.pdf', size: 8 } });
+    expect(screen.getByText('Prête à envoyer : acte.pdf')).toBeInTheDocument();
+    expect(screen.queryByText(/Reçue/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ajouter cette pièce' })).toBeNull();
+  });
+
+  it('shows the file as received once the composer sent it', () => {
+    show(fileRequestBlock(), { fileRequestSent: { name: 'acte.pdf', size: 8 } });
     expect(screen.getByText(/Reçue : acte\.pdf/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ajouter cette pièce' })).toBeNull();
   });
@@ -142,10 +155,18 @@ describe('fileRequest block', () => {
 });
 
 describe('loginRequired block', () => {
-  it('shows the reason and navigates to the login with the current path and the conversation', async () => {
+  const session = (body: unknown, delayed = false) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => (delayed ? new Promise<Response>(() => {}) : Promise.resolve(new Response(JSON.stringify(body), { status: 200 })))),
+    );
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('Keycloak: shows the reason and navigates to the login with the current path and the conversation', async () => {
+    session({ user: null, signIn: 'oidc' });
     show(loginRequiredBlock);
     expect(screen.getByText('Connectez-vous pour déposer ce dossier.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Se connecter pour continuer' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Se connecter pour continuer' }));
     expect(navigate).toHaveBeenCalledTimes(1);
     const url = new URL(vi.mocked(navigate).mock.calls[0][0], 'http://localhost');
     expect(url.pathname).toBe('/auth/login');
@@ -153,10 +174,44 @@ describe('loginRequired block', () => {
     expect(url.searchParams.get('conversationId')).toBe(CONVERSATION_ID);
   });
 
-  it('omits the conversation id when there is none', async () => {
+  it('Keycloak: omits the conversation id when there is none', async () => {
+    session({ user: null, signIn: 'oidc' });
     show(loginRequiredBlock, { conversationId: null });
-    await userEvent.click(screen.getByRole('button', { name: 'Se connecter pour continuer' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Se connecter pour continuer' }));
     expect(new URL(vi.mocked(navigate).mock.calls[0][0], 'http://localhost').searchParams.has('conversationId')).toBe(false);
+  });
+
+  it('NPI: shows the reason then the sign-in form instead of the Keycloak button', async () => {
+    session({ user: null, signIn: 'npi' });
+    show(loginRequiredBlock);
+    expect(screen.getByText('Connectez-vous pour déposer ce dossier.')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Votre NPI')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Se connecter pour continuer' })).toBeNull();
+  });
+
+  it('already signed in: only « Connexion effectuée. », no form and no button', async () => {
+    session({ user: { name: 'Usager', roles: ['citizen'] }, signIn: 'npi' });
+    show(loginRequiredBlock);
+    expect(await screen.findByText('Connexion effectuée.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Votre NPI')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('while the session loads: no form and no button', () => {
+    session(null, true);
+    show(loginRequiredBlock);
+    expect(screen.getByText('Connectez-vous pour déposer ce dossier.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Votre NPI')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('an older block shows no form and no button', async () => {
+    session({ user: null, signIn: 'npi' });
+    show(loginRequiredBlock, { interactive: false });
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByLabelText('Votre NPI')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });
 
@@ -184,6 +239,17 @@ describe('requestCard block', () => {
     show(requestCardBlock());
     expect(screen.getByText(exampleRequest.title)).toBeInTheDocument();
     expect(screen.getByText(/Tout est prêt pour le dépôt/)).toBeInTheDocument();
+  });
+
+  it('says the dossier is filed once submitted, even with nothing missing', () => {
+    show(requestCardBlock({ ...exampleRequest, status: 'submitted', missing: [] }));
+    expect(screen.getByText('Dossier déposé. Détail dans « Vos informations ».')).toBeInTheDocument();
+    expect(screen.queryByText(/Tout est prêt/)).toBeNull();
+  });
+
+  it('says the request is cancelled', () => {
+    show(requestCardBlock({ ...exampleRequest, status: 'cancelled', missing: [] }));
+    expect(screen.getByText('Demande annulée.')).toBeInTheDocument();
   });
 });
 

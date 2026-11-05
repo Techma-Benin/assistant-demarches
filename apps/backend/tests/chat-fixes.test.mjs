@@ -401,7 +401,7 @@ test("D: wanting to pay shows the amount and a button; the click pays once; anot
   assert.equal(h.called("request.pay").length, 0);
   assert.equal(h.called("case.status").length, 1);
   const buttons = (await h.lastBlocks(conversation.id)).find((block) => block.type === "buttons");
-  assert.deepEqual(buttons.items, [{ id: "payment.confirm." + card.id, label: "Confirmer 1 000 FCFA" }]);
+  assert.deepEqual(buttons.items, [{ id: "payment.confirm." + card.id, label: "Confirmer 1 000 FCFA" }, { id: "payment.later." + card.id, label: "Plus tard" }]);
   assert.ok(buttons.items[0].label.length <= 24);
 
   await h.send(h.user, conversation.id, { type: "interaction", actionId: "payment.confirm." + card.id, value: null });
@@ -623,4 +623,471 @@ test("a reply written after reading a fiche keeps its source, even without a sta
   assert.deepEqual(presentModelReply(reply("Les documents à fournir incluent notamment un formulaire."), evidence)[0].sources, [source]);
   assert.deepEqual(presentModelReply(reply("Je n’ai pas trouvé de démarche validée."), evidence)[0].sources, []);
   assert.deepEqual(presentModelReply(reply("Les documents à fournir incluent notamment un formulaire."), { sources: [], requests: [] })[0].sources, []);
+});
+
+test("sources kept without a stated fact are limited to the latest fiche, and repeated ones are dropped", async () => {
+  const { presentModelReply } = await import("../dist/apps/backend/src/model-reply.js");
+  const a = { procedureId: "PS00373", url: "https://service-public.bj/a", retrievedAt: "2026-11-01T00:00:00.000Z" };
+  const b = { procedureId: "PS00260", url: "https://service-public.bj/b", retrievedAt: "2026-11-01T00:00:00.000Z" };
+  const reply = (text) => JSON.stringify({ blocks: [{ type: "text", text, sources: [] }] });
+  const evidence = { sources: [a, b, a], requests: [] };
+  assert.deepEqual(presentModelReply(reply("Connectez-vous pour continuer."), evidence)[0].sources, [a]);
+  assert.deepEqual(presentModelReply(reply("Le coût est de 1 900 FCFA."), evidence)[0].sources, [a, b]);
+});
+
+test("a reply reporting the user's own cases may state an amount without a catalogue source", async () => {
+  const { presentModelReply, ModelReplyError } = await import("../dist/apps/backend/src/model-reply.js");
+  const reply = JSON.stringify({ blocks: [{ type: "text", text: "Votre demande attend le paiement de 1 900 FCFA.", sources: [] }] });
+  assert.deepEqual(presentModelReply(reply, { sources: [], requests: [], connectorData: true })[0].sources, []);
+  assert.throws(() => presentModelReply(reply, { sources: [], requests: [] }), (error) => error instanceof ModelReplyError && error.reason === "admin_fact_without_source");
+});
+
+// ---------------------------------------------------------------- G. guaranteed form and payment button
+
+const formBlocks = (blocks) => blocks.filter((block) => block.type === "form");
+const createsThen = (reply, before = []) => { let turn = 0; return { async generate() { turn++; return turn <= before.length ? before[turn - 1] : turn === before.length + 1 ? toolCall("request.create", { procedureId: procedure.id }) : reply; } }; };
+const caseOf = (requestId, status, amountFcfa = 1900) => ({ ...fixtures.schemas.Case, id: identifier("cas"), requestId, status, payment: { ...fixtures.schemas.Case.payment, amountFcfa, status: status === "awaiting_payment" ? "pending" : "paid", reference: null, paidAt: null } });
+/** Adds a later message carrying a case card to a conversation. */
+async function addCaseMessage(h, conversation, owner, card) {
+  const message = await h.send(owner, conversation.id, { type: "text", text: "Où en suis-je ?" });
+  await transaction(h.pool, (db) => h.conversations.complete(db, conversation.id, message.id, [{ type: "text", text: "Voici l’état.", sources: [] }, { type: "caseCard", case: card }], tp));
+}
+const submitReturns = (h, value) => {
+  const base = h.tooling.call;
+  h.tooling.call = async (url, auth, name, ...rest) => {
+    if (name === "request.submit") { await base(url, auth, name, ...rest); return { structuredContent: value, content: [{ type: "text", text: JSON.stringify(value) }] }; }
+    return base(url, auth, name, ...rest);
+  };
+};
+
+test("G: request.create with empty fields and a model without form gets the Backend form, typed from the schema", async (t) => {
+  const h = await harness(t);
+  const conversation = await h.conversations.create(h.user, { locale: "fr" }, identifier("key"));
+  await h.mandate(conversation.id);
+  await h.send(h.user, conversation.id, { type: "text", text: "Je veux déposer un casier judiciaire" });
+  const lenient = { ...procedure, filing: { ...procedure.filing, formSchema: { ...procedure.filing.formSchema, required: ["profession"], properties: { ...procedure.filing.formSchema.properties, situationMatrimoniale: { type: "string", format: "date" } } } } };
+  const base = h.tooling.call;
+  h.tooling.call = async (url, auth, name, ...rest) => name === "procedures.get" ? (await base(url, auth, name, ...rest), { structuredContent: lenient, content: [{ type: "text", text: JSON.stringify(lenient) }] }) : base(url, auth, name, ...rest);
+  await h.process(createsThen(final("Votre dossier est ouvert."), [toolCall("procedures.get", { procedureId: procedure.id })]), conversation.id);
+  const blocks = await h.lastBlocks(conversation.id);
+  const forms = formBlocks(blocks);
+  assert.equal(forms.length, 1);
+  const request = blocks.find((block) => block.type === "requestCard").request;
+  assert.equal(forms[0].id, "request.form." + request.id);
+  assert.deepEqual(forms[0].fields.map((field) => [field.name, field.required, field.type]), [
+    ["adresseDomicile", false, "text"],
+    ["profession", true, "text"],
+    ["nombreEnfantsACharge", false, "number"],
+    ["situationMatrimoniale", false, "date"],
+  ]);
+  assert.ok(blocks.findIndex((block) => block.type === "requestCard") < blocks.findIndex((block) => block.type === "form"), "the card comes before the form");
+});
+
+test("G: an unknown procedure in the turn gives text fields, all required", async (t) => {
+  const h = await harness(t);
+  const conversation = await h.conversations.create(h.user, { locale: "fr" }, identifier("key"));
+  await h.mandate(conversation.id);
+  await h.send(h.user, conversation.id, { type: "text", text: "Je veux déposer un casier judiciaire" });
+  await h.process(createsThen(final("Votre dossier est ouvert.")), conversation.id);
+  const forms = formBlocks(await h.lastBlocks(conversation.id));
+  assert.equal(forms.length, 1);
+  assert.equal(forms[0].fields.every((field) => field.required && field.type === "text"), true);
+});
+
+test("G: the model's own form is replaced by the Backend's, one form only", async (t) => {
+  const h = await harness(t);
+  const conversation = await h.conversations.create(h.user, { locale: "fr" }, identifier("key"));
+  await h.mandate(conversation.id);
+  await h.send(h.user, conversation.id, { type: "text", text: "Je veux déposer un casier judiciaire" });
+  const own = { text: JSON.stringify({ blocks: [{ type: "text", text: "Remplissez ceci.", sources: [] }, { type: "form", id: "mon-formulaire", fields: [{ name: "x", label: "X", required: true, type: "text" }] }] }), calls: [] };
+  await h.process(createsThen(own), conversation.id);
+  const forms = formBlocks(await h.lastBlocks(conversation.id));
+  assert.equal(forms.length, 1);
+  assert.match(forms[0].id, /^request\.form\./);
+  assert.equal(forms[0].fields.some((field) => field.name === "x"), false);
+});
+
+test("G: filled fields or a pending consent: no form", async (t) => {
+  const h = await harness(t);
+  const full = (cid) => draftOf(cid, undefined, { adresseDomicile: "Cotonou", profession: "Maçon", nombreEnfantsACharge: 1, situationMatrimoniale: "Marié" });
+  const draftOf = h.draftOf;
+  const conversation = await h.conversations.create(h.user, { locale: "fr" }, identifier("key"));
+  await h.mandate(conversation.id);
+  await h.send(h.user, conversation.id, { type: "text", text: "Je veux déposer un casier judiciaire" });
+  const base = h.tooling.call;
+  h.tooling.call = async (url, auth, name, args, context, ...rest) => name === "request.create" ? (await base(url, auth, name, args, context, ...rest), { structuredContent: full(context.conversationId), content: [{ type: "text", text: "{}" }] }) : base(url, auth, name, args, context, ...rest);
+  await h.process(createsThen(final("Votre dossier est complet.")), conversation.id);
+  assert.equal(formBlocks(await h.lastBlocks(conversation.id)).length, 0);
+
+  // No mandate: the consent is pending, the request is never created, and the Backend adds no form.
+  const guestless = await harness(t);
+  const second = await guestless.conversations.create(guestless.user, { locale: "fr" }, identifier("key"));
+  await guestless.send(guestless.user, second.id, { type: "text", text: "Je veux déposer un casier judiciaire" });
+  await guestless.process(createsThen(final("Une autorisation est nécessaire.")), second.id);
+  assert.equal(formBlocks(await guestless.lastBlocks(second.id)).length, 0);
+});
+
+test("G: sending the Backend's form forces request.update", async (t) => {
+  const h = await harness(t);
+  const conversation = await h.conversations.create(h.user, { locale: "fr" }, identifier("key"));
+  await h.mandate(conversation.id);
+  await h.send(h.user, conversation.id, { type: "text", text: "Je veux déposer un casier judiciaire" });
+  await h.process(createsThen(final("Votre dossier est ouvert.")), conversation.id);
+  const shown = await h.lastBlocks(conversation.id);
+  const requestId = shown.find((block) => block.type === "requestCard").request.id;
+  const { id } = shown.find((block) => block.type === "form");
+  await h.pool.query("SELECT 1");
+  await h.send(h.user, conversation.id, { type: "interaction", actionId: id, value: JSON.stringify({ profession: "Maçon", nombreEnfantsACharge: "3" }) });
+  await h.process({ async generate() { return final("Merci, c’est enregistré."); } }, conversation.id);
+  const update = h.called("request.update")[0];
+  assert.equal(update.args.requestId, requestId);
+  assert.deepEqual(update.args.fields.map((field) => field.name), ["profession", "nombreEnfantsACharge"]);
+});
+
+test("G: request.submit awaiting payment: the button comes with the filing message, request.pay is not called", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  submitReturns(h, caseOf(card.id, "awaiting_payment"));
+  await h.send(h.user, conversation.id, { type: "text", text: "Dépose mon dossier" });
+  let turn = 0;
+  await h.process({ async generate() { turn++; return turn === 1 ? toolCall("request.submit", { requestId: card.id }) : final("Votre dossier est déposé."); } }, conversation.id);
+  assert.equal(h.called("request.submit").length, 1);
+  const buttons = (await h.lastBlocks(conversation.id)).filter((block) => block.type === "buttons");
+  assert.equal(buttons.length, 1);
+  assert.deepEqual(buttons[0].items, [{ id: "payment.confirm." + card.id, label: "Confirmer 1\u202f900\u00a0FCFA" }, { id: "payment.later." + card.id, label: "Plus tard" }]);
+  assert.equal(h.called("request.pay").length, 0);
+});
+
+test("G: a case without payment due gets no button", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  submitReturns(h, caseOf(card.id, "in_review"));
+  await h.send(h.user, conversation.id, { type: "text", text: "Dépose mon dossier" });
+  let turn = 0;
+  await h.process({ async generate() { turn++; return turn === 1 ? toolCall("request.submit", { requestId: card.id }) : final("Votre dossier est déposé."); } }, conversation.id);
+  assert.equal((await h.lastBlocks(conversation.id)).some((block) => block.type === "buttons"), false);
+});
+
+test("G: wanting to pay with a case awaiting payment from an earlier message: button, nothing reaches request.pay", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  await addCaseMessage(h, conversation, h.user, caseOf(card.id, "awaiting_payment"));
+  await h.send(h.user, conversation.id, { type: "text", text: "je veux payer" });
+  await h.process({ async generate() { return final("Merci de confirmer votre souhait de payer."); } }, conversation.id);
+  assert.equal(h.called("request.pay").length, 0, "the guard stops the forced call before the Tooling");
+  const buttons = (await h.lastBlocks(conversation.id)).filter((block) => block.type === "buttons");
+  assert.equal(buttons.length, 1);
+  assert.deepEqual(buttons[0].items, [{ id: "payment.confirm." + card.id, label: "Confirmer 1\u202f000\u00a0FCFA" }, { id: "payment.later." + card.id, label: "Plus tard" }]);
+});
+
+test("G: a newer card of the same request with another status cancels the payable request", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  await addCaseMessage(h, conversation, h.user, caseOf(card.id, "awaiting_payment"));
+  await addCaseMessage(h, conversation, h.user, caseOf(card.id, "in_review"));
+  await h.send(h.user, conversation.id, { type: "text", text: "je veux payer" });
+  await h.process({ async generate() { return final("Votre dossier est en cours d’examen."); } }, conversation.id);
+  assert.equal(h.called("case.status").length, 0);
+  assert.equal((await h.lastBlocks(conversation.id)).some((block) => block.type === "buttons"), false);
+});
+
+test("G: a case from another conversation never gets a payment button", async (t) => {
+  const h = await harness(t);
+  const { conversation } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  const foreign = "req_01JD0000000000000000000077";
+  await addCaseMessage(h, conversation, h.user, caseOf(foreign, "awaiting_payment"));
+  await h.send(h.user, conversation.id, { type: "text", text: "je veux payer" });
+  await h.process({ async generate() { return final("Je ne peux pas payer ici."); } }, conversation.id);
+  assert.equal(h.called("request.pay").length, 0);
+  assert.equal(h.called("case.status").length, 0);
+  assert.equal((await h.lastBlocks(conversation.id)).some((block) => block.type === "buttons" && block.items.some((item) => item.id.startsWith("payment.confirm."))), false);
+
+  // The card shown in the turn itself (such as a cases.list result) gets no button either.
+  const { conversation: second, card } = await h.withCard(h.user);
+  await h.mandate(second.id);
+  submitReturns(h, caseOf(foreign, "awaiting_payment"));
+  await h.send(h.user, second.id, { type: "text", text: "Dépose mon dossier" });
+  let turn = 0;
+  await h.process({ async generate() { turn++; return turn === 1 ? toolCall("request.submit", { requestId: card.id }) : final("Dossier déposé."); } }, second.id);
+  assert.equal((await h.lastBlocks(second.id)).some((block) => block.type === "buttons"), false);
+});
+
+test("G: cases.list in the conversation of the request: payable here, so no nextStep and no pay-elsewhere text, usual button", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  await h.send(h.user, conversation.id, { type: "text", text: "Où en est ma demande ?" });
+  const listCases = async () => ({ items: [{ ...caseOf(card.id, "awaiting_payment"), updatedAt: new Date().toISOString() }], nextCursor: null });
+  let seen;
+  const model = { async generate(_config, history) {
+    const tool = history.findLast((item) => item.role === "tool");
+    if (!tool) return toolCall("cases.list");
+    seen = tool.content;
+    return final("Votre dossier attend le paiement.");
+  } };
+  await new Agent(h.pool, h.conversations, model, h.tooling, undefined, undefined, listCases).process(conversation.id);
+  assert.equal(seen.includes("nextStep"), false);
+  const blocks = await h.lastBlocks(conversation.id);
+  assert.equal(blocks.some((block) => block.type === "text" && block.text.startsWith("Pour payer, rouvrez")), false);
+  assert.equal(blocks.some((block) => block.type === "buttons" && block.items.some((item) => item.id === "payment.confirm." + card.id)), true);
+  assert.equal(h.called("request.pay").length, 0);
+});
+
+// ---------------------------------------------------------------- H. a file and the text that follows it
+
+/** A conversation with one pending fileRequest; `h.tooling` answers documents.attach with the request and its document. */
+async function fileScene(h, { request = true } = {}) {
+  const conversation = await h.conversations.create(h.user, { locale: "fr" }, identifier("key"));
+  const cid = conversation.id;
+  const requestId = identifier("req");
+  const fileId = identifier("fil");
+  const file = { id: fileId, mimeType: "application/pdf", sizeBytes: 12, expiresAt: new Date(Date.now() + 3600000).toISOString() };
+  await h.pool.query("INSERT INTO backend_files(id,user_ref,body,object_key,expires_at) VALUES($1,$2,$3,$4,$5)", [fileId, h.user.userRef, file, "synthetic-pdf", file.expiresAt]);
+  if (request)
+    await transaction(h.pool, (db) => h.conversations.complete(db, cid, identifier("msg"), [
+      { type: "fileRequest", requestId, documentType: "extrait-acte-naissance", label: "Extrait d’acte de naissance", acceptedMimeTypes: ["application/pdf"], received: false },
+    ], tp));
+  await h.mandate(cid, h.user, ["documents:write"]);
+  const attached = { ...fixtures.schemas.Request, id: requestId, conversationId: cid, documents: [{ documentType: "extrait-acte-naissance", label: "Extrait d’acte de naissance", fileId }] };
+  const original = h.tooling.call;
+  h.tooling.call = async (url, auth, name, args, context, key) => {
+    const result = await original(url, auth, name, args, context, key);
+    return name === "documents.attach" ? { structuredContent: attached, content: [{ type: "text", text: JSON.stringify(attached) }] } : result;
+  };
+  const sendAt = async (content, offsetMs = 0) => {
+    const message = { id: identifier("msg"), content, sentAt: new Date(Date.now() + offsetMs).toISOString() };
+    await h.conversations.accept(h.user, cid, message, identifier("key"), tp);
+    return message;
+  };
+  const sendFile = () => sendAt({ type: "file", fileId, documentType: null });
+  const seen = [];
+  const model = { async generate(_config, history) { seen.push(history.filter((turn) => turn.role === "user").map((turn) => turn.content)); return final("Pièce rattachée."); } };
+  const sentCount = async () => (await h.pool.query("SELECT count(*)::int AS n FROM backend_conversation_events WHERE conversation_id=$1 AND body->'data'->>'kind'='message.sent'", [cid])).rows[0].n;
+  const processedAt = async (id) => (await h.pool.query("SELECT processed_at FROM backend_messages WHERE conversation_id=$1 AND id=$2", [cid, id])).rows[0].processed_at;
+  return { cid, requestId, fileId, sendAt, sendFile, seen, model, sentCount, processedAt };
+}
+
+test("H: a file then its text already queued: one reply, one attach, the model sees the text, the text is processed", async (t) => {
+  const h = await harness(t);
+  const s = await fileScene(h);
+  const before = await s.sentCount();
+  await s.sendFile();
+  const text = await s.sendAt({ type: "text", text: "Voici ma pièce" });
+  await h.process(s.model, s.cid);
+  assert.equal(await s.sentCount(), before + 1);
+  assert.equal(h.called("documents.attach").length, 1);
+  assert.equal(s.seen.length >= 1, true);
+  const last = s.seen[0].at(-1);
+  assert.match(last, new RegExp(s.fileId));
+  assert.match(last, /Message joint par l’usager : Voici ma pièce/);
+  assert.ok(await s.processedAt(text.id));
+  assert.equal((await h.pool.query("SELECT count(*)::int AS n FROM backend_messages WHERE conversation_id=$1 AND processed_at IS NULL", [s.cid])).rows[0].n, 0);
+});
+
+test("H: a text arriving during the wait gives the same result", async (t) => {
+  const h = await harness(t);
+  const s = await fileScene(h);
+  const before = await s.sentCount();
+  await s.sendFile();
+  const running = h.process(s.model, s.cid);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const text = await s.sendAt({ type: "text", text: "Voici ma pièce" });
+  await running;
+  assert.equal(await s.sentCount(), before + 1);
+  assert.equal(h.called("documents.attach").length, 1);
+  assert.match(s.seen[0].at(-1), /Message joint par l’usager : Voici ma pièce/);
+  assert.ok(await s.processedAt(text.id));
+});
+
+test("H: a file alone gets a normal turn", async (t) => {
+  const h = await harness(t);
+  const s = await fileScene(h);
+  const before = await s.sentCount();
+  const file = await s.sendFile();
+  await h.process(s.model, s.cid);
+  assert.equal(await s.sentCount(), before + 1);
+  assert.equal(h.called("documents.attach").length, 1);
+  assert.doesNotMatch(s.seen[0].at(-1), /Message joint/);
+  assert.ok(await s.processedAt(file.id));
+});
+
+test("H: a text sent more than 5 seconds later keeps its own turn", async (t) => {
+  const h = await harness(t);
+  const s = await fileScene(h);
+  const before = await s.sentCount();
+  await s.sendFile();
+  const text = await s.sendAt({ type: "text", text: "Voici ma pièce" }, 6000);
+  await h.process(s.model, s.cid);
+  assert.equal(await s.sentCount(), before + 2);
+  assert.equal(h.called("documents.attach").length, 1);
+  assert.doesNotMatch(s.seen[0].at(-1), /Message joint/);
+  assert.ok(await s.processedAt(text.id));
+});
+
+test("H: a file answering no request is unchanged and takes no text", async (t) => {
+  const h = await harness(t);
+  const s = await fileScene(h, { request: false });
+  const before = await s.sentCount();
+  await s.sendFile();
+  await s.sendAt({ type: "text", text: "Voici ma pièce" });
+  await h.process(s.model, s.cid);
+  assert.equal(await s.sentCount(), before + 2, "the file and the text each get their reply");
+  assert.equal(h.called("documents.attach").length, 0);
+  assert.equal(s.seen.flat().some((turn) => /Message joint/.test(turn)), false);
+});
+
+test("H: after an incident the text already marked processed is found again", async (t) => {
+  const h = await harness(t);
+  const s = await fileScene(h);
+  const before = await s.sentCount();
+  await s.sendFile();
+  const text = await s.sendAt({ type: "text", text: "Voici ma pièce" });
+  await h.pool.query("UPDATE backend_messages SET processed_at=now() WHERE conversation_id=$1 AND id=$2", [s.cid, text.id]);
+  await h.process(s.model, s.cid);
+  assert.equal(await s.sentCount(), before + 1);
+  assert.match(s.seen[0].at(-1), /Message joint par l’usager : Voici ma pièce/);
+});
+
+// ---------------------------------------------------------------- I. end-to-end guidance
+
+const askedToPay = (blocks) => blocks.find((block) => block.type === "text" && /Voulez-vous payer maintenant/.test(block.text));
+/** request.update answers with a complete request (ready, nothing missing). */
+const updatesToReady = (h) => {
+  const base = h.tooling.call;
+  h.tooling.call = async (url, auth, name, args, ...rest) => {
+    const result = await base(url, auth, name, args, ...rest);
+    if (name !== "request.update") return result;
+    const request = { ...result.structuredContent, status: "ready", missing: [], fields: result.structuredContent.fields.map((field) => ({ ...field, value: field.value ?? "x" })) };
+    return { structuredContent: request, content: [{ type: "text", text: JSON.stringify(request) }] };
+  };
+};
+const completeForm = form({ adresseDomicile: "Cotonou", profession: "Maçon", nombreEnfantsACharge: "3", situationMatrimoniale: "Marié" });
+
+test("I: a filing with fees asks the question first, offers confirm and later, and does not pay", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  submitReturns(h, caseOf(card.id, "awaiting_payment"));
+  await h.send(h.user, conversation.id, { type: "text", text: "Dépose mon dossier" });
+  let turn = 0;
+  await h.process({ async generate() { turn++; return turn === 1 ? toolCall("request.submit", { requestId: card.id }) : final("Votre dossier est déposé."); } }, conversation.id);
+  const blocks = await h.lastBlocks(conversation.id);
+  assert.equal(askedToPay(blocks).text, "Il reste à payer 1 900 FCFA. Voulez-vous payer maintenant ?");
+  assert.ok(blocks.indexOf(askedToPay(blocks)) < blocks.findIndex((block) => block.type === "buttons"), "the question comes before the buttons");
+  assert.deepEqual(blocks.find((block) => block.type === "buttons").items.map((item) => item.id), ["payment.confirm." + card.id, "payment.later." + card.id]);
+  assert.equal(h.called("request.pay").length, 0);
+});
+
+test("I: an amount too long for the button label keeps the question and gets the generic label", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  submitReturns(h, caseOf(card.id, "awaiting_payment", 123456789));
+  await h.send(h.user, conversation.id, { type: "text", text: "Dépose mon dossier" });
+  let turn = 0;
+  await h.process({ async generate() { turn++; return turn === 1 ? toolCall("request.submit", { requestId: card.id }) : final("Votre dossier est déposé."); } }, conversation.id);
+  const blocks = await h.lastBlocks(conversation.id);
+  assert.match(askedToPay(blocks).text, /^Il reste à payer 123.456.789.FCFA\. Voulez-vous payer maintenant \?$/);
+  assert.equal(blocks.find((block) => block.type === "buttons").items[0].label, "Confirmer le paiement");
+});
+
+test("I: the later click answers without the model and without paying; wanting to pay offers the choice again", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  await addCaseMessage(h, conversation, h.user, caseOf(card.id, "awaiting_payment"));
+  await h.send(h.user, conversation.id, { type: "interaction", actionId: "payment.later." + card.id, value: null });
+  await h.process({ async generate() { throw new Error("the model must not be called"); } }, conversation.id);
+  assert.deepEqual(await h.lastBlocks(conversation.id), [{ type: "text", text: "D’accord, rien n’a été payé. Votre dossier reste en attente de paiement. Quand vous serez prêt, écrivez « je veux payer » dans cette conversation.", sources: [] }]);
+  assert.equal(h.called("request.pay").length, 0);
+
+  await h.send(h.user, conversation.id, { type: "text", text: "je veux payer" });
+  await h.process({ async generate() { return final("Merci de confirmer votre souhait de payer."); } }, conversation.id);
+  assert.equal(h.called("request.pay").length, 0);
+  const buttons = (await h.lastBlocks(conversation.id)).find((block) => block.type === "buttons");
+  assert.deepEqual(buttons.items.map((item) => item.id), ["payment.confirm." + card.id, "payment.later." + card.id]);
+});
+
+test("I: a ready request not filed at the end of the turn gets the question and the button; the click files once, then asks for payment", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  updatesToReady(h);
+  await h.send(h.user, conversation.id, completeForm);
+  await h.process({ async generate() { return final("Merci, c’est enregistré."); } }, conversation.id);
+  const blocks = await h.lastBlocks(conversation.id);
+  assert.ok(blocks.some((block) => block.type === "text" && block.text === "Votre dossier est complet. Voulez-vous le déposer ?"));
+  assert.deepEqual(blocks.find((block) => block.type === "buttons").items, [{ id: "request.submit." + card.id, label: "Déposer mon dossier" }]);
+  assert.equal(h.called("request.submit").length, 0);
+
+  submitReturns(h, caseOf(card.id, "awaiting_payment"));
+  await h.send(h.user, conversation.id, { type: "interaction", actionId: "request.submit." + card.id, value: null });
+  await h.process({ async generate() { return final("Votre dossier est déposé."); } }, conversation.id);
+  assert.equal(h.called("request.submit").length, 1);
+  assert.deepEqual(h.called("request.submit")[0].args, { requestId: card.id });
+  const after = await h.lastBlocks(conversation.id);
+  assert.ok(askedToPay(after));
+  assert.equal(after.some((block) => block.type === "buttons" && block.items.some((item) => item.id.startsWith("request.submit."))), false);
+  assert.equal(h.called("request.pay").length, 0);
+});
+
+test("I: a ready request already filed in the turn gets no submit button", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  updatesToReady(h);
+  submitReturns(h, caseOf(card.id, "in_review"));
+  await h.send(h.user, conversation.id, completeForm);
+  let turn = 0;
+  await h.process({ async generate() { turn++; return turn === 1 ? toolCall("request.submit", { requestId: card.id }) : final("Votre dossier est déposé."); } }, conversation.id);
+  assert.equal(h.called("request.update").length, 1);
+  assert.equal(h.called("request.submit").length, 1);
+  assert.equal((await h.lastBlocks(conversation.id)).some((block) => block.type === "buttons"), false);
+});
+
+test("I: a model cannot produce payment.later or request.submit buttons", () => {
+  const dropped = presentModelReply(JSON.stringify({ blocks: [
+    { type: "text", text: "Voici la suite.", sources: [] },
+    { type: "buttons", items: [{ id: "payment.later.req_01HZ", label: "Plus tard" }, { id: "request.submit.req_01HZ", label: "Déposer" }] },
+  ] }), empty);
+  assert.deepEqual(dropped.map((block) => block.type), ["text"]);
+});
+
+test("I: a piece followed by a form answer is one turn: one reply, request.update and documents.attach once each, filing still possible", async (t) => {
+  const h = await harness(t);
+  const s = await fileScene(h);
+  await h.mandate(s.cid);
+  await transaction(h.pool, (db) => h.conversations.complete(db, s.cid, identifier("msg"), [{ type: "requestCard", request: h.draftOf(s.cid, s.requestId) }], tp));
+  submitReturns(h, caseOf(s.requestId, "in_review"));
+  const before = await s.sentCount();
+  await s.sendFile();
+  const answer = await s.sendAt(form({ profession: "Maçon" }));
+  let turn = 0;
+  await h.process({ async generate(_config, history) { s.seen.push(history.filter((item) => item.role === "user").map((item) => item.content)); turn++; return turn === 1 ? toolCall("request.submit", { requestId: s.requestId }) : final("Dossier déposé."); } }, s.cid);
+  assert.equal(await s.sentCount(), before + 1);
+  assert.equal(h.called("request.update").length, 1);
+  assert.deepEqual(h.called("request.update")[0].args.fields.map((field) => field.name), ["profession"]);
+  assert.equal(h.called("documents.attach").length, 1);
+  assert.equal(h.called("request.submit").length, 1);
+  assert.ok(h.calls.findIndex((entry) => entry.name === "request.update") < h.calls.findIndex((entry) => entry.name === "documents.attach"), "the form goes before the piece");
+  assert.match(s.seen[0].at(-1), new RegExp(s.fileId));
+  assert.ok(await s.processedAt(answer.id));
+});
+
+test("I: a piece followed by an interaction without JSON value keeps its own turn", async (t) => {
+  const h = await harness(t);
+  const s = await fileScene(h);
+  const before = await s.sentCount();
+  await s.sendFile();
+  const click = await s.sendAt({ type: "interaction", actionId: "choix-libre", value: null });
+  await h.process(s.model, s.cid);
+  assert.equal(await s.sentCount(), before + 2);
+  assert.equal(h.called("documents.attach").length, 1);
+  assert.equal(h.called("request.update").length, 0);
+  assert.ok(await s.processedAt(click.id));
 });

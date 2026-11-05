@@ -11,6 +11,7 @@ export async function POST(request: Request): Promise<Response> {
   if (origin !== getAuthConfig().publicOrigin) return new Response(null, { status: 403 });
   const { user } = await readSession();
   await clearSession();
+  if (user?.provider === 'npi') return redirectToApp('/', 303);
   const endSession = await buildLogoutUrl(user?.idToken);
   if (!endSession) return redirectToApp('/', 303);
   return new Response(null, { status: 303, headers: { location: endSession.toString(), 'cache-control': 'no-store' } });

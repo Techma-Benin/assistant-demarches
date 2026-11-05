@@ -57,6 +57,14 @@ test('a stale .env on :5432 / :4020 is ignored in favour of local defaults', () 
   assert.equal(copy.MODEL_API_KEY, 'only-key');
 });
 
+test('NPI_SIMULATED_LOGIN is on by default for backend and interface, and `.env` can change it', () => {
+  assert.equal(serviceEnv('backend', { PATH: '/usr/bin' }, SERVICES).NPI_SIMULATED_LOGIN, 'on');
+  assert.equal(serviceEnv('interface', { PATH: '/usr/bin' }, SERVICES).NPI_SIMULATED_LOGIN, 'on');
+  assert.equal(serviceEnv('tooling', { PATH: '/usr/bin' }, SERVICES).NPI_SIMULATED_LOGIN, undefined);
+  for (const name of ['backend', 'interface'])
+    assert.equal(serviceEnv(name, { NPI_SIMULATED_LOGIN: 'off' }, SERVICES).NPI_SIMULATED_LOGIN, 'off');
+});
+
 test('a remote DATABASE_URL is kept', () => {
   const remote = {
     DATABASE_URL: 'postgres://techma:techma@db.example.test:5432/backend',

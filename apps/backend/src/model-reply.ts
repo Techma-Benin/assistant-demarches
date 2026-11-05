@@ -142,10 +142,27 @@ export type ReplyEvidence = {
   sources: Schemas["Source"][];
   requests: Schemas["Request"][];
   procedures?: Schemas["Procedure"][];
+  /** The reply reports the user's own cases, read from the connector: amounts and dates need no catalogue source. */
+  connectorData?: boolean;
 };
+
+/** Without a stated fact, only the latest fiche read backs the reply; a stated fact keeps every distinct source observed. */
+function observedFor(text: string, sources: Schemas["Source"][]): Schemas["Source"][] {
+  if (!hasAdministrativeFact(text)) return sources.slice(-1);
+  const seen = new Set<string>();
+  return sources.filter((source) => {
+    const identity = sourceIdentity(source) ?? source.url;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
 
 export const PAYMENT_CONFIRM_PREFIX = "payment.confirm.";
 export const PREPARE_REQUEST_PREFIX = "request.prepare.";
+export const PAYMENT_LATER_PREFIX = "payment.later.";
+export const SUBMIT_REQUEST_PREFIX = "request.submit.";
+const RESERVED_BUTTON_PREFIXES = [PAYMENT_CONFIRM_PREFIX, PREPARE_REQUEST_PREFIX, PAYMENT_LATER_PREFIX, SUBMIT_REQUEST_PREFIX];
 const NOT_FOUND = /Je n[’']ai pas trouvé/;
 const MODEL_BUTTON_LABEL_MAX = 24;
 const BACKEND_BLOCK_TYPES = new Set(["fileRequest", "loginRequired", "consent", "requestCard", "caseCard"]);
@@ -188,17 +205,17 @@ export function presentModelReply(replyText: string, evidence: ReplyEvidence): S
           ? cited.map((source: unknown) => bindObservedSource(source, evidence.sources))
           : evidence.sources.length && !NOT_FOUND.test(cleaned.text)
             // A reply written after reading a fiche rests on it, even when the wording escapes ADMIN_FACT.
-            ? evidence.sources
-            : hasAdministrativeFact(cleaned.text)
+            ? observedFor(cleaned.text, evidence.sources)
+            : hasAdministrativeFact(cleaned.text) && !evidence.connectorData
               ? reject("admin_fact_without_source", "Fait administratif sans source.")
               : [];
         return { ...block, text: redact(cleaned.text), sources };
       }
       // Payment confirmation buttons are built by the Backend only: a model copy could pay behind any label.
-      // The prepare button is built by the Backend only, from Procedure.filing: a model copy is dropped too.
+      // The prepare, "pay later" and submit buttons are built by the Backend only (the prepare one from Procedure.filing): a model copy is dropped too.
       // A label over the contract limit loses the button, not the whole reply.
       if (block.type === "buttons" && Array.isArray(block.items))
-        return { ...block, items: block.items.filter((item: { id?: unknown; label?: unknown }) => !(typeof item?.id === "string" && (item.id.startsWith(PAYMENT_CONFIRM_PREFIX) || item.id.startsWith(PREPARE_REQUEST_PREFIX))) && !(typeof item?.label === "string" && item.label.length > MODEL_BUTTON_LABEL_MAX)) };
+        return { ...block, items: block.items.filter((item: { id?: unknown; label?: unknown }) => !(typeof item?.id === "string" && RESERVED_BUTTON_PREFIXES.some((prefix) => (item.id as string).startsWith(prefix))) && !(typeof item?.label === "string" && item.label.length > MODEL_BUTTON_LABEL_MAX)) };
       return block;
     }).filter((block: any) => block.type !== "buttons" || !Array.isArray(block.items) || block.items.length > 0) as Schemas["AgentMessage"]["blocks"];
     if (!blocks.length) reject("empty_reply", "Réponse modèle vide après retrait des actions réservées.");

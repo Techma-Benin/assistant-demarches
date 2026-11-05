@@ -26,11 +26,21 @@ export interface UserSession {
   sub: string;
   name: string;
   roles: string[];
+  /** Set for the simulated NPI sign-in: no refresh token, never refreshed. */
+  provider?: 'npi';
+}
+
+/** Pending NPI challenge; stays in the encrypted cookie, never sent to the browser. */
+export interface NpiChallenge {
+  token: string;
+  /** ISO date-time returned by the Backend. */
+  expiresAt: string;
 }
 
 export interface Session {
   guest?: GuestSession;
   user?: UserSession;
+  npiChallenge?: NpiChallenge;
 }
 
 export interface AuthTransaction {
@@ -123,7 +133,12 @@ function toSession(data: Record<string, unknown>): Session {
       sub: user.sub,
       name: user.name,
       roles: user.roles.filter(isString),
+      ...(user.provider === 'npi' ? { provider: 'npi' as const } : {}),
     };
+  }
+  const challenge = data.npiChallenge as Partial<NpiChallenge> | undefined;
+  if (challenge && isString(challenge.token) && isString(challenge.expiresAt)) {
+    session.npiChallenge = { token: challenge.token, expiresAt: challenge.expiresAt };
   }
   return session;
 }
@@ -145,7 +160,7 @@ function deleteSessionCookies(store: CookieStore, keep: ReadonlySet<string> = ne
 /** Route handlers and Server Functions only (cookies cannot be set while rendering). */
 export async function writeSession(session: Session): Promise<void> {
   const store = await cookies();
-  if (!session.guest && !session.user) {
+  if (!session.guest && !session.user && !session.npiChallenge) {
     deleteSessionCookies(store);
     return;
   }

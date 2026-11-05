@@ -20,6 +20,8 @@ interface PendingUpload {
 
 const MAX_TEXT_LENGTH = 4000;
 
+export type FollowUp = { content: MessageInput['content']; display: string };
+
 /** A saved conversation holds only its id: the timeline is rebuilt from the event history. */
 function stateFromSnapshot(snapshot: ConversationSnapshot | null | undefined): ConversationState {
   if (!snapshot) return initialState;
@@ -172,8 +174,15 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
   );
 
   const sendFiles = useCallback(
-    (files: File[], note?: string, voice?: { durationMs: number; waveform: number[] }, documentType: string | null = null) => {
-      const text = note?.trim();
+    (
+      files: File[],
+      note?: string,
+      voice?: { durationMs: number; waveform: number[] },
+      documentType: string | null = null,
+      // Message sent after the last file instead of the note (e.g. a form answer); its `sentAt` is taken here, at send time.
+      followUp?: FollowUp,
+    ) => {
+      const text = followUp ? undefined : note?.trim();
       if (text && text.length > MAX_TEXT_LENGTH) return;
       const valid = files.flatMap((file) => {
         const validation = validateFile(file, CONTRACT_MIME_TYPES);
@@ -223,16 +232,17 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
           batchId,
         });
       }
-      if (text) {
+      const tail = followUp ?? (text ? { content: { type: 'text', text } as MessageInput['content'], display: text } : undefined);
+      if (tail) {
         // Shown right after the files; posted only once the last file message is accepted.
         const noteInput: MessageInput = {
           id: newId('msg'),
-          content: { type: 'text', text },
+          content: tail.content,
           sentAt: new Date().toISOString(),
         };
         link(noteInput.id);
         held.current.set(noteInput.id, noteInput);
-        dispatch({ type: 'userMessageQueued', id: noteInput.id, content: noteInput.content, display: text, sentAt: noteInput.sentAt, batchId });
+        dispatch({ type: 'userMessageQueued', id: noteInput.id, content: noteInput.content, display: tail.display, sentAt: noteInput.sentAt, batchId });
       }
       // Uploads run in parallel; the message POSTs are chained.
       for (const [id, entry] of started) void upload(id, entry);

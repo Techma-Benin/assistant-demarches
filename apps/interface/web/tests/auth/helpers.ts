@@ -98,6 +98,9 @@ export class FakeServers {
   refreshReturnsIdToken = false;
   guestFails = false;
   attachStatus = 200;
+  /** Status of POST /v1/identity/npi and /npi/verify (201 / 200 = success). */
+  npiStartStatus = 201;
+  npiVerifyStatus = 200;
   tokenCounter = 0;
   /** Padding appended to tokens to exercise cookie chunking. */
   padding = 0;
@@ -189,6 +192,18 @@ export class FakeServers {
     }
     if (url.startsWith(`${BACKEND_URL}/v1/conversations/`) && url.endsWith('/attach')) {
       return this.attachStatus === 200 ? Response.json({ conversationIds: [] }) : new Response('{}', { status: this.attachStatus });
+    }
+    if (url === `${BACKEND_URL}/v1/identity/npi`) {
+      if (this.npiStartStatus !== 201) return new Response('{}', { status: this.npiStartStatus });
+      return Response.json(
+        { challengeToken: 'challenge-secret', expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(), simulated: true },
+        { status: 201 },
+      );
+    }
+    if (url === `${BACKEND_URL}/v1/identity/npi/verify`) {
+      if (this.npiVerifyStatus !== 200) return new Response('{}', { status: this.npiVerifyStatus });
+      const token = await new SignJWT({}).setProtectedHeader({ alg: 'HS256' }).setSubject('npi-user-1').sign(new Uint8Array(32));
+      return Response.json({ token, expiresAt: new Date(Date.now() + 12 * 3600_000).toISOString(), simulated: true });
     }
     return new Response('unexpected', { status: 599 });
   }
