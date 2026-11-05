@@ -213,7 +213,6 @@
 }
 html:has([data-home]) {
   scroll-behavior: smooth;
-  scroll-padding-top: 56px;
 }
 
 .footer-word {

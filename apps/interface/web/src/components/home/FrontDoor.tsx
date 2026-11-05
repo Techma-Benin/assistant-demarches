@@ -13,6 +13,7 @@ import { FitWord } from './FitWord';
 import { HERO_PHOTOS, HeroSlideshow } from './HeroSlideshow';
 import { AskDemo, PrepareDemo, ValidateDemo } from './HowItWorksDemos';
 import { NeverShowcase } from './NeverDemos';
+import { PromptDock } from './PromptDock';
 import { Bridge } from './Bridge';
 import { CATALOGUE_PHOTO_CREDITS, CatalogueSection } from './CatalogueSection';
 import { GuidedStart } from './GuidedStart';
@@ -364,6 +365,16 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
       <StickyNav links={SECTIONS} brandFlag={brandFlag} onAsk={goToQuestion} />
 
+      <PromptDock
+        anchor={heroPrompt}
+        hideNear={['demander', 'site-footer']}
+        value={draft}
+        onValueChange={setDraft}
+        onSubmit={submitDraft}
+        onFiles={onFiles}
+        staged={staged}
+        disabled={disabled}
+      />
     </div>
   );
 }
