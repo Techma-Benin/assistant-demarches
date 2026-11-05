@@ -257,7 +257,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
             </div>
           </nav>
 
-          <div className="w-full px-2 pt-2 pb-3 md:mt-3">
+          <div className="w-full px-2 pt-2 pb-3 md:mt-auto">
             <OperatorAccountMenu collapsed={collapsed} />
           </div>
         </div>
