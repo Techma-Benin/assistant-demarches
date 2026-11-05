@@ -768,6 +768,42 @@ test("Real Backend C1/C2/C3/C4: verified identities, durable agent, consent and 
     },
   );
   await t.test(
+    "case.updated with an identical case is shown once, a changed case again",
+    async () => {
+      const caseBody = {
+        ...fixture.schemas.Case,
+        id: identifier("cas"),
+        requestId: identifier("req"),
+        applicantRef: userRef,
+      };
+      const publish = async (body) =>
+        (
+          await request("/internal/v1/events", {
+            method: "POST",
+            body: envelope(
+              { kind: "case.updated", conversationId: c.id, case: body },
+              tp,
+              "tooling",
+            ),
+            bearer: eventsToken,
+          })
+        ).status;
+      const cardsOf = async () =>
+        (await request("/v1/conversations/" + c.id + "/events")).value.items
+          .filter((item) => item.data.kind === "message.sent")
+          .flatMap((item) => item.data.message.blocks)
+          .filter((block) => block.type === "caseCard" && block.case.id === caseBody.id);
+      assert.equal(await publish(caseBody), 202);
+      assert.equal(await publish(caseBody), 202);
+      assert.equal((await cardsOf()).length, 1);
+      assert.equal(
+        await publish({ ...caseBody, updatedAt: "2031-01-01T00:00:00.000Z" }),
+        202,
+      );
+      assert.equal((await cardsOf()).length, 2);
+    },
+  );
+  await t.test(
     "Private files usable immediately, ownership and expiry",
     async () => {
       const file = await request("/v1/files", {
