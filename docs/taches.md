@@ -30,7 +30,7 @@ Une tâche est terminée quand elle marche de bout en bout avec `pnpm dev`, sans
    - Supprimer `DEFAULT_ADMINISTRATION_ID`, les jetons statiques et les boutons de test de Swagger.
 3. **Traitement des messages dans le processus de l'API** : boucle sur `backend_messages` avec `FOR UPDATE SKIP LOCKED`, plus la maintenance. Retirer la dépendance `bullmq`.
 4. **Agent.** Phrases naturelles : supprimer la liste fermée `SAFE_CONVERSATIONAL_TEXT` ; seules les informations administratives exigent une source vérifiée. Le modèle ne produit que `text`, `buttons` et `form`. Le code construit `fileRequest`, `loginRequired`, `consent`, `requestCard` et `caseCard` (U2, U5–U13). Enregistrer les questions sans réponse avec thème et motif (A7).
-5. **Vocal** : transcription Groq (`whisper-large-v3-turbo`) dès qu'une clé API est présente (pas de `TRANSCRIPTION_ENABLED` ; décision produit de l'utilisateur Billux), avec la transcription dans `message.received` (U3).
+5. **Vocal** : transcription (Groq `whisper-large-v3-turbo` ou OpenAI `whisper-1`, selon `MODEL_PROVIDER`) dès qu'une clé API compatible est présente (pas de `TRANSCRIPTION_ENABLED` ; décision produit de l'utilisateur Billux), avec la transcription dans `message.received` (U3).
 6. **Accueil** : `GET /v1/home` depuis le X-Road (U1).
 7. **« Mes démarches »** : `GET /v1/cases…` via le X-Road avec `X-Applicant-Ref` (U12, U14).
 8. **Console** : toutes les routes de `admin.openapi.json`, appelées vers le X-Road avec `X-Official-Subject` (A1–A12). Pour `createOfficial`, créer le compte via l'API d'administration Keycloak (le compte de service `backend` a `manage-users`). Photo : stockage privé et `avatarUrl`.
