@@ -304,6 +304,14 @@ describe('queue chrome', () => {
     expect(dialog).toHaveClass('queue-filter-glass');
     expect(dialog).toHaveAttribute('data-glass', 'liquid');
     expect(dialog).toHaveAttribute('data-tint', 'gray');
+    expect(dialog.className).toContain('z-10');
+    const backdrop = document.querySelector('[data-filter-backdrop]')!;
+    expect(backdrop.contains(dialog)).toBe(false);
+    expect(dialog.contains(backdrop)).toBe(false);
+    expect(backdrop.className).not.toContain('bg-black');
+    for (let ancestor = dialog.parentElement; ancestor; ancestor = ancestor.parentElement) {
+      expect(String(ancestor.className)).not.toContain('bg-black');
+    }
     expect(dialog).toHaveFocus();
     expect(within(dialog).queryByRole('button', { name: 'Tous' })).toBeNull();
     expect(within(dialog).queryByRole('radio')).toBeNull();
@@ -311,7 +319,7 @@ describe('queue chrome', () => {
     expect(within(dialog).queryByText(/pris en charge/i)).toBeNull();
 
     await user.tab({ shift: true });
-    expect(within(dialog).getByRole('button', { name: 'Réinitialiser' })).toHaveFocus();
+    expect(within(dialog).getByLabelText('Au')).toHaveFocus();
 
     const channel = within(dialog).getByRole('group', { name: 'Canal' });
     const whatsapp = within(channel).getByRole('button', { name: 'WhatsApp' });

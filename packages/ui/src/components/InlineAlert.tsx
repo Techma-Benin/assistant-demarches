@@ -10,8 +10,8 @@ export function InlineAlert({ tone = 'danger', className, children, ...props }: 
     <div
       role="alert"
       className={cn(
-        'ui-rise flex items-start gap-2 rounded-field px-3 py-2 text-sm font-semibold',
-        tone === 'danger' ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning',
+        'surface-glass ui-rise flex items-start gap-2 rounded-field px-3 py-2 text-sm font-semibold',
+        tone === 'danger' ? 'text-danger' : 'text-ink',
         className,
       )}
       {...props}

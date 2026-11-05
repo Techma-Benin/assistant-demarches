@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@techma/ui';
-import { Filter, X } from 'lucide-react';
+import { Filter, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { Case, CaseStatus } from '@/lib/admin/api';
@@ -138,31 +138,46 @@ function FilterPanel({
   const rangeInverted = filters.updatedFrom !== '' && filters.updatedTo !== '' && filters.updatedFrom > filters.updatedTo;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end p-3 sm:p-4">
-      <div data-filter-backdrop="" className="absolute inset-0 bg-black/20" onClick={onClose} />
+    <div className="fixed inset-0 z-50 flex overflow-clip">
+      <div data-filter-backdrop="" className="min-w-0 flex-1" onClick={onClose} />
       <div
-        ref={panelRef}
-        id={id}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        data-glass="liquid"
-        data-tint="gray"
-        className="queue-filter-glass flex h-full max-h-full w-[min(22.5rem,100%)] flex-col rounded-card focus:outline-none"
+        className="flex h-full w-[min(calc(22.5rem+1.5rem),100%)] shrink-0 p-3 sm:w-[min(calc(22.5rem+2rem),100%)] sm:p-4"
+        onClick={onClose}
       >
+        <div
+          ref={panelRef}
+          id={id}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+          data-glass="liquid"
+          data-tint="gray"
+          onClick={(event) => event.stopPropagation()}
+          className="surface-glass queue-filter-glass relative z-10 flex h-full max-h-full w-[min(22.5rem,100%)] flex-col rounded-card focus:outline-none"
+        >
         <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-2">
           <h2 id={titleId} className="font-display text-2xl font-extrabold tracking-[-0.035em]">
             Filtres
           </h2>
-          <button
-            type="button"
-            aria-label="Fermer"
-            onClick={onClose}
-            className="inline-flex size-9 items-center justify-center rounded-pill text-ink-muted hover:bg-black/10 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-          >
-            <X aria-hidden="true" className="size-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              aria-label="Réinitialiser"
+              onClick={() => onChange(EMPTY_CASE_FILTERS)}
+              className="inline-flex size-9 items-center justify-center rounded-pill text-ink-muted hover:bg-black/10 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+            >
+              <RotateCcw aria-hidden="true" className="size-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Fermer"
+              onClick={onClose}
+              className="inline-flex size-9 items-center justify-center rounded-pill text-ink-muted hover:bg-black/10 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+            >
+              <X aria-hidden="true" className="size-4" />
+            </button>
+          </div>
         </div>
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-5 pt-3 pb-5">
           <ToggleGroup
@@ -203,13 +218,7 @@ function FilterPanel({
               <p className="text-[13px] text-ink">La date de début est après la date de fin.</p>
             ) : null}
           </fieldset>
-          <button
-            type="button"
-            onClick={() => onChange(EMPTY_CASE_FILTERS)}
-            className="mt-auto self-start rounded-pill px-3 py-2 text-[13px] font-semibold text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-          >
-            Réinitialiser
-          </button>
+        </div>
         </div>
       </div>
     </div>

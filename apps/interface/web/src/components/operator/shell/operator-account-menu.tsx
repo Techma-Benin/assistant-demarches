@@ -174,7 +174,7 @@ export function OperatorAccountMenu({ collapsed }: { collapsed: boolean }) {
               aria-label="Compte"
               onKeyDown={onMenuKeyDown}
               style={{ transformOrigin: 'bottom left' }}
-              className="ui-pop w-[260px] rounded-xl border border-line-subtle bg-surface p-1.5 shadow-(--ui-shadow-pop)"
+              className="surface-glass ui-pop w-[260px] rounded-xl p-1.5 shadow-(--ui-shadow-pop)"
             >
               <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
                 <OperatorMark />

@@ -50,7 +50,7 @@ export function AccountMenu() {
       {open && (
         <div
           id={panelId}
-          className="absolute right-0 top-full z-40 mt-2 flex w-[min(280px,calc(100vw-2rem))] flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-(--ui-shadow-pop)"
+          className="surface-glass absolute right-0 top-full z-40 mt-2 flex w-[min(280px,calc(100vw-2rem))] flex-col gap-3 rounded-card p-4 shadow-(--ui-shadow-pop)"
         >
           {name && <p className="m-0 break-words text-[14px] text-ink-muted">{name}</p>}
           <Link
