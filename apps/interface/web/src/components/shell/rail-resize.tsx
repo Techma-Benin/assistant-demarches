@@ -1,7 +1,8 @@
 'use client';
 
 import { cn } from '@techma/ui';
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 
 /** Shared by the administration and operator rails so a resize on one is the expanded width of the other. */
 export const RAIL_WIDTH_KEY = 'shell-rail-width';
@@ -166,10 +167,58 @@ export function RailGrip({
       className="absolute top-1/2 right-0.5 z-30 hidden h-8 w-3 -translate-y-1/2 cursor-col-resize touch-none items-center justify-center md:flex focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
     >
       <span aria-hidden="true" className="flex h-4 gap-[3px]">
-        <span data-rail-stroke="" className="w-px rounded-full bg-ink-muted" />
-        <span data-rail-stroke="" className="w-px rounded-full bg-ink-muted" />
+        <span data-rail-stroke="" className="w-px rounded-full bg-field" />
+        <span data-rail-stroke="" className="w-px rounded-full bg-field" />
       </span>
     </div>
+  );
+}
+
+/**
+ * Shared by both rails.
+ * Collapsed: the mark stays visible and the unfold icon replaces it only while this control is hovered or keyboard-focused.
+ * Expanded: the fold icon stays on the right of the header.
+ */
+export function RailCollapseControl({
+  collapsed,
+  onToggle,
+  mark,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  mark: ReactNode;
+}) {
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={false}
+        aria-label="Déplier le menu latéral"
+        className="group hidden size-9 shrink-0 cursor-pointer place-items-center rounded-none text-ink-muted transition-colors duration-(--ui-dur-press) hover:bg-sunken hover:text-ink focus-visible:bg-sunken focus-visible:text-ink md:grid"
+      >
+        <span className="col-start-1 row-start-1 transition-opacity duration-(--ui-dur-press) group-hover:opacity-0 group-focus-visible:opacity-0 motion-reduce:transition-none">
+          {mark}
+        </span>
+        <ChevronsRight
+          aria-hidden="true"
+          strokeWidth={2}
+          className="col-start-1 row-start-1 size-4 opacity-0 transition-opacity duration-(--ui-dur-press) group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+        />
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded
+      aria-label="Replier le menu latéral"
+      className="hidden size-9 shrink-0 cursor-pointer items-center justify-center rounded-none text-ink-muted transition-colors duration-(--ui-dur-press) hover:bg-sunken hover:text-ink md:inline-flex"
+    >
+      <ChevronsLeft aria-hidden="true" className="size-4" strokeWidth={2} />
+    </button>
   );
 }
 
@@ -182,18 +231,26 @@ export function railFrameClass(dragging: boolean): string {
   );
 }
 
-const RAIL_SHADOW_EDGE = {
-  left: 'var(--rail-width)',
-  boxShadow: 'var(--ui-rail-shadow)',
+/** Sits on the rail only. Inset keeps the shadow inside this box, off the page. */
+const RAIL_SHADOW_BOX = {
+  left: 0,
+  width: 'var(--rail-width)',
 } as const;
 
-const RAIL_SHADOW_CLASS = 'pointer-events-none absolute z-10 w-px';
+const RAIL_SHADOW_CLASS = 'pointer-events-none absolute z-0 hidden md:block';
+
+/** Quiet inset along the rail edge shared with the page. */
+const RAIL_EDGE_SHADOW = 'inset var(--ui-rail-shadow)';
+
+/** Same radius as the content card. The two cutout corners use this fillet. */
+const RAIL_JOIN_RADIUS = 'var(--ui-radius-card)';
 
 /**
- * Shadow of the content over the rail behind it.
- * With a cutout, two segments leave a gap from 17px above the active row to
- * 17px below it (same as the selection notch) so the shadow never crosses the
- * merged canvas plane of the active section.
+ * Inset shadow on the rail, along the edge it shares with the page.
+ * The selected row is a gap: that row and the page are one plane, so no shadow
+ * crosses them. The same shadow turns along the top and bottom of the gap and
+ * falls onto the rail above and below the selected row. Those two turns are
+ * concave fillets, so the shadow follows the curve instead of a square cut.
  */
 export function RailEdgeShadow({ cutout }: { cutout: boolean }) {
   if (!cutout) {
@@ -202,7 +259,7 @@ export function RailEdgeShadow({ cutout }: { cutout: boolean }) {
         aria-hidden="true"
         data-rail-shadow=""
         className={cn(RAIL_SHADOW_CLASS, 'inset-y-0')}
-        style={RAIL_SHADOW_EDGE}
+        style={{ ...RAIL_SHADOW_BOX, boxShadow: RAIL_EDGE_SHADOW }}
       />
     );
   }
@@ -215,9 +272,11 @@ export function RailEdgeShadow({ cutout }: { cutout: boolean }) {
         data-rail-cutout=""
         className={RAIL_SHADOW_CLASS}
         style={{
-          ...RAIL_SHADOW_EDGE,
+          ...RAIL_SHADOW_BOX,
           top: 0,
-          height: 'max(0px, calc(var(--rail-cut-top) - 17px))',
+          height: 'var(--rail-cut-top)',
+          borderBottomRightRadius: RAIL_JOIN_RADIUS,
+          boxShadow: `${RAIL_EDGE_SHADOW}, inset var(--ui-rail-lip-above)`,
         }}
       />
       <div
@@ -226,11 +285,34 @@ export function RailEdgeShadow({ cutout }: { cutout: boolean }) {
         data-rail-cutout=""
         className={RAIL_SHADOW_CLASS}
         style={{
-          ...RAIL_SHADOW_EDGE,
-          top: 'calc(var(--rail-cut-top) + var(--nav-item-height, 0px) + 17px)',
+          ...RAIL_SHADOW_BOX,
+          top: 'calc(var(--rail-cut-top) + var(--nav-item-height, 0px))',
           bottom: 0,
+          borderTopRightRadius: RAIL_JOIN_RADIUS,
+          boxShadow: `${RAIL_EDGE_SHADOW}, inset var(--ui-rail-lip-below)`,
         }}
       />
+    </>
+  );
+}
+
+/**
+ * Selected row and page are one canvas. The rail scoops around that hole:
+ * a card-radius fillet at the top and bottom corners on the content edge.
+ */
+export function NavActiveNotch() {
+  const plate = { width: RAIL_JOIN_RADIUS, height: `calc(${RAIL_JOIN_RADIUS} + 1px)` };
+  const fillet = { width: RAIL_JOIN_RADIUS, height: RAIL_JOIN_RADIUS };
+  return (
+    <>
+      <span className="absolute inset-0 rounded-none bg-canvas" />
+      <span data-nav-active-bar="" className="absolute inset-y-0 left-0 w-0.5 rounded-none bg-ink-subtle" />
+      <span data-nav-corner="top" className="absolute right-0 bottom-[calc(100%-1px)] bg-canvas" style={plate}>
+        <span className="absolute top-0 right-0 rounded-br-full surface-glass" style={fillet} />
+      </span>
+      <span data-nav-corner="bottom" className="absolute top-[calc(100%-1px)] right-0 bg-canvas" style={plate}>
+        <span className="absolute right-0 bottom-0 rounded-tr-full surface-glass" style={fillet} />
+      </span>
     </>
   );
 }

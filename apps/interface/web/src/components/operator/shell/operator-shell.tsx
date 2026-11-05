@@ -5,7 +5,7 @@ import { Activity, Cpu, Plug, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { RAIL_CONTENT_CLASS, RailEdgeShadow, RailGrip, railFrameClass, useSharedRailWidth } from '@/components/shell/rail-resize';
+import { NavActiveNotch, RAIL_CONTENT_CLASS, RailCollapseControl, RailEdgeShadow, RailGrip, railFrameClass, useSharedRailWidth } from '@/components/shell/rail-resize';
 import { OperatorAccountMenu } from './operator-account-menu';
 import { OperatorLogomark } from './operator-logomark';
 
@@ -38,22 +38,6 @@ function readStoredCollapsed(): boolean {
 
 function NavIcon({ icon: Icon }: { icon: LucideIcon }) {
   return <Icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.75} fill="none" />;
-}
-
-/** Inverse corners: rail scoops around a canvas hole, same treatment as the administration nav. */
-function NavActiveNotch() {
-  return (
-    <>
-      <span className="absolute inset-0 rounded-none bg-canvas" />
-      <span data-nav-active-bar="" className="absolute inset-y-0 left-0 w-0.5 rounded-none bg-ink-subtle" />
-      <span data-nav-corner="top" className="absolute right-0 bottom-[calc(100%-1px)] h-[17px] w-4 bg-canvas">
-        <span className="absolute top-0 right-0 size-4 rounded-br-full bg-shell-rail" />
-      </span>
-      <span data-nav-corner="bottom" className="absolute top-[calc(100%-1px)] right-0 h-[17px] w-4 bg-canvas">
-        <span className="absolute right-0 bottom-0 size-4 rounded-tr-full bg-shell-rail" />
-      </span>
-    </>
-  );
 }
 
 export function OperatorShell({ children }: { children: ReactNode }) {
@@ -139,7 +123,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
       style={{ '--rail-width': rail.column, ...navVars } as CSSProperties}
       className={railFrameClass(rail.dragging)}
     >
-      <aside className="bg-shell-rail md:sticky md:top-0 md:h-dvh">
+      <aside className="surface-glass md:sticky md:top-0 md:h-dvh">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-3 md:flex md:h-full md:flex-col md:flex-nowrap md:items-stretch md:justify-start md:gap-0 md:p-0">
           <div
             className={cn(
@@ -148,18 +132,20 @@ export function OperatorShell({ children }: { children: ReactNode }) {
             )}
           >
             {collapsed ? (
-              <>
-                <span className="md:hidden">
-                  <OperatorLogomark />
-                </span>
-                <OperatorLogomark className="hidden md:inline-block" />
-              </>
+              <span className="md:hidden">
+                <OperatorLogomark />
+              </span>
             ) : (
               <div className="min-w-0 flex-1">
                 <BrandMark />
                 <p className="mt-1 text-xs leading-tight font-semibold text-ink-muted">Console opérateur</p>
               </div>
             )}
+            <RailCollapseControl
+              collapsed={collapsed}
+              onToggle={() => commitCollapsed(!collapsed)}
+              mark={<OperatorLogomark />}
+            />
           </div>
 
           <nav
@@ -177,7 +163,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                 aria-hidden="true"
                 data-nav-indicator=""
                 className={cn(
-                  'pointer-events-none absolute inset-x-0 z-0 hidden overflow-visible md:block motion-reduce:transition-none',
+                  'pointer-events-none absolute inset-x-0 z-[1] hidden overflow-visible md:block motion-reduce:transition-none',
                   indicatorTransition && 'transition-[transform,height] duration-[220ms] ease-(--ui-ease-drawer)',
                 )}
                 style={{
@@ -249,7 +235,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
           onDraggingChange={rail.setDragging}
         />
       </aside>
-      <RailEdgeShadow cutout={!collapsed && trackTop != null} />
+      <RailEdgeShadow cutout={trackTop != null} />
       <main className={RAIL_CONTENT_CLASS}>{children}</main>
     </div>
   );
