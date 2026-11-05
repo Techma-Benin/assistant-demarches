@@ -1,6 +1,7 @@
 'use client';
 
-import { Button, InlineAlert, TextArea } from '@techma/ui';
+import { Button, Dialog, DialogBody, DialogContent, DialogFooter, InlineAlert, TextArea } from '@techma/ui';
+import { Check, CircleX, MessageSquarePlus, UserPlus } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { adminApi, type Case, type CaseAction } from '@/lib/admin/api';
 import { toFailure } from '@/lib/admin/errors';
@@ -16,28 +17,49 @@ const NOTE_COPY: Partial<Record<CaseAction, { label: string; hint: string; confi
 };
 const MAX_NOTE = 1000;
 
-/** Agent actions allowed by the case status (§8). Disabled while a request is in flight. */
-export function WorkActions({
+const ACTION_BUTTONS: Array<{
+  action: CaseAction;
+  label: string;
+  variant: 'primary' | 'secondary' | 'trust' | 'outline';
+  icon: typeof UserPlus;
+}> = [
+  { action: 'claim', label: 'Prendre en charge', variant: 'primary', icon: UserPlus },
+  { action: 'request_information', label: 'Demander un complément', variant: 'secondary', icon: MessageSquarePlus },
+  { action: 'approve', label: 'Approuver', variant: 'trust', icon: Check },
+  { action: 'reject', label: 'Rejeter', variant: 'outline', icon: CircleX },
+];
+
+const DECIDE_ACTIONS: ReadonlySet<CaseAction> = new Set(['request_information', 'approve', 'reject']);
+
+/** Decide actions stay hidden until this official has claimed the dossier. */
+export function toolbarActions(item: Pick<Case, 'status' | 'claimedBy'>, officialId: string | null | undefined): CaseAction[] {
+  const actions = allowedActions(item);
+  if (item.claimedBy && officialId && item.claimedBy === officialId) return actions;
+  return actions.filter((action) => !DECIDE_ACTIONS.has(action));
+}
+
+export function useWorkActions({
   item,
+  enabled,
+  officialId,
   onUpdated,
   onConflict,
 }: {
-  item: Case;
+  item: Case | null;
+  enabled: boolean;
+  officialId: string | null | undefined;
   onUpdated: (item: Case, message: string) => void;
-  /** 409: the case changed meanwhile, the parent reloads it. */
   onConflict: () => void;
 }) {
-  const actions = allowedActions(item);
-  const [pending, setPending] = useState<CaseAction | null>(null); // action awaiting a note
+  const actions = item && enabled ? toolbarActions(item, officialId) : [];
+  const [pending, setPending] = useState<CaseAction | null>(null);
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // One key per intent: kept after a retryable failure so the retry is idempotent.
   const intent = useRef<{ signature: string; key: string } | null>(null);
 
-  if (actions.length === 0) return null;
-
   async function send(action: CaseAction, text: string | null) {
+    if (!item) return;
     const signature = `${item.id}:${action}:${text ?? ''}`;
     if (intent.current?.signature !== signature) {
       intent.current = { signature, key: `act-${item.id}-${crypto.randomUUID()}` };
@@ -74,70 +96,123 @@ export function WorkActions({
     }
   };
 
-  const noteCopy = pending ? NOTE_COPY[pending] : undefined;
+  return {
+    actions,
+    pending,
+    note,
+    setNote,
+    sending,
+    error,
+    start,
+    send,
+    cancel: () => {
+      setPending(null);
+      setNote('');
+      setError(null);
+    },
+    noteCopy: pending ? NOTE_COPY[pending] : undefined,
+  };
+}
 
+export function WorkActionToolbar({
+  actions,
+  sending,
+  onStart,
+}: {
+  actions: CaseAction[];
+  sending: boolean;
+  onStart: (action: CaseAction) => void;
+}) {
+  if (actions.length === 0) return null;
   return (
-    <section aria-label="Actions" className="flex flex-col gap-4">
-      <h2 className="font-display text-2xl font-extrabold tracking-[-0.035em]">Actions</h2>
-      <div className="flex flex-wrap gap-3">
-        {actions.includes('claim') ? (
-          <Button disabled={sending} onClick={() => start('claim')}>
-            Prendre en charge
-          </Button>
-        ) : null}
-        {actions.includes('request_information') ? (
-          <Button variant="secondary" disabled={sending} onClick={() => start('request_information')}>
-            Demander un complément
-          </Button>
-        ) : null}
-        {actions.includes('approve') ? (
-          <Button variant="trust" disabled={sending} onClick={() => start('approve')}>
-            Approuver
-          </Button>
-        ) : null}
-        {actions.includes('reject') ? (
-          <Button variant="outline" disabled={sending} onClick={() => start('reject')}>
-            Rejeter
-          </Button>
-        ) : null}
-      </div>
-
-      {pending && noteCopy ? (
-        <form
-          className="flex max-w-xl flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (note.trim()) void send(pending, note.trim());
-          }}
+    <section aria-label="Actions" className="flex flex-wrap items-center justify-end gap-2">
+      {ACTION_BUTTONS.filter((button) => actions.includes(button.action)).map((button) => (
+        <Button
+          key={button.action}
+          size="sm"
+          variant={button.variant}
+          disabled={sending}
+          leadingIcon={<button.icon aria-hidden="true" className="size-4" />}
+          onClick={() => onStart(button.action)}
         >
-          <TextArea
-            label={noteCopy.label}
-            hint={noteCopy.hint}
-            required
-            maxLength={MAX_NOTE}
-            value={note}
-            disabled={sending}
-            onChange={(event) => setNote(event.target.value)}
-          />
-          <div className="flex gap-3">
-            <Button type="submit" disabled={sending || note.trim() === ''}>
-              {noteCopy.confirm}
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={sending}
-              onClick={() => {
-                setPending(null);
-                setNote('');
+          {button.label}
+        </Button>
+      ))}
+    </section>
+  );
+}
+
+export function WorkActionNote({
+  pending,
+  note,
+  setNote,
+  sending,
+  error,
+  noteCopy,
+  onSend,
+  onCancel,
+}: {
+  pending: CaseAction | null;
+  note: string;
+  setNote: (value: string) => void;
+  sending: boolean;
+  error: string | null;
+  noteCopy?: { label: string; hint: string; confirm: string };
+  onSend: (action: CaseAction, text: string | null) => void;
+  onCancel: () => void;
+}) {
+  const open = Boolean(pending && noteCopy);
+  return (
+    <>
+      {!open && error ? <InlineAlert>{error}</InlineAlert> : null}
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && !sending) onCancel();
+        }}
+      >
+        {pending && noteCopy ? (
+          <DialogContent
+            title={noteCopy.label}
+            description={noteCopy.hint}
+            onEscapeKeyDown={(event) => {
+              if (sending) event.preventDefault();
+            }}
+            onInteractOutside={(event) => {
+              if (sending) event.preventDefault();
+            }}
+          >
+            <form
+              className="flex min-h-0 flex-1 flex-col"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (note.trim()) onSend(pending, note.trim());
               }}
             >
-              Annuler
-            </Button>
-          </div>
-        </form>
-      ) : null}
-
-      {error ? <InlineAlert>{error}</InlineAlert> : null}
-    </section>
+              <DialogBody>
+                <TextArea
+                  label={noteCopy.label}
+                  hint={noteCopy.hint}
+                  required
+                  maxLength={MAX_NOTE}
+                  value={note}
+                  disabled={sending}
+                  onChange={(event) => setNote(event.target.value)}
+                />
+                {error ? <InlineAlert className="mt-3">{error}</InlineAlert> : null}
+              </DialogBody>
+              <DialogFooter>
+                <Button type="submit" disabled={sending || note.trim() === ''}>
+                  {noteCopy.confirm}
+                </Button>
+                <Button type="button" variant="ghost" disabled={sending} onClick={onCancel}>
+                  Annuler
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        ) : null}
+      </Dialog>
+    </>
   );
 }

@@ -1,7 +1,9 @@
 'use client';
 
-import { Button, InlineAlert, StatusPill, TextField } from '@techma/ui';
-import { useState, type FormEvent } from 'react';
+import { Badge, Button, InlineAlert, TextField } from '@techma/ui';
+import { Camera } from 'lucide-react';
+import { useId, useState, type FormEvent } from 'react';
+import { Dialog } from '@/components/admin/dialog';
 import { adminApi } from '@/lib/admin/api';
 import { toFailure } from '@/lib/admin/errors';
 import { roleLabel } from '@/lib/admin/permissions';
@@ -10,15 +12,7 @@ import { useConsole } from './console-context';
 /** Photo limit from `PUT /v1/admin/me/avatar`: 2 Mio, JPEG or PNG. */
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const AVATAR_TYPES = ['image/jpeg', 'image/png'] as const;
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-card border border-line-subtle bg-surface p-5">
-      <h2 className="mb-3 text-xs font-bold tracking-[0.04em] text-ink-muted uppercase">{title}</h2>
-      {children}
-    </section>
-  );
-}
+const PHOTO_HINT = 'JPEG ou PNG, 2 Mio au maximum.';
 
 function initials(name: string): string {
   return name
@@ -29,11 +23,12 @@ function initials(name: string): string {
     .join('');
 }
 
-/** `GET /v1/admin/me`: identity, photo and edition of the name and function. */
+/** `GET /v1/admin/me`: identity card, photo and edition of the display name. */
 export function ProfileView() {
-  const { profile, official, administration, setOfficial, loading, error } = useConsole();
+  const { profile, official, setOfficial, loading, error } = useConsole();
+  const photoHintId = useId();
+  const [editing, setEditing] = useState(false);
   const [name, setName] = useState<string | null>(null);
-  const [job, setJob] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -45,19 +40,32 @@ export function ProfileView() {
   if (!profile || !official) return loading ? <p role="status" className="text-sm text-ink-muted">Chargement…</p> : null;
 
   const displayName = name ?? official.displayName;
-  const jobTitle = job ?? official.jobTitle;
-  const dirty = displayName.trim() !== official.displayName || jobTitle.trim() !== official.jobTitle;
+  const dirty = displayName.trim() !== official.displayName;
+
+  function openEditor() {
+    setName(official.displayName);
+    setFailure(null);
+    setSaved(false);
+    setEditing(true);
+  }
+
+  function closeEditor() {
+    if (saving) return;
+    setEditing(false);
+    setName(null);
+    setFailure(null);
+  }
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (!dirty || saving || !displayName.trim() || !jobTitle.trim()) return;
+    if (!dirty || saving || !displayName.trim()) return;
     setSaving(true);
     setFailure(null);
     setSaved(false);
     try {
-      setOfficial(await adminApi.updateMe({ displayName: displayName.trim(), jobTitle: jobTitle.trim() }));
+      setOfficial(await adminApi.updateMe({ displayName: displayName.trim(), jobTitle: official.jobTitle }));
       setName(null);
-      setJob(null);
+      setEditing(false);
       setSaved(true);
     } catch (caught) {
       setFailure(toFailure(caught).message);
@@ -90,99 +98,88 @@ export function ProfileView() {
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-4">
-      <Section title="Identité">
-        <div className="flex flex-wrap items-center gap-4">
+    <section className="w-full rounded-card border border-line bg-surface p-5 sm:p-6">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+        <label
+          title={PHOTO_HINT}
+          className="group relative block size-28 shrink-0 cursor-pointer overflow-hidden rounded-card bg-sunken"
+        >
           {official.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               key={photoVersion}
               src={adminApi.avatarUrl(official.id)}
               alt={`Photo de ${official.displayName}`}
-              className="size-20 rounded-full object-cover"
+              className="size-full object-cover"
             />
           ) : (
             <span
               aria-hidden="true"
-              className="flex size-20 items-center justify-center rounded-full bg-sunken text-2xl font-bold text-ink-muted"
+              className="flex size-full items-center justify-center text-2xl font-bold text-ink-muted"
             >
               {initials(official.displayName)}
             </span>
           )}
-          <div className="flex min-w-0 flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="font-display text-2xl font-extrabold tracking-[-0.03em]">{official.displayName}</p>
-              <StatusPill status={official.role === 'agent' ? 'info' : 'validated'}>{roleLabel(official.role)}</StatusPill>
-            </div>
-            <p className="text-sm text-ink-muted">{official.jobTitle}</p>
-            <p className="text-sm text-ink-muted">{official.email}</p>
-            <p className="text-sm text-ink-muted">
-              {administration ? administration.name : 'Toutes les administrations'}
-            </p>
+          <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-ink/80 py-1.5 text-xs font-semibold text-surface">
+            <Camera aria-hidden="true" className="size-3.5" />
+            Photo
+          </span>
+          <input
+            type="file"
+            accept="image/jpeg,image/png"
+            aria-label="Choisir une photo"
+            aria-describedby={photoHintId}
+            disabled={uploading}
+            onChange={(event) => {
+              void upload(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+            className="sr-only"
+          />
+        </label>
+        <span id={photoHintId} className="sr-only">
+          {PHOTO_HINT}
+        </span>
+
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="font-display text-3xl font-extrabold tracking-[-0.03em] text-ink">{official.displayName}</p>
+            <Badge tone="trust">{roleLabel(official.role)}</Badge>
           </div>
+          <p className="text-sm text-ink-muted">{official.email}</p>
         </div>
-      </Section>
 
-      <Section title="Modifier mon profil">
-        <form className="flex flex-col gap-4" onSubmit={save}>
-          <TextField
-            label="Nom affiché"
-            required
-            maxLength={200}
-            value={displayName}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <TextField
-            label="Fonction"
-            required
-            maxLength={200}
-            value={jobTitle}
-            onChange={(event) => setJob(event.target.value)}
-          />
-          <div className="flex items-center gap-3">
-            <Button type="submit" disabled={!dirty || saving || !displayName.trim() || !jobTitle.trim()}>
-              Enregistrer
-            </Button>
-            {saved ? <span role="status" className="text-sm font-semibold text-trust-text">Profil enregistré.</span> : null}
-          </div>
-          {failure ? <InlineAlert>{failure}</InlineAlert> : null}
-        </form>
-      </Section>
+        <Button variant="outline" size="sm" className="self-start sm:self-center" onClick={openEditor}>
+          Modifier
+        </Button>
+      </div>
 
-      <Section title="Photo">
-        <div className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1.5 text-[15px] font-semibold text-ink">
-            Choisir une photo
-            <input
-              type="file"
-              accept="image/jpeg,image/png"
-              disabled={uploading}
-              onChange={(event) => {
-                void upload(event.target.files?.[0]);
-                event.target.value = '';
-              }}
-              className="text-sm font-normal"
+      {uploading ? <p role="status" className="mt-4 text-sm text-ink-muted">Envoi en cours…</p> : null}
+      {photoFailure ? <div className="mt-4"><InlineAlert>{photoFailure}</InlineAlert></div> : null}
+      {saved ? <p role="status" className="mt-4 text-sm font-semibold text-trust-text">Profil enregistré.</p> : null}
+
+      {editing ? (
+        <Dialog title="Modifier le nom affiché" onClose={closeEditor}>
+          <form className="flex flex-col gap-4" onSubmit={save}>
+            <TextField
+              label="Nom affiché"
+              required
+              maxLength={200}
+              value={displayName}
+              onChange={(event) => setName(event.target.value)}
             />
-          </label>
-          <p className="text-[13px] text-ink-muted">JPEG ou PNG, 2 Mio au maximum.</p>
-          {uploading ? <p role="status" className="text-sm text-ink-muted">Envoi en cours…</p> : null}
-          {photoFailure ? <InlineAlert>{photoFailure}</InlineAlert> : null}
-        </div>
-      </Section>
-
-      <Section title="Permissions">
-        {profile.permissions.length === 0 ? (
-          <p className="text-sm text-ink-muted">Aucune permission.</p>
-        ) : (
-          <ul aria-label="Permissions" className="flex flex-wrap gap-2">
-            {profile.permissions.map((permission) => (
-              <li key={permission} className="rounded-pill bg-sunken px-2.5 py-1 font-mono text-xs">
-                {permission}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-    </div>
+            {failure ? <InlineAlert>{failure}</InlineAlert> : null}
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="outline" onClick={closeEditor} disabled={saving}>
+                Annuler
+              </Button>
+              <Button type="submit" disabled={!dirty || saving || !displayName.trim()}>
+                Enregistrer
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      ) : null}
+    </section>
   );
 }

@@ -1,4 +1,4 @@
-import type { ActivityEntry, Case, CaseAction, CaseStatus, CaseStep, CaseView, UnansweredEntry } from './api';
+import type { ActivityEntry, Case, CaseAction, CaseStatus, CaseStep, CaseView } from './api';
 import { formatInteger } from './format';
 
 const MINUTE = 60_000;
@@ -155,13 +155,6 @@ export const ACTIVITY_LABELS: Record<ActivityEntry['action'], string> = {
   'case.approved': 'Dossier approuvé',
   'case.rejected': 'Dossier rejeté',
   'document.issued': 'Document délivré',
-};
-
-export const UNANSWERED_REASONS: Record<UnansweredEntry['reason'], string> = {
-  no_procedure_found: 'Aucune démarche trouvée',
-  no_source: 'Aucune source disponible',
-  model_unavailable: 'Assistant indisponible',
-  tool_failed: 'Un outil a échoué',
 };
 
 /** « Agent 3F7K2M » when the name is unknown (no `officials:read`). */

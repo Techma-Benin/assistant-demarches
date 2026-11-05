@@ -24,12 +24,15 @@
   --color-trust-soft: var(--ui-trust-soft);
   --color-trust-line: var(--ui-trust-line);
   --color-on-trust: var(--ui-on-trust);
+  --color-web: var(--ui-web);
+  --color-web-soft: var(--ui-web-soft);
   --color-sun: var(--ui-sun);
   --color-flag-red: var(--ui-flag-red);
   --color-danger: var(--ui-danger-text);
   --color-danger-soft: var(--ui-danger-soft);
   --color-warning: var(--ui-warning-text);
   --color-warning-soft: var(--ui-warning-soft);
+  --color-warning-pending: var(--ui-warning-pending);
   --color-focus: var(--ui-focus);
   --color-viz-1: var(--ui-viz-1);
   --color-viz-2: var(--ui-viz-2);

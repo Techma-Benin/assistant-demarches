@@ -35,12 +35,27 @@ export function CaseStatusPill({ status }: { status: CaseStatus }) {
   return <StatusPill status={statusTone(status)}>{STATUS_LABELS[status]}</StatusPill>;
 }
 
-/** Reference (SIM-…) with the « Simulation » mark when the case is simulated. */
-export function CaseReference({ item }: { item: Pick<Case, 'reference' | 'simulated'> }) {
+/** Channel name. Web uses the blue canal chip; other channels stay the neutral info pill. */
+export function ChannelPill({ channel }: { channel: string }) {
+  return (
+    <StatusPill status="info" className={channel === 'web' ? 'border-transparent bg-web-soft text-web' : undefined}>
+      {CHANNEL_LABELS[channel] ?? channel}
+    </StatusPill>
+  );
+}
+
+/** Reference (SIM-…). `mark` keeps the « Simulation » tag on detail views; queues omit it. */
+export function CaseReference({
+  item,
+  mark = true,
+}: {
+  item: Pick<Case, 'reference' | 'simulated'>;
+  mark?: boolean;
+}) {
   return (
     <span className="flex flex-wrap items-center gap-2">
       <span className="font-mono text-xs text-ink-muted">{item.reference}</span>
-      {item.simulated ? <SimulationPill /> : null}
+      {mark && item.simulated ? <SimulationPill /> : null}
     </span>
   );
 }

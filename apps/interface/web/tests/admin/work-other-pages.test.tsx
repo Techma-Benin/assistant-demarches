@@ -4,7 +4,6 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivityLog } from '@/components/admin/work/activity-log';
-import { UnansweredList } from '@/components/admin/work/unanswered-list';
 import { UsersList } from '@/components/admin/work/users-list';
 import {
   ADMIN,
@@ -38,67 +37,6 @@ beforeEach(() => resetConsole());
 afterEach(() => vi.unstubAllGlobals());
 
 const page = (items: unknown[], nextCursor: string | null = null) => json({ items, nextCursor });
-const UNQ = 'unq_01JD0000000000000000000001';
-const unanswered = (overrides = {}) => ({
-  id: UNQ,
-  administrationId: 'justice',
-  theme: 'Fiscalité',
-  reason: 'no_procedure_found',
-  status: 'open',
-  createdAt: '2026-11-02T08:00:00Z',
-  resolvedAt: null,
-  ...overrides,
-});
-
-describe('Sans réponse (A7)', () => {
-  it('shows theme and reason only, never conversation or message ids', async () => {
-    const { calls } = stubFetch(() => page([unanswered(), unanswered({ id: 'unq_01JD0000000000000000000002', theme: null, reason: 'tool_failed' })]));
-    render(<UnansweredList />);
-    expect(await screen.findByText('Fiscalité')).toBeInTheDocument();
-    expect(screen.getByText(/Aucune démarche trouvée/)).toBeInTheDocument();
-    expect(screen.getByText('Thème non déterminé')).toBeInTheDocument();
-    expect(screen.getByText(/Un outil a échoué/)).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/cnv_|msg_|unq_/);
-    expect(calls[0].url.searchParams.get('status')).toBe('open');
-  });
-
-  it('resolves an entry with POST /resolve and marks it resolved', async () => {
-    const { calls } = stubFetch((call) => (call.method === 'POST' ? json(unanswered({ status: 'resolved' })) : page([unanswered()])));
-    render(<UnansweredList />);
-    await userEvent.setup().click(await screen.findByRole('button', { name: 'Marquer comme résolu' }));
-    expect(await screen.findByText('Question marquée comme résolue.')).toBeInTheDocument();
-    const post = calls.find((c) => c.method === 'POST')!;
-    expect(post.url.pathname).toBe(`/api/admin/v1/admin/unanswered/${UNQ}/resolve`);
-    expect(post.body).toBeUndefined();
-    expect(screen.queryByRole('button', { name: 'Marquer comme résolu' })).toBeNull();
-    expect(screen.getByText('Résolue')).toBeInTheDocument();
-  });
-
-  it('shows a failed resolution as a message', async () => {
-    stubFetch((call) => (call.method === 'POST' ? problem(409, 'CONFLICT', 'Déjà résolue par un collègue.') : page([unanswered()])));
-    render(<UnansweredList />);
-    await userEvent.setup().click(await screen.findByRole('button', { name: 'Marquer comme résolu' }));
-    expect(await screen.findByText('Déjà résolue par un collègue.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Marquer comme résolu' })).toBeInTheDocument();
-  });
-
-  it('switches to the resolved questions with status=resolved and shows the empty state', async () => {
-    const { calls } = stubFetch(() => page([]));
-    render(<UnansweredList />);
-    expect(await screen.findByText('Aucune question sans réponse')).toBeInTheDocument();
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Résolues' }));
-    expect(await screen.findByText('Aucune question résolue')).toBeInTheDocument();
-    expect(calls.at(-1)!.url.searchParams.get('status')).toBe('resolved');
-  });
-
-  it('sends the chosen administration for a super admin', async () => {
-    resetConsole(SUPER, { scopeId: 'anip' });
-    const { calls } = stubFetch(() => page([]));
-    render(<UnansweredList />);
-    await screen.findByText('Aucune question sans réponse');
-    expect(calls[0].url.searchParams.get('administrationId')).toBe('anip');
-  });
-});
 
 describe('Journal (A8)', () => {
   const entry = (overrides = {}) => ({
@@ -115,25 +53,69 @@ describe('Journal (A8)', () => {
   });
 
   it('shows who did what on which case, with French labels and no trace column', async () => {
+    const longNote =
+      'Pièce d’identité illisible, dossier à redéposer. Merci de fournir un extrait d’acte de naissance plus lisible, puis de confirmer l’identité du demandeur.';
     const { calls } = stubFetch(() =>
       page([
         entry(),
         entry({ id: 'act_01JD0000000000000000000002', actor: 'assistant', officialId: null, action: 'document.issued', note: 'Extrait délivré' }),
-        entry({ id: 'act_01JD0000000000000000000003', officialId: OTHER_OFFICIAL_ID, action: 'case.rejected', note: 'Illisible' }),
+        entry({ id: 'act_01JD0000000000000000000003', officialId: OTHER_OFFICIAL_ID, action: 'case.rejected', note: longNote }),
       ]),
     );
     render(<ActivityLog />);
     expect(await screen.findByText('Dossier pris en charge')).toBeInTheDocument();
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      'Quand',
+      'Action',
+      'Acteur',
+      'Dossier',
+      'Note',
+    ]);
+    expect(screen.getAllByText('2 nov. 2026').length).toBeGreaterThan(0);
+    expect(screen.queryByText('hier')).toBeNull();
     expect(screen.getByText('Document délivré')).toBeInTheDocument();
     expect(screen.getByText('Dossier rejeté')).toBeInTheDocument();
     expect(screen.getByText('Agent Justice')).toBeInTheDocument();
     expect(screen.getByText('Assistant')).toBeInTheDocument();
     expect(screen.getByText('Agent 000002')).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: 'SIM-JUS-2026-000001' })[0]).toHaveAttribute('href', `/admin/dossiers/${CASE_ID}`);
-    expect(screen.getByText('Extrait délivré')).toBeInTheDocument();
+    const dossier = screen.getAllByRole('link', { name: 'SIM-JUS-2026-000001' })[0];
+    expect(dossier).toHaveAttribute('href', `/admin/dossiers/${CASE_ID}`);
+    expect(dossier).toHaveClass('whitespace-nowrap');
+    expect(dossier.closest('td')).toHaveClass('min-w-[14rem]', 'whitespace-nowrap');
+    const actor = screen.getByText('Agent Justice');
+    expect(actor.closest('td')).toHaveClass('w-[15rem]', 'min-w-[15rem]', 'whitespace-nowrap');
+    expect(actor.closest('td')).not.toHaveClass('max-w-[9.5rem]');
+    expect(screen.getByText(longNote).closest('td')).toHaveClass('w-[16rem]', 'max-w-[16rem]');
+    expect(screen.getByText('Extrait délivré')).toHaveClass('line-clamp-2');
+    const note = screen.getByText(longNote);
+    expect(note).toHaveClass('line-clamp-2');
+    expect(note.textContent).toBe(longNote);
     expect(screen.queryByText('case.claimed')).toBeNull();
     expect(screen.queryByRole('columnheader', { name: /Trace|Révision/ })).toBeNull();
     expect(calls[0].url.pathname).toBe('/api/admin/v1/admin/activity');
+  });
+
+  it('sorts the loaded rows from a column header, then reverses, without a new request', async () => {
+    const { calls } = stubFetch(() =>
+      page([
+        entry({ id: 'act_01JD0000000000000000000001', action: 'case.claimed' }),
+        entry({ id: 'act_01JD0000000000000000000002', action: 'document.issued', note: 'Extrait délivré' }),
+        entry({ id: 'act_01JD0000000000000000000003', action: 'case.rejected', note: 'Pièce illisible' }),
+      ]),
+    );
+    render(<ActivityLog />);
+    await screen.findByText('Dossier pris en charge');
+    const user = userEvent.setup();
+    const actionOf = () =>
+      screen.getAllByRole('row').slice(1).map((row) => within(row).getAllByRole('cell')[1].textContent);
+    expect(screen.getByRole('columnheader', { name: 'Action' })).toHaveAttribute('aria-sort', 'none');
+    await user.click(screen.getByRole('button', { name: 'Action' }));
+    expect(screen.getByRole('columnheader', { name: 'Action' })).toHaveAttribute('aria-sort', 'ascending');
+    expect(actionOf()).toEqual(['Document délivré', 'Dossier pris en charge', 'Dossier rejeté']);
+    await user.click(screen.getByRole('button', { name: 'Action' }));
+    expect(screen.getByRole('columnheader', { name: 'Action' })).toHaveAttribute('aria-sort', 'descending');
+    expect(actionOf()).toEqual(['Dossier rejeté', 'Dossier pris en charge', 'Document délivré']);
+    expect(calls).toHaveLength(1);
   });
 });
 
@@ -168,6 +150,25 @@ describe('Utilisateurs (A9)', () => {
     render(<UsersList />);
     expect(screen.getByText('Vous n’avez pas accès à cette page.')).toBeInTheDocument();
     expect(calls).toHaveLength(0);
+  });
+
+  it('sorts officials by column and does not make Actions a sort button', async () => {
+    resetConsole(ADMIN);
+    const { calls } = stubUsers();
+    render(<UsersList />);
+    await screen.findByText('Camille Agent');
+    const user = userEvent.setup();
+    const names = () =>
+      screen.getAllByRole('row').slice(1).map((row) => within(row).getAllByRole('cell')[0].textContent);
+    expect(within(screen.getByRole('columnheader', { name: 'Actions' })).queryByRole('button')).toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'Nom' })).toHaveAttribute('aria-sort', 'none');
+    await user.click(screen.getByRole('button', { name: 'Nom' }));
+    expect(names().map((name) => name?.includes('Dana Admin'))).toEqual([false, true]);
+    await user.click(screen.getByRole('button', { name: 'Nom' }));
+    expect(screen.getByRole('columnheader', { name: 'Nom' })).toHaveAttribute('aria-sort', 'descending');
+    expect(names()[0]).toContain('Dana Admin');
+    expect(names()[1]).toContain('Camille Agent');
+    expect(calls.filter((call) => call.method === 'GET')).toHaveLength(1);
   });
 
   it('offers edit but not create to an admin of an administration', async () => {

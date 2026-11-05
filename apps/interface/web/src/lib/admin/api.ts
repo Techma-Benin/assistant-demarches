@@ -1,5 +1,6 @@
 import type { Schemas } from '@techma/contracts-ts';
 import { newTraceparent } from '@/lib/trace';
+import { emitLoadedCase } from './case-events';
 import { AdminError, type Problem } from './errors';
 
 export type Case = Schemas['Case'];
@@ -86,15 +87,21 @@ export class AdminClient {
   }
 
   getCase(id: string, signal?: AbortSignal): Promise<Case> {
-    return this.get(`/cases/${encodeURIComponent(id)}`, {}, signal);
+    return this.get<Case>(`/cases/${encodeURIComponent(id)}`, {}, signal).then((item) => {
+      emitLoadedCase(item);
+      return item;
+    });
   }
 
   /** Body is exactly `{ action, note }`; one `idempotencyKey` per intent, reused on retry. */
   act(id: string, command: CaseActionInput, idempotencyKey: string): Promise<Case> {
-    return this.send('POST', `/cases/${encodeURIComponent(id)}/actions`, {
+    return this.send<Case>('POST', `/cases/${encodeURIComponent(id)}/actions`, {
       body: JSON.stringify({ action: command.action, note: command.note }),
       contentType: 'application/json',
       headers: { 'idempotency-key': idempotencyKey },
+    }).then((item) => {
+      emitLoadedCase(item);
+      return item;
     });
   }
 

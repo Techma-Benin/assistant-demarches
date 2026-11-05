@@ -31,7 +31,6 @@ beforeEach(() => resetConsole());
 afterEach(() => vi.unstubAllGlobals());
 
 const TITLE = 'Délivrance du Casier judiciaire (Extrait B3 du casier judiciaire)';
-const buttons = () => screen.queryAllByRole('button').map((b) => b.textContent);
 const entry = (action: string, overrides = {}) => ({
   id: 'act_01JD0000000000000000000001',
   caseId: CASE_ID,
@@ -61,32 +60,69 @@ async function open(
 }
 
 describe('case detail (A4)', () => {
-  it('shows the status, the reference with the Simulation mark, fields, payment and procedure', async () => {
+  it('shows the status, the stacked reference and procedure, fields and payment', async () => {
     await open({ status: 'in_review' });
-    expect(screen.getByText('En vérification')).toBeInTheDocument();
-    expect(screen.getByText('SIM-JUS-2026-000001')).toBeInTheDocument();
-    expect(screen.getByText('Simulation')).toBeInTheDocument();
-    expect(screen.getByText('Dossier simulé : aucune démarche réelle')).toBeInTheDocument();
-    expect(screen.getByText('PS00373')).toBeInTheDocument();
+    const heading = screen.getByRole('heading', { level: 1, name: TITLE });
+    expect(heading.nextElementSibling).toHaveTextContent('En vérification');
+    const details = screen.getByRole('region', { name: 'Détails du dossier' });
+    expect(within(details).queryByText('Statut')).toBeNull();
+    const terms = within(details).getAllByRole('term');
+    expect(terms.map((term) => term.textContent)).toEqual([
+      'Paiement',
+      'Canal',
+      'Référence',
+      'Procédure',
+      'Déposé le',
+      'Mis à jour le',
+    ]);
+    const reference = terms.find((term) => term.textContent === 'Référence')!;
+    const procedure = terms.find((term) => term.textContent === 'Procédure')!;
+    expect(reference.parentElement).toBe(procedure.parentElement);
+    expect(reference.nextElementSibling).toHaveTextContent('SIM-JUS-2026-000001');
+    expect(procedure.nextElementSibling).toHaveTextContent('PS00373');
+    expect(within(details).queryByText('Simulation')).toBeNull();
+    expect(screen.queryByText('Dossier simulé : aucune démarche réelle')).toBeNull();
     expect(screen.getByText('Payé · 1 900 FCFA')).toBeInTheDocument();
-    expect(screen.getByText('SIM-PAY-000001')).toBeInTheDocument();
+    expect(screen.queryByText('SIM-PAY-000001')).toBeNull();
     const infos = screen.getByRole('region', { name: 'Informations du dossier' });
     expect(within(infos).getByText('Adresse domicile')).toBeInTheDocument();
     expect(within(infos).getByText('Cotonou, Akpakpa')).toBeInTheDocument();
     expect(within(infos).getByText('2')).toBeInTheDocument();
   });
 
-  it('shows the steps: what the assistant did and what needs an intervention', async () => {
-    await open({});
+  it('keeps history on the left, steps on the right, without faire/pas faire copy', async () => {
+    await open({
+      steps: [
+        ...caseItem().steps,
+        {
+          id: 'claim',
+          label: 'Pris en charge par Agent Justice',
+          state: 'done',
+          actor: 'administration',
+          note: null,
+          at: '2026-11-02T10:00:00Z',
+        },
+      ],
+    });
+    const infos = screen.getByRole('region', { name: 'Informations du dossier' });
+    const history = await screen.findByRole('region', { name: 'Historique du dossier' });
     const steps = screen.getByRole('region', { name: 'Étapes' });
+    const files = screen.getByRole('region', { name: 'Pièces de l’usager' });
+    expect(steps.closest('aside')).not.toBeNull();
+    expect(files.closest('aside')).not.toBeNull();
+    expect(history.closest('aside')).toBeNull();
+    expect(infos.closest('aside')).toBeNull();
+    expect(infos.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(steps).queryByText(/fait|pas faire|à venir|intervention requise/i)).toBeNull();
+    expect(within(steps).queryByText(/pris en charge/i)).toBeNull();
     const items = within(steps).getAllByRole('listitem');
     expect(items).toHaveLength(3);
     expect(items[0]).toHaveTextContent('Dossier déposé par l’assistant');
-    expect(items[0]).toHaveTextContent('Fait');
     expect(items[0]).toHaveTextContent('Assistant');
+    expect(within(items[0]).getByRole('img', { name: 'terminée' })).toBeInTheDocument();
     expect(items[2]).toHaveTextContent('Vérification de l’identité par un agent');
-    expect(items[2]).toHaveTextContent('Intervention requise');
     expect(items[2]).toHaveTextContent('Nouvelle demande à vérifier');
+    expect(within(items[2]).getByRole('img', { name: 'bloquée' })).toBeInTheDocument();
   });
 
   it('separates submitted documents from issued ones, each downloadable', async () => {
@@ -131,6 +167,16 @@ describe('case detail (A4)', () => {
       claimedBy: OFFICIAL_ID,
       informationRequest: { note: 'Merci de joindre une pièce lisible', requestedAt: '2026-11-03T08:00:00Z', requestedBy: OTHER_OFFICIAL_ID },
     });
+    const details = screen.getByRole('region', { name: 'Détails du dossier' });
+    expect(within(details).getAllByRole('term').map((term) => term.textContent)).toEqual([
+      'Pris en charge par',
+      'Paiement',
+      'Canal',
+      'Référence',
+      'Procédure',
+      'Déposé le',
+      'Mis à jour le',
+    ]);
     expect(screen.getByText('Pris en charge par').nextElementSibling).toHaveTextContent('Agent Justice');
     const request = screen.getByRole('region', { name: 'Complément demandé' });
     expect(request).toHaveTextContent('Merci de joindre une pièce lisible');
@@ -181,25 +227,37 @@ describe('case detail (A4)', () => {
 });
 
 describe('action visibility by status (A5)', () => {
+  const actionNames = () =>
+    screen
+      .queryAllByRole('button')
+      .map((button) => button.getAttribute('aria-label') ?? button.textContent?.replace(/\s+/g, ' ').trim())
+      .filter((label): label is string => Boolean(label) && label !== 'Réessayer');
+
   it.each([
     ['awaiting_payment', []],
     ['received', ['Prendre en charge']],
-    ['in_review', ['Prendre en charge', 'Demander un complément', 'Approuver', 'Rejeter']],
-    ['information_requested', ['Rejeter']],
+    ['in_review', ['Prendre en charge']],
+    ['information_requested', []],
     ['completed', []],
     ['rejected', []],
   ] as const)('%s offers %j', async (status, expected) => {
     await open({ status });
-    expect(buttons().filter((label) => label !== 'Réessayer')).toEqual([...expected]);
+    expect(actionNames()).toEqual([...expected]);
   });
 
-  it('hides Prendre en charge once claimedBy is set', async () => {
+  it('hides Prendre en charge once this official owns the claim', async () => {
     await open({ status: 'in_review', claimedBy: OFFICIAL_ID });
-    expect(buttons().filter((label) => label !== 'Réessayer')).toEqual([
-      'Demander un complément',
-      'Approuver',
-      'Rejeter',
-    ]);
+    expect(actionNames()).toEqual(['Demander un complément', 'Approuver', 'Rejeter']);
+  });
+
+  it('hides decide actions when another official owns the claim', async () => {
+    await open({ status: 'in_review', claimedBy: OTHER_OFFICIAL_ID });
+    expect(actionNames()).toEqual([]);
+  });
+
+  it('offers Rejeter on information_requested once this official owns the claim', async () => {
+    await open({ status: 'information_requested', claimedBy: OFFICIAL_ID });
+    expect(actionNames()).toEqual(['Rejeter']);
   });
 
   it('hides every action without cases:act', async () => {
@@ -241,7 +299,9 @@ describe('actions (A5)', () => {
   });
 
   it('approves with note null', async () => {
-    const { calls } = await open({ status: 'in_review' }, () => json(caseItem({ status: 'completed', completedBy: 'administration' })));
+    const { calls } = await open({ status: 'in_review', claimedBy: OFFICIAL_ID }, () =>
+      json(caseItem({ status: 'completed', completedBy: 'administration' })),
+    );
     await userEvent.setup().click(screen.getByRole('button', { name: 'Approuver' }));
     expect(await screen.findByText('Dossier approuvé.')).toBeInTheDocument();
     expect(actionCalls(calls)[0].body).toEqual({ action: 'approve', note: null });
@@ -252,22 +312,26 @@ describe('actions (A5)', () => {
     ['Demander un complément', 'request_information', 'Complément demandé à l’usager', 'Envoyer la demande', 'Demande de complément envoyée.'],
     ['Rejeter', 'reject', 'Motif du rejet', 'Confirmer le rejet', 'Dossier rejeté.'],
   ])('%s requires a non-empty note and sends it', async (button, action, label, confirm, success) => {
-    const { calls } = await open({ status: 'in_review' }, () => json(caseItem({ status: 'rejected' })));
+    const { calls } = await open({ status: 'in_review', claimedBy: OFFICIAL_ID }, () =>
+      json(caseItem({ status: 'rejected' })),
+    );
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: button }));
     expect(actionCalls(calls)).toHaveLength(0); // the note comes first
-    const submit = screen.getByRole('button', { name: confirm });
+    const dialog = screen.getByRole('dialog', { name: label });
+    const submit = within(dialog).getByRole('button', { name: confirm });
     expect(submit).toBeDisabled();
-    await user.type(screen.getByLabelText(new RegExp(label)), '   ');
+    await user.type(within(dialog).getByLabelText(new RegExp(label)), '   ');
     expect(submit).toBeDisabled();
-    await user.type(screen.getByLabelText(new RegExp(label)), ' Pièce illisible ');
+    await user.type(within(dialog).getByLabelText(new RegExp(label)), ' Pièce illisible ');
     await user.click(submit);
     expect(await screen.findByText(success)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: label })).toBeNull();
     expect(actionCalls(calls)[0].body).toEqual({ action, note: 'Pièce illisible' });
   });
 
   it('shows the server problem for 409 INVALID_TRANSITION and reloads the case', async () => {
-    const { calls } = await open({ status: 'in_review' }, () =>
+    const { calls } = await open({ status: 'in_review', claimedBy: OFFICIAL_ID }, () =>
       problem(409, 'INVALID_TRANSITION', 'Le dossier est déjà complété.'),
     );
     await userEvent.setup().click(screen.getByRole('button', { name: 'Approuver' }));
@@ -278,7 +342,7 @@ describe('actions (A5)', () => {
 
   it('shows other problems as messages (403, 400)', async () => {
     const user = userEvent.setup();
-    await open({ status: 'in_review' }, () => problem(403, 'FORBIDDEN', 'refusé'));
+    await open({ status: 'in_review', claimedBy: OFFICIAL_ID }, () => problem(403, 'FORBIDDEN', 'refusé'));
     await user.click(screen.getByRole('button', { name: 'Approuver' }));
     expect(await screen.findByText('Vous n’avez pas le droit d’effectuer cette action.')).toBeInTheDocument();
   });
@@ -302,8 +366,9 @@ describe('actions (A5)', () => {
     expect(actionCalls(calls)[2].headers['idempotency-key']).not.toBe(keys[0]);
   });
 
-  it('does not require having claimed the case first: approve is offered on an unclaimed in_review case', async () => {
+  it('offers Approuver only after this official has claimed the case', async () => {
     await open({ status: 'in_review', claimedBy: null });
-    expect(screen.getByRole('button', { name: 'Approuver' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Approuver' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Prendre en charge' })).toBeEnabled();
   });
 });
