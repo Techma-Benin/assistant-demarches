@@ -8,6 +8,7 @@ import { conversationReducer, initialState, type ConversationState } from '@/lib
 import { saveConversation, type ConversationSnapshot } from '@/lib/conversation-persistence';
 import { CONTRACT_MIME_TYPES, validateFile, type ContractMimeType } from '@/lib/files';
 import { newId } from '@/lib/ids';
+import { onSessionChanged } from '@/lib/session-events';
 import { buttonInteraction, fileContent, formInteraction } from '@/lib/interactions';
 
 interface PendingUpload {
@@ -79,6 +80,7 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
 
   // Realtime (CONTRACTS.md §5): WebSocket with polling fallback, owned by ConversationStream.
   const conversationId = state.conversationId;
+  const streamRef = useRef<ConversationStream | null>(null);
   const [connection, setConnection] = useState<StreamStatus>('connecting');
   // A resumed conversation shows nothing until its history is back.
   const [loadingHistory, setLoadingHistory] = useState(restored != null);
@@ -105,9 +107,16 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
         }),
     });
     if (!resuming) setLoadingHistory(false);
+    streamRef.current = stream;
     stream.start();
-    return () => stream.stop();
+    return () => {
+      stream.stop();
+      if (streamRef.current === stream) streamRef.current = null;
+    };
   }, [c1, conversationId]);
+
+  // A sign-in changed the cookie: the socket was opened with a guest ticket, renew it.
+  useEffect(() => onSessionChanged(() => streamRef.current?.renewConnection()), []);
 
   const post = useCallback(
     async (input: MessageInput): Promise<void> => {

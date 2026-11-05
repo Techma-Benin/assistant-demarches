@@ -14,6 +14,51 @@ type Options = {
 };
 
 const SAMPLE_EVERY_MS = 100;
+const LIVE_RMS = 1e-5;
+const LIVE_HOLD_MS = 300;
+const LIVE_TIMEOUT_MS = 1500;
+
+type LiveOptions = { holdMs?: number; timeoutMs?: number; isCancelled?: () => boolean };
+
+/**
+ * Resolves once the microphone really delivers sound: `holdMs` in a row where every reading has an RMS above 1e-5
+ * (a digital-silence reading resets the count). Gives up after `timeoutMs` (a timer, since a hidden tab pauses
+ * requestAnimationFrame) and resolves anyway. Without an analyser there is nothing to wait for.
+ */
+export function waitForLiveInput(
+  analyser: Pick<AnalyserNode, 'fftSize' | 'getFloatTimeDomainData'> | null,
+  { holdMs = LIVE_HOLD_MS, timeoutMs = LIVE_TIMEOUT_MS, isCancelled }: LiveOptions = {},
+): Promise<void> {
+  if (!analyser) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const data = new Float32Array(analyser.fftSize);
+    let frame: number | null = null;
+    let liveSince: number | null = null;
+    const done = () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    const check = () => {
+      frame = null;
+      if (isCancelled?.()) return done();
+      analyser.getFloatTimeDomainData(data);
+      let sum = 0;
+      for (const v of data) sum += v * v;
+      if (Math.sqrt(sum / data.length) > LIVE_RMS) {
+        const now = performance.now();
+        liveSince ??= now;
+        if (now - liveSince >= holdMs) return done();
+      } else {
+        liveSince = null;
+      }
+      frame = requestAnimationFrame(check);
+    };
+    frame = requestAnimationFrame(check);
+  });
+}
 
 function detect(): RecorderChoice | null {
   if (typeof window === 'undefined') return null;
@@ -90,7 +135,9 @@ export function useVoiceRecorder({ maxMs = 120_000, minMs = 1_000, onMaxReached 
     setStatus('requesting');
     let media: MediaStream;
     try {
-      media = await navigator.mediaDevices.getUserMedia({ audio: true });
+      media = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
     } catch (e) {
       if (generation.current !== mine) return;
       setError(errorMessage(e));
@@ -131,6 +178,12 @@ export function useVoiceRecorder({ maxMs = 120_000, minMs = 1_000, onMaxReached 
       } catch {
         analyser = null; // metering is optional
       }
+    }
+
+    await waitForLiveInput(analyser, { isCancelled: () => generation.current !== mine });
+    if (generation.current !== mine) {
+      release();
+      return;
     }
 
     rec.start(250);

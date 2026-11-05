@@ -1,4 +1,5 @@
 import { randomBytes, createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { Pool, PoolClient } from "pg";
 import {
   identifier,
@@ -17,6 +18,32 @@ export type OwnedConversation = Conversation & { userRef: string };
 export type Event = Schemas["Event"];
 export type MessageInput = Schemas["MessageInput"];
 type Db = Pick<Pool, "query"> | Pick<PoolClient, "query">;
+
+/** Case bodies already shown in this conversation, newest first (`afterSeq`: only those published after that event). */
+async function shownCases(
+  db: Db,
+  conversationId: string,
+  caseId: string | null,
+  afterSeq = 0,
+): Promise<Schemas["Case"][]> {
+  const rows = (
+    await db.query(
+      `SELECT body FROM backend_conversation_events
+       WHERE conversation_id=$1 AND seq>$2 AND body->'data'->>'kind'='message.sent'
+       ORDER BY seq DESC LIMIT 50`,
+      [conversationId, afterSeq],
+    )
+  ).rows;
+  const cases: Schemas["Case"][] = [];
+  for (const row of rows)
+    for (const block of row.body?.data?.message?.blocks ?? [])
+      if (
+        block?.type === "caseCard" &&
+        (caseId === null || block.case?.id === caseId)
+      )
+        cases.push(block.case);
+  return cases;
+}
 export function envelope(
   data: Event["data"],
   _traceparent: string,
@@ -492,6 +519,14 @@ export class Conversations {
               [data.mandate.id, cid, userRef, data.mandate],
             );
         } else if (data.kind === "case.updated") {
+          const [latest] = await shownCases(db, cid, data.case.id);
+          if (latest && isDeepStrictEqual(latest, data.case)) {
+            await db.query(
+              "INSERT INTO backend_ingested_events(id,fingerprint) VALUES($1,$2)",
+              [event.id, fingerprint(event)],
+            );
+            return event;
+          }
           const message = {
             id: identifier("msg"),
             conversationId: cid,
@@ -555,6 +590,29 @@ export class Conversations {
     preserveError = false,
     messageId?: string,
   ): Promise<Event> {
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      conversationId,
+    ]);
+    const received = (
+      await db.query(
+        `SELECT seq FROM backend_conversation_events
+         WHERE conversation_id=$1 AND body->'data'->>'kind'='message.received'
+           AND body->'data'->'message'->>'id'=$2
+         ORDER BY seq DESC LIMIT 1`,
+        [conversationId, inputId],
+      )
+    ).rows[0];
+    if (received) {
+      const shown = await shownCases(db, conversationId, null, Number(received.seq));
+      const kept = blocks.filter(
+        (block) =>
+          !(
+            block.type === "caseCard" &&
+            shown.some((c) => isDeepStrictEqual(c, block.case))
+          ),
+      );
+      if (kept.length > 0) blocks = kept;
+    }
     const message = {
       id: messageId ?? identifier("msg"),
       conversationId,

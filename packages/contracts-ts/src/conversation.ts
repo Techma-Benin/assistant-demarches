@@ -238,6 +238,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/transcriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transcrire un vocal sans l’envoyer
+         * @description Le fichier audio doit avoir été déposé par l’usager avec POST /v1/files. Aucun message n’est créé et le modèle n’est pas appelé : l’usager relit et corrige le texte, puis l’envoie comme message text. Le fichier suit la conservation de 24 h.
+         */
+        post: operations["transcribeAudio"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/cases": {
         parameters: {
             query?: never;
@@ -710,6 +730,13 @@ export interface components {
              * @description Date de collecte de la fiche.
              */
             retrievedAt: string;
+        };
+        Transcription: {
+            /** @description Texte transcrit du vocal, à relire et corriger par l’usager avant envoi. */
+            text: string;
+        };
+        TranscriptionInput: {
+            fileId: components["schemas"]["FileId"];
         };
         UserMessage: {
             id: components["schemas"]["MessageId"];
@@ -1494,6 +1521,87 @@ export interface operations {
             };
             /** @description Authentification absente ou invalide (UNAUTHORIZED). */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    transcribeAudio: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description W3C Trace Context. Facultatif : le serveur en crée un s’il est absent. */
+                traceparent?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranscriptionInput"];
+            };
+        };
+        responses: {
+            /** @description Succès. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transcription"];
+                };
+            };
+            /** @description Requête invalide (INVALID_REQUEST). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentification absente ou invalide (UNAUTHORIZED). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Fichier inconnu ou appartenant à un autre usager (NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Fichier audio ou transcription trop long (FILE_TOO_LARGE). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Le fichier n’est pas un audio pris en charge (UNSUPPORTED_MEDIA_TYPE). */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

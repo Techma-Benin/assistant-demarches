@@ -195,3 +195,55 @@ test('process() persists the transcript on message.received without changing the
   assert.ok(received.every(item => item.content.type === 'audio' && item.content.fileId === fileId));
   assert.ok(received.every(item => item.transcript === 'Bonjour'));
 });
+
+async function viaFakeFetch(t, env, response = () => new Response(JSON.stringify({ text: 'ok' }), { status: 200 })) {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => { calls.push({ url: String(url), auth: init.headers.Authorization, model: init.body.get('model') }); return response(); };
+  t.after(() => { globalThis.fetch = original; });
+  const transcriber = transcriberFromEnvironment({ async readOwned() { return audioFile(); } }, env);
+  if (transcriber) await transcriber.transcribe('file', 'owner').catch(() => {});
+  return { transcriber, calls };
+}
+const groqUrl = 'https://api.groq.com/openai/v1/audio/transcriptions';
+const openaiUrl = 'https://api.openai.com/v1/audio/transcriptions';
+
+test('Transcription endpoint and key follow the model provider', async t => {
+  let r = await viaFakeFetch(t, { MODEL_PROVIDER: 'openai', MODEL_API_KEY: 'k-openai' });
+  assert.deepEqual(r.calls, [{ url: openaiUrl, auth: 'Bearer k-openai', model: 'whisper-1' }]);
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: ' OpenAI ', MODEL_API_KEY: 'k-openai' });
+  assert.equal(r.calls[0].url, openaiUrl);
+  r = await viaFakeFetch(t, { MODEL_API_KEY: 'k-model' });
+  assert.deepEqual(r.calls, [{ url: groqUrl, auth: 'Bearer k-model', model: 'whisper-large-v3-turbo' }]);
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: 'anthropic', MODEL_API_KEY: 'k-model' });
+  assert.equal(r.transcriber, undefined);
+  assert.deepEqual(r.calls, []);
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: 'anthropic', MODEL_API_KEY: 'k-model', GROQ_API_KEY: 'k-groq' });
+  assert.deepEqual(r.calls, [{ url: groqUrl, auth: 'Bearer k-groq', model: 'whisper-large-v3-turbo' }]);
+  const custom = 'https://stt.example/v1/transcriptions';
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: 'anthropic', MODEL_API_KEY: 'k-model', TRANSCRIPTION_ENDPOINT: custom, TRANSCRIPTION_ALLOWED_URLS: custom });
+  assert.deepEqual(r.calls, [{ url: custom, auth: 'Bearer k-model', model: 'whisper-large-v3-turbo' }]);
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: 'openai', MODEL_API_KEY: 'k-openai', TRANSCRIPTION_MODEL: 'custom-stt' });
+  assert.deepEqual(r.calls, [{ url: openaiUrl, auth: 'Bearer k-openai', model: 'custom-stt' }]);
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: 'anthropic', MODEL_API_KEY: 'k-model', TRANSCRIPTION_API_KEY_ENV: 'STT_KEY', STT_KEY: 'k-stt' });
+  assert.deepEqual(r.calls, [{ url: groqUrl, auth: 'Bearer k-stt', model: 'whisper-large-v3-turbo' }]);
+  r = await viaFakeFetch(t, { MODEL_API_KEY: 'k-model', TRANSCRIPTION_API_KEY_ENV: 'STT_KEY' });
+  assert.equal(r.transcriber, undefined);
+});
+
+test('Transcription failures are logged without secrets, bodies or transcripts', async t => {
+  const lines = [];
+  const original = console.error;
+  console.error = (...args) => { lines.push(args.join(' ')); };
+  t.after(() => { console.error = original; });
+  const env = { MODEL_API_KEY: secret };
+  await viaFakeFetch(t, env, () => new Response('PRIVATE_PROVIDER_ECHO ' + secret, { status: 401 }));
+  const log = lines.join('\n');
+  assert.match(log, /transcription\.failed/);
+  assert.match(log, /provider_authentication_failed/);
+  assert.doesNotMatch(log, /PRIVATE_PROVIDER_ECHO|synthetic-transcription-secret/);
+  lines.length = 0;
+  await viaFakeFetch(t, env, () => new Response(JSON.stringify({ text: 'PRIVATE_TRANSCRIPT' }), { status: 200 }));
+  assert.doesNotMatch(lines.join('\n'), /PRIVATE_TRANSCRIPT/);
+  assert.equal(lines.length, 0);
+});

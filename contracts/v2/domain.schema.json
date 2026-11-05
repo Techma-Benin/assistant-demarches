@@ -3307,6 +3307,33 @@
         "detail",
         "traceId"
       ]
+    },
+    "TranscriptionInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/FileId"
+        }
+      },
+      "required": [
+        "fileId"
+      ]
+    },
+    "Transcription": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "description": "Texte transcrit du vocal, à relire et corriger par l’usager avant envoi."
+        }
+      },
+      "required": [
+        "text"
+      ]
     }
   }
 }

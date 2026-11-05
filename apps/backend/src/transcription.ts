@@ -1,4 +1,5 @@
 import { approvedMcpUrl, Problem } from "./domain.js";
+import { logFailure, providerReason } from "./diagnostics.js";
 import type { Files } from "./files.js";
 
 export interface TranscriptionPort {
@@ -6,6 +7,11 @@ export interface TranscriptionPort {
 }
 
 const groqEndpoint = "https://api.groq.com/openai/v1/audio/transcriptions";
+const openaiEndpoint = "https://api.openai.com/v1/audio/transcriptions";
+const transcriptionDefaults: Readonly<Record<string, { endpoint: string; model: string }>> = {
+  groq: { endpoint: groqEndpoint, model: "whisper-large-v3-turbo" },
+  openai: { endpoint: openaiEndpoint, model: "whisper-1" },
+};
 const audioExtensions: Readonly<Record<string, string>> = {
   "audio/ogg": "ogg",
   "audio/mpeg": "mp3",
@@ -89,6 +95,9 @@ export class HttpTranscription implements TranscriptionPort {
     form.set("file", new Blob([new Uint8Array(bytes)], { type: file.mimeType }), "recording." + extension);
     form.set("model", this.model);
     form.set("response_format", "json");
+    form.set("language", "fr");
+    const context = { mimeType: file.mimeType, sizeBytes: bytes.length };
+    let reason = "provider_network_error";
     try {
       const response = await fetch(this.endpoint, {
         method: "POST",
@@ -99,8 +108,11 @@ export class HttpTranscription implements TranscriptionPort {
       });
       if (!response.ok) {
         await response.body?.cancel().catch(() => {});
-        throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Le fournisseur de transcription est indisponible (HTTP " + response.status + ").");
+        const problem = new Problem(503, "UPSTREAM_UNAVAILABLE", "Le fournisseur de transcription est indisponible (HTTP " + response.status + ").");
+        logFailure("transcription.failed", problem, { ...context, reason: providerReason(response.status, undefined), upstreamStatus: response.status });
+        throw problem;
       }
+      reason = "invalid_provider_response";
       const reader = response.body?.getReader();
       if (!reader) throw new Error();
       const chunks: Uint8Array[] = [];
@@ -123,6 +135,11 @@ export class HttpTranscription implements TranscriptionPort {
       return text.trim();
     } catch (error) {
       if (error instanceof Problem) throw error;
+      const name = (error as { name?: unknown } | undefined)?.name;
+      logFailure("transcription.failed", error, {
+        ...context,
+        reason: name === "TimeoutError" || name === "AbortError" ? "provider_network_error" : reason,
+      });
       // Provider bodies, audio and transcripts may contain private data; never echo them.
       throw new Problem(503, "UPSTREAM_UNAVAILABLE", "La transcription audio a échoué ou a expiré.");
     }
@@ -135,18 +152,33 @@ export function transcriberFromEnvironment(
 ): TranscriptionPort | undefined {
   // On by default when a key is present. No TRANSCRIPTION_ENABLED gate
   // (product decision from the user, Billux).
-  const apiKeyEnv = environment.TRANSCRIPTION_API_KEY_ENV
-    ?? (environment.MODEL_API_KEY?.trim() ? "MODEL_API_KEY" : "GROQ_API_KEY");
-  if (!environment[apiKeyEnv]?.trim()) return undefined;
-  const endpoint = environment.TRANSCRIPTION_ENDPOINT ?? groqEndpoint;
+  const filled = (value: string | undefined) => value?.trim() ? value : undefined;
+  const provider = filled(environment.MODEL_PROVIDER)?.trim().toLowerCase() ?? "groq";
+  const providerDefault = Object.hasOwn(transcriptionDefaults, provider) ? transcriptionDefaults[provider] : undefined;
+  const explicitEndpoint = environment.TRANSCRIPTION_ENDPOINT;
+  let apiKeyEnv: string;
+  let endpoint: string;
+  if (environment.TRANSCRIPTION_API_KEY_ENV !== undefined) {
+    apiKeyEnv = environment.TRANSCRIPTION_API_KEY_ENV;
+    if (!environment[apiKeyEnv]?.trim()) return undefined;
+    endpoint = explicitEndpoint ?? providerDefault?.endpoint ?? groqEndpoint;
+  } else if (filled(environment.MODEL_API_KEY) && (explicitEndpoint !== undefined || providerDefault)) {
+    apiKeyEnv = "MODEL_API_KEY";
+    endpoint = (explicitEndpoint ?? providerDefault?.endpoint) as string;
+  } else if (filled(environment.GROQ_API_KEY)) {
+    apiKeyEnv = "GROQ_API_KEY";
+    endpoint = explicitEndpoint ?? groqEndpoint;
+  } else return undefined;
+  const defaultModel = Object.values(transcriptionDefaults).find((entry) => entry.endpoint === endpoint)?.model;
   const allowedEndpoints = new Set([
     groqEndpoint,
+    openaiEndpoint,
     ...(environment.TRANSCRIPTION_ALLOWED_URLS ?? "").split(",").map((value) => value.trim()).filter(Boolean),
   ]);
   return new HttpTranscription(files, {
     endpoint,
     allowedEndpoints,
-    model: environment.TRANSCRIPTION_MODEL,
+    model: environment.TRANSCRIPTION_MODEL ?? defaultModel,
     apiKeyEnv,
     timeoutMs: environment.TRANSCRIPTION_TIMEOUT_MS === undefined ? undefined : Number(environment.TRANSCRIPTION_TIMEOUT_MS),
   }, environment);

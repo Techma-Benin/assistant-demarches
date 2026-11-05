@@ -98,12 +98,14 @@ export async function loadRuntime(
     kid: "backend-signing",
     issuer: required("PUBLIC_URL"),
   };
+  const transcriber = transcriberFromEnvironment(files);
   const runtime: Runtime = {
     pool,
     auth,
     identities,
     conversations,
     files,
+    ...(transcriber ? { transcriber } : {}),
     publicUrl: process.env.PUBLIC_URL,
     signing,
     xroadUrl: process.env.XROAD_URL,
@@ -129,7 +131,7 @@ export async function loadRuntime(
     models,
     tooling,
     runtime.consent,
-    transcriberFromEnvironment(files),
+    transcriber,
     process.env.XROAD_URL
       ? (userRef) =>
           new XroadClient(process.env.XROAD_URL!, () => tokens.get("xroad:apply")).cases(userRef, "?limit=20")
