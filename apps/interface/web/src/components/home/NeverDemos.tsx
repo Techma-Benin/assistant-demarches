@@ -145,7 +145,6 @@ export function NeverShowcase(): ReactNode {
   return (
     <div className="mx-auto max-w-[1320px] px-5 md:px-8">
       <style>{'@keyframes nv-rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}'}</style>
-      <p className="m-0 mb-3 text-[14px] font-semibold uppercase tracking-[0.08em] text-trust-text">Vos garanties</p>
       <div {...rv(0)} className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-10">
         <h2 id="trust-title" className="m-0 font-display text-[clamp(32px,3.6vw,52px)] font-extrabold leading-[1.02] tracking-[-0.04em]">
           Ce que l’assistant ne fera jamais.

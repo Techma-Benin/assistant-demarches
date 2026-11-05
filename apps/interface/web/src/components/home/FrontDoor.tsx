@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowRight, MessageSquare } from 'lucide-react';
-import { useRef, useState, type CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 import { BrandMark, Chip, FlagGlyph, ThemeToggle, cn } from '@techma/ui';
 import { Composer } from '@/components/chat/Composer';
 import { useStagedFiles } from '@/hooks/use-staged-files';
@@ -91,6 +91,15 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
   // Staged files are shared too, so a document attached in the hero box follows into the dock.
   const staged = useStagedFiles(CONTRACT_MIME_TYPES);
   const heroPrompt = useRef<HTMLDivElement>(null);
+  const goToSection = (event: MouseEvent<HTMLAnchorElement>, id: string) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    event.preventDefault();
+    const box = el.getBoundingClientRect();
+    const top = window.scrollY + box.top - Math.max(0, (window.innerHeight - box.height) / 2);
+    window.scrollTo({ top, behavior: 'smooth' });
+    window.history.replaceState(null, '', `#${id}`);
+  };
   const goToQuestion = () => {
     const box = heroPrompt.current;
     if (!box) return;
@@ -115,7 +124,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
         <div className="flex min-w-0 items-center gap-1">
           <nav aria-label="Navigation principale" className="hidden items-center gap-1 md:flex">
             {SECTIONS.map((section) => (
-              <a key={section.id} href={`#${section.id}`} className="inline-flex min-h-11 items-center px-3 text-[16px] font-medium text-ink no-underline hover:underline">
+              <a key={section.id} href={`#${section.id}`} onClick={(e) => goToSection(e, section.id)} className="inline-flex min-h-11 items-center px-3 text-[16px] font-medium text-ink no-underline hover:underline">
                 {section.label}
               </a>
             ))}
@@ -182,7 +191,6 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
       <main>
         <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
-          <p className="mx-auto mb-3 w-full max-w-[1320px] px-5 text-[14px] font-semibold uppercase tracking-[0.08em] text-trust-text md:px-8">Exemples</p>
           <div className="mx-auto mb-8 flex max-w-[1320px] flex-wrap items-end justify-between gap-x-8 gap-y-2 px-5 md:mb-10 md:px-8">
             <h2 {...rv(0)} id="documents-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
               Un document ? Voici comment l’obtenir.
@@ -201,7 +209,6 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
         <section id="fonctionnement" ref={howRef} aria-labelledby="how-title" className={cn(sectionPad, 'lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
           <div className="mx-auto max-w-[1320px] px-5 md:px-8">
-            <p className="m-0 mb-3 text-[14px] font-semibold uppercase tracking-[0.08em] text-trust-text">Comment ça marche</p>
             <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-10">
               <h2 {...rv(0)} id="how-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
                 Trois étapes. Vous décidez à chaque fois.
@@ -309,10 +316,10 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
             <nav aria-label="Sur cette page" className="min-w-0 md:col-span-4">
               <p className="m-0 text-[13px] font-semibold uppercase tracking-[0.08em] text-on-action/60">Sur cette page</p>
               <ul className="m-0 mt-3 list-none p-0">
-                {SECTIONS.map((section) => [`#${section.id}`, section.label]).map(([href, label]) => (
-                  <li key={href}>
-                    <a href={href} className="inline-flex min-h-11 items-center text-[16px] font-medium text-on-action no-underline hover:underline">
-                      {label}
+                {SECTIONS.map((section) => (
+                  <li key={section.id}>
+                    <a href={`#${section.id}`} onClick={(e) => goToSection(e, section.id)} className="inline-flex min-h-11 items-center text-[16px] font-medium text-on-action no-underline hover:underline">
+                      {section.label}
                     </a>
                   </li>
                 ))}

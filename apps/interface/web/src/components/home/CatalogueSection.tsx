@@ -229,7 +229,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
 
         <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-end lg:gap-x-8">
           <div {...rv(2)} className="lg:col-span-12">
-            <h2 id="themes-title" className="m-0 mb-2 text-[14px] font-semibold uppercase tracking-[0.08em] text-(--home-field-green)">
+            <h2 id="themes-title" className="sr-only">
               Trouver ma démarche
             </h2>
             <p className="m-0 text-[clamp(17px,1.5vw,20px)] leading-normal text-on-action/85">
