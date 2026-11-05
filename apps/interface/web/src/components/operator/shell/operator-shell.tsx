@@ -122,19 +122,30 @@ export function OperatorShell({ children }: { children: ReactNode }) {
       : {}),
   } as CSSProperties;
 
-  const collapseToggle = (
+  const collapseToggle = collapsed ? (
     <button
       type="button"
       onClick={toggleCollapsed}
-      aria-expanded={!collapsed}
-      aria-label={collapsed ? 'Déplier le menu latéral' : 'Replier le menu latéral'}
+      aria-expanded={false}
+      aria-label="Déplier le menu latéral"
+      className="group hidden size-9 shrink-0 cursor-pointer place-items-center rounded-none text-ink-muted transition-colors duration-(--ui-dur-press) hover:bg-sunken hover:text-ink focus-visible:bg-sunken focus-visible:text-ink md:grid"
+    >
+      <OperatorLogomark className="col-start-1 row-start-1 transition-opacity duration-(--ui-dur-press) group-hover:opacity-0 group-focus:opacity-0 group-focus-visible:opacity-0 motion-reduce:transition-none" />
+      <ChevronsRight
+        aria-hidden="true"
+        strokeWidth={2}
+        className="col-start-1 row-start-1 size-4 opacity-0 transition-opacity duration-(--ui-dur-press) group-hover:opacity-100 group-focus:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+      />
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={toggleCollapsed}
+      aria-expanded
+      aria-label="Replier le menu latéral"
       className="hidden size-9 shrink-0 cursor-pointer items-center justify-center rounded-none text-ink-muted transition-colors duration-(--ui-dur-press) hover:bg-sunken hover:text-ink md:inline-flex"
     >
-      {collapsed ? (
-        <ChevronsRight aria-hidden="true" className="size-4" strokeWidth={2} />
-      ) : (
-        <ChevronsLeft aria-hidden="true" className="size-4" strokeWidth={2} />
-      )}
+      <ChevronsLeft aria-hidden="true" className="size-4" strokeWidth={2} />
     </button>
   );
 
@@ -143,20 +154,22 @@ export function OperatorShell({ children }: { children: ReactNode }) {
       data-collapsed={collapsed ? '' : undefined}
       className={cn(
         'min-h-dvh md:grid md:transition-[grid-template-columns] md:duration-[220ms] md:ease-(--ui-ease-drawer)',
-        collapsed ? 'md:grid-cols-[4.25rem_minmax(0,1fr)]' : 'md:grid-cols-[15rem_minmax(0,1fr)]',
+        collapsed ? 'md:grid-cols-[4.25rem_minmax(0,1fr)]' : 'md:grid-cols-[12.5rem_minmax(0,1fr)]',
       )}
     >
       <aside className="bg-shell-rail md:sticky md:top-0 md:h-dvh">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-3 md:flex md:h-full md:flex-col md:flex-nowrap md:items-stretch md:justify-start md:gap-0 md:p-0">
           <div
             className={cn(
-              'flex w-full shrink-0 items-center justify-between gap-2 px-3 pt-3 md:pt-4',
+              'flex w-full shrink-0 items-center justify-between gap-2 px-3 pt-3 md:gap-1.5 md:px-2 md:pt-3',
               collapsed && 'md:flex-col md:items-center md:gap-2 md:px-0 md:pb-1',
             )}
           >
             {collapsed ? (
               <>
-                <OperatorLogomark />
+                <span className="md:hidden">
+                  <OperatorLogomark />
+                </span>
                 {collapseToggle}
               </>
             ) : (
@@ -172,7 +185,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
 
           <nav
             aria-label="Navigation principale"
-            className="order-last w-full md:order-none md:w-full md:flex-none md:pt-8"
+            className="order-last w-full md:order-none md:w-full md:flex-none md:pt-4"
           >
             <div
               ref={navTrackRef}
@@ -204,11 +217,13 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                       aria-current={active ? 'page' : undefined}
                       data-nav-active={active ? 'true' : undefined}
                       className={cn(
-                        'flex min-h-12 w-full items-center justify-center gap-2 rounded-none px-2 py-3 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:h-[51px] md:min-h-[51px] md:justify-start md:gap-3 md:px-3 md:py-3.5',
+                        'flex min-h-12 w-full items-center justify-center gap-2 rounded-none px-2 py-3 text-[15px] font-semibold transition-colors duration-(--ui-dur-press)',
+                        collapsed
+                          ? 'md:h-[51px] md:min-h-[51px] md:w-full md:min-w-0 md:justify-center md:px-0 md:py-3.5'
+                          : 'md:h-16 md:min-h-16 md:justify-start md:gap-2.5 md:px-2.5 md:py-2',
                         active
                           ? 'text-ink max-md:bg-canvas md:bg-transparent'
                           : 'text-ink-muted hover:bg-sunken/80 hover:text-ink dark:hover:bg-sunken/60',
-                        collapsed && 'md:w-full md:min-w-0 md:justify-center md:px-0',
                       )}
                     >
                       <NavIcon icon={icon} />
@@ -242,7 +257,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
             </div>
           </nav>
 
-          <div className="w-full px-2 pt-2 pb-3 md:mt-auto">
+          <div className="w-full px-2 pt-2 pb-3 md:mt-3">
             <OperatorAccountMenu collapsed={collapsed} />
           </div>
         </div>
