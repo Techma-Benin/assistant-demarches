@@ -23,7 +23,7 @@ export function Tooltip({ label, children, side = 'top', className }: TooltipPro
             side={side}
             sideOffset={6}
             className={cn(
-              'ui-tooltip z-[60] rounded-lg bg-action px-2.5 py-1.5 text-[13px] leading-none font-semibold text-on-action shadow-(--ui-shadow-pop)',
+              'surface-glass ui-tooltip z-[60] rounded-lg px-2.5 py-1.5 text-[13px] leading-none font-semibold text-ink shadow-(--ui-shadow-pop)',
               className,
             )}
           >

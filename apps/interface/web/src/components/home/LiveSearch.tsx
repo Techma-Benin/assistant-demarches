@@ -27,7 +27,7 @@ export function LiveSearch({ query, disabled, onPick }: { query: string; disable
   const results = query.trim().length >= 2 ? matchDemarches(query) : [];
   if (results.length === 0) return null;
   return (
-    <div className="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-[22px] border border-line bg-surface text-left shadow-[0_18px_50px_rgb(0_0_0/0.18)] animate-[ui-enter_180ms_ease-out_both]">
+    <div className="surface-glass absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-[22px] text-left shadow-[0_18px_50px_rgb(0_0_0/0.18)] animate-[ui-enter_180ms_ease-out_both]">
       <p className="m-0 px-5 pb-1 pt-3 text-[13px] font-semibold uppercase tracking-[0.08em] text-ink-subtle">Démarches correspondantes</p>
       <ul aria-label="Démarches correspondantes" className="m-0 list-none p-1.5">
         {results.map((item) => {
