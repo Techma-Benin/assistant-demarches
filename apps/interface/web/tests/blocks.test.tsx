@@ -109,7 +109,7 @@ describe('form block', () => {
 describe('fileRequest block', () => {
   const pdf = () => new File(['%PDF-1.4'], 'acte.pdf', { type: 'application/pdf' });
 
-  it('an add button per line sends the file with the documentType of the line', async () => {
+  it('an add button per line hands the file with the documentType of the line', async () => {
     const props = show(fileRequestBlock());
     const region = screen.getByText('Extrait d’acte de naissance').closest('[data-request-id]')!;
     expect(region).toHaveAttribute('data-request-id', exampleRequest.id);
@@ -117,6 +117,19 @@ describe('fileRequest block', () => {
     expect(input.accept).toBe('application/pdf,image/jpeg');
     await userEvent.upload(input, pdf());
     expect(props.onFiles).toHaveBeenCalledWith([expect.any(File)], 'extrait-acte-naissance');
+    // Nothing is received until the composer sends the file.
+    expect(screen.queryByText(/Reçue/)).toBeNull();
+  });
+
+  it('shows a file waiting in the composer, with nothing to add', () => {
+    show(fileRequestBlock(), { fileRequestPending: { name: 'acte.pdf', size: 8 } });
+    expect(screen.getByText('Prête à envoyer : acte.pdf')).toBeInTheDocument();
+    expect(screen.queryByText(/Reçue/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ajouter cette pièce' })).toBeNull();
+  });
+
+  it('shows the file as received once the composer sent it', () => {
+    show(fileRequestBlock(), { fileRequestSent: { name: 'acte.pdf', size: 8 } });
     expect(screen.getByText(/Reçue : acte\.pdf/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ajouter cette pièce' })).toBeNull();
   });

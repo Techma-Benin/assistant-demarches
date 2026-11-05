@@ -25,6 +25,12 @@ export type BlockRendererProps = {
   fileRequestActive?: boolean;
   /** `fileRequest` only: a later request card shows the document as received. */
   fileRequestReceived?: boolean;
+  /** `fileRequest` only: file chosen for this document, waiting in the composer. */
+  fileRequestPending?: { name: string; size: number } | null;
+  /** `fileRequest` only: an active form can send the staged file too. */
+  fileRequestFormActive?: boolean;
+  /** `fileRequest` only: file of this document sent from the composer. */
+  fileRequestSent?: { name: string; size: number } | null;
   /** Progressive reveal of a live answer: start delay (ms) of this block. Undefined = shown at once. */
   revealDelay?: number;
 };
@@ -39,6 +45,9 @@ export function BlockRenderer({
   conversationId = null,
   fileRequestActive = false,
   fileRequestReceived,
+  fileRequestPending,
+  fileRequestSent,
+  fileRequestFormActive,
   revealDelay,
 }: BlockRendererProps) {
   if (block.type === 'text') return <TextBlock block={block} revealDelay={revealDelay} />;
@@ -49,7 +58,7 @@ export function BlockRenderer({
       case 'form':
         return <FormBlock block={block} interactive={interactive} onForm={onForm} />;
       case 'fileRequest':
-        return <FileRequestBlock block={block} interactive={interactive || fileRequestActive} received={fileRequestReceived} onFiles={onFiles} />;
+        return <FileRequestBlock block={block} interactive={interactive || fileRequestActive} received={fileRequestReceived} pending={fileRequestPending} sent={fileRequestSent} formActive={fileRequestFormActive} onFiles={onFiles} />;
       case 'loginRequired':
         return <LoginRequiredBlock block={block} conversationId={conversationId} interactive={interactive} />;
       case 'consent':
