@@ -147,4 +147,45 @@ describe('NpiSignIn', () => {
     // Only the two sign-in routes are called: nothing goes to the conversation.
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/auth/npi', '/auth/npi/verify']);
   });
+
+  it('calls onSignedIn instead of navigating once the code is accepted', async () => {
+    const onSignedIn = vi.fn();
+    render(<NpiSignIn returnTo="/demarches" conversationId={CONVERSATION_ID} onSignedIn={onSignedIn} />);
+    const code = await toCodeStep();
+    replies.push({ status: 200, body: { attachFailed: false } });
+    await userEvent.type(code, '0000');
+    await userEvent.click(screen.getByRole('button', { name: 'Valider' }));
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
+  });
+
+  it('falls back to a page load when the session read never reports the account', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onSignedIn = vi.fn();
+      render(<NpiSignIn returnTo="/conversation" conversationId={CONVERSATION_ID} onSignedIn={onSignedIn} />);
+      const code = await toCodeStep();
+      replies.push({ status: 200, body: { attachFailed: false } });
+      await userEvent.type(code, '0000');
+      await userEvent.click(screen.getByRole('button', { name: 'Valider' }));
+      await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1));
+      expect(navigate).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(navigate).toHaveBeenCalledWith('/conversation');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('navigates with attach=failed and skips onSignedIn when the attach failed', async () => {
+    const onSignedIn = vi.fn();
+    render(<NpiSignIn returnTo="/conversation" conversationId={CONVERSATION_ID} onSignedIn={onSignedIn} />);
+    const code = await toCodeStep();
+    replies.push({ status: 200, body: { attachFailed: true } });
+    await userEvent.type(code, '1');
+    await userEvent.click(screen.getByRole('button', { name: 'Valider' }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/conversation?attach=failed'));
+    expect(onSignedIn).not.toHaveBeenCalled();
+  });
 });

@@ -135,6 +135,16 @@ export class ConversationStream {
     this.connect();
   }
 
+  /** The session changed (new cookie): drop the socket opened with the old ticket and open another. The cursor replays what came meanwhile. */
+  renewConnection(): void {
+    if (this.stopped) return;
+    this.attempt = 0;
+    this.attemptId++;
+    this.clearReconnect();
+    this.closeSocket();
+    this.connect();
+  }
+
   private setStatus(status: StreamStatus): void {
     if (this.stopped || this.status === status) return;
     this.status = status;

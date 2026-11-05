@@ -7,6 +7,7 @@ import { NpiSignIn } from '@/components/app/NpiSignIn';
 import { useSessionUser } from '@/hooks/use-session-user';
 import { loginHref } from '@/lib/auth-links';
 import { navigate } from '@/lib/navigate';
+import { announceSessionChanged } from '@/lib/session-events';
 
 type Props = {
   block: { type: 'loginRequired'; reason: string };
@@ -32,7 +33,7 @@ export function LoginRequiredBlock({ block, conversationId, interactive = true }
     // Keeps the card height steady until the session is known.
     action = <div aria-hidden="true" className="min-h-[52px]" />;
   } else if (interactive && signIn === 'npi') {
-    action = <NpiSignIn conversationId={conversationId} returnTo={window.location.pathname} />;
+    action = <NpiSignIn conversationId={conversationId} returnTo={window.location.pathname} onSignedIn={conversationId ? announceSessionChanged : undefined} />;
   } else if (interactive) {
     action = (
       <Button
