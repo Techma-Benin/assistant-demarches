@@ -228,7 +228,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
                       'relative overflow-hidden rounded-card',
                       ['h-[320px]', 'h-[480px]', 'h-[440px]'][i],
                       'md:h-[clamp(440px,52svh,520px)]',
-                      i === 2 ? 'bg-(--home-field-green)' : 'bg-sunken',
+                      i === 2 ? 'bg-(--home-field-green)' : 'bg-sunken text-ink',
                     )}
                   >
                     {[<AskDemo key="d" />, <PrepareDemo key="d" />, <ValidateDemo key="d" />][i]}
