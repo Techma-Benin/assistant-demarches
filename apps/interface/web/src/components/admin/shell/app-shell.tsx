@@ -123,19 +123,35 @@ export function AppShell({ children }: { children: ReactNode }) {
       : {}),
   } as CSSProperties;
 
-  const collapseToggle = (
+  const collapseToggle = collapsed ? (
     <button
       type="button"
       onClick={toggleCollapsed}
-      aria-expanded={!collapsed}
-      aria-label={collapsed ? 'Déplier le menu latéral' : 'Replier le menu latéral'}
+      aria-expanded={false}
+      aria-label="Déplier le menu latéral"
+      className="group hidden size-9 shrink-0 cursor-pointer place-items-center rounded-none text-ink-muted transition-colors duration-(--ui-dur-press) hover:bg-sunken hover:text-ink focus-visible:bg-sunken focus-visible:text-ink md:grid"
+    >
+      <FlagGlyph
+        decorative
+        width={28}
+        height={21}
+        className="col-start-1 row-start-1 shrink-0 transition-opacity duration-(--ui-dur-press) group-hover:opacity-0 group-focus:opacity-0 group-focus-visible:opacity-0 motion-reduce:transition-none"
+      />
+      <ChevronsRight
+        aria-hidden="true"
+        strokeWidth={2}
+        className="col-start-1 row-start-1 size-4 opacity-0 transition-opacity duration-(--ui-dur-press) group-hover:opacity-100 group-focus:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+      />
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={toggleCollapsed}
+      aria-expanded
+      aria-label="Replier le menu latéral"
       className="hidden size-9 shrink-0 cursor-pointer items-center justify-center rounded-none text-ink-muted transition-colors duration-(--ui-dur-press) hover:bg-sunken hover:text-ink md:inline-flex"
     >
-      {collapsed ? (
-        <ChevronsRight aria-hidden="true" className="size-4" strokeWidth={2} />
-      ) : (
-        <ChevronsLeft aria-hidden="true" className="size-4" strokeWidth={2} />
-      )}
+      <ChevronsLeft aria-hidden="true" className="size-4" strokeWidth={2} />
     </button>
   );
 
@@ -145,22 +161,26 @@ export function AppShell({ children }: { children: ReactNode }) {
         data-collapsed={collapsed ? '' : undefined}
         className={cn(
           'min-h-dvh md:grid md:transition-[grid-template-columns] md:duration-[220ms] md:ease-(--ui-ease-drawer)',
-          collapsed ? 'md:grid-cols-[4.25rem_minmax(0,1fr)]' : 'md:grid-cols-[15rem_minmax(0,1fr)]',
+          collapsed ? 'md:grid-cols-[4.25rem_minmax(0,1fr)]' : 'md:grid-cols-[12.5rem_minmax(0,1fr)]',
         )}
       >
       <aside className="relative bg-shell-rail md:sticky md:top-0 md:h-dvh">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-3 md:flex md:h-full md:flex-col md:flex-nowrap md:items-stretch md:justify-start md:gap-0 md:p-0">
           <div
             className={cn(
-              'flex w-full shrink-0 items-center justify-between gap-2 px-3 pt-3 md:pt-4',
+              'flex w-full shrink-0 items-center justify-between gap-2 px-3 pt-3 md:gap-1.5 md:px-2 md:pt-3',
               collapsed && 'md:flex-col md:items-center md:gap-2 md:px-0 md:pb-1',
             )}
           >
-            <div className={cn('min-w-0 flex-1', collapsed && 'md:hidden')}>
-              <BrandMark />
-              <p className="mt-1 text-xs leading-tight font-semibold text-ink-muted">Console d’administration</p>
-            </div>
-            {collapsed ? <FlagGlyph decorative width={28} height={21} className="hidden shrink-0 md:inline-block" /> : null}
+            {collapsed ? (
+              <span className="md:hidden">
+                <BrandMark />
+              </span>
+            ) : (
+              <div className="min-w-0 flex-1">
+                <BrandMark />
+              </div>
+            )}
             {collapseToggle}
             <IconButton
               label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
@@ -184,7 +204,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 : 'pointer-events-none invisible -translate-y-2 opacity-0 duration-(--ui-dur-exit)',
             )}
           >
-            <nav aria-label="Navigation principale" className="w-full md:pt-8">
+            <nav aria-label="Navigation principale" className="w-full md:pt-4">
               <div
                 data-admin-nav-track=""
                 data-nav-active-index={activeIndex}
@@ -221,7 +241,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </ul>
               </div>
             </nav>
-            <div className="mt-auto px-2 pt-2 pb-3 md:px-2 md:pb-3">
+            <div className="mt-auto px-2 pt-2 pb-3 md:mt-auto md:px-2 md:pb-3">
               <AccountMenu collapsed={collapsed} />
             </div>
           </div>
@@ -288,9 +308,11 @@ function NavLink({
       aria-label={count ? `${label}, ${count} à traiter` : undefined}
       data-nav-active={active ? 'true' : undefined}
       className={cn(
-        'flex min-h-12 w-full items-center gap-3 rounded-none px-3 py-3 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:h-[51px] md:min-h-[51px] md:py-3.5',
+        'flex min-h-12 w-full items-center gap-3 rounded-none px-3 py-3 text-[15px] font-semibold transition-colors duration-(--ui-dur-press)',
+        collapsed
+          ? 'md:h-[51px] md:min-h-[51px] md:justify-center md:px-0 md:py-3.5'
+          : 'md:h-16 md:min-h-16 md:gap-2.5 md:px-2.5 md:py-2',
         active ? 'text-ink max-md:bg-canvas md:bg-transparent' : 'text-ink-muted hover:bg-sunken/80 hover:text-ink dark:hover:bg-sunken/60',
-        collapsed && 'md:justify-center md:px-0',
       )}
     >
       <Icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.75} fill="none" />
