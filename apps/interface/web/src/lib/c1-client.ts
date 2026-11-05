@@ -16,6 +16,7 @@ export type Mandate = Schemas['Mandate'];
 export type UploadedFile = Schemas['File'];
 export type Case = Schemas['Case'];
 export type CasePage = Schemas['CasePage'];
+export type ConversationPage = Schemas['ConversationPage'];
 
 export class C1Error extends Error {
   readonly status: number;
@@ -71,6 +72,14 @@ export class C1Client {
 
   revokeMandate(conversationId: string, mandateId: string, idempotencyKey: string): Promise<Mandate> {
     return this.request('POST', `/v1/conversations/${conversationId}/mandates/${mandateId}/revoke`, { idempotencyKey });
+  }
+
+  listConversations(cursor?: string | null, limit?: number, signal?: AbortSignal): Promise<ConversationPage> {
+    const params = new URLSearchParams();
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (cursor) params.set('cursor', cursor);
+    const query = params.size > 0 ? `?${params}` : '';
+    return this.request('GET', `/v1/conversations${query}`, { signal });
   }
 
   listCases(cursor?: string | null, signal?: AbortSignal): Promise<CasePage> {

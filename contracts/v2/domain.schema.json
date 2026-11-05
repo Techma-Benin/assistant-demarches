@@ -1695,6 +1695,88 @@
         "expiresAt"
       ]
     },
+    "NpiChallengeInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "npi": {
+          "type": "string",
+          "pattern": "^[0-9]{1,20}$",
+          "description": "Numéro personnel d’identification, chiffres seulement."
+        }
+      },
+      "required": [
+        "npi"
+      ]
+    },
+    "NpiChallenge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "challengeToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Jeton de défi signé, valable 5 minutes. Ne donne accès à aucune route."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "simulated": {
+          "type": "boolean",
+          "description": "Vrai tant que le code n’est pas réellement envoyé par SMS."
+        }
+      },
+      "required": [
+        "challengeToken",
+        "expiresAt",
+        "simulated"
+      ]
+    },
+    "NpiVerifyInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "challengeToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[0-9]{1,12}$"
+        }
+      },
+      "required": [
+        "challengeToken",
+        "code"
+      ]
+    },
+    "NpiSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "JWT usager connecté signé par le Backend, 12 h."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "simulated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "token",
+        "expiresAt",
+        "simulated"
+      ]
+    },
     "Conversation": {
       "type": "object",
       "additionalProperties": false,

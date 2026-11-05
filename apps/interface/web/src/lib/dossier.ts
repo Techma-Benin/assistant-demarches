@@ -17,27 +17,53 @@ export function latestRequest(timeline: TimelineEntry[]): DraftRequest | null {
   return card?.type === 'requestCard' ? card.request : null;
 }
 
+type FileRequestBlock = Extract<Block, { type: 'fileRequest' }>;
+
+/** Identity of a requested document across the conversation. */
+export const fileRequestKey = (block: Pick<FileRequestBlock, 'requestId' | 'documentType'>) => `${block.requestId}:${block.documentType}`;
+
+/** The latest `requestCard` of each request id. */
+function latestCards(timeline: TimelineEntry[]): DraftRequest[] {
+  const byId = new Map<string, DraftRequest>();
+  for (const block of agentBlocks(timeline)) if (block.type === 'requestCard') byId.set(block.request.id, block.request);
+  return [...byId.values()];
+}
+
+/** `requestId:documentType` of documents still missing from a draft not yet filed (latest card of each request). */
+export function openFileRequests(timeline: TimelineEntry[]): Set<string> {
+  const open = new Set<string>();
+  for (const request of latestCards(timeline)) {
+    if ((request.status !== 'draft' && request.status !== 'ready') || request.caseId !== null) continue;
+    for (const document of request.documents) if (document.fileId === null) open.add(`${request.id}:${document.documentType}`);
+  }
+  return open;
+}
+
+/** `requestId:documentType` of documents the latest card of their request shows as received. */
+export function receivedFileRequests(timeline: TimelineEntry[]): Set<string> {
+  const received = new Set<string>();
+  for (const request of latestCards(timeline)) {
+    for (const document of request.documents) if (document.fileId !== null) received.add(`${request.id}:${document.documentType}`);
+  }
+  return received;
+}
+
+/** For each requested document, the position (`entry:block`) of its most recent `fileRequest` block: only that one stays active. */
+export function latestFileRequestSlots(timeline: TimelineEntry[]): Map<string, string> {
+  const slots = new Map<string, string>();
+  timeline.forEach((entry, index) => {
+    if (entry.kind !== 'agent') return;
+    entry.message.blocks.forEach((block, blockIndex) => {
+      if (block.type === 'fileRequest') slots.set(fileRequestKey(block), `${index}:${blockIndex}`);
+    });
+  });
+  return slots;
+}
+
 /** Sources of the last text block of the conversation (empty when there is none). */
 export function lastTextSources(timeline: TimelineEntry[]): Source[] {
   const last = agentBlocks(timeline).filter((b) => b.type === 'text').at(-1);
   return last?.type === 'text' ? last.sources : [];
-}
-
-/**
- * Quick action offered under the last agent message when it presents one procedure and nothing else
- * is pending (no interactive block, no draft or case yet). Null otherwise.
- */
-export function prepareRequestAction(timeline: TimelineEntry[]): { procedureId: string } | null {
-  const last = timeline[timeline.length - 1];
-  if (last?.kind !== 'agent') return null;
-  const all = agentBlocks(timeline);
-  if (all.some((b) => b.type === 'requestCard' || b.type === 'caseCard')) return null;
-  const blocks = last.message.blocks;
-  if (blocks.some((b) => b.type !== 'text')) return null;
-  const ids = new Set<string>();
-  for (const b of blocks) if (b.type === 'text') for (const s of b.sources) ids.add(s.procedureId);
-  if (ids.size !== 1) return null;
-  return { procedureId: [...ids][0] };
 }
 
 /** Contract `Source` → design-system `SourceInfo` (no title in the contract: the procedure id is used). */

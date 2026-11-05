@@ -1,6 +1,6 @@
 import type { Conversations } from "./conversations.js";
 import type { Schemas } from "./domain.js";
-import { draftCitesOutside, hasStreamingAdminFact, looksLikeJsonEnvelope } from "./model-reply.js";
+import { draftCitesOutside, hasStreamingAdminFact, looksLikeJsonEnvelope, stripForeignUrls } from "./model-reply.js";
 import { redact } from "./model.js";
 import { TextDeltaExtractor } from "./text-deltas.js";
 
@@ -19,6 +19,7 @@ export type LiveAttempt = {
 };
 
 const KEYWORDS = ["npi", "otp", "code sms", "mot de passe"];
+const URL_IN_JSON = /https?:\/\/[^\s"'\\<>]+/gi;
 const WORD = /[A-Za-z0-9_]/;
 const SENSITIVE_KEYWORD_WITH_VALUE = /\b(?:npi|otp|code\s*sms|mot de passe)\s*[:=]?\s*\S*$/i;
 
@@ -101,7 +102,10 @@ export class LiveReply {
   ) {}
 
   /** Listener for one model generation. Silent when this reply already streamed (or was streamed before a restart). */
-  async attempt(observedSources: readonly Pick<Schemas["Source"], "procedureId" | "url">[] = []): Promise<LiveAttempt> {
+  async attempt(
+    observedSources: readonly Pick<Schemas["Source"], "procedureId" | "url">[] = [],
+    options: { hold?: boolean } = {},
+  ): Promise<LiveAttempt> {
     let unknown = false;
     if (!this.checked) {
       try {
@@ -121,24 +125,33 @@ export class LiveReply {
     let raw = "";
     let incoming = "";
     let fed = 0;
-    let muted = !mine;
+    // `hold`: the text will be discarded for a forced call; stay silent, publishVisible() speaks after acceptance.
+    let muted = !mine || Boolean(options.hold);
     const observed = [...observedSources];
     const stage = (visible: string, final: boolean) => {
       // Only masked text leaves, and only the part no later character can turn into a sensitive value.
-      const masked = redact(final ? visible : visible.slice(0, stableEnd(visible)));
+      const masked = redact(stripForeignUrls(final ? visible : visible.slice(0, stableEnd(visible)), observed));
       if (!masked.startsWith(this.staged) || masked.length === this.staged.length) return;
       this.pending += masked.slice(this.staged.length);
       this.staged = masked;
       this.started = true;
       this.schedule();
     };
+    // Same order as presentModelReply: foreign URLs are removed before the text is judged.
+    const cleanedFact = (text: string) => hasStreamingAdminFact(stripForeignUrls(text, observed));
+    // Unknown PS ids anywhere, unknown URLs only outside the visible text (the text itself is cleaned by stage()).
+    const citesOutsideText = () => {
+      const inText = raw.match(URL_IN_JSON) ?? [];
+      const outside = incoming.replace(URL_IN_JSON, (found) => inText.some((url) => found.startsWith(url) || url.startsWith(found)) ? "" : found);
+      return draftCitesOutside(outside, observed);
+    };
     const gated = () => {
       if (muted || !looksLikeJsonEnvelope(incoming)) return true;
-      if (draftCitesOutside(incoming, observed)) {
+      if (citesOutsideText()) {
         muted = true;
         return true;
       }
-      return hasStreamingAdminFact(raw) && observed.length === 0;
+      return cleanedFact(raw) && observed.length === 0;
     };
     const ingest = (piece: string) => {
       const visible = extractor.push(piece);
@@ -162,7 +175,7 @@ export class LiveReply {
         if (!looksLikeJsonEnvelope(replyText)) {
           incoming = replyText;
           raw = replyText;
-          if (!(hasStreamingAdminFact(replyText) && observed.length === 0)) stage(raw, true);
+          if (!(cleanedFact(replyText) && observed.length === 0)) stage(raw, true);
           muted = true;
           return;
         }

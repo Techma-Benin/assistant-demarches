@@ -198,7 +198,7 @@ test("v2 journey: guest catalogue, loginRequired, attach, consent, caseCard, cas
     const model = {
       async generate(_config, history) {
         turn += 1;
-        resumeTexts.push(history.at(-1).content);
+        resumeTexts.push(history.findLast((turn) => turn.role === "user").content);
         if (turn === 1) return toolCall(toolName, { procedureId: procedure.id });
         return toolName === "procedures.get" ? final("L'extrait B3 coûte 1 900 FCFA.", [procedure.source]) : final("Suite.");
       },
@@ -236,12 +236,12 @@ test("v2 journey: guest catalogue, loginRequired, attach, consent, caseCard, cas
   ownerRef = (await pool.query("SELECT user_ref FROM backend_conversations WHERE id=$1", [cid])).rows[0].user_ref;
   const owner = { userRef: ownerRef, channel: "web", authenticated: true, expiresAt: Date.now() + 60000, roles: new Set(["citizen"]) };
 
-  // The Interface sends nothing after the login: the agent resumes the action that asked for it.
+  // The Interface sends nothing after the login: the Backend replays the action that asked for it (the model would only read the catalogue).
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM backend_messages WHERE conversation_id=$1 AND processed_at IS NULL", [cid])).rows[0].n, 1);
   writeCalls.length = 0;
-  await run(cid, "request.create");
+  await run(cid, "procedures.get");
   assert.equal(writeCalls.length, 0);
-  assert.equal(resumeTexts.at(-2), RESUME_AFTER_LOGIN);
+  assert.equal(resumeTexts.at(-1), RESUME_AFTER_LOGIN);
   const consentBlock = (await lastBlocks(cid)).find((block) => block.type === "consent");
   assert.equal(consentBlock?.type, "consent");
   validate("Challenge", consentBlock.challenge);
@@ -263,8 +263,8 @@ test("v2 journey: guest catalogue, loginRequired, attach, consent, caseCard, cas
   // POST …/mandates is the last thing the Interface does: the action that waited for the mandate is replayed.
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM backend_messages WHERE conversation_id=$1 AND processed_at IS NULL", [cid])).rows[0].n, 1);
   writeCalls.length = 0;
-  await run(cid, "request.create");
-  assert.equal(resumeTexts.at(-2), RESUME_AFTER_CONSENT);
+  await run(cid, "procedures.get");
+  assert.equal(resumeTexts.at(-1), RESUME_AFTER_CONSENT);
   assert.equal(writeCalls.length, 1);
   assert.ok(writeCalls[0].mandateId);
   assert.equal((await lastBlocks(cid)).some((block) => block.type === "requestCard"), true);

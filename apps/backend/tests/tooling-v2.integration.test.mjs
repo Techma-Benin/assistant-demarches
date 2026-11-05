@@ -301,8 +301,8 @@ test("real Tooling v2 + X-Road sim: guest create → loginRequired → attach �
       "SELECT body->'data'->'message'->'blocks' AS blocks FROM backend_conversation_events WHERE conversation_id=$1 AND body->'data'->>'kind'='message.sent' ORDER BY seq DESC LIMIT 1",
       [cid],
     )).rows[0]?.blocks ?? [];
-  const ask = async (bearer, cid, text) => {
-    const message = { id: identifier("msg"), content: { type: "text", text }, sentAt: new Date().toISOString() };
+  const ask = async (bearer, cid, text, content = { type: "text", text }) => {
+    const message = { id: identifier("msg"), content, sentAt: new Date().toISOString() };
     const accepted = await request("/v1/conversations/" + cid + "/messages", { method: "POST", body: message, bearer });
     assert.equal(accepted.status, 202, accepted.text);
     await agent.process(cid);
@@ -365,7 +365,13 @@ test("real Tooling v2 + X-Road sim: guest create → loginRequired → attach �
   assert.equal(submittedCase.status, "awaiting_payment");
   assert.match(submittedCase.reference, /^SIM-JUS-/);
 
-  const paid = await ask(citizen, cid, "Payer les frais");
+  // The amount is announced first: "payer" alone never reaches request.pay.
+  const payPrompt = await ask(citizen, cid, "Payer les frais");
+  assert.equal(payPrompt.some((block) => block.type === "caseCard" && block.case.status === "in_review"), false);
+  const confirm = payPrompt.find((block) => block.type === "buttons")?.items[0];
+  assert.equal(confirm?.id, "payment.confirm." + journey.requestId, JSON.stringify(payPrompt));
+  assert.match(confirm.label, /^Confirmer 1.900.FCFA$/);
+  const paid = await ask(citizen, cid, "", { type: "interaction", actionId: confirm.id, value: null });
   const paidCase = paid.find((block) => block.type === "caseCard")?.case;
   assert.equal(paidCase?.status, "in_review", JSON.stringify(paid));
 

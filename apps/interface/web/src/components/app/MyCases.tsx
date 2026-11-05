@@ -5,11 +5,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { BrandMark, Button, InlineAlert, StatusPill, ThemeToggle, TypingIndicator } from '@techma/ui';
 import { ArrowLeft } from 'lucide-react';
 import { CaseCard, CaseReference } from '@/components/blocks/CaseCardBlock';
-import { loginHref } from '@/lib/auth-links';
+import { AccountMenu } from '@/components/app/AccountMenu';
+import { ConversationList } from '@/components/app/ConversationList';
+import { useSessionUser } from '@/hooks/use-session-user';
 import { C1Client, C1Error } from '@/lib/c1-client';
 import { CASE_STATUS_LABELS, CASE_STATUS_PILL, administrationLabel, formatDateFr, type Case } from '@/lib/cases';
 
-type Access = 'checking' | 'guest' | 'user';
+const SECTION_TITLE = 'm-0 font-display text-[26px] font-extrabold leading-[1.1] tracking-[-0.03em]';
 
 function Shell({ title, back, children }: { title: string; back?: { href: string; label: string }; children: ReactNode }) {
   return (
@@ -19,7 +21,8 @@ function Shell({ title, back, children }: { title: string; back?: { href: string
           <Link href="/" aria-label="Accueil" className="shrink-0 rounded-pill no-underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink">
             <BrandMark />
           </Link>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <AccountMenu />
             <ThemeToggle />
           </div>
         </div>
@@ -41,35 +44,15 @@ function Shell({ title, back, children }: { title: string; back?: { href: string
 function GuestPrompt({ returnTo }: { returnTo: string }) {
   return (
     <div className="flex flex-col items-start gap-4 rounded-card bg-sunken p-6">
-      <p className="m-0 text-[17px] font-semibold">Connectez-vous pour voir vos démarches</p>
+      <p className="m-0 text-[17px] font-semibold">Connectez-vous pour retrouver vos démarches et vos conversations</p>
       <Button asChild size="lg" className="min-h-[52px] px-7 font-bold">
-        <a href={loginHref(returnTo)}>Se connecter</a>
+        <a href={`/connexion?${new URLSearchParams({ returnTo })}`}>Se connecter</a>
       </Button>
     </div>
   );
 }
 
 const isAuthError = (error: unknown) => error instanceof C1Error && (error.status === 401 || error.status === 403);
-
-/** Who is behind the browser: `user: null` is a guest (`GET /api/session`). */
-function useAccess(): Access {
-  const [access, setAccess] = useState<Access>('checking');
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/session')
-      .then((response) => (response.ok ? response.json() : { user: null }))
-      .then((data: { user?: unknown }) => {
-        if (!cancelled) setAccess(data.user ? 'user' : 'guest');
-      })
-      .catch(() => {
-        if (!cancelled) setAccess('user'); // Unknown: let the API answer (401/403 shows the same prompt).
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  return access;
-}
 
 function Loading({ label }: { label: string }) {
   return (
@@ -87,11 +70,11 @@ export function CaseListItem({ item }: { item: Case }) {
         <StatusPill status={CASE_STATUS_PILL[item.status]}>{CASE_STATUS_LABELS[item.status]}</StatusPill>
         <CaseReference item={item} />
       </div>
-      <h2 className="m-0 font-display text-[22px] font-extrabold leading-[1.2] tracking-[-0.02em]">
+      <h3 className="m-0 font-display text-[22px] font-extrabold leading-[1.2] tracking-[-0.02em]">
         <Link href={`/demarches/${item.id}`} className="text-ink underline-offset-4 hover:underline">
           {item.title}
         </Link>
-      </h2>
+      </h3>
       <p className="m-0 text-[14px] text-ink-muted">
         {administrationLabel(item.administrationId)} · Mise à jour le {formatDateFr(item.updatedAt)}
       </p>
@@ -102,7 +85,8 @@ export function CaseListItem({ item }: { item: Case }) {
 /** « Mes démarches »: the cases filed by the person (`GET /v1/cases`, cursor pagination). */
 export function MyCases({ client }: { client?: C1Client }) {
   const c1 = useMemo(() => client ?? new C1Client(), [client]);
-  const access = useAccess();
+  // Unknown (network error): let the API answer, a 401/403 shows the same prompt.
+  const { status: access } = useSessionUser({ onError: 'user' });
   const [items, setItems] = useState<Case[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [state, setState] = useState<'idle' | 'loading' | 'error' | 'guest'>('loading');
@@ -160,9 +144,27 @@ export function MyCases({ client }: { client?: C1Client }) {
       </>
     );
   }
+  const signedIn = access === 'user' && state !== 'guest';
   return (
     <Shell title="Mes démarches" back={{ href: '/', label: 'Accueil' }}>
-      {body}
+      {signedIn && (
+        <section aria-labelledby="my-conversations" className="flex flex-col gap-4">
+          <h2 id="my-conversations" className={SECTION_TITLE}>
+            Conversations
+          </h2>
+          <ConversationList client={c1} />
+        </section>
+      )}
+      {signedIn ? (
+        <section aria-labelledby="my-cases" className="flex flex-col gap-4">
+          <h2 id="my-cases" className={SECTION_TITLE}>
+            Dossiers déposés
+          </h2>
+          {body}
+        </section>
+      ) : (
+        body
+      )}
     </Shell>
   );
 }

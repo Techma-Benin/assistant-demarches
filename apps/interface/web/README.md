@@ -26,6 +26,7 @@ Le chat usager suit le contrat v2 (`CONTRACTS.md`, `contracts/v2/`). À faire : 
 - Serveur uniquement (Keycloak, realm `techma`, client confidentiel `interface`, PKCE S256, `openid-client`) : aucun jeton n'atteint le navigateur. Variables : voir `.env.example` (injectées par `pnpm dev`).
 - Session : cookie chiffré `ad_session` (jose, A256GCM, clé dans `SESSION_SECRET_FILE`), HttpOnly, SameSite=Lax, découpé en `ad_session.0`, `.1`… au-delà de 3800 octets. Transaction de connexion : cookie `ad_auth` (10 min).
 - Routes : `GET /auth/login?returnTo=&conversationId=`, `GET /auth/callback`, `POST /auth/logout` (même origine), `GET /api/session` (`{user}` sans jeton).
+- Connexion usager par NPI simulée (`NPI_SIMULATED_LOGIN=on`) : page `/connexion` et encart `loginRequired`, `POST /auth/npi` puis `POST /auth/npi/verify` (n'importe quels chiffres passent) ; le NPI et le code ne passent ni par la conversation ni par le stockage du navigateur, le jeton de défi reste dans le cookie chiffré, la session dure 12 h sans rafraîchissement. Sans la variable, retour à Keycloak. `/admin` et `/operateur` restent sur Keycloak.
 - Visiteur : jeton invité créé côté serveur (`POST /v1/guest-sessions`) ; à la connexion, `attach` transfère ses conversations au compte.
 - `/api/admin/*` exige le rôle `official` (401 / 403) ; la console `/admin` redirige vers la connexion, ou affiche un écran d'accès refusé sans ce rôle. Un lien profond vers `/admin/...` atterrit sur `/admin` après connexion.
 

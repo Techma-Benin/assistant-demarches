@@ -2,12 +2,14 @@
 
 import { MessageSquare } from 'lucide-react';
 import { useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { AccountMenu } from '@/components/app/AccountMenu';
 import { BrandMark, Button, Chip, ThemeToggle, cn } from '@techma/ui';
 import { Composer } from '@/components/chat/Composer';
 import { useStagedFiles } from '@/hooks/use-staged-files';
 import { CONTRACT_MIME_TYPES } from '@/lib/files';
 import { formatRelative } from '@/lib/format-time';
 import { siteConfig, type SiteConfig } from '@/lib/site-config';
+import { CatalogueSection } from './CatalogueSection';
 import { DocumentArt, type DocumentKind } from './DocumentArt';
 import { HERO_PHOTOS, HeroSlideshow } from './HeroSlideshow';
 import { AskDemo, PrepareDemo, ValidateDemo } from './HowItWorksDemos';
@@ -42,68 +44,18 @@ const STEPS = [
   { name: 'Vous gardez la main', text: 'Rien ne part sans votre accord. Selon la démarche, vous validez sur le portail officiel ou l’assistant dépose le dossier pour vous.' },
 ];
 
-const CATALOGUE: { title: string; kind: DocumentKind; items: { name: string; question: string; kind?: DocumentKind }[] }[] = [
-  {
-    title: 'Identité',
-    kind: 'cni',
-    items: [
-      { name: 'Carte d’identité', question: 'Comment obtenir ma carte d’identité ?' },
-      { name: 'Certificat de résidence', question: 'Comment obtenir un certificat de résidence ?', kind: 'residence' },
-      { name: 'Certificat d’identification personnelle', question: 'Comment obtenir mon certificat d’identification personnelle ?' },
-      { name: 'Certificat de nationalité', question: 'Comment obtenir un certificat de nationalité ?' },
-    ],
-  },
-  {
-    title: 'État civil',
-    kind: 'acte-naissance',
-    items: [
-      { name: 'Acte de naissance', question: 'Comment obtenir un acte de naissance ?' },
-      { name: 'Acte de mariage', question: 'Comment obtenir un acte de mariage ?' },
-      { name: 'Acte de décès', question: 'Comment obtenir un acte de décès ?' },
-    ],
-  },
-  {
-    title: 'Voyage',
-    kind: 'passeport',
-    items: [
-      { name: 'Passeport', question: 'Comment renouveler mon passeport ?' },
-      { name: 'Visa', question: 'Comment demander un visa ?' },
-    ],
-  },
-  {
-    title: 'Entreprise',
-    kind: 'entreprise',
-    items: [
-      { name: 'Créer une entreprise', question: 'Comment créer mon entreprise ?' },
-      { name: 'Modifier une entreprise', question: 'Comment modifier mon entreprise ?' },
-      { name: 'Fermer une entreprise', question: 'Comment fermer mon entreprise ?' },
-    ],
-  },
-  {
-    title: 'Justice',
-    kind: 'casier',
-    items: [
-      { name: 'Casier judiciaire', question: 'Comment obtenir un extrait de casier judiciaire ?' },
-      { name: 'Légalisation de signature', question: 'Comment faire légaliser une signature ?' },
-    ],
-  },
-  {
-    title: 'Foncier et logement',
-    kind: 'permis',
-    items: [
-      { name: 'Titre foncier', question: 'Comment obtenir un titre foncier ?' },
-      { name: 'Permis de construire', question: 'Comment obtenir un permis de construire ?' },
-    ],
-  },
-];
-
 const navLink = 'inline-flex min-h-11 items-center px-3 text-[16px] font-medium text-ink no-underline hover:underline';
-const cta = 'bg-action text-on-action rounded-pill';
 const sectionPad = 'py-24 md:py-40';
 const h2Class = 'm-0 font-display font-extrabold leading-[1.02] tracking-[-0.04em]';
 
 /** Staggered entrance step: pass the order of the element inside its section. */
 const rv = (i: number) => ({ 'data-r': '', style: { '--r': i } as CSSProperties });
+
+/** Hero load sequence: plays on mount (the hero is already in view), in 80ms steps. */
+const rise = (i: number) => ({
+  className: 'motion-safe:animate-[home-rise_700ms_var(--ui-ease-out)_both]',
+  style: { animationDelay: `${i * 80}ms` } as CSSProperties,
+});
 
 /** A saved conversation, one quiet line under the question box: the box stays the first thing seen. */
 function ResumeLine({ title, at, onResume }: NonNullable<FrontDoorProps['resume']>) {
@@ -128,7 +80,7 @@ function ResumeLine({ title, at, onResume }: NonNullable<FrontDoorProps['resume'
 }
 
 export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config = siteConfig, resume }: FrontDoorProps) {
-  const { brandFlag, whatsappNumber, reportUrl, privacyUrl } = config;
+  const { brandFlag, reportUrl, privacyUrl } = config;
   const ask = (text: string) => {
     if (!disabled) onAsk(text);
   };
@@ -163,22 +115,23 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
   const showcaseRef = useReveal<HTMLElement>();
   const howRef = useReveal<HTMLElement>();
-  const themesRef = useReveal<HTMLElement>();
   const trustRef = useReveal<HTMLElement>();
   const closingRef = useReveal<HTMLElement>();
 
   return (
     <div className="relative min-h-screen overflow-x-clip bg-canvas font-sans text-ink">
-      <header className="mx-auto flex max-w-[1320px] items-center justify-between gap-x-4 px-5 py-4 md:px-8 md:py-6">
+      {/* Header and hero share one screen from lg: the hero gets what the 92px header leaves. */}
+      <header className="mx-auto flex max-w-[1320px] items-center justify-between gap-x-4 px-5 py-4 md:px-8 md:py-6 lg:h-[92px] lg:py-0">
           <a href="#top" className="inline-flex min-h-11 items-center no-underline">
             <BrandMark showFlag={brandFlag} />
           </a>
           <div className="flex min-w-0 items-center gap-1">
             <nav aria-label="Navigation principale" className="hidden items-center gap-1 md:flex">
-              <a href="#documents" className={navLink}>Démarches</a>
+              <a href="#documents" className={navLink}>Exemples</a>
               <a href="#fonctionnement" className={navLink}>Comment ça marche</a>
-              <a href="#whatsapp" className={navLink}>WhatsApp</a>
+              <a href="#themes" className={navLink}>Toutes les démarches</a>
             </nav>
+            <AccountMenu />
             <ThemeToggle />
           </div>
         </header>
@@ -187,22 +140,37 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
         <section
           id="top"
           aria-labelledby="hero-title"
-          className="flex flex-col items-stretch"
+          className="flex flex-col items-stretch lg:h-[calc(100svh-92px)] lg:min-h-[600px] lg:pb-6"
         >
           <div className="px-5 text-center md:px-10">
             <h1
               id="hero-title"
-              className="m-0 mt-6 text-balance font-display text-[clamp(44px,7vw,104px)] font-extrabold leading-[0.95] tracking-[-0.045em] md:mt-12"
+              {...rise(0)}
+              className={cn(
+                // From lg the title also scales with the screen height, so short laptop screens keep the photo in view.
+                'm-0 mt-6 text-balance font-display text-[clamp(44px,7vw,104px)] font-extrabold leading-[0.95] tracking-[-0.045em] md:mt-12 lg:mt-2 lg:text-[clamp(44px,min(6.4vw,9.5svh),104px)]',
+                rise(0).className,
+              )}
             >
               Vos démarches, simplement.
             </h1>
-            <p className="m-0 mt-4 font-display text-[clamp(18px,2vw,24px)] font-semibold tracking-[-0.02em] text-ink-muted md:mt-6">
+            <p
+              {...rise(1)}
+              className={cn(
+                'm-0 mt-4 font-display text-[clamp(18px,2vw,24px)] font-semibold tracking-[-0.02em] text-ink-muted md:mt-6 lg:mt-3',
+                rise(1).className,
+              )}
+            >
               Quelle que soit votre démarche, commencez ici.
             </p>
           </div>
 
-          <div className="mt-8 px-3 md:mt-12 md:px-6">
-            <div ref={heroPrompt} className="relative z-10 mx-auto -mb-8 w-full max-w-[880px] md:-mb-9">
+          <div className="mt-8 px-3 md:mt-12 md:px-6 lg:mt-6">
+            <div
+              ref={heroPrompt}
+              {...rise(2)}
+              className={cn('relative z-10 mx-auto -mb-8 w-full max-w-[880px] md:-mb-9', rise(2).className)}
+            >
               <Composer
                 variant="compact"
                 label="Votre question"
@@ -219,11 +187,12 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
             </div>
           </div>
 
-          <HeroSlideshow />
+          {/* From lg the photo takes whatever height the text leaves, so the whole hero fits one screen. */}
+          <HeroSlideshow className="lg:min-h-0 lg:flex-1" />
 
-          <div className="flex flex-col items-center gap-4 px-5 pb-10 pt-6 text-center md:px-10 md:pb-14">
+          <div className="flex flex-col items-center gap-4 px-5 pb-10 pt-6 text-center md:px-10 md:pb-14 lg:gap-3 lg:pb-0 lg:pt-4">
             {resume && <ResumeLine {...resume} />}
-            <div className="flex flex-wrap justify-center gap-2">
+            <div {...rise(3)} className={cn('flex flex-wrap justify-center gap-2', rise(3).className)}>
               {SUGGESTIONS.map((s) => (
                 <Chip key={s} disabled={disabled} onClick={() => ask(s)}>
                   {s}
@@ -240,7 +209,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               <div {...rv(0)} role="group" aria-labelledby="documents-title" onKeyDown={onShowcaseKey} className="flex flex-col">
                 <h2
                   id="documents-title"
-                  className="m-0 mb-3 font-display text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] text-ink-muted lg:mb-0 lg:text-[clamp(28px,2.9vw,44px)]"
+                  className="m-0 mb-3 font-display text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] text-ink-muted lg:mb-6 lg:text-[clamp(28px,2.9vw,44px)]"
                 >
                   Une démarche, un document.
                 </h2>
@@ -255,18 +224,31 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
                       aria-pressed={i === selected}
                       onClick={() => setSelected(i)}
                       className={cn(
-                        'ui-press shrink-0 whitespace-nowrap text-left font-display text-[26px] leading-[1.15] tracking-[-0.03em] lg:text-[clamp(28px,2.9vw,44px)]',
+                        'ui-press relative shrink-0 whitespace-nowrap text-left font-display text-[26px] leading-[1.15] tracking-[-0.03em] lg:flex lg:items-baseline lg:justify-between lg:gap-6 lg:border-t lg:border-line lg:py-3 lg:text-[clamp(22px,2vw,30px)]',
+                        i === SHOWCASE.length - 1 && 'lg:border-b',
                         i === selected ? 'font-extrabold text-ink' : 'font-semibold text-ink-muted hover:text-ink',
                       )}
                     >
                       {d.name}
+                      <span aria-hidden="true" className="hidden font-mono text-[13px] font-normal text-ink-muted lg:inline">
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'absolute inset-x-0 bottom-0 hidden h-0.5 origin-left bg-(--home-field-green) transition-transform duration-300 motion-reduce:transition-none lg:block',
+                          i === selected ? 'scale-x-100' : 'scale-x-0',
+                        )}
+                      />
                     </button>
                   ))}
                 </div>
               </div>
 
               <div {...rv(1)} className="flex max-w-[34ch] flex-col items-start gap-4 text-[18px] leading-normal">
-                <p className="m-0 font-semibold">Demandez : « {current.question} »</p>
+                <p key={selected} className="chat-fade-in m-0 font-semibold">
+                  Demandez : « {current.question} »
+                </p>
                 <p className="m-0">L’assistant vous indique les pièces à fournir, le coût et le délai, d’après la fiche officielle.</p>
                 <Button disabled={disabled} onClick={() => ask(current.question)}>
                   Demander à l’assistant
@@ -280,8 +262,8 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
                 <div
                   key={d.kind}
                   className={cn(
-                    'absolute left-1/2 top-[-8%] aspect-[3/4] h-[80%] -translate-x-1/2 transition-opacity duration-300 motion-reduce:transition-none',
-                    i === selected ? 'opacity-100' : 'opacity-0',
+                    'absolute left-1/2 top-[-8%] aspect-[3/4] h-[80%] -translate-x-1/2 transition-[opacity,translate,rotate] duration-500 ease-out motion-reduce:transition-none',
+                    i === selected ? 'translate-y-0 rotate-0 opacity-100' : '-rotate-3 translate-y-6 opacity-0',
                   )}
                 >
                   <DocumentArt kind={d.kind} className="size-full" />
@@ -306,7 +288,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               return [
                 <div
                   key={`tile-${i}`}
-                  {...rv(2)}
+                  {...rv(1 + i * 2)}
                   className={cn(
                     'relative overflow-hidden rounded-card lg:row-start-1 lg:self-end',
                     span,
@@ -316,7 +298,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
                 >
                   {[<AskDemo key="d" />, <PrepareDemo key="d" />, <ValidateDemo key="d" />][i]}
                 </div>,
-                <div key={`text-${i}`} {...rv(1)} className={cn('mb-6 lg:row-start-2 lg:mb-0 lg:mt-5', span)}>
+                <div key={`text-${i}`} {...rv(2 + i * 2)} className={cn('mb-6 lg:row-start-2 lg:mb-0 lg:mt-5', span)}>
                   <p className="m-0 text-[20px] font-semibold">{step.name}</p>
                   <p className="m-0 mt-1 max-w-[34ch] text-[16px] text-ink-muted">{step.text}</p>
                 </div>,
@@ -325,86 +307,32 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
           </div>
         </section>
 
-        <section id="themes" ref={themesRef} aria-labelledby="themes-title" className={sectionPad}>
-          <div className="mx-auto max-w-[1320px] px-5 md:px-8">
-            <h2 {...rv(0)} id="themes-title" className={cn(h2Class, 'text-[clamp(36px,4vw,52px)]')}>
-              Toutes les démarches.
-            </h2>
-            <div className="mt-16 grid grid-cols-1 gap-x-16 gap-y-16 lg:grid-cols-2 lg:gap-y-[72px]">
-              {CATALOGUE.map((cat) => (
-                <div key={cat.title} {...rv(1)}>
-                  <div className="mb-8 flex items-baseline justify-between gap-4">
-                    <h3 className="m-0 font-display text-[clamp(32px,3.4vw,52px)] font-extrabold leading-none tracking-[-0.04em]">
-                      {cat.title}
-                    </h3>
-                    <span className="text-[16px] text-ink-muted">{cat.items.length} démarches</span>
-                  </div>
-                  <ul className="m-0 grid list-none grid-cols-1 gap-y-6 p-0">
-                    {cat.items.map((item) => (
-                      <li key={item.name}>
-                        <button
-                          type="button"
-                          disabled={disabled}
-                          onClick={() => ask(item.question)}
-                          className="ui-press group flex w-full items-center gap-4 text-left text-ink disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <span
-                            aria-hidden="true"
-                            className="relative size-14 shrink-0 overflow-hidden rounded-full bg-sunken transition-transform duration-200 motion-reduce:transition-none group-enabled:group-hover:scale-105"
-                          >
-                            <DocumentArt kind={item.kind ?? cat.kind} className="absolute left-1/2 top-[16%] w-[70%] -translate-x-1/2" />
-                          </span>
-                          <span className="flex min-w-0 flex-col">
-                            <span className="text-[18px] font-semibold group-enabled:group-hover:underline">{item.name}</span>
-                            <span className="text-[16px] text-ink-muted">{item.question}</span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+        <CatalogueSection disabled={disabled} onAsk={ask} onAskOther={goToQuestion} />
 
         <section ref={trustRef} aria-labelledby="trust-title" className={sectionPad}>
           <NeverShowcase />
         </section>
 
-        <section id="whatsapp" ref={closingRef} className="relative flex flex-col overflow-hidden bg-sunken">
+        <section id="commencer" ref={closingRef} className="relative flex flex-col overflow-hidden bg-sunken">
           <div aria-hidden="true" className="relative order-2 h-[80vw] overflow-hidden lg:absolute lg:inset-0 lg:h-auto">
             <div className="absolute left-0 top-0 size-[130vw] rounded-full bg-(--home-field-green) lg:bottom-[-25svh] lg:left-[-10vw] lg:top-auto lg:size-[min(105svh,62vw)]" />
             <div className="absolute left-1/2 top-[40vw] -translate-x-1/2 -translate-y-1/2 lg:left-[26vw] lg:top-1/2">
-              <DocumentArt kind="acte-naissance" stamped className="block h-[54vw] w-auto -rotate-6 lg:h-[46svh]" />
+              <div className="motion-safe:animate-[home-float_6s_ease-in-out_infinite]">
+                <DocumentArt kind="acte-naissance" stamped className="block h-[54vw] w-auto -rotate-6 lg:h-[46svh]" />
+              </div>
             </div>
           </div>
           <div className="relative mx-auto flex w-full max-w-[1320px] items-center px-5 pt-24 md:px-8 lg:min-h-[80svh] lg:py-24 lg:pt-24">
             <div className="flex w-full flex-col items-start gap-5 pb-10 lg:ml-auto lg:w-1/3 lg:pb-0">
               <h2 {...rv(0)} className={cn(h2Class, 'text-[40px]')}>
-                Aussi sur WhatsApp.
+                Une démarche à faire ?
               </h2>
               <p {...rv(1)} className="m-0 text-[18px] leading-normal">
-                Le même assistant, dans l’application que vous utilisez déjà.
+                Posez votre question. L’assistant trouve la fiche officielle et vous accompagne pas à pas.
               </p>
-              {whatsappNumber ? (
-                <>
-                  <p {...rv(2)} className="m-0 text-[20px] font-semibold">Écrivez au {whatsappNumber}</p>
-                  <a
-                    {...rv(3)}
-                    href={`https://wa.me/${whatsappNumber.replace(/\D/g, '')}`}
-                    target="_blank"
-                    rel="noopener"
-                    className={cn(cta, 'ui-press inline-flex min-h-12 items-center px-6 text-[16px] font-semibold no-underline hover:bg-action-hover')}
-                  >
-                    Ouvrir WhatsApp
-                  </a>
-                </>
-              ) : (
-                <div {...rv(2)}>
-                  <Button disabled={disabled} onClick={goToQuestion}>Poser ma question</Button>
-                </div>
-              )}
+              <div {...rv(2)}>
+                <Button disabled={disabled} onClick={goToQuestion}>Poser ma question</Button>
+              </div>
             </div>
           </div>
         </section>
@@ -435,18 +363,23 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
             ) : null}
           </div>
           <p className="m-0 mt-8 text-[16px] text-on-action/75">© 2026 Techma Bénin</p>
-          <p className="m-0 mt-2 text-[16px] text-on-action/75">
-            Photos :{' '}
-            {HERO_PHOTOS.map((p, i) => (
-              <span key={p.page}>
-                {i > 0 && ' · '}
-                <a href={p.page} target="_blank" rel="noopener" className="underline underline-offset-4 hover:no-underline">
-                  «&nbsp;{p.title}&nbsp;»
-                </a>
-                , {p.author} ({p.licence})
-              </span>
-            ))}
-          </p>
+          {/* CC BY-SA photos must stay credited; folded behind one discreet link instead of a full paragraph. */}
+          <details className="mt-2 text-[16px] text-on-action/75">
+            <summary className="inline-flex min-h-11 cursor-pointer list-none items-center underline-offset-4 hover:underline [&::-webkit-details-marker]:hidden">
+              Crédits photos
+            </summary>
+            <p className="m-0 mt-1">
+              {HERO_PHOTOS.map((p, i) => (
+                <span key={p.page}>
+                  {i > 0 && ' · '}
+                  <a href={p.page} target="_blank" rel="noopener" className="underline underline-offset-4 hover:no-underline">
+                    «&nbsp;{p.title}&nbsp;»
+                  </a>
+                  , {p.author} ({p.licence})
+                </span>
+              ))}
+            </p>
+          </details>
         </div>
         {/* The flag as a thin edge-to-edge strip closing the page: present, never shouting. */}
         <div aria-hidden="true" className="flex h-1.5">
@@ -458,7 +391,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
       <PromptDock
         anchor={heroPrompt}
-        hideNear={['whatsapp', 'site-footer']}
+        hideNear={['commencer', 'site-footer']}
         value={draft}
         onValueChange={setDraft}
         onSubmit={submitDraft}

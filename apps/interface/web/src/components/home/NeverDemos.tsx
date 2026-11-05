@@ -16,27 +16,27 @@ type Scene = {
   stamp: StampKind;
 };
 
-// The NPI never goes through the chat or the model (CONTRACTS.md §6-7); the service still knows who you are from your sign-in.
+// Each scene must match the contract: identity (NPI, SMS code) is asked in a separate sign-in card, never in the chat;
+// fees are paid by the assistant only through `request.pay` after the user's mandate, so payment belongs to « Agir sans votre accord ».
 const SCENES: Scene[] = [
   {
-    title: 'Vous demander votre NPI dans la conversation',
-    note: 'Votre identité vient de votre connexion, jamais du chat.',
+    title: 'Voir votre NPI',
+    note: 'Vous vous identifiez par une connexion sécurisée, à part de la conversation. L’assistant ne voit jamais votre NPI.',
     user: 'Je vous donne mon NPI pour aller plus vite ?',
-    agent: 'Non, gardez-le. Je n’en ai pas besoin : votre identité vient de votre connexion.',
+    agent: 'Pas ici. Vous vous identifiez par une connexion sécurisée, à part de la conversation : je ne vois jamais votre NPI.',
     stamp: 'never',
   },
   {
     title: 'Vous demander un code SMS',
     user: 'J’ai reçu un code par SMS, je vous l’envoie ?',
-    agent: 'Surtout pas : ce code se saisit uniquement sur le portail officiel.',
+    agent: 'Pas dans la conversation. S’il faut confirmer votre identité, un encart à part vous le demande et je ne le vois pas. Ne donnez ce code à personne d’autre.',
     stamp: 'never',
   },
   {
-    // Product rule: fees are paid by the user on the payment aggregator (phone number, confirmation), never by the assistant.
-    title: 'Payer à votre place',
-    note: 'Le paiement se fait par vous, sur la plateforme de paiement.',
-    user: 'Payez les frais pour moi.',
-    agent: 'Non : c’est vous qui payez, sur la plateforme de paiement, avec votre numéro.',
+    title: 'Répondre sans source',
+    note: 'Chaque tarif, pièce ou délai vient d’une fiche officielle, avec son lien.',
+    user: 'C’est combien, le passeport ?',
+    agent: 'Je vous donne le tarif de la fiche officielle, avec son lien. Sans fiche, je vous le dis.',
     stamp: 'never',
   },
   {
