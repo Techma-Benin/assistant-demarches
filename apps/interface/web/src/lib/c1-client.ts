@@ -100,6 +100,11 @@ export class C1Client {
     });
   }
 
+  // Dictation: transcribes an uploaded audio file without creating a message. Read-only, so no Idempotency-Key.
+  transcribeAudio(fileId: string, signal?: AbortSignal): Promise<Schemas['Transcription']> {
+    return this.request('POST', '/v1/transcriptions', { body: { fileId }, signal });
+  }
+
   private async request<T>(
     method: 'GET' | 'POST',
     path: string,

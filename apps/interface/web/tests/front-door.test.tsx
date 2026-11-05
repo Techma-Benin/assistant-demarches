@@ -171,7 +171,7 @@ describe('FrontDoor', () => {
       vi.stubGlobal('MediaRecorder', FakeRecorder);
       Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: () => Promise.resolve({}) }, configurable: true });
       render(<FrontDoor onAsk={() => {}} config={base} />);
-      expect(await screen.findByRole('button', { name: 'Enregistrer un message vocal' })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: 'Dicter un message' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Joindre un fichier' })).toBeInTheDocument();
     });
 
