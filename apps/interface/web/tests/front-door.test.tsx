@@ -54,7 +54,7 @@ describe('FrontDoor', () => {
 
   it('shows the trust board', () => {
     render(<FrontDoor onAsk={() => {}} config={base} />);
-    expect(screen.getByRole('button', { name: /Voir votre NPI/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Voir votre NPI' })).toBeInTheDocument();
     expect(screen.getAllByText(/Chaque information administrative cite sa fiche officielle/).length).toBeGreaterThan(0);
   });
 
