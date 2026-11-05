@@ -16,6 +16,7 @@ beforeEach(() => {
   pathname = '/admin';
   router.push.mockClear();
   router.refresh.mockClear();
+  localStorage.clear();
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -111,6 +112,47 @@ describe('AppShell navigation', () => {
     renderShell();
     expect(await screen.findByText('Impossible de charger votre profil. Réessayez.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
+  });
+
+  it('drops the administration subtitle and collapses to one flag', async () => {
+    stubConsole({ me: me(AGENT) });
+    const ui = userEvent.setup();
+    const { container } = renderShell();
+    expect(await screen.findByText('Démarches')).toBeInTheDocument();
+    expect(screen.queryByText('Console d’administration')).toBeNull();
+    const account = await screen.findByRole('button', { name: 'Agent Justice' });
+    expect(account.parentElement).toHaveClass('md:mt-auto');
+    const collapse = screen.getByRole('button', { name: 'Replier le menu latéral' });
+    expect(collapse).toHaveAttribute('aria-expanded', 'true');
+    expect(collapse.querySelector('svg[width="28"]')).toBeNull();
+
+    await ui.click(collapse);
+    expect(localStorage.getItem('admin-nav-collapsed')).toBe('true');
+    const expand = screen.getByRole('button', { name: 'Déplier le menu latéral' });
+    expect(expand).toHaveAttribute('aria-expanded', 'false');
+    const flags = expand.querySelectorAll('svg[width="28"]');
+    expect(flags).toHaveLength(1);
+    expect(container.querySelectorAll('svg[width="28"]')).toHaveLength(1);
+    const flag = flags[0];
+    const arrow = expand.querySelector('svg.size-4');
+    expect(flag.getAttribute('class')).not.toMatch(/(^|\s)opacity-0(\s|$)/);
+    expect(flag.getAttribute('class')).toContain('group-hover:opacity-0');
+    expect(flag.getAttribute('class')).toContain('group-focus:opacity-0');
+    expect(flag.getAttribute('class')).toContain('group-focus-visible:opacity-0');
+    expect(arrow!.getAttribute('class')).toMatch(/(^|\s)opacity-0(\s|$)/);
+    expect(arrow!.getAttribute('class')).toContain('group-hover:opacity-100');
+    expect(arrow!.getAttribute('class')).toContain('group-focus:opacity-100');
+    expect(arrow!.getAttribute('class')).toContain('group-focus-visible:opacity-100');
+    const shell = screen.getByText('contenu').closest('.min-h-dvh')!;
+    expect(shell.className).toContain('md:grid-cols-[4.25rem_minmax(0,1fr)]');
+    expect(shell.className).not.toContain('12.5rem');
+    expect(shell).toHaveAttribute('data-collapsed', '');
+    const topCorner = container.querySelector('[data-nav-corner="top"] span') as HTMLElement;
+    const bottomCorner = container.querySelector('[data-nav-corner="bottom"] span') as HTMLElement;
+    expect(topCorner.className).toContain('rounded-br-full');
+    expect(bottomCorner.className).toContain('rounded-tr-full');
+    expect(screen.getByRole('button', { name: 'Agent Justice' }).parentElement).toHaveClass('md:mt-auto');
+    expect(screen.queryByText('Console d’administration')).toBeNull();
   });
 
   it('toggles the mobile menu with aria-expanded', async () => {
