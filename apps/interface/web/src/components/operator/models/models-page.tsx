@@ -1,5 +1,7 @@
 'use client';
 
+import { ChatCircleDotsIcon } from '@phosphor-icons/react/ChatCircleDots';
+import { MicrophoneIcon } from '@phosphor-icons/react/Microphone';
 import { Badge, Button, Dialog, DialogContent, IconButton, InlineAlert, Tooltip, cn } from '@techma/ui';
 import { CircleCheck, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -24,17 +26,22 @@ function avatarTone(id: string): string {
   return AVATAR_TONES[hash % AVATAR_TONES.length];
 }
 
-function roleLabel(model: ModelConfig): string {
-  return model.role === 'transcription' ? 'Transcription' : 'Discussion';
-}
-
 function sameRole(left: ModelConfig, right: ModelConfig): boolean {
   return (left.role === 'transcription') === (right.role === 'transcription');
 }
 
-function initials(label: string): string {
-  const words = label.trim().split(/\s+/).filter(Boolean);
-  return (words.length > 1 ? `${words[0][0]}${words[1][0]}` : label.trim().slice(0, 2)).toUpperCase();
+function RoleMark({ model }: { model: ModelConfig }) {
+  const transcription = model.role === 'transcription';
+  const Icon = transcription ? MicrophoneIcon : ChatCircleDotsIcon;
+  return (
+    <span
+      aria-hidden="true"
+      data-model-mark={transcription ? 'transcription' : 'discussion'}
+      className={cn('grid size-12 shrink-0 place-items-center rounded-2xl', avatarTone(model.id))}
+    >
+      <Icon aria-hidden="true" weight="duotone" size={32} />
+    </span>
+  );
 }
 
 function ModelRow({
@@ -59,16 +66,10 @@ function ModelRow({
           : 'border-line bg-surface hover:border-line-strong hover:bg-sunken',
       )}
     >
-      <span
-        aria-hidden="true"
-        className={cn('grid size-12 shrink-0 place-items-center rounded-2xl font-display text-[15px] font-extrabold', avatarTone(model.id))}
-      >
-        {initials(model.label)}
-      </span>
+      <RoleMark model={model} />
       <div className="min-w-0 flex-1 basis-48">
         <h2 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] leading-tight font-bold break-words">
           {model.label}
-          <span className="text-[13px] font-semibold text-ink-muted">{roleLabel(model)}</span>
           {model.active ? (
             <Badge tone="trust" className="bg-trust text-on-trust" icon={<CircleCheck aria-hidden="true" className="size-3.5" />}>
               Actif
