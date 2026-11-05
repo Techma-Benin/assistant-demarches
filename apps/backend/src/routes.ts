@@ -17,6 +17,7 @@ import { Conversations, type Event } from "./conversations.js";
 import { Consent } from "./consent.js";
 import type { ToolingPort } from "./tooling.js";
 import { Files } from "./files.js";
+import type { TranscriptionPort } from "./transcription.js";
 import { Problem, validate, type Schemas } from "./domain.js";
 import { idempotencyKey } from "./transactions.js";
 import type { CryptoKey } from "jose";
@@ -33,6 +34,7 @@ export type Runtime = {
   conversations: Conversations;
   consent?: Consent;
   files?: Files;
+  transcriber?: TranscriptionPort;
   publicUrl?: string;
   signing?: { key: CryptoKey; kid: string; issuer: string };
   xroadUrl?: string;
@@ -300,6 +302,21 @@ export class ConversationController {
     );
     res.setHeader("Cache-Control", "no-store");
     res.send(file.bytes);
+  }
+  @Post("transcriptions")
+  @HttpCode(200)
+  async transcribe(@Req() req: Request, @Body() body: unknown) {
+    const principal = await user(this.runtime, req);
+    validate("TranscriptionInput", body);
+    if (!this.runtime.transcriber)
+      throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Transcription audio non configurée.");
+    const text = await this.runtime.transcriber.transcribe(
+      (body as Schemas["TranscriptionInput"]).fileId,
+      principal.userRef,
+    );
+    if (text.length > 4000)
+      throw new Problem(413, "FILE_TOO_LARGE", "Message vocal trop long.");
+    return { text } satisfies Schemas["Transcription"];
   }
   @Post("files")
   @HttpCode(201)

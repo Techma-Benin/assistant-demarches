@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Conversation — Backend → Interface usager",
-    "version": "2.2.0",
+    "version": "2.3.0",
     "description": "Jeton Bearer : jeton invité (POST /v1/guest-sessions) ou jeton usager Keycloak (rôle citizen, audience techma-backend). Les routes marquées « connexion requise » renvoient 401 LOGIN_REQUIRED avec un jeton invité."
   },
   "servers": [
@@ -1095,6 +1095,110 @@
           },
           "401": {
             "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dépendance indisponible (UPSTREAM_UNAVAILABLE), avec Retry-After.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/transcriptions": {
+      "post": {
+        "operationId": "transcribeAudio",
+        "summary": "Transcrire un vocal sans l’envoyer",
+        "description": "Le fichier audio doit avoir été déposé par l’usager avec POST /v1/files. Aucun message n’est créé et le modèle n’est pas appelé : l’usager relit et corrige le texte, puis l’envoie comme message text. Le fichier suit la conservation de 24 h.",
+        "tags": [
+          "Conversation"
+        ],
+        "parameters": [
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "W3C Trace Context. Facultatif : le serveur en crée un s’il est absent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Succès.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transcription"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide (INVALID_REQUEST).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentification absente ou invalide (UNAUTHORIZED).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Fichier inconnu ou appartenant à un autre usager (NOT_FOUND).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Fichier audio ou transcription trop long (FILE_TOO_LARGE).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Le fichier n’est pas un audio pris en charge (UNSUPPORTED_MEDIA_TYPE).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3069,6 +3173,33 @@
           "procedureId",
           "url",
           "retrievedAt"
+        ]
+      },
+      "Transcription": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "Texte transcrit du vocal, à relire et corriger par l’usager avant envoi."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "TranscriptionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fileId": {
+            "$ref": "#/components/schemas/FileId"
+          }
+        },
+        "required": [
+          "fileId"
         ]
       },
       "UserMessage": {

@@ -21,6 +21,7 @@ const ALLOWLIST: readonly Rule[] = [
   { method: 'POST', path: new RegExp(`^/v1/conversations/cnv_${ID}/mandates$`) },
   { method: 'POST', path: new RegExp(`^/v1/conversations/cnv_${ID}/mandates/mdt_${ID}/revoke$`) },
   { method: 'POST', path: /^\/v1\/files$/ },
+  { method: 'POST', path: /^\/v1\/transcriptions$/ },
   { method: 'GET', path: /^\/v1\/home$/, public: true },
   { method: 'GET', path: /^\/v1\/cases$/ },
   { method: 'GET', path: new RegExp(`^/v1/cases/cas_${ID}$`) },

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { isolatedDatabase } from "./helpers.mjs";
 import { database, migrate, provision } from "../dist/apps/backend/src/database.js";
-import { Conversations, RESUME_AFTER_CONSENT, RESUME_AFTER_LOGIN } from "../dist/apps/backend/src/conversations.js";
+import { Conversations, RESUME_AFTER_CONSENT, RESUME_AFTER_LOGIN, envelope } from "../dist/apps/backend/src/conversations.js";
 import { transaction } from "../dist/apps/backend/src/transactions.js";
 import { Agent } from "../dist/apps/backend/src/agent.js";
 import { identifier } from "../dist/apps/backend/src/domain.js";
@@ -419,6 +419,27 @@ test("D: wanting to pay shows the amount and a button; the click pays once; anot
   assert.equal(h.called("request.pay").filter((entry) => entry.args.requestId === other).length, 0);
   const prompt = (await h.lastBlocks(second.id)).find((block) => block.type === "buttons");
   assert.equal(prompt.items[0].id, "payment.confirm." + other);
+});
+
+test("D: a case.updated published during the payment turn is not shown twice", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  const base = h.tooling.call;
+  h.tooling.call = async (url, auth, name, args, context, key) => {
+    const result = await base(url, auth, name, args, context, key);
+    if (name === "request.pay") {
+      const paid = { ...fixtures.schemas.Case, status: "in_review" };
+      await h.conversations.ingest(envelope({ kind: "case.updated", conversationId: conversation.id, case: paid }, tp, "tooling"), identifier("key"));
+    }
+    return result;
+  };
+  await h.send(h.user, conversation.id, { type: "interaction", actionId: "payment.confirm." + card.id, value: null });
+  await h.process({ async generate() { return final("Paiement effectué."); } }, conversation.id);
+  assert.equal(h.called("request.pay").length, 1);
+  const sent = (await h.pool.query("SELECT body->'data'->'message'->'blocks' AS blocks FROM backend_conversation_events WHERE conversation_id=$1 AND body->'data'->>'kind'='message.sent'", [conversation.id])).rows;
+  const cards = sent.flatMap((row) => row.blocks).filter((block) => block.type === "caseCard" && block.case.id === fixtures.schemas.Case.id);
+  assert.equal(cards.length, 1);
 });
 
 test("D: an unreadable amount leaves a generic confirmation button", async (t) => {

@@ -1,12 +1,19 @@
 'use client';
 
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Button, InlineAlert, TextField } from '@techma/ui';
 import { navigate } from '@/lib/navigate';
 
-type Props = { conversationId?: string | null; returnTo: string };
+type Props = {
+  conversationId?: string | null;
+  returnTo: string;
+  /** Signed in with the conversation attached: stay on the page instead of navigating to `returnTo`. */
+  onSignedIn?: () => void;
+};
 type Step = 'npi' | 'code';
 
+/** Safety net: a session read that never reports the account would leave the form frozen. */
+const SESSION_READ_TIMEOUT_MS = 4000;
 const DIGITS = /^[0-9]+$/;
 const MAX_LENGTH: Record<Step, number> = { npi: 20, code: 12 };
 
@@ -34,12 +41,19 @@ function withAttachFailure(returnTo: string): string {
 }
 
 /** Simulated NPI sign-in, in two steps. Nothing typed here goes through the conversation or browser storage. */
-export function NpiSignIn({ conversationId, returnTo }: Props) {
+export function NpiSignIn({ conversationId, returnTo, onSignedIn }: Props) {
   const baseId = useId();
   const [step, setStep] = useState<Step>('npi');
   const [value, setValue] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const fallback = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (fallback.current !== null) clearTimeout(fallback.current);
+    },
+    [],
+  );
 
   // Focus the field of the current step (also after an error brings the user back).
   const fieldId = `${baseId}-${step}`;
@@ -63,6 +77,7 @@ export function NpiSignIn({ conversationId, returnTo }: Props) {
 
     setError(null);
     setPending(true);
+    let stay = false;
     try {
       const response = await fetch(step === 'npi' ? '/auth/npi' : '/auth/npi/verify', {
         method: 'POST',
@@ -86,11 +101,18 @@ export function NpiSignIn({ conversationId, returnTo }: Props) {
         return;
       }
       const body = (await response.json().catch(() => ({}))) as { attachFailed?: unknown };
+      if (body.attachFailed !== true && onSignedIn) {
+        // Stays pending until the form unmounts (the session read turns the block into "Connexion effectuée.").
+        stay = true;
+        onSignedIn();
+        fallback.current = setTimeout(() => navigate(returnTo), SESSION_READ_TIMEOUT_MS);
+        return;
+      }
       navigate(body.attachFailed === true ? withAttachFailure(returnTo) : returnTo);
     } catch {
       setError(MESSAGES.unavailable);
     } finally {
-      setPending(false);
+      if (!stay) setPending(false);
     }
   }
 

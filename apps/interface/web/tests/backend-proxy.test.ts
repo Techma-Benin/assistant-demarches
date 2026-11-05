@@ -123,6 +123,7 @@ describe('proxyToBackend v2 routes', () => {
     ['POST', ['v1', 'conversations', CNV, 'mandates']],
     ['POST', ['v1', 'conversations', CNV, 'mandates', MDT, 'revoke']],
     ['POST', ['v1', 'files']],
+    ['POST', ['v1', 'transcriptions']],
     ['GET', ['v1', 'home']],
     ['GET', ['v1', 'cases']],
     ['GET', ['v1', 'cases', CAS]],

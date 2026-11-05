@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
-import { ArrowUp, Loader, Mic, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { Check, Loader, Mic, Trash2 } from 'lucide-react';
 import { IconButton, InlineAlert, PromptBox, VisuallyHidden, cn } from '@techma/ui';
-import { CONTRACT_MIME_TYPES, MAX_FILE_BYTES, mimeLabel, validateFile } from '@/lib/files';
+import { C1Client } from '@/lib/c1-client';
+import { CONTRACT_MIME_TYPES, MAX_FILE_BYTES, mimeLabel, validateFile, type ContractMimeType } from '@/lib/files';
 import { fileKey, useStagedFiles } from '@/hooks/use-staged-files';
 import { useVoiceRecorder } from '@/hooks/use-voice-recorder';
 import { formatDuration } from '@/lib/voice';
@@ -24,6 +25,8 @@ type Props = {
   /** Shared staged files (e.g. between two composers); the composer stages its own when absent. */
   staged?: ReturnType<typeof useStagedFiles>;
   className?: string;
+  /** Backend client used to upload and transcribe a dictation; defaults to a new C1Client. */
+  client?: Pick<C1Client, 'uploadFile' | 'transcribeAudio'>;
 };
 
 const METER_BARS = 24;
@@ -73,7 +76,9 @@ export function Composer({
   hint = true,
   staged,
   className,
+  client,
 }: Props) {
+  const c1 = useMemo(() => client ?? new C1Client(), [client]);
   const [innerText, setInnerText] = useState('');
   const text = value ?? innerText;
   const setText = (next: string) => {
@@ -85,34 +90,68 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const root = useRef<HTMLDivElement>(null);
-  const sending = useRef(false);
-  const sendVoiceRef = useRef<() => void>(() => {});
-  const voice = useVoiceRecorder({ onMaxReached: () => sendVoiceRef.current() });
+  const dictating = useRef(false);
+  const dictateRef = useRef<() => void>(() => {});
+  const textRef = useRef(text);
+  textRef.current = text;
+  const abort = useRef(new AbortController());
+  const [transcribing, setTranscribing] = useState(false);
+  const [dictationError, setDictationError] = useState(false);
+  const refocusText = useRef(false);
+  const voice = useVoiceRecorder({ onMaxReached: () => dictateRef.current() });
   const recording = voice.status === 'recording';
   const wasRecording = useRef(false);
 
   useEffect(() => {
-    if (recording) root.current?.querySelector<HTMLElement>('button[aria-label="Envoyer le message vocal"]')?.focus();
+    // StrictMode replays the effects: a fresh controller after the simulated unmount.
+    if (abort.current.signal.aborted) abort.current = new AbortController();
+    const controller = abort.current;
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (transcribing || !refocusText.current) return;
+    refocusText.current = false;
+    const area = root.current?.querySelector<HTMLTextAreaElement>('textarea');
+    if (!area) return;
+    area.focus();
+    area.setSelectionRange(area.value.length, area.value.length);
+  }, [transcribing]);
+
+  useEffect(() => {
+    if (recording) root.current?.querySelector<HTMLElement>('button[aria-label="Terminer la dictée"]')?.focus();
     else if (wasRecording.current) {
       const target =
-        root.current?.querySelector<HTMLElement>('button[aria-label="Enregistrer un message vocal"]') ??
+        root.current?.querySelector<HTMLElement>('button[aria-label="Dicter un message"]') ??
         root.current?.querySelector<HTMLElement>('textarea');
       target?.focus();
     }
     wasRecording.current = recording;
   }, [recording]);
 
-  async function sendVoice() {
-    if (sending.current) return;
-    sending.current = true;
+  async function dictate() {
+    if (dictating.current) return;
+    dictating.current = true;
+    const { signal } = abort.current;
     try {
       const result = await voice.finish();
-      if (result) onFiles([result.file], undefined, { durationMs: result.durationMs, waveform: result.waveform });
+      if (!result) return;
+      setDictationError(false);
+      setTranscribing(true);
+      refocusText.current = true;
+      const uploaded = await c1.uploadFile(result.file, result.file.type as ContractMimeType, crypto.randomUUID(), signal);
+      const { text: said } = await c1.transcribeAudio(uploaded.id, signal);
+      if (signal.aborted) return;
+      const current = textRef.current;
+      setText((current === '' ? said : `${current.trimEnd()} ${said}`).slice(0, MAX_LENGTH));
+    } catch {
+      if (!signal.aborted) setDictationError(true);
     } finally {
-      sending.current = false;
+      dictating.current = false;
+      if (!signal.aborted) setTranscribing(false);
     }
   }
-  sendVoiceRef.current = () => void sendVoice();
+  dictateRef.current = () => void dictate();
 
   function handleRecordingKey(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === 'Escape') {
@@ -120,12 +159,12 @@ export function Composer({
       voice.cancel();
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      void sendVoice();
+      void dictate();
     }
   }
 
   function stage(list: File[]) {
-    if (disabled || recording) return;
+    if (disabled || recording || transcribing) return;
     add(list);
   }
 
@@ -149,7 +188,7 @@ export function Composer({
   }
 
   function handleDragOver(event: DragEvent<HTMLDivElement>) {
-    if (disabled || recording || !event.dataTransfer.types.includes('Files')) return;
+    if (disabled || recording || transcribing || !event.dataTransfer.types.includes('Files')) return;
     event.preventDefault();
     setDragging(true);
   }
@@ -162,11 +201,15 @@ export function Composer({
   const counting = text.length > COUNTER_FROM;
 
   const alert = voice.error ?? fileError;
+  const transcriptionAlert = dictationError && !voice.error;
   const micButton = voice.supported ? (
     <IconButton
       variant="primary"
-      label="Enregistrer un message vocal"
-      onClick={() => void voice.start()}
+      label="Dicter un message"
+      onClick={() => {
+        setDictationError(false);
+        void voice.start();
+      }}
       disabled={disabled || voice.status === 'requesting'}
       className="size-12"
     >
@@ -181,6 +224,9 @@ export function Composer({
   return (
     <div ref={root}>
       {alert && <InlineAlert className="mb-2">{alert}</InlineAlert>}
+      {!alert && transcriptionAlert && (
+        <InlineAlert className="mb-2">La transcription n’a pas abouti. Réessayez ou écrivez votre message.</InlineAlert>
+      )}
       <input
         ref={fileInput}
         type="file"
@@ -215,12 +261,20 @@ export function Composer({
             </div>
             <IconButton
               variant="primary"
-              label="Envoyer le message vocal"
-              onClick={() => void sendVoice()}
+              label="Terminer la dictée"
+              onClick={() => void dictate()}
               className="size-12"
             >
-              <ArrowUp className="size-5" strokeWidth={2.5} aria-hidden="true" />
+              <Check className="size-5" strokeWidth={2.5} aria-hidden="true" />
             </IconButton>
+          </div>
+        ) : transcribing ? (
+          <div className="ui-enter flex items-center gap-2 rounded-[28px] border border-line-strong bg-surface py-2.5 pl-2.5 pr-2.5 shadow-prompt sm:pl-3">
+            <VisuallyHidden role="status">Transcription en cours…</VisuallyHidden>
+            <div aria-hidden="true" className="flex min-h-12 min-w-0 flex-1 items-center gap-3 px-2 text-base text-ink">
+              <Loader className="size-5 shrink-0 motion-safe:animate-spin" />
+              <span>Transcription en cours…</span>
+            </div>
           </div>
         ) : (
         <PromptBox

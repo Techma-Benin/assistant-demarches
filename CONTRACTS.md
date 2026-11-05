@@ -1,4 +1,4 @@
-# Contrat d'intégration v2.2.0
+# Contrat d'intégration v2.3.0
 
 Ce document et les fichiers de `contracts/v2/` sont la seule référence entre les équipes. Ils découlent de la [spécification fonctionnelle](docs/spec.md). Tout ce qui n'y figure pas n'existe pas.
 
@@ -101,7 +101,7 @@ Commandes :
 5. Pendant la génération, le Backend **peut** émettre zéro, un ou plusieurs `message.delta`. Ils portent uniquement le texte du futur bloc `text` — jamais les blocs structurés (`buttons`, `form`, `fileRequest`, `loginRequired`, `consent`, `requestCard`, `caseCard`) ni les `sources`.
 6. La clôture reste `message.sent` : `AgentMessage` complet, `blocks` définitifs. L'Interface remplace / finalise la bulle en cours par cet événement. Sources, boutons, formulaire, `fileRequest` et les autres blocs n'apparaissent que sur `message.sent`. Le modèle ne produit toujours que `text` / `buttons` / `form` ; les autres blocs restent construits par le Backend.
 7. `message.delta` n'est **pas** émis : dans `GET …/events` sans curseur ; après le `message.sent` du même `messageId` ; pour une réponse sans texte (pas de bloc `text` à venir) ; par le Tooling (`POST /internal/v1/events`).
-8. Vocal : `POST /v1/files` (audio), puis message `{type: audio, fileId}`. Le Backend transcrit, et la transcription apparaît dans `message.received`.
+8. Vocal : `POST /v1/files` (audio), puis message `{type: audio, fileId}`. Le Backend transcrit, et la transcription apparaît dans `message.received`. Sur le web, l’usager dicte : `POST /v1/files` (audio), puis `POST /v1/transcriptions` (`{fileId}`) renvoie `{text}` sans créer de message ni appeler le modèle ; l’usager relit, corrige et envoie un message `text`. Le message `{type: audio}` reste pour WhatsApp. Le fichier audio suit la règle de conservation de 24 h ci-dessous.
 9. Connexion par NPI : l'Interface appelle `POST /v1/identity/npi` (le NPI ne transite que par cet appel, jamais par la conversation ni par le modèle), puis `POST /v1/identity/npi/verify` avec le défi et le code reçu. Le jeton obtenu s'utilise comme un jeton usager connecté ; un même NPI donne toujours le même `userRef`. Une conversation invitée s'y rattache par `POST …/attach`, et l'action en attente est reprise.
 10. Suivi des demandes depuis n'importe quel chat : l'usager connecté demande où en sont ses demandes, y compris dans une nouvelle conversation. L'assistant interroge la liste des dossiers de l'usager et répond par des blocs `caseCard` ; un invité reçoit `loginRequired`, et la question est rejouée après connexion.
 

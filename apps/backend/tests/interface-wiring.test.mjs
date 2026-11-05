@@ -149,7 +149,7 @@ async function harness(t) {
   await app.listen(0, "127.0.0.1");
   const base = (await app.getUrl()).replace("[::1]", "127.0.0.1");
   runtime.publicUrl = base;
-  return { pool, conversations, files, agent, makeAgent, runtime, base, stop, modelCalls, transcriptionCalls, behaviour, citizen };
+  return { pool, conversations, files, agent, makeAgent, runtime, endpoint, base, stop, modelCalls, transcriptionCalls, behaviour, citizen };
 }
 
 /** `fetch` the way c1-client.ts builds its requests (after the Interface proxy: Bearer added, headers forwarded). */
@@ -500,4 +500,54 @@ test("issued document downloads carry a filename for the browser", () => {
   assert.equal(header, `attachment; filename="Extrait B3 du casier judiciaire.pdf"; filename*=UTF-8''Extrait%20B3%20du%20casier%20judiciaire.pdf`);
   assert.match(documentDisposition([{ ...documents[0], name: "Acte de naissance « é »\r\n\"x\"" }], documents[0].id, "image/png"), /^attachment; filename="Acte de naissance [^"\r\n]*\.png"; filename\*=UTF-8''[A-Za-z0-9%._-]+$/);
   assert.equal(documentDisposition([], "doc_x", "application/pdf"), `attachment; filename="document.pdf"; filename*=UTF-8''document.pdf`);
+});
+
+test("POST /v1/transcriptions dictates a vocal without creating a message or calling the model", async (t) => {
+  const h = await harness(t);
+  const endpoint = h.endpoint;
+  h.runtime.transcriber = new HttpTranscription(h.files, { endpoint, allowedEndpoints: new Set([endpoint]), allowLocalhost: true, apiKeyEnv: "TRANSCRIPTION_KEY" }, { TRANSCRIPTION_KEY: "synthetic-transcription-key" });
+  const guest = await (await fetch(h.base + "/v1/guest-sessions", { method: "POST" })).json();
+  const api = client(h.base, guest.token);
+  const conversationId = (await api.createConversation()).json.id;
+  const uploaded = await api.uploadFile(WEBM, "audio/webm");
+  assert.equal(uploaded.status, 201, uploaded.text);
+  const before = (await api.listEvents(conversationId)).json.items.length;
+  const result = await api.call("POST", "/v1/transcriptions", { body: { fileId: uploaded.json.id } });
+  assert.equal(result.status, 200, result.text);
+  assert.deepEqual(result.json, { text: TRANSCRIPT });
+  validate("Transcription", result.json);
+  assert.equal((await api.listEvents(conversationId)).json.items.length, before);
+  assert.equal((await h.pool.query("SELECT count(*)::int AS n FROM backend_messages")).rows[0].n, 0);
+  assert.equal(h.modelCalls.length, 0);
+  assert.equal(h.transcriptionCalls.length, 1);
+  assert.equal(h.transcriptionCalls[0].authorization, "Bearer synthetic-transcription-key");
+  // The form pins the language to French.
+  assert.match(h.transcriptionCalls[0].raw.toString("latin1"), /name="language"\r\n\r\nfr\r\n/);
+});
+
+test("POST /v1/transcriptions errors: other user's file 404, invalid body 400, no transcriber 503, no auth 401", async (t) => {
+  const h = await harness(t);
+  const endpoint = h.endpoint;
+  const problem = (result, status, code) => {
+    assert.equal(result.status, status, result.text);
+    assert.match(result.headers.get("content-type"), /application\/problem\+json/);
+    assert.equal(result.json.code, code);
+  };
+  const guest = await (await fetch(h.base + "/v1/guest-sessions", { method: "POST" })).json();
+  const api = client(h.base, guest.token);
+  const other = client(h.base, (await (await fetch(h.base + "/v1/guest-sessions", { method: "POST" })).json()).token);
+  const uploaded = await api.uploadFile(WEBM, "audio/webm");
+  assert.equal(uploaded.status, 201, uploaded.text);
+
+  // No transcriber configured.
+  problem(await api.call("POST", "/v1/transcriptions", { body: { fileId: uploaded.json.id } }), 503, "UPSTREAM_UNAVAILABLE");
+
+  h.runtime.transcriber = new HttpTranscription(h.files, { endpoint, allowedEndpoints: new Set([endpoint]), allowLocalhost: true, apiKeyEnv: "TRANSCRIPTION_KEY" }, { TRANSCRIPTION_KEY: "synthetic-transcription-key" });
+  problem(await other.call("POST", "/v1/transcriptions", { body: { fileId: uploaded.json.id } }), 404, "NOT_FOUND");
+  problem(await api.call("POST", "/v1/transcriptions", { body: { fileId: identifier("fil") } }), 404, "NOT_FOUND");
+  problem(await api.call("POST", "/v1/transcriptions", { body: { fileId: "nope" } }), 400, "INVALID_REQUEST");
+  problem(await api.call("POST", "/v1/transcriptions", { body: { fileId: uploaded.json.id, extra: 1 } }), 400, "INVALID_REQUEST");
+  problem(await api.call("POST", "/v1/transcriptions", { body: {} }), 400, "INVALID_REQUEST");
+  problem(await client(h.base).call("POST", "/v1/transcriptions", { body: { fileId: uploaded.json.id } }), 401, "UNAUTHORIZED");
+  assert.equal(h.transcriptionCalls.length, 0);
 });

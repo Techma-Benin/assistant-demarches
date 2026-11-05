@@ -299,6 +299,37 @@ describe('ConversationStream', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('renewConnection() while live closes the socket, asks a new ticket and replays from the cursor', async () => {
+    const t = setup();
+    t.stream.start();
+    await flush();
+    const old = last();
+    old.open();
+    old.message(JSON.stringify(evt('evt_1')));
+    t.stream.renewConnection();
+    await flush();
+    expect(old.closedWith?.code).toBe(1000);
+    expect(t.createSocketTicket).toHaveBeenCalledTimes(2);
+    expect(t.createSocketTicket.mock.calls[1][1]).not.toBe(t.createSocketTicket.mock.calls[0][1]);
+    expect(last()).not.toBe(old);
+    const url = new URL(last().url);
+    expect(url.searchParams.get('ticket')).toBe('tkt_secret2');
+    expect(url.searchParams.get('cursor')).toBe('evt_1');
+    t.stream.stop();
+  });
+
+  it('renewConnection() does nothing once stopped', async () => {
+    const t = setup();
+    t.stream.start();
+    await flush();
+    last().open();
+    t.stream.stop();
+    t.stream.renewConnection();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(t.createSocketTicket).toHaveBeenCalledTimes(1);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
   it('stop() during polling leaves no timer pending', async () => {
     const t = setup();
     t.stream.start();
