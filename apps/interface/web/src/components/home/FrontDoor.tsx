@@ -36,6 +36,9 @@ const SECTIONS: { id: string; label: string }[] = [
   { id: 'garanties', label: 'Vos garanties' },
 ];
 
+const DOCK_SPACE = 104;
+const EDGE_GAP = 16;
+
 const SUGGESTIONS = ['Comment obtenir un casier judiciaire ?', 'Renouveler mon passeport', 'Déclarer une naissance', 'Créer mon entreprise'];
 
 const SHOWCASE: CarouselItem[] = [
@@ -96,9 +99,14 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
     const el = document.getElementById(id);
     if (!el) return;
     event.preventDefault();
-    const box = el.getBoundingClientRect();
-    const top = window.scrollY + box.top - Math.max(0, (window.innerHeight - box.height) / 2);
-    window.scrollTo({ top, behavior: 'smooth' });
+    const parts = Array.from(el.querySelectorAll<HTMLElement>(':scope > *, :scope > * > *')).filter((child) => child.offsetHeight > 0);
+    const boxes = parts.length ? parts.map((child) => child.getBoundingClientRect()) : [el.getBoundingClientRect()];
+    const contentTop = Math.min(...boxes.map((b) => b.top));
+    const contentBottom = Math.max(...boxes.map((b) => b.bottom));
+    const visible = window.innerHeight - DOCK_SPACE;
+    const room = visible - (contentBottom - contentTop);
+    const offset = room > 0 ? room / 2 : EDGE_GAP;
+    window.scrollTo({ top: window.scrollY + contentTop - offset, behavior: 'smooth' });
     window.history.replaceState(null, '', `#${id}`);
   };
   const goToQuestion = () => {
