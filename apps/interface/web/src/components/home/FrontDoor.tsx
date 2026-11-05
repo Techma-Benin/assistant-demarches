@@ -8,15 +8,12 @@ import { useStagedFiles } from '@/hooks/use-staged-files';
 import { CONTRACT_MIME_TYPES } from '@/lib/files';
 import { formatRelative } from '@/lib/format-time';
 import { siteConfig, type SiteConfig } from '@/lib/site-config';
-import { DocumentCarousel, type CarouselItem } from './DocumentCarousel';
 import { FitWord } from './FitWord';
 import { HERO_PHOTOS, HeroSlideshow } from './HeroSlideshow';
 import { AskDemo, PrepareDemo, ValidateDemo } from './HowItWorksDemos';
 import { NeverShowcase } from './NeverDemos';
-import { PromptDock } from './PromptDock';
 import { Bridge } from './Bridge';
 import { CATALOGUE_PHOTO_CREDITS, CatalogueSection } from './CatalogueSection';
-import { GuidedStart } from './GuidedStart';
 import { LiveSearch } from './LiveSearch';
 import { StickyNav, type NavLink } from './StickyNav';
 import { useReveal } from './use-reveal';
@@ -31,16 +28,14 @@ export type FrontDoorProps = {
 };
 
 const SECTIONS: NavLink[] = [
-  { id: 'commencer', label: 'Commencer' },
-  { id: 'documents', label: 'Exemples' },
   { id: 'fonctionnement', label: 'Comment ça marche' },
-  { id: 'themes', label: 'Toutes les démarches' },
+  { id: 'themes', label: 'Trouver ma démarche' },
   { id: 'garanties', label: 'Vos garanties' },
 ];
 
-const SUGGESTIONS = ['Comment obtenir un casier judiciaire ?', 'Renouveler mon passeport', 'Déclarer une naissance', 'Créer mon entreprise'];
+const SUGGESTIONS = ['Obtenir un casier judiciaire', 'Renouveler mon passeport', 'Déclarer une naissance', 'Créer mon entreprise'];
 
-const SHOWCASE: CarouselItem[] = [
+const SHOWCASE = [
   { name: 'Acte de naissance', kind: 'acte-naissance', detail: 'État civil', question: 'Comment obtenir un acte de naissance ?' },
   { name: 'Casier judiciaire', kind: 'casier', detail: 'Justice', question: 'Comment obtenir un extrait de casier judiciaire ?' },
   { name: 'Passeport', kind: 'passeport', detail: 'Voyage', question: 'Comment renouveler mon passeport ?' },
@@ -105,7 +100,6 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
     ask(text);
     setDraft('');
   };
-  const showcaseRef = useReveal<HTMLElement>();
   const howRef = useReveal<HTMLElement>();
   const trustRef = useReveal<HTMLElement>();
 
@@ -118,7 +112,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
           </a>
           <div className="flex min-w-0 items-center gap-1">
             <nav aria-label="Navigation principale" className="hidden items-center gap-1 md:flex">
-              {SECTIONS.slice(0, 4).map((s) => (
+              {SECTIONS.map((s) => (
                 <a key={s.id} href={`#${s.id}`} className={navLink}>
                   {s.label}
                 </a>
@@ -185,38 +179,6 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
       </div>
 
       <main>
-        <section id="commencer" aria-labelledby="start-title" className="bg-sunken py-12 md:py-16">
-          <div className="mx-auto max-w-[1320px] px-5 md:px-8">
-            <div className="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-8">
-              <h2 id="start-title" className={cn(h2Class, 'text-[clamp(28px,3vw,42px)]')}>
-                Pas sûr de quoi demander ?
-              </h2>
-              <p className="m-0 text-[17px] text-ink-muted">Trouvez votre démarche en trois clics.</p>
-            </div>
-            <GuidedStart disabled={disabled} onAsk={ask} />
-            <Bridge to="documents" className="mt-6 text-ink">
-              Ou voyez les documents les plus demandés
-            </Bridge>
-          </div>
-        </section>
-
-        <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
-          <div className="mx-auto mb-8 flex max-w-[1320px] flex-wrap items-end justify-between gap-x-8 gap-y-2 px-5 md:mb-10 md:px-8">
-            <h2 {...rv(0)} id="documents-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
-              Un document ? Voici comment l’obtenir.
-            </h2>
-            <p {...rv(1)} className="m-0 max-w-[40ch] text-[17px] text-ink-muted">
-              Choisissez-en un : l’assistant vous accompagne jusqu’au dépôt.
-            </p>
-          </div>
-          <div {...rv(2)}>
-            <DocumentCarousel items={SHOWCASE} disabled={disabled} onAsk={ask} />
-          </div>
-          <Bridge to="fonctionnement" className="mt-8 text-ink">
-            Vous savez ce qu’il vous faut ? Voyez comment l’assistant s’en occupe
-          </Bridge>
-        </section>
-
         <section id="fonctionnement" ref={howRef} aria-labelledby="how-title" className={cn(sectionPad, 'lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
           <div className="mx-auto max-w-[1320px] px-5 md:px-8">
             <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-10">
@@ -327,10 +289,8 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               <p className="m-0 text-[13px] font-semibold uppercase tracking-[0.08em] text-on-action/60">Sur cette page</p>
               <ul className="m-0 mt-3 list-none p-0">
                 {[
-                  ['#commencer', 'Trouver ma démarche'],
-                  ['#documents', 'Documents'],
                   ['#fonctionnement', 'Comment ça marche'],
-                  ['#themes', 'Toutes les démarches'],
+                  ['#themes', 'Trouver ma démarche'],
                   ['#garanties', 'Vos garanties'],
                 ].map(([href, label]) => (
                   <li key={href}>
@@ -388,16 +348,6 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
       <StickyNav links={SECTIONS} brandFlag={brandFlag} onAsk={goToQuestion} />
 
-      <PromptDock
-        anchor={heroPrompt}
-        hideNear={['demander', 'site-footer']}
-        value={draft}
-        onValueChange={setDraft}
-        onSubmit={submitDraft}
-        onFiles={onFiles}
-        staged={staged}
-        disabled={disabled}
-      />
     </div>
   );
 }

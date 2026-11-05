@@ -43,8 +43,10 @@ export function useDemoLoop(steps: number[], finalStep: number): Loop {
   }, []);
 
   const running = animated && onScreen && pageVisible;
+  const played = useRef(false);
+  if (animated && step !== finalStep) played.current = true;
   useEffect(() => {
-    if (!running) return;
+    if (!running || (played.current && step === finalStep)) return;
     const timer = window.setTimeout(() => setStep((s) => (s + 1) % steps.length), steps[step]);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps

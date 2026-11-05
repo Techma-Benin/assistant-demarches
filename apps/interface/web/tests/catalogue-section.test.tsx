@@ -10,10 +10,10 @@ const setup = (disabled = false) => {
 };
 
 describe('CatalogueSection', () => {
-  it('lists the six themes as tabs, the first selected', () => {
+  it('lists the seven themes as tabs, the first selected', () => {
     setup();
     const tabs = screen.getAllByRole('tab');
-    expect(tabs).toHaveLength(6);
+    expect(tabs).toHaveLength(7);
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
     expect(tabs[0]).toHaveAttribute('tabindex', '0');
     expect(tabs[1]).toHaveAttribute('tabindex', '-1');
@@ -37,11 +37,11 @@ describe('CatalogueSection', () => {
     expect(screen.getByRole('tab', { name: /État civil/ })).toHaveFocus();
     expect(screen.getByRole('tab', { name: /État civil/ })).toHaveAttribute('aria-selected', 'true');
     await user.keyboard('{ArrowUp}{ArrowUp}');
-    expect(screen.getByRole('tab', { name: /Foncier et logement/ })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: /Services consulaires/ })).toHaveFocus();
     await user.keyboard('{Home}');
     expect(screen.getByRole('tab', { name: /Identité/ })).toHaveFocus();
     await user.keyboard('{End}');
-    expect(screen.getByRole('tab', { name: /Foncier et logement/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /Services consulaires/ })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('an item calls onAsk with its question', async () => {

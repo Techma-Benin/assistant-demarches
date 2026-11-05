@@ -15,7 +15,7 @@ describe('FrontDoor', () => {
     expect(onAsk).toHaveBeenCalledExactlyOnceWith('Mon passeport');
   });
 
-  it.each(['Comment obtenir un casier judiciaire ?', 'Renouveler mon passeport', 'Déclarer une naissance', 'Créer mon entreprise'])(
+  it.each(['Obtenir un casier judiciaire', 'Renouveler mon passeport', 'Déclarer une naissance', 'Créer mon entreprise'])(
     'chip %s calls onAsk with its label',
     async (label) => {
       const onAsk = vi.fn();
@@ -25,14 +25,21 @@ describe('FrontDoor', () => {
     },
   );
 
-  it('moving the document carousel then asking sends the centred document’s question', async () => {
+  it('typing in the hero box lists matching démarches, and one click asks', async () => {
     const onAsk = vi.fn();
     render(<FrontDoor onAsk={onAsk} config={base} />);
     const user = userEvent.setup();
-    await user.click(screen.getAllByRole('button', { name: 'Document suivant' })[0]!);
-    await user.click(screen.getAllByRole('button', { name: 'Document suivant' })[0]!);
-    await user.click(screen.getByRole('button', { name: 'Poser cette question à l’assistant : Comment renouveler mon passeport ?' }));
-    expect(onAsk).toHaveBeenCalledExactlyOnceWith('Comment renouveler mon passeport ?');
+    await user.type(screen.getByLabelText('Votre question'), 'pass');
+    await user.click(screen.getByRole('button', { name: /Laissez-passer/ }));
+    expect(onAsk).toHaveBeenCalledExactlyOnceWith('Comment obtenir un laissez-passer ?');
+  });
+
+  it('filters the catalogue by who you are', async () => {
+    render(<FrontDoor onAsk={() => {}} config={base} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Diaspora' }));
+    expect(screen.getByRole('tab', { name: /Services consulaires/ })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Entreprise/ })).toBeNull();
   });
 
   it('a catalogue item calls onAsk with its question', async () => {
@@ -185,12 +192,5 @@ describe('FrontDoor', () => {
       expect(onAsk).not.toHaveBeenCalled();
     });
 
-    it('shares the staged file with the docked box', async () => {
-      const { container } = render(<FrontDoor onAsk={() => {}} config={base} />);
-      await userEvent.setup().upload(heroInput(container), pdf());
-      const docks = document.querySelectorAll('[data-shown]');
-      expect(docks).toHaveLength(1);
-      expect(within(docks[0] as HTMLElement).getByText('acte.pdf')).toBeInTheDocument();
-    });
   });
 });

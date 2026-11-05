@@ -7,7 +7,9 @@ import {
   FilePenLine,
   Fingerprint,
   Flag,
+  FileSignature,
   Flower,
+  Landmark,
   Gavel,
   Hash,
   Map as MapIcon,
@@ -34,7 +36,10 @@ import { Bridge } from './Bridge';
 import { FitWord } from './FitWord';
 import { useReveal } from './use-reveal';
 
+export type Audience = 'particulier' | 'entreprise' | 'diaspora';
+
 export type CatalogueTheme = {
+  audiences: Audience[];
   title: string;
   description: string;
   kind: DocumentKind;
@@ -45,6 +50,7 @@ export type CatalogueTheme = {
 export const CATALOGUE: CatalogueTheme[] = [
   {
     title: 'Identité',
+    audiences: ['particulier'],
     backdrop: { src: '/photos/fond-identite.jpg', size: 'cover', y: '50%' },
     description: 'Prouver qui vous êtes, votre nationalité et votre lieu de résidence.',
     kind: 'cni',
@@ -57,6 +63,7 @@ export const CATALOGUE: CatalogueTheme[] = [
   },
   {
     title: 'État civil',
+    audiences: ['particulier', 'diaspora'],
     backdrop: { src: '/photos/esplanade-statue-bande.jpg', size: 'cover', y: '50%' },
     description: 'Les grands moments de la vie de famille, enregistrés et prouvés.',
     kind: 'acte-naissance',
@@ -69,6 +76,7 @@ export const CATALOGUE: CatalogueTheme[] = [
   },
   {
     title: 'Voyage',
+    audiences: ['particulier', 'diaspora'],
     backdrop: { src: '/photos/pirogue-ganvie.jpg', size: 'auto 200svh', y: '100%' },
     description: 'Quitter le territoire et y revenir avec les bons documents.',
     kind: 'passeport',
@@ -81,6 +89,7 @@ export const CATALOGUE: CatalogueTheme[] = [
   },
   {
     title: 'Entreprise',
+    audiences: ['entreprise'],
     backdrop: { src: '/photos/vieux-pont-grand-popo.jpg', size: 'auto 200svh', y: '70%' },
     description: 'Donner une existence légale à votre activité, puis la faire évoluer.',
     kind: 'entreprise',
@@ -93,6 +102,7 @@ export const CATALOGUE: CatalogueTheme[] = [
   },
   {
     title: 'Justice',
+    audiences: ['particulier', 'entreprise'],
     backdrop: { src: '/photos/porte-non-retour-ouidah.jpg', size: 'auto 200svh', y: '62%' },
     description: 'Prouver votre situation devant la loi et obtenir les actes du tribunal.',
     kind: 'casier',
@@ -105,6 +115,7 @@ export const CATALOGUE: CatalogueTheme[] = [
   },
   {
     title: 'Foncier et logement',
+    audiences: ['particulier', 'entreprise'],
     backdrop: { src: '/photos/tata-somba-nadoba.jpg', size: 'auto 200svh', y: '22%' },
     description: 'Sécuriser votre terrain et construire en règle.',
     kind: 'permis',
@@ -113,6 +124,19 @@ export const CATALOGUE: CatalogueTheme[] = [
       { name: 'Permis de construire', about: 'L’autorisation de construire sur votre terrain.', question: 'Comment obtenir un permis de construire ?', icon: HardHat },
       { name: 'Mutation de titre foncier', about: 'Inscrire le nouveau propriétaire après une vente ou une succession.', question: 'Comment faire la mutation d’un titre foncier ?', icon: Repeat },
       { name: 'Extrait de plan cadastral', about: 'Le plan officiel qui situe votre parcelle.', question: 'Comment obtenir l’extrait de plan cadastral d’une parcelle ?', icon: MapIcon },
+    ],
+  },
+  {
+    title: 'Services consulaires',
+    audiences: ['diaspora'],
+    backdrop: { src: '/photos/porte-non-retour-ouidah.jpg', size: 'auto 200svh', y: '62%' },
+    description: 'Vos démarches depuis l’étranger, avec votre consulat.',
+    kind: 'passeport',
+    items: [
+      { name: 'Carte consulaire', about: 'Votre carte d’identification auprès du consulat du Bénin.', question: 'Comment obtenir ou renouveler ma carte consulaire ?', icon: IdCard },
+      { name: 'Immatriculation consulaire', about: 'Vous faire connaître du consulat de votre pays de résidence.', question: 'Comment m’immatriculer au consulat ?', icon: Landmark },
+      { name: 'Procuration', about: 'Charger un proche d’une démarche au Bénin à votre place.', question: 'Comment faire une procuration depuis l’étranger ?', icon: FileSignature },
+      { name: 'Autorisation parentale', about: 'Autoriser une démarche pour votre enfant depuis l’étranger.', question: 'Comment obtenir une autorisation parentale depuis l’étranger ?', icon: UserRound },
     ],
   },
 ];
@@ -132,12 +156,21 @@ export const CATALOGUE_PHOTO_CREDITS = [
   },
 ];
 
+const AUDIENCES: { key: Audience | null; label: string }[] = [
+  { key: null, label: 'Tous' },
+  { key: 'particulier', label: 'Particulier' },
+  { key: 'entreprise', label: 'Entreprise' },
+  { key: 'diaspora', label: 'Diaspora' },
+];
+
 const FAN_ROTATIONS = ['-rotate-[8deg]', 'rotate-0', 'rotate-[8deg]'];
 
 /** « Toutes les démarches »: themes on the left, the selected theme as one detail card on the right. */
 export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk: (q: string) => void }) {
   const ref = useReveal<HTMLElement>();
+  const [audience, setAudience] = useState<Audience | null>(null);
   const [selected, setSelected] = useState(0);
+  const visible = audience ? CATALOGUE.filter((t) => t.audiences.includes(audience)) : CATALOGUE;
   const [lifted, setLifted] = useState<number | null>(null);
   const [pointed, setPointed] = useState<number | null>(null);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -151,7 +184,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
     mq.addEventListener?.('change', sync);
     return () => mq.removeEventListener?.('change', sync);
   }, []);
-  const theme = CATALOGUE[selected]!;
+  const theme = visible[selected]!;
   const fan = theme.items.slice(0, 3);
 
   const choose = (next: number) => {
@@ -168,7 +201,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
     tabs.current[next]?.focus();
   };
   const onKey = (e: KeyboardEvent) => {
-    const last = CATALOGUE.length - 1;
+    const last = visible.length - 1;
     let next: number;
     if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = selected === last ? 0 : selected + 1;
     else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = selected === 0 ? last : selected - 1;
@@ -180,15 +213,15 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
   };
 
   return (
-    <section id="themes" ref={ref} data-theme="light" aria-labelledby="themes-title" className={cn(sectionPad, 'overflow-x-clip bg-action text-on-action lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-10')}>
+    <section id="themes" ref={ref} data-theme="light" aria-labelledby="themes-title" className={cn(sectionPad, 'overflow-x-clip bg-action text-on-action lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-8')}>
       <div className="mx-auto max-w-[1320px] px-5 md:px-8">
         {/* Decorative: the chosen theme's photo shows through the letters, fixed to the screen while the page scrolls. */}
         <div {...rv(0)}>
           <FitWord
             word="DÉMARCHES"
             max={240}
-            maxScreenHeight={0.22}
-            fills={CATALOGUE.map((t) => ({ backgroundImage: `url(${t.backdrop.src})`, backgroundSize: t.backdrop.size, backgroundPosition: `50% ${t.backdrop.y}` }))}
+            maxScreenHeight={0.17}
+            fills={visible.map((t) => ({ backgroundImage: `url(${t.backdrop.src})`, backgroundSize: t.backdrop.size, backgroundPosition: `50% ${t.backdrop.y}` }))}
             active={selected}
             className="type-photo bg-fixed"
           />
@@ -196,7 +229,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
 
         <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-end lg:gap-x-8">
           <h2 id="themes-title" className="sr-only">
-            Toutes les démarches
+            Trouver ma démarche
           </h2>
           <p {...rv(2)} className="m-0 text-[clamp(17px,1.5vw,20px)] leading-normal text-on-action/85 lg:col-span-12">
             Trouvez la vôtre en un clic, d’après les fiches officielles du service public.
@@ -205,6 +238,29 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
 
         <div className="mt-8 grid grid-cols-1 gap-8 lg:mt-8 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:gap-x-12 lg:gap-y-6">
           <div {...rv(3)} className="min-w-0 lg:col-span-4">
+            <p className="m-0 mb-2 text-[14px] font-semibold text-on-action/70">Vous êtes</p>
+            <div role="group" aria-label="Vous êtes" className="mb-4 flex flex-wrap items-center gap-1.5">
+              {AUDIENCES.map((a) => {
+                const on = audience === a.key;
+                return (
+                  <button
+                    key={a.label}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => {
+                      setAudience(a.key);
+                      choose(0);
+                    }}
+                    className={cn(
+                      'ui-press inline-flex min-h-10 items-center rounded-pill border px-3 text-[14px] font-semibold transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-on-action',
+                      on ? 'border-on-action bg-on-action text-action' : 'border-on-action/30 text-on-action/80 hover:border-on-action hover:text-on-action',
+                    )}
+                  >
+                    {a.label}
+                  </button>
+                );
+              })}
+            </div>
             <div
               role="tablist"
               aria-label="Thèmes de démarches"
@@ -212,7 +268,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
               onKeyDown={onKey}
               className="ui-scrollbar-none -mx-5 flex gap-2 overflow-x-auto px-5 pb-1 lg:mx-0 lg:flex-col lg:gap-0 lg:overflow-visible lg:border-t lg:border-on-action/20 lg:px-0 lg:pb-0"
             >
-              {CATALOGUE.map((t, i) => {
+              {visible.map((t, i) => {
                 const active = i === selected;
                 return (
                   <button
@@ -231,7 +287,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
                     onFocus={() => choose(i)}
                     className={cn(
                       'ui-press relative flex min-h-11 shrink-0 items-center justify-between gap-6 whitespace-nowrap rounded-pill border px-4 text-left text-[15px] font-semibold transition-colors duration-200',
-                      'lg:rounded-none lg:border-0 lg:border-b lg:border-on-action/20 lg:px-0 lg:py-[clamp(7px,1.3svh,14px)] lg:font-display lg:text-[clamp(21px,1.9vw,28px)] lg:leading-[1.15] lg:tracking-[-0.03em]',
+                      'lg:rounded-none lg:border-0 lg:border-b lg:border-on-action/20 lg:px-0 lg:py-[clamp(5px,0.9svh,11px)] lg:font-display lg:text-[clamp(20px,1.7vw,26px)] lg:leading-[1.15] lg:tracking-[-0.03em]',
                       active
                         ? 'border-on-action bg-on-action text-action lg:bg-transparent lg:font-extrabold lg:text-on-action'
                         : 'border-on-action/25 text-on-action/75 hover:text-on-action lg:text-on-action/60',
@@ -279,7 +335,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
           >
             <div className="grid min-h-full grid-cols-1 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
               <div aria-hidden="true" className="relative h-[220px] overflow-hidden bg-sunken md:h-auto md:min-h-[clamp(300px,40svh,420px)]">
-                {CATALOGUE.map((t, ti) => {
+                {visible.map((t, ti) => {
                   const shown = ti === selected;
                   const docs = t.items.slice(0, 3);
                   return (
@@ -298,7 +354,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
                             shown && lifted === i ? 'z-10 -translate-y-[6%] scale-[1.08]' : 'translate-y-0',
                           )}
                         >
-                          <div style={{ animationDelay: `${i * 700}ms` }} className="relative size-full animate-[doc-float_5s_ease-in-out_infinite]">
+                          <div style={{ animationDelay: `${i * 700}ms` }} className="relative size-full">
                             <DocumentArt kind={item.kind ?? t.kind} className="size-full drop-shadow-md" />
                             {i === 1 && shown && <Stamp key={selected} className="doc-stamp absolute -right-[10%] bottom-[10%] size-[46%] -rotate-12" />}
                           </div>
