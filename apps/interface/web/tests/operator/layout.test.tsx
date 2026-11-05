@@ -1,8 +1,9 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import OperatorLayout from '@/app/operateur/layout';
 import { OPERATOR_NAV_COLLAPSED_KEY } from '@/components/operator/shell/operator-shell';
+import { RAIL_COLLAPSED, RAIL_WIDTH_KEY, clampExpandedWidth } from '@/components/shell/rail-resize';
 
 const readSession = vi.fn();
 const redirect = vi.fn((url: string) => {
@@ -96,15 +97,31 @@ describe('operator layout gate', () => {
     expect(screen.getByRole('link', { name: 'Modèles' })).toHaveAttribute('href', '/operateur/modeles');
     expect(activeLink).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Statut' })).not.toHaveAttribute('aria-current');
-    expect(screen.getByRole('button', { name: 'Replier le menu latéral' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByRole('button', { name: 'Replier le menu latéral' })).toBeNull();
     const account = screen.getByRole('button', { name: 'Opérateur' });
     expect(account).toHaveAttribute('aria-haspopup', 'menu');
     expect(account).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('button', { name: 'Se déconnecter' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Thème' })).toBeNull();
-    const shell = container.firstElementChild!;
-    expect(shell.className).toContain('md:grid-cols-[12.5rem_minmax(0,1fr)]');
+    const shell = container.firstElementChild as HTMLElement;
+    expect(shell.className).toContain('md:grid-cols-[var(--rail-width)_minmax(0,1fr)]');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe('200px');
     const main = screen.getByRole('main');
+    expect(main.className).toContain('z-10');
+    expect(main.className).toContain('bg-canvas');
+    expect(main.className).not.toContain('shadow-rail');
+    const grip = screen.getByRole('separator', { name: 'Redimensionner le menu latéral' });
+    expect(grip.className).toContain('top-1/2');
+    expect(grip.className).toContain('cursor-col-resize');
+    expect(grip.className).toContain('right-0.5');
+    expect(grip.className).not.toContain('-translate-x-1/2');
+    expect(grip.closest('aside')).toBeTruthy();
+    expect(grip.querySelectorAll('[data-rail-stroke]')).toHaveLength(2);
+    const shadows = container.querySelectorAll('[data-rail-shadow][data-rail-cutout]');
+    expect(shadows).toHaveLength(2);
+    expect((shadows[0] as HTMLElement).style.height).toContain('--rail-cut-top');
+    expect((shadows[1] as HTMLElement).style.top).toContain('--rail-cut-top');
+    expect(shell.style.getPropertyValue('--rail-cut-top')).toContain('--nav-active-index');
     expect(main.className).toContain('w-full');
     expect(main.className).not.toContain('max-w-5xl');
     expect(main.className).not.toContain('mx-auto');
@@ -123,34 +140,26 @@ describe('operator layout gate', () => {
     rerender(await OperatorLayout({ children: <p>contenu</p> }));
     expect(track.getAttribute('data-nav-active-index')).toBe('1');
     expect(indicator.style.transform).toContain('var(--nav-active-index');
+    const shell = screen.getByText('contenu').closest('.min-h-dvh') as HTMLElement;
+    expect(shell.style.getPropertyValue('--nav-active-index')).toBe('1');
+    expect(shell.querySelector('[data-rail-shadow]')).toHaveAttribute('data-rail-cutout', '');
   });
 
   it('persists sidebar collapse in localStorage', async () => {
     readSession.mockResolvedValue(user(['operator']));
     const ui = userEvent.setup();
     const { container } = render(await OperatorLayout({ children: <p>contenu</p> }));
-    await ui.click(screen.getByRole('button', { name: 'Replier le menu latéral' }));
+    const grip = screen.getByRole('separator', { name: 'Redimensionner le menu latéral' });
+    grip.focus();
+    await ui.keyboard('{ArrowLeft}');
     expect(localStorage.getItem(OPERATOR_NAV_COLLAPSED_KEY)).toBe('true');
-    const expand = screen.getByRole('button', { name: 'Déplier le menu latéral' });
-    expect(expand).toHaveAttribute('aria-expanded', 'false');
-    const flags = expand.querySelectorAll('svg[width="28"]');
-    expect(flags).toHaveLength(1);
-    const flag = flags[0];
-    const arrow = expand.querySelector('svg.size-4');
-    expect(flag).toBeTruthy();
-    expect(arrow).toBeTruthy();
-    expect(flag!.getAttribute('class')).not.toMatch(/(^|\s)opacity-0(\s|$)/);
-    expect(flag!.getAttribute('class')).toContain('group-hover:opacity-0');
-    expect(flag!.getAttribute('class')).toContain('group-focus:opacity-0');
-    expect(flag!.getAttribute('class')).toContain('group-focus-visible:opacity-0');
-    expect(arrow!.getAttribute('class')).toMatch(/(^|\s)opacity-0(\s|$)/);
-    expect(arrow!.getAttribute('class')).toContain('group-hover:opacity-100');
-    expect(arrow!.getAttribute('class')).toContain('group-focus:opacity-100');
-    expect(arrow!.getAttribute('class')).toContain('group-focus-visible:opacity-100');
-    expand.focus();
-    expect(expand).toHaveFocus();
-    const shell = screen.getByText('contenu').closest('.min-h-dvh')!;
-    expect(shell.className).toContain('md:grid-cols-[4.25rem_minmax(0,1fr)]');
+    expect(screen.queryByRole('button', { name: 'Déplier le menu latéral' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Replier le menu latéral' })).toBeNull();
+    expect(container.querySelectorAll('aside svg[width="28"]')).toHaveLength(2);
+    expect(container.querySelector('aside svg.lucide-chevrons-left, aside svg.lucide-chevrons-right')).toBeNull();
+    expect(container.querySelector('[data-rail-shadow]')).not.toHaveAttribute('data-rail-cutout');
+    const shell = screen.getByText('contenu').closest('.min-h-dvh') as HTMLElement;
+    expect(shell.style.getPropertyValue('--rail-width')).toBe(RAIL_COLLAPSED);
     expect(shell).toHaveAttribute('data-collapsed', '');
     const activeLink = screen.getByRole('link', { name: 'Connexions' });
     expect(activeLink.className).toContain('md:bg-transparent');
@@ -167,6 +176,59 @@ describe('operator layout gate', () => {
     expect(statutLink.className.split(' ')).not.toContain('bg-canvas');
     expect(container.querySelector('aside')!.className).toContain('bg-shell-rail');
     expect(screen.getByRole('button', { name: 'Opérateur' })).toBeInTheDocument();
+  });
+
+  it('caps the shared expanded width at the smaller of 320px and 32vw', () => {
+    expect(clampExpandedWidth(480, 1600)).toBe(320);
+    expect(clampExpandedWidth(480, 800)).toBe(256);
+    expect(clampExpandedWidth(120, 1600)).toBe(200);
+  });
+
+  it('resizes from the grip, collapses under the minimum, and keeps the shared width', async () => {
+    readSession.mockResolvedValue(user(['operator']));
+    localStorage.setItem(RAIL_WIDTH_KEY, '280');
+    const ui = userEvent.setup();
+    const { container } = render(await OperatorLayout({ children: <p>contenu</p> }));
+    const shell = container.firstElementChild as HTMLElement;
+    const grip = screen.getByRole('separator', { name: 'Redimensionner le menu latéral' });
+    expect(shell.style.getPropertyValue('--rail-width')).toBe('280px');
+    expect(shell.querySelector('[data-rail-shadow]')).toHaveAttribute('data-rail-cutout', '');
+
+    grip.focus();
+    await ui.keyboard('{ArrowRight}');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe('296px');
+    expect(localStorage.getItem(RAIL_WIDTH_KEY)).toBe('296');
+    for (let step = 0; step < 4; step += 1) await ui.keyboard('{ArrowRight}');
+    expect(localStorage.getItem(RAIL_WIDTH_KEY)).toBe('320');
+    await ui.keyboard('{ArrowRight}');
+    expect(localStorage.getItem(RAIL_WIDTH_KEY)).toBe('320');
+
+    fireEvent.pointerDown(grip, { button: 0, clientX: 400, pointerId: 1 });
+    expect(shell.className).toContain('md:transition-none');
+    fireEvent.pointerMove(grip, { clientX: 340, pointerId: 1 });
+    expect(shell.style.getPropertyValue('--rail-width')).toBe('260px');
+    fireEvent.pointerUp(grip, { clientX: 340, pointerId: 1 });
+    expect(shell.className).toContain('md:transition-[grid-template-columns,--rail-cut-top]');
+
+    fireEvent.pointerDown(grip, { button: 0, clientX: 300, pointerId: 1 });
+    fireEvent.pointerMove(grip, { clientX: 200, pointerId: 1 });
+    fireEvent.pointerUp(grip, { clientX: 200, pointerId: 1 });
+    expect(shell).toHaveAttribute('data-collapsed', '');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe(RAIL_COLLAPSED);
+    expect(localStorage.getItem(OPERATOR_NAV_COLLAPSED_KEY)).toBe('true');
+
+    fireEvent.pointerDown(grip, { button: 0, clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(grip, { clientX: 80, pointerId: 1 });
+    expect(shell.style.getPropertyValue('--rail-width')).toBe(RAIL_COLLAPSED);
+    fireEvent.pointerUp(grip, { clientX: 80, pointerId: 1 });
+
+    fireEvent.pointerDown(grip, { button: 0, clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(grip, { clientX: 160, pointerId: 1 });
+    fireEvent.pointerUp(grip, { clientX: 160, pointerId: 1 });
+    expect(shell).not.toHaveAttribute('data-collapsed');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe('228px');
+    expect(localStorage.getItem(RAIL_WIDTH_KEY)).toBe('228');
+    expect(screen.getByRole('button', { name: 'Opérateur' }).parentElement).toHaveClass('md:mt-auto');
   });
 
   it('opens the account menu for the theme and sign-out', async () => {
