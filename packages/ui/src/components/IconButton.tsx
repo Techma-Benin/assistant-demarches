@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cn } from '../cn';
 
 export const iconButtonVariants = cva(
-  'inline-flex size-11 shrink-0 items-center justify-center rounded-pill ui-press transition-[color,background-color,border-color,transform] duration-(--ui-dur-press) ease-(--ui-ease-out) disabled:cursor-not-allowed disabled:opacity-50',
+  'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-pill ui-press transition-[color,background-color,border-color,transform] duration-(--ui-dur-press) ease-(--ui-ease-out) disabled:cursor-not-allowed disabled:opacity-50',
   {
     variants: {
       variant: {

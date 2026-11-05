@@ -90,10 +90,19 @@ test("v2 admin case actions and unanswered", async (t) => {
   assert.equal(listed.status, 200);
   const page = await listed.json();
   assert.equal(page.items[0].id, unansweredId);
+  const ids = async (status) => {
+    const res = await fetch(base + "/v1/admin/unanswered?status=" + status, { headers: { Authorization: "Bearer " + official, traceparent: tp } });
+    assert.equal(res.status, 200, await res.clone().text());
+    return (await res.json()).items.map((item) => item.id);
+  };
+  assert.deepEqual(await ids("open"), [unansweredId]);
+  assert.deepEqual(await ids("resolved"), []);
   const resolved = await fetch(base + "/v1/admin/unanswered/" + unansweredId + "/resolve", {
     method: "POST",
     headers: { Authorization: "Bearer " + official, traceparent: tp, "Idempotency-Key": "resolve-unanswered-1" },
   });
   assert.equal(resolved.status, 200, await resolved.clone().text());
   assert.equal((await resolved.json()).status, "resolved");
+  assert.deepEqual(await ids("open"), []);
+  assert.deepEqual(await ids("resolved"), [unansweredId]);
 });

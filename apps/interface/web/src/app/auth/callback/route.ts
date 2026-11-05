@@ -1,3 +1,4 @@
+import { attachGuest } from '@/server/auth/attach';
 import { getAuthConfig } from '@/server/auth/config';
 import { redirectToApp } from '@/server/auth/links';
 import { completeLogin } from '@/server/auth/oidc';
@@ -7,20 +8,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const failed = () => redirectToApp('/', 302, { auth: 'failed' });
-
-/** Moves the guest's conversations to the account. True when the Backend accepted (the guest token can go). */
-async function attachGuest(conversationId: string, guestToken: string, userToken: string): Promise<boolean> {
-  try {
-    const response = await fetch(new URL(`/v1/conversations/${conversationId}/attach`, getAuthConfig().backendUrl), {
-      method: 'POST',
-      headers: { authorization: `Bearer ${userToken}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ guestToken }),
-    });
-    return response.status === 200;
-  } catch {
-    return false;
-  }
-}
 
 export async function GET(request: Request): Promise<Response> {
   const { publicUrl } = getAuthConfig();

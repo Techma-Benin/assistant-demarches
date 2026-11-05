@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Console d’administration — Backend → Interface",
-    "version": "2.1.0",
+    "version": "2.3.0",
     "description": "Jeton Keycloak d’une personne ayant le rôle realm official. Le Backend transmet son sub au X-Road simulé (en-tête X-Official-Subject), qui applique le cloisonnement par administration. Le texte des conversations n’est jamais exposé."
   },
   "servers": [

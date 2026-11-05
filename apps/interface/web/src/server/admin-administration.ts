@@ -16,6 +16,20 @@ function cookie(name: string, value: string, url: URL): string {
   return `${name}=${value}; HttpOnly; SameSite=Lax; Path=/${url.protocol === 'https:' ? '; Secure' : ''}`;
 }
 
+const loopback = (host: string) => host === 'localhost' || host === '127.0.0.1';
+
+/** Same site as this request: identical origin, or localhost ↔ 127.0.0.1 on the same port. */
+function isOwnOrigin(originHeader: string | null, url: URL): boolean {
+  if (!originHeader) return false;
+  try {
+    const origin = new URL(originHeader);
+    if (origin.protocol !== url.protocol || origin.port !== url.port) return false;
+    return origin.hostname === url.hostname || (loopback(origin.hostname) && loopback(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
 async function readBodyCapped(request: Request, limit: number): Promise<string | null> {
   if (!request.body) return '';
   const reader = request.body.getReader();
@@ -37,8 +51,8 @@ async function readBodyCapped(request: Request, limit: number): Promise<string |
 /** `POST /api/admin-administration` `{ administrationId }`: the Backend stays the authority on access. */
 export async function switchAdministration(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  // Cross-site writes are refused: the Origin must be our own.
-  if (request.headers.get('origin') !== url.origin) return problem(403, 'FORBIDDEN', 'Origine non autorisée');
+  // Cross-site writes are refused: the Origin must be our own (localhost and 127.0.0.1 count as one).
+  if (!isOwnOrigin(request.headers.get('origin'), url)) return problem(403, 'FORBIDDEN', 'Origine non autorisée');
   const invalid = (detail: string) => problem(400, 'INVALID_REQUEST', detail);
   if (Number(request.headers.get('content-length')) > MAX_BODY_BYTES) return invalid('Corps de requête trop volumineux');
   const text = await readBodyCapped(request, MAX_BODY_BYTES);

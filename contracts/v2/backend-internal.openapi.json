@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Interne — Tooling → Backend",
-    "version": "2.1.0",
+    "version": "2.3.0",
     "description": "Jeton de service Keycloak du client tooling (azp = tooling, audience techma-backend)."
   },
   "servers": [

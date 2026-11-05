@@ -80,6 +80,8 @@ export type GenerateOptions = {
   structuredOutput?: boolean;
   /** Force a tool turn. Never combine with response_format. */
   toolChoice?: "auto" | "required" | { name: string };
+  /** Resolved provider key. When absent, `environment[apiKeyRef]` is used. */
+  apiKey?: string;
 };
 
 const AGENT_BLOCKS_SCHEMA = {
@@ -224,7 +226,6 @@ export class HttpModels implements ModelPort {
       baseUrl: config.baseUrl,
       protocol: config.protocol,
       apiKeyEnv: config.apiKeyRef,
-      omitTemperature: extras?.omitTemperature,
       parallelToolCalls: extras?.parallelToolCalls,
     };
     const providerName = new URL(config.baseUrl).host;
@@ -232,7 +233,7 @@ export class HttpModels implements ModelPort {
       new URL("./assets/prompts/agent-v1.txt", import.meta.url),
       "utf8",
     );
-    const apiKey = this.environment[config.apiKeyRef];
+    const apiKey = options?.apiKey ?? this.environment[config.apiKeyRef];
     if (!apiKey)
       throw new Problem(
         503,
@@ -241,7 +242,6 @@ export class HttpModels implements ModelPort {
       );
     const common = {
       model: config.model,
-      ...(!provider.omitTemperature ? { temperature: config.temperature } : {}),
     };
     const responses = provider.protocol === "responses";
     let body: Record<string, unknown>;

@@ -386,6 +386,29 @@ export interface components {
             /** Format: date-time */
             expiresAt: string;
         };
+        NpiChallengeInput: {
+            /** @description Numéro personnel d’identification, chiffres seulement. */
+            npi: string;
+        };
+        NpiChallenge: {
+            /** @description Jeton de défi signé, valable 5 minutes. Ne donne accès à aucune route. */
+            challengeToken: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description Vrai tant que le code n’est pas réellement envoyé par SMS. */
+            simulated: boolean;
+        };
+        NpiVerifyInput: {
+            challengeToken: string;
+            code: string;
+        };
+        NpiSession: {
+            /** @description JWT usager connecté signé par le Backend, 12 h. */
+            token: string;
+            /** Format: date-time */
+            expiresAt: string;
+            simulated: boolean;
+        };
         Conversation: {
             id: components["schemas"]["ConversationId"];
             channel: components["schemas"]["Channel"];
@@ -669,7 +692,12 @@ export interface components {
             /** @description Nom de la variable d’environnement qui contient la clé. La clé ne transite jamais par l’API. */
             apiKeyRef: string;
             temperature: number;
-            /** @description Un seul modèle actif à la fois. */
+            /**
+             * @description discussion : réponses de l’assistant. transcription : dictée vocale. Un seul modèle actif par rôle. Absent = discussion.
+             * @enum {string}
+             */
+            role?: "discussion" | "transcription";
+            /** @description Un seul modèle actif par rôle. */
             active: boolean;
         };
         ModelConfigPage: {
@@ -750,6 +778,13 @@ export interface components {
             code: "INVALID_REQUEST" | "UNAUTHORIZED" | "LOGIN_REQUIRED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATE_MISSING" | "MANDATE_EXPIRED" | "MANDATE_REVOKED" | "MANDATE_SCOPE_DENIED" | "REQUEST_INCOMPLETE" | "INVALID_TRANSITION" | "NOT_ASSISTED" | "REPLAY_EXPIRED" | "UNSUPPORTED_MEDIA_TYPE" | "FILE_TOO_LARGE" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "MCP_AUTH_FAILED" | "MCP_CONNECTION_FAILED" | "MCP_DISCOVERY_FAILED";
             detail: string;
             traceId: string;
+        };
+        TranscriptionInput: {
+            fileId: components["schemas"]["FileId"];
+        };
+        Transcription: {
+            /** @description Texte transcrit du vocal, à relire et corriger par l’usager avant envoi. */
+            text: string;
         };
     };
     responses: never;

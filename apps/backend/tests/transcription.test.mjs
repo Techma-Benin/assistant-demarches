@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { HttpTranscription, transcriberFromEnvironment } from '../dist/apps/backend/src/transcription.js';
+import { HttpTranscription, transcriberFromActiveModel, transcriberFromEnvironment } from '../dist/apps/backend/src/transcription.js';
 import { Files } from '../dist/apps/backend/src/files.js';
 import { identifier, Problem } from '../dist/apps/backend/src/domain.js';
 import { database, migrate, provision } from '../dist/apps/backend/src/database.js';
 import { Conversations } from '../dist/apps/backend/src/conversations.js';
 import { Agent } from '../dist/apps/backend/src/agent.js';
 import { isolatedDatabase } from './helpers.mjs';
+import { upsertModelSecret } from '../dist/apps/backend/src/secrets.js';
 
 const voice = Buffer.from('OggS\0synthetic-opus-header-OpusHead-private-audio');
 const secret = 'synthetic-transcription-secret';
@@ -169,6 +170,17 @@ test('process() persists the transcript on message.received without changing the
     temperature: 0,
     active: true,
   });
+  await provision(pool, 'global', 'models', {
+    id: 'voice',
+    label: 'Voix',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    protocol: 'chat-completions',
+    model: 'whisper-large-v3-turbo',
+    apiKeyRef: 'GROQ_API_KEY',
+    temperature: 0,
+    role: 'transcription',
+    active: true,
+  });
   const conversations = new Conversations(pool);
   const user = { userRef: identifier('usr'), channel: 'web', authenticated: true, expiresAt: Date.now() + 60000, roles: new Set() };
   const fileId = identifier('fil');
@@ -194,4 +206,113 @@ test('process() persists the transcript on message.received without changing the
   assert.ok(received.length >= 1);
   assert.ok(received.every(item => item.content.type === 'audio' && item.content.fileId === fileId));
   assert.ok(received.every(item => item.transcript === 'Bonjour'));
+});
+
+const realFetch = globalThis.fetch;
+async function viaFakeFetch(t, env, response = () => new Response(JSON.stringify({ text: 'ok' }), { status: 200 })) {
+  if (globalThis.fetch === realFetch) t.after(() => { globalThis.fetch = realFetch; });
+  const calls = [];
+  globalThis.fetch = async (url, init) => { calls.push({ url: String(url), auth: init.headers.Authorization, model: init.body.get('model') }); return response(); };
+  const transcriber = transcriberFromEnvironment({ async readOwned() { return audioFile(); } }, env);
+  if (transcriber) await transcriber.transcribe('file', 'owner').catch(() => {});
+  return { transcriber, calls };
+}
+const groqUrl = 'https://api.groq.com/openai/v1/audio/transcriptions';
+const openaiUrl = 'https://api.openai.com/v1/audio/transcriptions';
+
+test('Transcription endpoint and key follow the model provider', async t => {
+  let r = await viaFakeFetch(t, { MODEL_PROVIDER: 'openai', MODEL_API_KEY: 'k-openai' });
+  assert.deepEqual(r.calls, [{ url: openaiUrl, auth: 'Bearer k-openai', model: 'whisper-1' }]);
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: ' OpenAI ', MODEL_API_KEY: 'k-openai' });
+  assert.equal(r.calls[0].url, openaiUrl);
+  r = await viaFakeFetch(t, { MODEL_API_KEY: 'k-model' });
+  assert.deepEqual(r.calls, [{ url: groqUrl, auth: 'Bearer k-model', model: 'whisper-large-v3-turbo' }]);
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: 'anthropic', MODEL_API_KEY: 'k-model' });
+  assert.equal(r.transcriber, undefined);
+  assert.deepEqual(r.calls, []);
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: 'anthropic', MODEL_API_KEY: 'k-model', GROQ_API_KEY: 'k-groq' });
+  assert.deepEqual(r.calls, [{ url: groqUrl, auth: 'Bearer k-groq', model: 'whisper-large-v3-turbo' }]);
+  const custom = 'https://stt.example/v1/transcriptions';
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: 'anthropic', MODEL_API_KEY: 'k-model', TRANSCRIPTION_ENDPOINT: custom, TRANSCRIPTION_ALLOWED_URLS: custom });
+  assert.deepEqual(r.calls, [{ url: custom, auth: 'Bearer k-model', model: 'whisper-large-v3-turbo' }]);
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: 'openai', MODEL_API_KEY: 'k-openai', TRANSCRIPTION_MODEL: 'custom-stt' });
+  assert.deepEqual(r.calls, [{ url: openaiUrl, auth: 'Bearer k-openai', model: 'custom-stt' }]);
+  r = await viaFakeFetch(t, { MODEL_PROVIDER: 'anthropic', MODEL_API_KEY: 'k-model', TRANSCRIPTION_API_KEY_ENV: 'STT_KEY', STT_KEY: 'k-stt' });
+  assert.deepEqual(r.calls, [{ url: groqUrl, auth: 'Bearer k-stt', model: 'whisper-large-v3-turbo' }]);
+  r = await viaFakeFetch(t, { MODEL_API_KEY: 'k-model', TRANSCRIPTION_API_KEY_ENV: 'STT_KEY' });
+  assert.equal(r.transcriber, undefined);
+});
+
+test('Transcription failures are logged without secrets, bodies or transcripts', async t => {
+  const lines = [];
+  const original = console.error;
+  console.error = (...args) => { lines.push(args.join(' ')); };
+  t.after(() => { console.error = original; });
+  const env = { MODEL_API_KEY: secret };
+  await viaFakeFetch(t, env, () => new Response('PRIVATE_PROVIDER_ECHO ' + secret, { status: 401 }));
+  const log = lines.join('\n');
+  assert.match(log, /transcription\.failed/);
+  assert.match(log, /provider_authentication_failed/);
+  assert.doesNotMatch(log, /PRIVATE_PROVIDER_ECHO|synthetic-transcription-secret/);
+  lines.length = 0;
+  await viaFakeFetch(t, env, () => new Response(JSON.stringify({ text: 'PRIVATE_TRANSCRIPT' }), { status: 200 }));
+  assert.doesNotMatch(lines.join('\n'), /PRIVATE_TRANSCRIPT/);
+  assert.equal(lines.length, 0);
+});
+
+test('the active transcription model serves voice, and the env path remains when none is active', async t => {
+  const pg = await isolatedDatabase();
+  const pool = database(pg.connection);
+  t.after(async () => { await pool.end(); await pg.close(); });
+  await migrate(pool);
+  const auths = [];
+  const mock = await provider(t, async (req, res) => {
+    auths.push(req.headers.authorization);
+    const parts = [];
+    for await (const part of req) parts.push(part);
+    const body = Buffer.concat(parts).toString();
+    assert.match(body, /name="model"\r\n\r\nwhisper-large-v3-turbo/);
+    assert.match(body, /name="language"\r\n\r\nfr/);
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ text: 'Bonjour vocal' }));
+  });
+  const baseUrl = mock.endpoint.replace(/\/audio\/transcriptions$/, '');
+  await provision(pool, 'global', 'models', {
+    id: 'chat', label: 'Chat', baseUrl: 'https://api.groq.com/openai/v1', protocol: 'chat-completions',
+    model: 'synthetic', apiKeyRef: 'GROQ_API_KEY', temperature: 0, role: 'discussion', active: true,
+  });
+  await provision(pool, 'global', 'models', {
+    id: 'voice', label: 'Voix', baseUrl, protocol: 'chat-completions',
+    model: 'whisper-large-v3-turbo', apiKeyRef: 'VOICE_API_KEY', temperature: 0, role: 'transcription', active: true,
+  });
+  await upsertModelSecret(pool, 'global', 'voice', secret);
+  const files = { async readOwned() { return audioFile(); } };
+  const selected = await transcriberFromActiveModel(pool, 'global', files, { VOICE_API_KEY: 'env-must-not-win' });
+  assert.equal(await selected.transcribe('file', 'owner'), 'Bonjour vocal');
+  assert.deepEqual(auths, ['Bearer ' + secret]);
+
+  const conversations = new Conversations(pool);
+  const user = { userRef: identifier('usr'), channel: 'web', authenticated: true, expiresAt: Date.now() + 60000, roles: new Set() };
+  const fileId = identifier('fil');
+  const file = { id: fileId, mimeType: 'audio/ogg', sizeBytes: voice.length, expiresAt: new Date(Date.now() + 3600000).toISOString() };
+  await pool.query('INSERT INTO backend_files(id,user_ref,body,object_key,expires_at) VALUES($1,$2,$3,$4,$5)', [fileId, user.userRef, file, 'synthetic-audio', file.expiresAt]);
+  const conversation = await conversations.create(user, { locale: 'fr' }, identifier('key'));
+  const message = { id: identifier('msg'), content: { type: 'audio', fileId }, sentAt: new Date().toISOString() };
+  const tp = '00-' + '3'.repeat(32) + '-' + '4'.repeat(16) + '-01';
+  await conversations.accept(user, conversation.id, message, identifier('key'), tp);
+  const model = { async generate(_config, history) {
+    assert.ok(history.some((turn) => turn.role === 'user' && turn.content === 'Bonjour vocal'));
+    return { text: JSON.stringify({ blocks: [{ type: 'text', text: 'Quelle démarche souhaitez-vous effectuer ?', sources: [] }] }), calls: [] };
+  } };
+  const tooling = { async discover() { return []; }, async call() { throw new Error('unused'); } };
+  await new Agent(pool, conversations, model, tooling, undefined, { async transcribe() { throw new Error('env transcriber must stay unused'); } }, undefined, files).process(conversation.id);
+  assert.equal(auths.length, 2);
+  assert.equal(auths[1], 'Bearer ' + secret);
+
+  await pool.query("UPDATE backend_configurations SET body=jsonb_set(body,'{active}','false'::jsonb) WHERE resource_id='voice'");
+  assert.equal(await transcriberFromActiveModel(pool, 'global', files, { GROQ_API_KEY: secret }), undefined);
+  await pool.query("DELETE FROM backend_secrets WHERE resource_id='voice'");
+  await pool.query("UPDATE backend_configurations SET body=jsonb_set(body,'{active}','true'::jsonb) WHERE resource_id='voice'");
+  const fromEnv = await transcriberFromActiveModel(pool, 'global', files, { VOICE_API_KEY: 'env-key' });
+  assert.equal(await fromEnv.transcribe('file', 'owner'), 'Bonjour vocal');
+  assert.equal(auths.at(-1), 'Bearer env-key');
 });

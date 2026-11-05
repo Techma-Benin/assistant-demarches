@@ -31,7 +31,7 @@ export const noopConsent: ConsentControls = {
 };
 
 /**
- * What the assistant never does, whatever the scopes: no NPI or SMS code in the chat (CONTRACTS.md §6),
+ * What the assistant never does, whatever the scopes: no NPI or SMS code in the chat (the sign-in card is separate),
  * no payment (product rule: the user pays on the payment aggregator; the Tooling's `request.pay` still
  * contradicts it, see the Backend meeting notes), and no action without a granted mandate.
  * Used by the home page; the chat shows the server `consentText` only.

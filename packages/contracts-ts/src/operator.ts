@@ -232,7 +232,12 @@ export interface components {
             /** @description Nom de la variable d’environnement qui contient la clé. La clé ne transite jamais par l’API. */
             apiKeyRef: string;
             temperature: number;
-            /** @description Un seul modèle actif à la fois. */
+            /**
+             * @description discussion : réponses de l’assistant. transcription : dictée vocale. Un seul modèle actif par rôle. Absent = discussion.
+             * @enum {string}
+             */
+            role?: "discussion" | "transcription";
+            /** @description Un seul modèle actif par rôle. */
             active: boolean;
         };
         ModelConfigPage: {

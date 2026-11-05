@@ -108,33 +108,245 @@
     transform: scale(1.06);
   }
 }
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.4em);
+  }
+}
+@keyframes hero-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+@keyframes hero-card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes hero-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.hero-word {
+  display: inline-block;
+  animation: hero-rise 700ms var(--ui-ease-out) backwards;
+  animation-delay: calc(var(--d, 0) * 1ms);
+}
+.hero-in {
+  animation: hero-fade-up 600ms var(--ui-ease-out) backwards;
+  animation-delay: calc(var(--d, 0) * 1ms);
+}
+.hero-card {
+  animation: hero-card-in 800ms var(--ui-ease-out) 120ms backwards;
+}
+.hero-controls {
+  animation: hero-fade-up 500ms var(--ui-ease-out) 700ms backwards;
+}
+.hero-progress {
+  animation-name: hero-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
 @keyframes home-rise {
   from {
     opacity: 0;
     transform: translateY(24px);
   }
 }
-@media (prefers-reduced-motion: no-preference) {
-  [data-reveal='pending'] [data-r] {
-    opacity: 0;
-    transform: translateY(24px);
-  }
-  [data-reveal='done'] [data-r] {
-    animation: home-rise 700ms var(--ui-ease-out) both;
-    animation-delay: calc(var(--r, 0) * 70ms);
-  }
+[data-reveal='pending'] [data-r] {
+  opacity: 0;
+  transform: translateY(24px);
+}
+[data-reveal='done'] [data-r] {
+  animation: home-rise 700ms var(--ui-ease-out) backwards;
+  animation-delay: calc(var(--r, 0) * 70ms);
 }
 
 /* Large green fields of the home page (stamp discs, validated tile). The brand green of dark mode is
    tuned for small marks; at disc size it glares, so fields use a deeper green there. */
 :root {
   --home-field-green: var(--ui-trust);
+  --home-field-sun: #f3d36b;
 }
 [data-theme='dark'] {
   --home-field-green: #0d6b47;
+  --home-field-sun: #6e5614;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --home-field-green: #0d6b47;
+    --home-field-sun: #6e5614;
+  }
+}
+
+.type-photo {
+  background-size: cover;
+  background-position: center;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@supports (-webkit-touch-callout: none) {
+  .type-photo {
+    background-attachment: scroll;
+  }
+}
+
+@keyframes carousel-progress {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+html:has([data-home]) {
+  scroll-behavior: smooth;
+}
+
+.footer-word {
+  background-image: linear-gradient(
+    90deg,
+    var(--home-field-green) 0%,
+    var(--color-sun) 25%,
+    var(--color-flag-red) 50%,
+    var(--color-sun) 75%,
+    var(--home-field-green) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: footer-word-pan 16s linear infinite;
+}
+@keyframes footer-word-pan {
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes doc-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5%);
+  }
+}
+.doc-stamp {
+  animation: doc-stamp 450ms var(--ui-ease-out) 750ms both;
+}
+@keyframes doc-stamp {
+  from {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.footer-cta .footer-word {
+  transition: transform 350ms var(--ui-ease-out);
+}
+.footer-cta:enabled:hover .footer-word,
+.footer-cta:focus-visible .footer-word {
+  transform: translateX(1.5%);
+}
+
+@supports (animation-timeline: view()) {
+  .cta-zoom .footer-cta {
+    animation: cta-zoom linear both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 45%;
+  }
+}
+@keyframes cta-zoom {
+  from {
+    transform: scale(0.72);
+    opacity: 0.35;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Shared frost for floating surfaces and the queue filter.
+   Flat gray, no border, no tint. Grain sits on the surface only.
+   `position` stays in the components layer so `absolute` / `fixed` utilities still win. */
+@layer components {
+  .surface-glass {
+    position: relative;
+  }
+}
+.surface-glass {
+  background: rgb(226 229 233 / 0.36);
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
+  border: none;
+}
+.surface-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.18;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  mix-blend-mode: overlay;
+}
+[data-theme='dark'] .surface-glass {
+  background: rgb(38 41 46 / 0.36);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .surface-glass {
+    background: rgb(38 41 46 / 0.36);
+  }
+}
+
+/* Queue filter only: the dim is a shadow, not a layer behind the glass, so backdrop-filter samples the page. */
+.queue-filter-glass {
+  color: var(--ui-text);
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.2);
+  animation: queue-filter-in 220ms var(--ui-ease-drawer);
+}
+.queue-filter-glass input[type='date']:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+@keyframes queue-filter-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .queue-filter-glass {
+    animation: none;
+  }
+}
+
+@keyframes bridge-nudge {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(3px);
   }
 }

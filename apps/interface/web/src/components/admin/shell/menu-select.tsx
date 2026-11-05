@@ -113,7 +113,7 @@ export function MenuSelect({
           aria-label={menuLabel}
           onKeyDown={onMenuKeyDown}
           // Wider than the sidebar on desktop so names never wrap mid-word; full width in the mobile menu.
-          className="ui-pop absolute top-full left-0 z-40 mt-2 flex w-full flex-col rounded-2xl border border-line bg-surface p-1.5 shadow-(--ui-shadow-pop) md:w-[328px]"
+          className="surface-glass ui-pop absolute top-full left-0 z-40 mt-2 flex w-full flex-col rounded-2xl p-1.5 shadow-(--ui-shadow-pop) md:w-[328px]"
         >
           {header}
           {options.map((option) => {

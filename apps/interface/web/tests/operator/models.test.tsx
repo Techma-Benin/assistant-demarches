@@ -26,8 +26,44 @@ describe('Modèles', () => {
     expect(within(items[0]).queryByRole('button', { name: /Activer/ })).not.toBeInTheDocument();
     expect(within(items[1]).queryByText('Actif')).not.toBeInTheDocument();
     expect(within(items[1]).getByRole('button', { name: 'Activer Mistral Small' })).toBeInTheDocument();
-    // The reference is displayed as a plain name, not masked.
-    expect(within(items[0]).getByText('GROQ_API_KEY')).toBeInTheDocument();
+    expect(within(items[0]).getByText('Groq Llama')).toBeInTheDocument();
+    expect(within(items[0]).queryByText('Discussion')).not.toBeInTheDocument();
+    expect(within(items[1]).queryByText('Discussion')).not.toBeInTheDocument();
+    expect(items[0].querySelector('[data-model-mark="discussion"] svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(items[1].querySelector('[data-model-mark="discussion"] svg')).toBeTruthy();
+    expect(within(items[0]).getByText('llama-3.3-70b-versatile')).toBeInTheDocument();
+  });
+
+  it('keeps technical details out of the list', async () => {
+    stubOperator(list());
+    render(<ModelsPage />);
+    for (const item of await screen.findAllByRole('listitem')) {
+      expect(item).not.toHaveTextContent(/api\.(groq|mistral)\.|chat-completions|responses|API_KEY|••••|température/i);
+    }
+  });
+
+  it('names the icon actions with a tooltip on hover', async () => {
+    stubOperator(list());
+    render(<ModelsPage />);
+    await userEvent.hover(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Modifier');
+    await userEvent.unhover(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
+    await userEvent.hover(await screen.findByRole('button', { name: 'Supprimer Groq Llama' }));
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('Supprimer'));
+  });
+
+  it('shows the technical details only in the edit dialog', async () => {
+    stubOperator(list());
+    render(<ModelsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
+    const dialog = screen.getByRole('dialog', { name: 'Modifier Groq Llama' });
+    expect(within(dialog).getByLabelText(/Adresse du service/)).toHaveValue('https://api.groq.com/openai/v1');
+    expect(within(dialog).getByLabelText(/Protocole/)).toHaveValue('chat-completions');
+    expect(within(dialog).getByLabelText(/Rôle/)).toHaveValue('discussion');
+    expect(within(dialog).queryByLabelText(/Température/)).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/Clé d’accès/)).toHaveValue('');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('shows the load error and retries', async () => {
@@ -48,14 +84,17 @@ describe('Modèles', () => {
     render(<ModelsPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'Ajouter un modèle' }));
     const form = screen.getByRole('form', { name: 'Ajouter un modèle' });
-    expect(within(form).getByText('Nom de la variable d’environnement qui contient la clé, jamais la clé elle-même.')).toBeInTheDocument();
+    expect(within(form).queryByText(/chiffrée|conserver la clé|Discussion répond|le plus courant|compatible OpenAI/)).not.toBeInTheDocument();
     await userEvent.type(within(form).getByLabelText(/^Nom/), 'Mistral Été');
     await userEvent.type(within(form).getByLabelText(/Adresse du service/), 'https://api.mistral.ai/v1');
     await userEvent.selectOptions(within(form).getByLabelText(/Protocole/), 'responses');
     await userEvent.type(within(form).getByLabelText(/^Modèle/), 'mistral-small-latest');
-    await userEvent.type(within(form).getByLabelText(/Clé d’accès/), 'MISTRAL_API_KEY');
-    await userEvent.clear(within(form).getByLabelText(/Température/));
-    await userEvent.type(within(form).getByLabelText(/Température/), '0.5');
+    const key = within(form).getByLabelText(/Clé d’accès/);
+    expect(key).toHaveAttribute('type', 'password');
+    await userEvent.type(key, 'sk-test-operator-key');
+    expect(within(form).queryByLabelText(/Température/)).not.toBeInTheDocument();
+    expect(within(form).getByLabelText(/Rôle/)).toHaveValue('discussion');
+    await userEvent.selectOptions(within(form).getByLabelText(/Rôle/), 'transcription');
     await userEvent.click(within(form).getByRole('button', { name: 'Enregistrer' }));
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
     const post = calls.find((c) => c.method === 'POST')!;
@@ -66,16 +105,20 @@ describe('Modèles', () => {
       baseUrl: 'https://api.mistral.ai/v1',
       protocol: 'responses',
       model: 'mistral-small-latest',
-      apiKeyRef: 'MISTRAL_API_KEY',
-      temperature: 0.5,
+      apiKeyRef: 'MDL_MISTRAL_ETE',
+      apiKey: 'sk-test-operator-key',
+      temperature: 0,
+      role: 'transcription',
       active: false,
     });
-    assertContract('ModelConfig', post.body);
+    const { apiKey, ...config } = post.body as { apiKey: string };
+    expect(apiKey).toBe('sk-test-operator-key');
+    assertContract('ModelConfig', config);
     expect(await screen.findByText('« Mistral Été » est enregistré.')).toBeInTheDocument();
     expect(screen.queryByRole('form')).not.toBeInTheDocument();
   });
 
-  it('never accepts a key value in apiKeyRef and ties the error to the field', async () => {
+  it('requires a key on create and ties the error to the field', async () => {
     const calls = stubOperator(list([groq]));
     render(<ModelsPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'Ajouter un modèle' }));
@@ -83,14 +126,13 @@ describe('Modèles', () => {
     await userEvent.type(within(form).getByLabelText(/^Nom/), 'Test');
     await userEvent.type(within(form).getByLabelText(/Adresse du service/), 'https://x.example/v1');
     await userEvent.type(within(form).getByLabelText(/^Modèle/), 'm');
-    const ref = within(form).getByLabelText(/Clé d’accès/);
-    expect(ref).toHaveAttribute('type', 'text');
-    await userEvent.type(ref, 'sk-abc123secret');
+    const key = within(form).getByLabelText(/Clé d’accès/);
+    expect(key).toHaveAttribute('type', 'password');
     await userEvent.click(within(form).getByRole('button', { name: 'Enregistrer' }));
-    expect(ref).toHaveAttribute('aria-invalid', 'true');
-    const describedBy = ref.getAttribute('aria-describedby')!.split(' ');
+    expect(key).toHaveAttribute('aria-invalid', 'true');
+    const describedBy = key.getAttribute('aria-describedby')!.split(' ');
     const errorId = describedBy.find((id) => id.endsWith('-error'))!;
-    expect(document.getElementById(errorId)).toHaveTextContent('Ne collez jamais la clé elle-même');
+    expect(document.getElementById(errorId)).toHaveTextContent('Indiquez la clé d’accès du fournisseur');
     expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
   });
 
@@ -99,14 +141,13 @@ describe('Modèles', () => {
     render(<ModelsPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
     const form = screen.getByRole('form', { name: 'Modifier Groq Llama' });
-    const temperature = within(form).getByLabelText(/Température/);
-    await userEvent.clear(temperature);
-    await userEvent.type(temperature, '1.2');
+    expect(within(form).queryByLabelText(/Température/)).not.toBeInTheDocument();
+    await userEvent.selectOptions(within(form).getByLabelText(/Rôle/), 'transcription');
     await userEvent.click(within(form).getByRole('button', { name: 'Enregistrer' }));
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
     const put = calls.find((c) => c.method === 'PUT')!;
     expect(put.path).toBe('/models/groq-llama');
-    expect(put.body).toEqual({ ...groq, temperature: 1.2 });
+    expect(put.body).toEqual({ ...groq, role: 'transcription' });
     assertContract('ModelConfig', put.body);
   });
 
@@ -118,7 +159,7 @@ describe('Modèles', () => {
     await userEvent.type(within(form).getByLabelText(/^Nom/), 'Test');
     await userEvent.type(within(form).getByLabelText(/Adresse du service/), 'https://x.example/v1');
     await userEvent.type(within(form).getByLabelText(/^Modèle/), 'm');
-    await userEvent.type(within(form).getByLabelText(/Clé d’accès/), 'TEST_KEY');
+    await userEvent.type(within(form).getByLabelText(/Clé d’accès/), 'sk-test-key');
     await userEvent.click(within(form).getByRole('button', { name: 'Enregistrer' }));
     expect(await within(form).findByRole('alert')).toHaveTextContent('Adresse refusée');
   });
@@ -144,7 +185,64 @@ describe('Modèles', () => {
       expect(within(items[1]).getByText('Actif')).toBeInTheDocument();
       expect(within(items[0]).queryByText('Actif')).not.toBeInTheDocument();
     });
-    expect(screen.getByText('« Mistral Small » est le modèle actif.')).toBeInTheDocument();
+    expect(screen.getByText('« Mistral Small » est le modèle de discussion actif.')).toBeInTheDocument();
+  });
+
+  it('offers to undo an activation by putting the previous model of the same role back', async () => {
+    const whisper = { ...groq, id: 'whisper', label: 'Whisper', model: 'whisper-large-v3-turbo', role: 'transcription' as const, active: true };
+    let activeId = 'groq-llama';
+    const calls = stubOperator(
+      (call) => {
+        if (call.method === 'PUT') {
+          activeId = (call.body as { id: string }).id;
+          return json(call.body);
+        }
+      },
+      (call) =>
+        call.method === 'GET'
+          ? json({
+              items: [whisper, ...[groq, mistral].map((m) => ({ ...m, active: m.id === activeId }))],
+              nextCursor: null,
+            })
+          : undefined,
+    );
+    render(<ModelsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Activer Mistral Small' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(2));
+    const puts = calls.filter((c) => c.method === 'PUT');
+    expect(puts[0].body).toEqual({ ...mistral, active: true });
+    expect(puts[1].path).toBe('/models/groq-llama');
+    expect(puts[1].body).toEqual({ ...groq, active: true });
+    expect(puts.every((call) => (call.body as { id: string }).id !== 'whisper')).toBe(true);
+    expect(await screen.findByText('« Groq Llama » est le modèle de discussion actif.')).toBeInTheDocument();
+  });
+
+  it('activates a transcription model without clearing the discussion model', async () => {
+    const whisper = { ...groq, id: 'whisper', label: 'Whisper', model: 'whisper-large-v3-turbo', role: 'transcription' as const, active: false };
+    let voiceActive = false;
+    const calls = stubOperator(
+      (call) => {
+        if (call.method === 'PUT') {
+          voiceActive = (call.body as { id: string }).id === 'whisper';
+          return json(call.body);
+        }
+      },
+      (call) =>
+        call.method === 'GET' ? json({ items: [groq, { ...whisper, active: voiceActive }], nextCursor: null }) : undefined,
+    );
+    render(<ModelsPage />);
+    const voiceRow = (await screen.findAllByRole('listitem')).find((item) => within(item).queryByText('Whisper'))!;
+    expect(within(voiceRow).getByRole('heading', { name: 'Whisper' })).toBeInTheDocument();
+    expect(within(voiceRow).queryByText('Transcription')).not.toBeInTheDocument();
+    expect(voiceRow.querySelector('[data-model-mark="transcription"] svg')).toHaveAttribute('aria-hidden', 'true');
+    await userEvent.click(await screen.findByRole('button', { name: 'Activer Whisper' }));
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(1));
+    expect(calls.find((c) => c.method === 'PUT')!.body).toEqual({ ...whisper, active: true });
+    const rows = screen.getAllByRole('listitem');
+    expect(within(rows[0]).getByText('Actif')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('Actif')).toBeInTheDocument();
+    expect(screen.getByText('« Whisper » est le modèle de transcription actif.')).toBeInTheDocument();
   });
 
   it('asks for confirmation before deleting, and can cancel', async () => {

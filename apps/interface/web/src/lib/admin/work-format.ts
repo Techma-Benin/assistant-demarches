@@ -1,4 +1,4 @@
-import type { ActivityEntry, Case, CaseAction, CaseStatus, CaseStep, CaseView, UnansweredEntry } from './api';
+import type { ActivityEntry, Case, CaseAction, CaseStatus, CaseStep, CaseView } from './api';
 import { formatInteger } from './format';
 
 const MINUTE = 60_000;
@@ -105,10 +105,11 @@ export function completedByLabel(item: Pick<Case, 'completedBy'>): string | null
   return null;
 }
 
-/** Actions an agent may take, by status (§8). The server decides in the end. */
-export function allowedActions(status: CaseStatus): CaseAction[] {
+/** Actions an agent may take, by status and claim (§8). The server decides in the end. */
+export function allowedActions(item: Pick<Case, 'status' | 'claimedBy'>): CaseAction[] {
+  const { status, claimedBy } = item;
   const actions: CaseAction[] = [];
-  if (status === 'received' || status === 'in_review') actions.push('claim');
+  if ((status === 'received' || status === 'in_review') && !claimedBy) actions.push('claim');
   if (status === 'in_review') actions.push('request_information', 'approve');
   if (status === 'in_review' || status === 'information_requested') actions.push('reject');
   return actions;
@@ -132,6 +133,47 @@ export const PAYMENT_LABELS: Record<string, string> = {
 
 export const CHANNEL_LABELS: Record<string, string> = { whatsapp: 'WhatsApp', web: 'Web' };
 
+/** Local calendar day (`YYYY-MM-DD`) of an ISO timestamp, for the update-date filter. */
+export function calendarDay(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+export type CaseListFilters = {
+  /** Empty means every channel. */
+  channels: Case['channel'][];
+  /** Empty means every status. */
+  statuses: CaseStatus[];
+  /** Inclusive local calendar day, or empty when that bound is open. */
+  updatedFrom: string;
+  updatedTo: string;
+};
+
+export const EMPTY_CASE_FILTERS: CaseListFilters = {
+  channels: [],
+  statuses: [],
+  updatedFrom: '',
+  updatedTo: '',
+};
+
+/** Channel, status and update day. An empty channel or status list adds no constraint. */
+export function matchesCaseFilters(
+  item: Pick<Case, 'channel' | 'status' | 'updatedAt'>,
+  filter: CaseListFilters,
+): boolean {
+  if (filter.channels.length > 0 && !filter.channels.includes(item.channel)) return false;
+  if (filter.statuses.length > 0 && !filter.statuses.includes(item.status)) return false;
+  if (filter.updatedFrom || filter.updatedTo) {
+    const day = calendarDay(item.updatedAt);
+    if (filter.updatedFrom && day < filter.updatedFrom) return false;
+    if (filter.updatedTo && day > filter.updatedTo) return false;
+  }
+  return true;
+}
+
 export const ACTOR_LABELS: Record<CaseStep['actor'], string> = {
   assistant: 'Assistant',
   applicant: 'Usager',
@@ -154,13 +196,6 @@ export const ACTIVITY_LABELS: Record<ActivityEntry['action'], string> = {
   'case.approved': 'Dossier approuvé',
   'case.rejected': 'Dossier rejeté',
   'document.issued': 'Document délivré',
-};
-
-export const UNANSWERED_REASONS: Record<UnansweredEntry['reason'], string> = {
-  no_procedure_found: 'Aucune démarche trouvée',
-  no_source: 'Aucune source disponible',
-  model_unavailable: 'Assistant indisponible',
-  tool_failed: 'Un outil a échoué',
 };
 
 /** « Agent 3F7K2M » when the name is unknown (no `officials:read`). */

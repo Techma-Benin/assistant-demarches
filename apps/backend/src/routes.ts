@@ -17,6 +17,7 @@ import { Conversations, type Event } from "./conversations.js";
 import { Consent } from "./consent.js";
 import type { ToolingPort } from "./tooling.js";
 import { Files } from "./files.js";
+import { transcriberFromActiveModel, type TranscriptionPort } from "./transcription.js";
 import { Problem, validate, type Schemas } from "./domain.js";
 import { idempotencyKey } from "./transactions.js";
 import type { CryptoKey } from "jose";
@@ -33,10 +34,13 @@ export type Runtime = {
   conversations: Conversations;
   consent?: Consent;
   files?: Files;
+  transcriber?: TranscriptionPort;
   publicUrl?: string;
   signing?: { key: CryptoKey; kid: string; issuer: string };
   xroadUrl?: string;
   serviceTokens?: ServiceTokens;
+  /** Secret derived from the signing key; keys the digest of a NPI. */
+  npiSubjectKey?: Uint8Array;
 };
 const key = (req: Request) => idempotencyKey(req.get("Idempotency-Key"));
 const trace = (req: Request) => req.get("traceparent")!;
@@ -60,6 +64,11 @@ function xroadQuery(req: Request, names: string[]) {
   }
   const encoded = params.toString();
   return encoded ? "?" + encoded : "";
+}
+/** The NPI login is a simulation: without the explicit switch the routes do not exist. */
+function npiSimulated() {
+  if (process.env.NPI_SIMULATED_LOGIN !== "on")
+    throw new Problem(404, "NOT_FOUND", "Ressource introuvable.");
 }
 function loggedIn(principal: User) {
   if (!principal.authenticated)
@@ -98,6 +107,31 @@ export class ConversationController {
       this.runtime.signing,
       req.ip || req.socket.remoteAddress || "unknown",
     );
+  }
+  @Post("identity/npi")
+  @HttpCode(201)
+  async npiChallenge(@Req() req: Request, @Body() body: unknown) {
+    npiSimulated();
+    validate("NpiChallengeInput", body);
+    if (!this.runtime.signing || !this.runtime.npiSubjectKey)
+      throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Signature non configurée.");
+    return this.runtime.identities.issueNpiChallenge(
+      this.runtime.signing,
+      req.ip || req.socket.remoteAddress || "unknown",
+      (body as Schemas["NpiChallengeInput"]).npi,
+      this.runtime.npiSubjectKey,
+    );
+  }
+  @Post("identity/npi/verify")
+  @HttpCode(200)
+  async npiVerify(@Req() req: Request, @Body() body: unknown) {
+    npiSimulated();
+    validate("NpiVerifyInput", body);
+    if (!this.runtime.signing)
+      throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Signature non configurée.");
+    const input = body as Schemas["NpiVerifyInput"];
+    const payload = await verifyIdentity("Bearer " + input.challengeToken, this.runtime.auth);
+    return this.runtime.identities.verifyNpiChallenge(this.runtime.signing, payload, input.code);
   }
   @Get("conversations")
   async list(@Req() req: Request) {
@@ -268,6 +302,25 @@ export class ConversationController {
     );
     res.setHeader("Cache-Control", "no-store");
     res.send(file.bytes);
+  }
+  @Post("transcriptions")
+  @HttpCode(200)
+  async transcribe(@Req() req: Request, @Body() body: unknown) {
+    const principal = await user(this.runtime, req);
+    validate("TranscriptionInput", body);
+    const configured = this.runtime.files
+      ? await transcriberFromActiveModel(this.runtime.pool, "global", this.runtime.files)
+      : undefined;
+    const transcriber = configured ?? this.runtime.transcriber;
+    if (!transcriber)
+      throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Transcription audio non configurée.");
+    const text = await transcriber.transcribe(
+      (body as Schemas["TranscriptionInput"]).fileId,
+      principal.userRef,
+    );
+    if (text.length > 4000)
+      throw new Problem(413, "FILE_TOO_LARGE", "Message vocal trop long.");
+    return { text } satisfies Schemas["Transcription"];
   }
   @Post("files")
   @HttpCode(201)

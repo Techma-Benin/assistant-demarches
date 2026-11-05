@@ -1,6 +1,10 @@
 import type { Pool } from "pg";
 import { providerReason } from "./diagnostics.js";
 import { catalog } from "./tooling.js";
+import { readModelSecret } from "./secrets.js";
+
+/** Model probe budget: a loaded machine needs more than 1.5 s. */
+const MODEL_PROBE_TIMEOUT_MS = 5000;
 
 export type ComponentStatus = { ok: boolean; detail: string };
 export type ReadyReport = {
@@ -53,7 +57,7 @@ async function probeProvider(
   try {
     const response = await fetch(modelsUrl, {
       redirect: "error",
-      signal: timeout(1500),
+      signal: timeout(MODEL_PROBE_TIMEOUT_MS),
       headers: apiKey ? { Authorization: "Bearer " + apiKey } : {},
     });
     let message: unknown;
@@ -133,7 +137,7 @@ export async function probeReadiness(options: ReadinessOptions): Promise<ReadyRe
     try {
       const rows = (
         await options.pool.query(
-          "SELECT body FROM backend_configurations WHERE resource='models' AND body->>'active'='true' ORDER BY resource_id",
+          "SELECT administration_id, body FROM backend_configurations WHERE resource='models' AND body->>'active'='true' AND CASE WHEN body->>'role'='transcription' THEN 'transcription' ELSE 'discussion' END='discussion' ORDER BY resource_id",
         )
       ).rows;
       if (rows.length === 1) {
@@ -147,7 +151,8 @@ export async function probeReadiness(options: ReadinessOptions): Promise<ReadyRe
         const label = `${body.label ?? body.id} / ${body.model ?? "modèle"}`;
         const env = options.environment ?? process.env;
         if (body.baseUrl && modelReadinessProbeEnabled(env)) {
-          const cacheKey = `${body.id ?? ""}|${body.baseUrl}|${body.apiKeyRef ?? ""}`;
+          const stored = body.id ? await readModelSecret(options.pool, rows[0].administration_id, body.id) : undefined;
+          const cacheKey = `${body.id ?? ""}|${body.baseUrl}|${body.apiKeyRef ?? ""}|${stored ? "secret" : "env"}`;
           const now = Date.now();
           let probe: ComponentStatus;
           if (probeCache && probeCache.key === cacheKey && now - probeCache.at < PROBE_TTL_MS) {
@@ -155,7 +160,7 @@ export async function probeReadiness(options: ReadinessOptions): Promise<ReadyRe
           } else {
             probe = await probeProvider(
               body.baseUrl,
-              body.apiKeyRef ? env[body.apiKeyRef] : undefined,
+              stored ?? (body.apiKeyRef ? env[body.apiKeyRef] : undefined),
             );
             probeCache = { key: cacheKey, at: now, result: probe };
           }

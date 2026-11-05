@@ -5,6 +5,7 @@ import { resolveModelFromEnv } from "../dist/apps/backend/src/model-env.js";
 test("MODEL_API_KEY alone uses the Groq default", () => {
   const model = resolveModelFromEnv({ MODEL_API_KEY: "secret" });
   assert.equal(model.apiKeyRef, "MODEL_API_KEY");
+  assert.equal(model.role, "discussion");
   assert.equal(model.baseUrl, "https://api.groq.com/openai/v1");
   assert.equal(model.model, "qwen/qwen3.8-27b");
   assert.equal(JSON.stringify(model).includes("secret"), false);

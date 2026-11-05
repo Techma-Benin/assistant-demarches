@@ -1,4 +1,5 @@
 import { randomBytes, createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { Pool, PoolClient } from "pg";
 import {
   identifier,
@@ -17,6 +18,32 @@ export type OwnedConversation = Conversation & { userRef: string };
 export type Event = Schemas["Event"];
 export type MessageInput = Schemas["MessageInput"];
 type Db = Pick<Pool, "query"> | Pick<PoolClient, "query">;
+
+/** Case bodies already shown in this conversation, newest first (`afterSeq`: only those published after that event). */
+async function shownCases(
+  db: Db,
+  conversationId: string,
+  caseId: string | null,
+  afterSeq = 0,
+): Promise<Schemas["Case"][]> {
+  const rows = (
+    await db.query(
+      `SELECT body FROM backend_conversation_events
+       WHERE conversation_id=$1 AND seq>$2 AND body->'data'->>'kind'='message.sent'
+       ORDER BY seq DESC LIMIT 50`,
+      [conversationId, afterSeq],
+    )
+  ).rows;
+  const cases: Schemas["Case"][] = [];
+  for (const row of rows)
+    for (const block of row.body?.data?.message?.blocks ?? [])
+      if (
+        block?.type === "caseCard" &&
+        (caseId === null || block.case?.id === caseId)
+      )
+        cases.push(block.case);
+  return cases;
+}
 export function envelope(
   data: Event["data"],
   _traceparent: string,
@@ -58,6 +85,13 @@ export async function appendEvent(
       "INSERT INTO backend_conversation_events(id,conversation_id,body) VALUES($1,$2,$3)",
       [event.id, conversationId, event],
     );
+}
+/** Keeps Conversation.lastMessageAt in step with the message events, in the same transaction. */
+async function touchLastMessage(db: Db, conversationId: string, time: string): Promise<void> {
+  await db.query(
+    "UPDATE backend_conversations SET body=jsonb_set(body,'{lastMessageAt}',to_jsonb($2::text),true) WHERE id=$1",
+    [conversationId, time],
+  );
 }
 export const RESUME_AFTER_CONSENT =
   "L’usager vient d’accorder l’autorisation demandée dans l’interface. Reprends l’action qui attendait cette autorisation, sans redemander ce qui a déjà été fourni.";
@@ -276,23 +310,21 @@ export class Conversations {
             "INSERT INTO backend_messages(conversation_id,id,fingerprint,body,traceparent) VALUES($1,$2,$3,$4,$5)",
             [conversationId, body.id, fingerprint(body), stored, traceparent],
           );
-          await appendEvent(
-            db,
-            conversationId,
-            envelope(
-              {
-                kind: "message.received",
-                conversationId,
-                message: {
-                  id: stored.id,
-                  content: stored.content,
-                  transcript: null,
-                  sentAt: stored.sentAt,
-                },
+          const received = envelope(
+            {
+              kind: "message.received",
+              conversationId,
+              message: {
+                id: stored.id,
+                content: stored.content,
+                transcript: null,
+                sentAt: stored.sentAt,
               },
-              traceparent,
-            ),
+            },
+            traceparent,
           );
+          await appendEvent(db, conversationId, received);
+          await touchLastMessage(db, conversationId, received.time);
         }
         return {
           messageId: body.id,
@@ -487,6 +519,14 @@ export class Conversations {
               [data.mandate.id, cid, userRef, data.mandate],
             );
         } else if (data.kind === "case.updated") {
+          const [latest] = await shownCases(db, cid, data.case.id);
+          if (latest && isDeepStrictEqual(latest, data.case)) {
+            await db.query(
+              "INSERT INTO backend_ingested_events(id,fingerprint) VALUES($1,$2)",
+              [event.id, fingerprint(event)],
+            );
+            return event;
+          }
           const message = {
             id: identifier("msg"),
             conversationId: cid,
@@ -550,6 +590,29 @@ export class Conversations {
     preserveError = false,
     messageId?: string,
   ): Promise<Event> {
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      conversationId,
+    ]);
+    const received = (
+      await db.query(
+        `SELECT seq FROM backend_conversation_events
+         WHERE conversation_id=$1 AND body->'data'->>'kind'='message.received'
+           AND body->'data'->'message'->>'id'=$2
+         ORDER BY seq DESC LIMIT 1`,
+        [conversationId, inputId],
+      )
+    ).rows[0];
+    if (received) {
+      const shown = await shownCases(db, conversationId, null, Number(received.seq));
+      const kept = blocks.filter(
+        (block) =>
+          !(
+            block.type === "caseCard" &&
+            shown.some((c) => isDeepStrictEqual(c, block.case))
+          ),
+      );
+      if (kept.length > 0) blocks = kept;
+    }
     const message = {
       id: messageId ?? identifier("msg"),
       conversationId,
@@ -559,6 +622,7 @@ export class Conversations {
     validate("AgentMessage", message);
     const event = envelope({ kind: "message.sent", conversationId, message }, traceparent);
     await appendEvent(db, conversationId, event);
+    await touchLastMessage(db, conversationId, event.time);
     await db.query(
       "UPDATE backend_messages SET processed_at=now(),last_error=CASE WHEN $3 THEN last_error ELSE NULL END WHERE conversation_id=$1 AND id=$2",
       [conversationId, inputId, preserveError],

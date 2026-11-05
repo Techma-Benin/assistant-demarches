@@ -12,7 +12,7 @@ type Loop = { ref: RefObject<HTMLDivElement | null>; step: number; animated: boo
 
 /**
  * Drives a demo: `steps` are durations in ms, the last one being the fade-out/pause before restarting.
- * Until mounted (and always under reduced motion) the hook returns `finalStep`, the complete frame.
+ * Until mounted the hook returns `finalStep`, the complete frame.
  */
 export function useDemoLoop(steps: number[], finalStep: number): Loop {
   const ref = useRef<HTMLDivElement>(null);
@@ -22,7 +22,6 @@ export function useDemoLoop(steps: number[], finalStep: number): Loop {
   const [pageVisible, setPageVisible] = useState(true);
 
   useEffect(() => {
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     setStep(0);
     setAnimated(true);
   }, []);
@@ -44,8 +43,10 @@ export function useDemoLoop(steps: number[], finalStep: number): Loop {
   }, []);
 
   const running = animated && onScreen && pageVisible;
+  const played = useRef(false);
+  if (animated && step !== finalStep) played.current = true;
   useEffect(() => {
-    if (!running) return;
+    if (!running || (played.current && step === finalStep)) return;
     const timer = window.setTimeout(() => setStep((s) => (s + 1) % steps.length), steps[step]);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -79,7 +80,7 @@ export function Rise({ animated, children, className, from = 'translate-y-2.5' }
   return (
     <div
       className={cn(
-        'transition-[opacity,transform] duration-300 ease-out motion-reduce:transition-none',
+        'transition-[opacity,transform] duration-300 ease-out',
         on ? 'translate-y-0 opacity-100' : cn(from, 'opacity-0'),
         className,
       )}
@@ -97,7 +98,7 @@ function Frame({ loop, fading, center, children }: { loop: Loop; fading: boolean
       inert
       className={cn('pointer-events-none absolute inset-0 flex flex-col overflow-hidden p-5 lg:p-6', center ? 'justify-center' : 'justify-end')}
     >
-      <div className={cn('flex flex-col gap-3 transition-opacity duration-300 ease-out motion-reduce:transition-none', fading ? 'opacity-0' : 'opacity-100', center && 'h-full justify-center')}>
+      <div className={cn('flex flex-col gap-3 transition-opacity duration-300 ease-out', fading ? 'opacity-0' : 'opacity-100', center && 'h-full justify-center')}>
         {children}
       </div>
     </div>
@@ -302,7 +303,7 @@ function StampLanding({ animated }: { animated: boolean }) {
   return (
     <Stamp
       className={cn(
-        'absolute bottom-3 right-4 size-24 -rotate-12 transition-[transform,opacity] duration-[400ms] ease-out motion-reduce:transition-none',
+        'absolute bottom-3 right-4 size-24 -rotate-12 transition-[transform,opacity] duration-[400ms] ease-out',
         on ? 'scale-100 opacity-100' : 'scale-[1.3] opacity-0',
       )}
     />

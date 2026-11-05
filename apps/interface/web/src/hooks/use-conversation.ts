@@ -8,6 +8,7 @@ import { conversationReducer, initialState, type ConversationState } from '@/lib
 import { saveConversation, type ConversationSnapshot } from '@/lib/conversation-persistence';
 import { CONTRACT_MIME_TYPES, validateFile, type ContractMimeType } from '@/lib/files';
 import { newId } from '@/lib/ids';
+import { onSessionChanged } from '@/lib/session-events';
 import { buttonInteraction, fileContent, formInteraction } from '@/lib/interactions';
 
 interface PendingUpload {
@@ -19,6 +20,8 @@ interface PendingUpload {
 }
 
 const MAX_TEXT_LENGTH = 4000;
+
+export type FollowUp = { content: MessageInput['content']; display: string };
 
 /** A saved conversation holds only its id: the timeline is rebuilt from the event history. */
 function stateFromSnapshot(snapshot: ConversationSnapshot | null | undefined): ConversationState {
@@ -77,6 +80,7 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
 
   // Realtime (CONTRACTS.md §5): WebSocket with polling fallback, owned by ConversationStream.
   const conversationId = state.conversationId;
+  const streamRef = useRef<ConversationStream | null>(null);
   const [connection, setConnection] = useState<StreamStatus>('connecting');
   // A resumed conversation shows nothing until its history is back.
   const [loadingHistory, setLoadingHistory] = useState(restored != null);
@@ -103,9 +107,16 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
         }),
     });
     if (!resuming) setLoadingHistory(false);
+    streamRef.current = stream;
     stream.start();
-    return () => stream.stop();
+    return () => {
+      stream.stop();
+      if (streamRef.current === stream) streamRef.current = null;
+    };
   }, [c1, conversationId]);
+
+  // A sign-in changed the cookie: the socket was opened with a guest ticket, renew it.
+  useEffect(() => onSessionChanged(() => streamRef.current?.renewConnection()), []);
 
   const post = useCallback(
     async (input: MessageInput): Promise<void> => {
@@ -172,8 +183,15 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
   );
 
   const sendFiles = useCallback(
-    (files: File[], note?: string, voice?: { durationMs: number; waveform: number[] }, documentType: string | null = null) => {
-      const text = note?.trim();
+    (
+      files: File[],
+      note?: string,
+      voice?: { durationMs: number; waveform: number[] },
+      documentType: string | null = null,
+      // Message sent after the last file instead of the note (e.g. a form answer); its `sentAt` is taken here, at send time.
+      followUp?: FollowUp,
+    ) => {
+      const text = followUp ? undefined : note?.trim();
       if (text && text.length > MAX_TEXT_LENGTH) return;
       const valid = files.flatMap((file) => {
         const validation = validateFile(file, CONTRACT_MIME_TYPES);
@@ -223,16 +241,17 @@ export function useConversation(client?: C1Client, restored?: ConversationSnapsh
           batchId,
         });
       }
-      if (text) {
+      const tail = followUp ?? (text ? { content: { type: 'text', text } as MessageInput['content'], display: text } : undefined);
+      if (tail) {
         // Shown right after the files; posted only once the last file message is accepted.
         const noteInput: MessageInput = {
           id: newId('msg'),
-          content: { type: 'text', text },
+          content: tail.content,
           sentAt: new Date().toISOString(),
         };
         link(noteInput.id);
         held.current.set(noteInput.id, noteInput);
-        dispatch({ type: 'userMessageQueued', id: noteInput.id, content: noteInput.content, display: text, sentAt: noteInput.sentAt, batchId });
+        dispatch({ type: 'userMessageQueued', id: noteInput.id, content: noteInput.content, display: tail.display, sentAt: noteInput.sentAt, batchId });
       }
       // Uploads run in parallel; the message POSTs are chained.
       for (const [id, entry] of started) void upload(id, entry);

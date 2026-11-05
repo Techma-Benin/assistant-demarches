@@ -22,6 +22,12 @@ describe('HeroSlideshow', () => {
     vi.useRealTimers();
   });
 
+  it('has five photos, the Porte du non-retour by day', () => {
+    expect(HERO_PHOTOS).toHaveLength(5);
+    expect(HERO_PHOTOS.map((p) => p.src)).toContain('/photos/porte-non-retour-ouidah.jpg');
+    expect(HERO_PHOTOS.map((p) => p.src)).not.toContain('/photos/porte-non-retour-ouidah-nuit.jpg');
+  });
+
   it('renders every photo, only the first one exposed', () => {
     render(<HeroSlideshow />);
     expect(all()).toHaveLength(HERO_PHOTOS.length);
@@ -52,22 +58,22 @@ describe('HeroSlideshow', () => {
     expect(screen.getByRole('button', { name: 'Mettre le diaporama en pause' })).toBeInTheDocument();
   });
 
-  it('advances every 6 seconds, and not while paused', () => {
-    vi.useFakeTimers();
+  it('advances when the 6-second progress bar ends, and holds the bar while paused', () => {
     render(<HeroSlideshow />);
-    act(() => void vi.advanceTimersByTime(6000));
+    const bar = () => document.querySelector('.hero-progress') as HTMLElement;
+    expect(bar().style.animationDuration).toBe('6000ms');
+    act(() => {
+      for (const type of ['animationend', 'webkitAnimationEnd']) bar().dispatchEvent(new Event(type, { bubbles: true }));
+    });
     expect(visible()[0]).toHaveAttribute('alt', HERO_PHOTOS[1]!.alt);
     act(() => screen.getByRole('button', { name: 'Mettre le diaporama en pause' }).click());
-    act(() => void vi.advanceTimersByTime(20000));
-    expect(visible()[0]).toHaveAttribute('alt', HERO_PHOTOS[1]!.alt);
+    expect(bar().style.animationPlayState).toBe('paused');
   });
 
-  it('starts paused under reduced motion', () => {
+  it('plays under reduced motion too, with the pause button available', () => {
     mockMotion(true);
-    vi.useFakeTimers();
     render(<HeroSlideshow />);
-    expect(screen.getByRole('button', { name: 'Lire le diaporama' })).toBeInTheDocument();
-    act(() => void vi.advanceTimersByTime(20000));
-    expect(visible()[0]).toHaveAttribute('alt', HERO_PHOTOS[0]!.alt);
+    expect(screen.getByRole('button', { name: 'Mettre le diaporama en pause' })).toBeInTheDocument();
+    expect((document.querySelector('.hero-progress') as HTMLElement).style.animationPlayState).toBe('running');
   });
 });

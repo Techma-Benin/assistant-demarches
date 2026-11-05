@@ -1,4 +1,4 @@
-# Contrat d'intégration v2.1.0
+# Contrat d'intégration v2.3.0
 
 Ce document et les fichiers de `contracts/v2/` sont la seule référence entre les équipes. Ils découlent de la [spécification fonctionnelle](docs/spec.md). Tout ce qui n'y figure pas n'existe pas.
 
@@ -46,6 +46,7 @@ Realm exporté dans `infra/keycloak/realm-techma.json`, importé au démarrage a
 |---|---|---|
 | Visiteur web non connecté | Jeton invité signé par le Backend (`POST /v1/guest-sessions`, 24 h) | Backend |
 | Usager connecté | Keycloak, client `interface`, rôle realm `citizen`, audience `techma-backend` | Backend |
+| Usager connecté par NPI (simulé) | NPI puis code (`POST /v1/identity/npi`, `POST /v1/identity/npi/verify`), jeton `npi` signé par le Backend, 12 h, traité comme un usager connecté. Actif seulement avec `NPI_SIMULATED_LOGIN=on`. | Backend |
 | Usager WhatsApp | Numéro vérifié par la signature Meta, dans le module WhatsApp du Backend. Compte comme connecté. | Backend |
 | Agent, admin, super admin | Keycloak, client `interface`, rôle realm `official`. Rôle et administration lus dans le X-Road simulé par le `sub`. | Backend puis X-Road simulé |
 | Opérateur | Keycloak, client `interface`, rôle realm `operator` | Backend |
@@ -57,7 +58,7 @@ Règles :
 - Le Backend publie ses propres clés (jetons invités et preuves de consentement) sur `GET /.well-known/jwks.json`.
 - `userRef` (`usr_…`) est attribué par le Backend à partir du `sub` Keycloak ou du numéro WhatsApp. Il n'est jamais accepté depuis le navigateur ni depuis le modèle.
 - Le Backend transmet au Tooling `X-User-Ref`, `X-Conversation-Id`, `X-Channel`, `X-Mandate-Id`, et au X-Road `X-Applicant-Ref` (vue usager) ou `X-Official-Subject` (vue agent). Ces en-têtes ne viennent que du code, jamais du modèle.
-- Aucun jeton statique, aucun `mock-*`, aucun mode d'authentification de développement dans le code.
+- Aucun jeton statique, aucun `mock-*`, aucun mode d'authentification de développement dans le code, à une exception nommée : la connexion par NPI simulée. Tout code numérique y est accepté et aucun SMS n'est envoyé ; elle n'existe que si `NPI_SIMULATED_LOGIN=on` (sinon les deux routes répondent 404) et doit être remplacée par la vérification réelle du code. Raison : permettre de livrer et de tester le parcours de connexion avant que le fournisseur de SMS soit branché, sans changer l'écran ni le contrat.
 
 ## 5. Contrats machine (`contracts/v2/`)
 
@@ -100,7 +101,9 @@ Commandes :
 5. Pendant la génération, le Backend **peut** émettre zéro, un ou plusieurs `message.delta`. Ils portent uniquement le texte du futur bloc `text` — jamais les blocs structurés (`buttons`, `form`, `fileRequest`, `loginRequired`, `consent`, `requestCard`, `caseCard`) ni les `sources`.
 6. La clôture reste `message.sent` : `AgentMessage` complet, `blocks` définitifs. L'Interface remplace / finalise la bulle en cours par cet événement. Sources, boutons, formulaire, `fileRequest` et les autres blocs n'apparaissent que sur `message.sent`. Le modèle ne produit toujours que `text` / `buttons` / `form` ; les autres blocs restent construits par le Backend.
 7. `message.delta` n'est **pas** émis : dans `GET …/events` sans curseur ; après le `message.sent` du même `messageId` ; pour une réponse sans texte (pas de bloc `text` à venir) ; par le Tooling (`POST /internal/v1/events`).
-8. Vocal : `POST /v1/files` (audio), puis message `{type: audio, fileId}`. Le Backend transcrit, et la transcription apparaît dans `message.received`.
+8. Vocal : `POST /v1/files` (audio), puis message `{type: audio, fileId}`. Le Backend transcrit, et la transcription apparaît dans `message.received`. Sur le web, l’usager dicte : `POST /v1/files` (audio), puis `POST /v1/transcriptions` (`{fileId}`) renvoie `{text}` sans créer de message ni appeler le modèle ; l’usager relit, corrige et envoie un message `text`. Le message `{type: audio}` reste pour WhatsApp. Le fichier audio suit la règle de conservation de 24 h ci-dessous.
+9. Connexion par NPI : l'Interface appelle `POST /v1/identity/npi` (le NPI ne transite que par cet appel, jamais par la conversation ni par le modèle), puis `POST /v1/identity/npi/verify` avec le défi et le code reçu. Le jeton obtenu s'utilise comme un jeton usager connecté ; un même NPI donne toujours le même `userRef`. Une conversation invitée s'y rattache par `POST …/attach`, et l'action en attente est reprise.
+10. Suivi des demandes depuis n'importe quel chat : l'usager connecté demande où en sont ses demandes, y compris dans une nouvelle conversation. L'assistant interroge la liste des dossiers de l'usager et répond par des blocs `caseCard` ; un invité reçoit `loginRequired`, et la question est rejouée après connexion.
 
 ### 7.2 Réponses de l'assistant (`AgentMessage.blocks`)
 
@@ -163,7 +166,7 @@ in_review | information_requested ─ reject ─→ rejected
 ## 10. Écran opérateur
 
 - Rôle `operator` uniquement. Configuration globale.
-- Modèles : `baseUrl` compatible OpenAI, `protocol`, `model`, `apiKeyRef` (nom de la variable d'environnement), `temperature`, un seul `active`. L'agent utilise le modèle actif sans redémarrage.
+- Modèles : `baseUrl` compatible OpenAI, `protocol`, `model`, `apiKeyRef` (nom de la variable d'environnement), `temperature` (stockée, non envoyée), `role` optionnel (`discussion` ou `transcription`, absent = discussion), un seul `active` par rôle. Le modèle de discussion actif répond et le modèle de transcription actif dicte, sans redémarrage.
 - Connexions MCP : URL autorisée par `MCP_ALLOWED_URLS` ; découverte réelle (`tools/list`) ; outils désactivés et avec consentement par défaut ; une définition changée est désactivée à la redécouverte. Le serveur Techma (Tooling) est provisionné au démarrage.
 
 ## 11. MCP (Tooling)

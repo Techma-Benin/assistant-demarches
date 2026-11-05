@@ -358,15 +358,39 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
   await t.test(
     "strict inputs, PUT existing semantics, secret references and MCP allowlist",
     async () => {
-      for (const body of [
-        { ...model, apiKey: "never-store-me" },
-        { ...model, temperature: 4 },
-      ])
-        assert.equal(
-          (await request("/v1/operator/models/primary", { method: "PUT", body }))
-            .status,
-          400,
-        );
+      assert.equal(
+        (
+          await request("/v1/operator/models/primary", {
+            method: "PUT",
+            body: { ...model, temperature: 4 },
+          })
+        ).status,
+        400,
+      );
+      const stored = await request("/v1/operator/models/primary", {
+        method: "PUT",
+        body: { ...model, apiKey: "never-store-me" },
+        key: "secret-key-0001",
+      });
+      assert.equal(stored.status, 200);
+      assert.equal(stored.value.apiKey, undefined);
+      assert.deepEqual(stored.value, model);
+      validate("ModelConfig", stored.value);
+      const listed = JSON.stringify((await request("/v1/operator/models")).value);
+      assert.equal(listed.includes("never-store-me"), false);
+      const secret = (
+        await pool.query(
+          "SELECT ciphertext FROM backend_secrets WHERE resource_id='primary'",
+        )
+      ).rows[0];
+      assert.ok(secret.ciphertext);
+      assert.equal(String(secret.ciphertext).includes("never-store-me"), false);
+      const body = (
+        await pool.query(
+          "SELECT body FROM backend_configurations WHERE resource_id='primary'",
+        )
+      ).rows[0].body;
+      assert.equal(JSON.stringify(body).includes("never-store-me"), false);
       assert.equal(
         (
           await request("/v1/operator/models/unknown", {
@@ -414,23 +438,37 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       );
     },
   );
-  await t.test("activating a model deactivates the others, including under concurrency; deactivating the last remains allowed", async () => {
-    const first = { ...model, id: "exclusive-a", model: "one" };
-    const second = { ...model, id: "exclusive-b", model: "two" };
+  await t.test("activating a model deactivates the others of the same role; two roles can stay active", async () => {
+    const first = { ...model, id: "exclusive-a", model: "one", role: "discussion" };
+    const second = { ...model, id: "exclusive-b", model: "two", role: "discussion" };
+    const voice = { ...model, id: "exclusive-voice", model: "whisper-1", role: "transcription", label: "Voix" };
     assert.equal((await request("/v1/operator/models", { method: "POST", body: first, key: "exclusive-create-a" })).status, 201);
     assert.equal((await request("/v1/operator/models", { method: "POST", body: second, key: "exclusive-create-b" })).status, 201);
+    assert.equal((await request("/v1/operator/models", { method: "POST", body: voice, key: "exclusive-create-voice" })).status, 201);
     const afterCreate = await request("/v1/operator/models?limit=100");
-    const createdActive = afterCreate.value.items.filter((item) => item.active && item.id.startsWith("exclusive-"));
-    assert.equal(createdActive.length, 1);
-    assert.equal(createdActive[0].id, "exclusive-b");
+    const createdDiscussion = afterCreate.value.items.filter((item) => item.active && item.role !== "transcription" && item.id.startsWith("exclusive-"));
+    assert.equal(createdDiscussion.length, 1);
+    assert.equal(createdDiscussion[0].id, "exclusive-b");
+    assert.equal(afterCreate.value.items.find((item) => item.id === "exclusive-voice").active, true);
     const concurrent = await Promise.all([
       request("/v1/operator/models/exclusive-a", { method: "PUT", body: first, key: "exclusive-conc-a" }),
       request("/v1/operator/models/exclusive-b", { method: "PUT", body: second, key: "exclusive-conc-b" }),
     ]);
     assert.ok(concurrent.every((result) => result.status === 200));
     const afterConcurrent = await request("/v1/operator/models?limit=100");
-    const stillActive = afterConcurrent.value.items.filter((item) => item.active);
-    assert.equal(stillActive.length, 1);
+    const stillDiscussion = afterConcurrent.value.items.filter((item) => item.active && item.role !== "transcription");
+    assert.equal(stillDiscussion.length, 1);
+    assert.equal(afterConcurrent.value.items.find((item) => item.id === "exclusive-voice").active, true);
+    assert.equal((await request("/v1/operator/status")).value.model.id, stillDiscussion[0].id);
+    const voiceNext = { ...voice, id: "exclusive-voice-2", model: "whisper-2" };
+    assert.equal((await request("/v1/operator/models", { method: "POST", body: voiceNext, key: "exclusive-create-voice-2" })).status, 201);
+    const afterVoice = await request("/v1/operator/models?limit=100");
+    const voices = afterVoice.value.items.filter((item) => item.active && item.role === "transcription");
+    assert.equal(voices.length, 1);
+    assert.equal(voices[0].id, "exclusive-voice-2");
+    assert.equal(afterVoice.value.items.find((item) => item.id === "exclusive-voice").active, false);
+    assert.equal(afterVoice.value.items.filter((item) => item.active && item.role !== "transcription").length, 1);
+    assert.equal((await request("/v1/operator/status")).value.model.id, stillDiscussion[0].id);
     assert.equal(
       (await request("/v1/operator/models/exclusive-a", { method: "PUT", body: { ...first, active: false }, key: "exclusive-off-a" })).status,
       200,
@@ -439,10 +477,9 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
       (await request("/v1/operator/models/exclusive-b", { method: "PUT", body: { ...second, active: false }, key: "exclusive-off-b" })).status,
       200,
     );
-    assert.equal(
-      (await request("/v1/operator/models?limit=100")).value.items.filter((item) => item.active && item.id.startsWith("exclusive-")).length,
-      0,
-    );
+    const afterOff = await request("/v1/operator/models?limit=100");
+    assert.equal(afterOff.value.items.filter((item) => item.active && item.id.startsWith("exclusive-") && item.role !== "transcription").length, 0);
+    assert.equal(afterOff.value.items.find((item) => item.id === "exclusive-voice-2").active, true);
   });
   await t.test("CRUD models: creation, detail, scopes, retries and delete/recreate", async () => {
     const body = { ...model, id: "crud-model" };
@@ -458,7 +495,7 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
     assert.equal((await request(path, { method: "POST", body, authToken: await token({ scope: "admin:read" }) })).status, 403);
     assert.equal((await request(detail, { method: "DELETE", authToken: await token({ scope: "admin:read" }) })).status, 403);
     assert.equal((await request(detail, { authToken: await token({ scope: "admin:write" }) })).status, 403);
-    const changed = { ...body, temperature: 0.7 };
+    const changed = { ...body, role: "transcription", label: "Modèle modifié" };
     assert.equal((await request(detail, { method: "PUT", body: changed, key: "crud-update" })).status, 200);
     assert.deepEqual((await request(detail)).value, changed);
     const removed = await Promise.all(Array.from({ length: 3 }, () => request(detail, { method: "DELETE", key: "crud-delete" })));
@@ -468,13 +505,16 @@ test("Backend C3 with isolated PostgreSQL and signed administrator tokens", asyn
     assert.equal((await request(path, { method: "POST", body, key: "crud-recreate" })).status, 201);
     assert.equal((await request(detail, { method: "DELETE", key: "crud-delete" })).status, 204);
     assert.deepEqual((await request(detail)).value, body, "replayed DELETE must not remove recreated configuration");
-    assert.equal((await request("/v1/operator/models", { method: "POST", body: { ...model, id: "bad", apiKey: "secret" } })).status, 400);
+    const withKey = await request("/v1/operator/models", { method: "POST", body: { ...model, id: "bad", apiKey: "secret" } });
+    assert.equal(withKey.status, 201);
+    assert.equal(withKey.value.apiKey, undefined);
+    assert.equal(JSON.stringify(withKey.value).includes("secret"), false);
     assert.equal((await request("/v1/operator/models", { method: "POST", body: { ...model, id: "missing-key" }, key: "" })).status, 400);
     assert.equal((await request("/v1/operator/models/primary", { method: "DELETE", key: "" })).status, 400);
     const optional = { ...model, id: "optional-key" };
     assert.equal((await request("/v1/operator/models", { method: "POST", body: optional, key: false })).status, 201);
-    assert.equal((await request("/v1/operator/models/optional-key", { method: "PUT", body: { ...optional, temperature: 0.4 }, key: false })).status, 200);
-    assert.equal((await request("/v1/operator/models/optional-key", { method: "PUT", body: { ...optional, temperature: 0.5 }, key: "x" })).status, 400);
+    assert.equal((await request("/v1/operator/models/optional-key", { method: "PUT", body: { ...optional, label: "Clé optionnelle" }, key: false })).status, 200);
+    assert.equal((await request("/v1/operator/models/optional-key", { method: "PUT", body: { ...optional, label: "Autre libellé" }, key: "x" })).status, 400);
     assert.equal((await request("/v1/operator/models/optional-key", { method: "DELETE", key: false })).status, 204);
     assert.equal((await request("/v1/operator/models/primary", { method: "DELETE", body: { unexpected: true } })).status, 400);
     for (const rawBody of ["{}", "null"]) {

@@ -11,6 +11,7 @@ import { syncEnvModel } from "./model-env.js";
 import { Agent } from "./agent.js";
 import { Problem, approvedMcpUrl } from "./domain.js";
 import type { Runtime } from "./routes.js";
+import { XroadClient } from "./xroad.js";
 import { transcriberFromEnvironment } from "./transcription.js";
 
 export const required = (name: string) => {
@@ -72,6 +73,7 @@ export async function loadRuntime(
   auth: AuthOptions,
   allowedMcpUrls: ReadonlySet<string>,
   signingKey: CryptoKey,
+  npiSubjectKey?: Uint8Array,
 ) {
   await pool.query("SELECT 1");
   const identities = new Identities(pool);
@@ -96,16 +98,19 @@ export async function loadRuntime(
     kid: "backend-signing",
     issuer: required("PUBLIC_URL"),
   };
+  const transcriber = transcriberFromEnvironment(files);
   const runtime: Runtime = {
     pool,
     auth,
     identities,
     conversations,
     files,
+    ...(transcriber ? { transcriber } : {}),
     publicUrl: process.env.PUBLIC_URL,
     signing,
     xroadUrl: process.env.XROAD_URL,
     serviceTokens: tokens,
+    ...(npiSubjectKey ? { npiSubjectKey } : {}),
   };
   const control = new HttpMandateControl(required("TOOLING_URL"), () =>
     tokens.get("mandates:grant"),
@@ -126,7 +131,12 @@ export async function loadRuntime(
     models,
     tooling,
     runtime.consent,
-    transcriberFromEnvironment(files),
+    transcriber,
+    process.env.XROAD_URL
+      ? (userRef) =>
+          new XroadClient(process.env.XROAD_URL!, () => tokens.get("xroad:apply")).cases(userRef, "?limit=20")
+      : undefined,
+    files,
   );
   return { runtime, agent, tokens };
 }

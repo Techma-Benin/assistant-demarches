@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Écran opérateur — Backend → Interface",
-    "version": "2.1.0",
+    "version": "2.3.0",
     "description": "Jeton Keycloak avec le rôle realm operator. Configuration globale du modèle et des serveurs MCP ; aucune donnée de dossier."
   },
   "servers": [
@@ -1564,9 +1564,17 @@
             "minimum": 0,
             "maximum": 2
           },
+          "role": {
+            "type": "string",
+            "enum": [
+              "discussion",
+              "transcription"
+            ],
+            "description": "discussion : réponses de l’assistant. transcription : dictée vocale. Un seul modèle actif par rôle. Absent = discussion."
+          },
           "active": {
             "type": "boolean",
-            "description": "Un seul modèle actif à la fois."
+            "description": "Un seul modèle actif par rôle."
           }
         },
         "required": [

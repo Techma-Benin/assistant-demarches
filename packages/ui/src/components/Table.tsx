@@ -1,10 +1,20 @@
 import type { CSSProperties, HTMLAttributes, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react';
 import { cn } from '../cn';
 
+export type TableProps = TableHTMLAttributes<HTMLTableElement> & {
+  /** Optional classes on the scroll wrapper (e.g. flush inside a dialog). */
+  wrapperClassName?: string;
+};
+
 /** Dense data table (console). The wrapper scrolls horizontally only (entering rows must not flash a vertical bar). */
-export function Table({ className, ...props }: TableHTMLAttributes<HTMLTableElement>) {
+export function Table({ className, wrapperClassName, ...props }: TableProps) {
   return (
-    <div className="overflow-x-auto overflow-y-hidden rounded-card border border-line bg-surface">
+    <div
+      className={cn(
+        'overflow-x-auto overflow-y-hidden rounded-card border border-line bg-surface',
+        wrapperClassName,
+      )}
+    >
       <table className={cn('w-full border-collapse text-left text-sm text-ink', className)} {...props} />
     </div>
   );
