@@ -166,7 +166,7 @@ in_review | information_requested ─ reject ─→ rejected
 ## 10. Écran opérateur
 
 - Rôle `operator` uniquement. Configuration globale.
-- Modèles : `baseUrl` compatible OpenAI, `protocol`, `model`, `apiKeyRef` (nom de la variable d'environnement), `temperature`, un seul `active`. L'agent utilise le modèle actif sans redémarrage.
+- Modèles : `baseUrl` compatible OpenAI, `protocol`, `model`, `apiKeyRef` (nom de la variable d'environnement), `temperature` (stockée, non envoyée), `role` optionnel (`discussion` ou `transcription`, absent = discussion), un seul `active` par rôle. Le modèle de discussion actif répond et le modèle de transcription actif dicte, sans redémarrage.
 - Connexions MCP : URL autorisée par `MCP_ALLOWED_URLS` ; découverte réelle (`tools/list`) ; outils désactivés et avec consentement par défaut ; une définition changée est désactivée à la redécouverte. Le serveur Techma (Tooling) est provisionné au démarrage.
 
 ## 11. MCP (Tooling)

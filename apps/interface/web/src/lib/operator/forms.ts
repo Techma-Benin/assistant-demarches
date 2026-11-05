@@ -39,7 +39,7 @@ export interface ModelFormValues {
   protocol: ModelConfig['protocol'];
   model: string;
   apiKey: string;
-  temperature: string;
+  role: 'discussion' | 'transcription';
 }
 
 export type ModelFormErrors = Partial<Record<keyof ModelFormValues, string>>;
@@ -50,7 +50,7 @@ export const emptyModelForm: ModelFormValues = {
   protocol: 'chat-completions',
   model: '',
   apiKey: '',
-  temperature: '0.2',
+  role: 'discussion',
 };
 
 export const API_KEY_ERROR = 'Indiquez la clé d’accès du fournisseur.';
@@ -68,13 +68,13 @@ export function modelToForm(model: ModelConfig): ModelFormValues {
     protocol: model.protocol,
     model: model.model,
     apiKey: '',
-    temperature: String(model.temperature),
+    role: model.role === 'transcription' ? 'transcription' : 'discussion',
   };
 }
 
 export function validateModelForm(
   values: ModelFormValues,
-  base: { id: string; active: boolean; apiKeyRef?: string },
+  base: { id: string; active: boolean; apiKeyRef?: string; temperature?: number },
   options: { requireKey: boolean },
 ): { errors: ModelFormErrors; model?: ModelConfig; apiKey?: string } {
   const errors: ModelFormErrors = {};
@@ -82,14 +82,11 @@ export function validateModelForm(
   const baseUrl = values.baseUrl.trim();
   const model = values.model.trim();
   const apiKey = values.apiKey.trim();
-  const temperature = Number(values.temperature.trim().replace(',', '.'));
   if (!label || label.length > 200) errors.label = 'Indiquez un nom (200 caractères au plus).';
   if (!isHttpUrl(baseUrl)) errors.baseUrl = 'Indiquez une adresse valide, par exemple https://api.groq.com/openai/v1.';
   if (!model || model.length > 200) errors.model = 'Indiquez l’identifiant du modèle (200 caractères au plus).';
   if (options.requireKey && !apiKey) errors.apiKey = API_KEY_ERROR;
-  if (values.temperature.trim() === '' || !Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
-    errors.temperature = 'Indiquez un nombre entre 0 et 2.';
-  }
+  if (values.role !== 'discussion' && values.role !== 'transcription') errors.role = 'Choisissez un rôle.';
   if (!ID.test(base.id)) errors.label = 'Nom inutilisable : choisissez des lettres ou des chiffres.';
   const apiKeyRef = base.apiKeyRef && ENV_NAME.test(base.apiKeyRef) ? base.apiKeyRef : modelKeyRef(base.id);
   if (Object.keys(errors).length > 0) return { errors };
@@ -103,7 +100,8 @@ export function validateModelForm(
       protocol: values.protocol,
       model,
       apiKeyRef,
-      temperature,
+      temperature: typeof base.temperature === 'number' ? base.temperature : 0,
+      role: values.role,
       active: base.active,
     },
   };

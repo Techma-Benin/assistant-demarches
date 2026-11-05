@@ -137,7 +137,7 @@ export async function probeReadiness(options: ReadinessOptions): Promise<ReadyRe
     try {
       const rows = (
         await options.pool.query(
-          "SELECT administration_id, body FROM backend_configurations WHERE resource='models' AND body->>'active'='true' ORDER BY resource_id",
+          "SELECT administration_id, body FROM backend_configurations WHERE resource='models' AND body->>'active'='true' AND CASE WHEN body->>'role'='transcription' THEN 'transcription' ELSE 'discussion' END='discussion' ORDER BY resource_id",
         )
       ).rows;
       if (rows.length === 1) {

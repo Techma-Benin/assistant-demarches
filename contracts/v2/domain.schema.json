@@ -2925,9 +2925,14 @@
           "minimum": 0,
           "maximum": 2
         },
+        "role": {
+          "type": "string",
+          "enum": ["discussion", "transcription"],
+          "description": "discussion : réponses de l’assistant. transcription : dictée vocale. Un seul modèle actif par rôle. Absent = discussion."
+        },
         "active": {
           "type": "boolean",
-          "description": "Un seul modèle actif à la fois."
+          "description": "Un seul modèle actif par rôle."
         }
       },
       "required": [

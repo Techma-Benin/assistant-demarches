@@ -14,7 +14,7 @@ import {
   type Principal,
   type Resource,
 } from "./domain.js";
-import { deactivateOtherModels, modelsLockKey } from "./model-env.js";
+import { deactivateOtherModels, modelRole, modelsLockKey } from "./model-env.js";
 import { deleteModelSecret, upsertModelSecret } from "./secrets.js";
 
 export function takeModelWrite(body: unknown): { model: Config; apiKey?: string } {
@@ -155,7 +155,7 @@ export class Settings {
       if (method !== "DELETE" && resource === "models" && apiKey)
         await upsertModelSecret(client, principal.administrationId, id, apiKey);
       if (method !== "DELETE" && body && "active" in body && body.active)
-        await deactivateOtherModels(client, principal.administrationId, id);
+        await deactivateOtherModels(client, principal.administrationId, id, modelRole(body));
       const event = {
         specversion: "1.0",
         id: eventId(),

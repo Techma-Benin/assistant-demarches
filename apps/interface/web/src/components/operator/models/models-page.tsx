@@ -24,6 +24,14 @@ function avatarTone(id: string): string {
   return AVATAR_TONES[hash % AVATAR_TONES.length];
 }
 
+function roleLabel(model: ModelConfig): string {
+  return model.role === 'transcription' ? 'Transcription' : 'Discussion';
+}
+
+function sameRole(left: ModelConfig, right: ModelConfig): boolean {
+  return (left.role === 'transcription') === (right.role === 'transcription');
+}
+
 function initials(label: string): string {
   const words = label.trim().split(/\s+/).filter(Boolean);
   return (words.length > 1 ? `${words[0][0]}${words[1][0]}` : label.trim().slice(0, 2)).toUpperCase();
@@ -60,6 +68,7 @@ function ModelRow({
       <div className="min-w-0 flex-1 basis-48">
         <h2 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[17px] leading-tight font-bold break-words">
           {model.label}
+          <span className="text-[13px] font-semibold text-ink-muted">{roleLabel(model)}</span>
           {model.active ? (
             <Badge tone="trust" className="bg-trust text-on-trust" icon={<CircleCheck aria-hidden="true" className="size-3.5" />}>
               Actif
@@ -130,7 +139,7 @@ export function ModelsPage() {
       await operatorApi.updateModel({ ...model, active: true });
       await load();
       toast.show(
-        `« ${model.label} » est le modèle actif.`,
+        `« ${model.label} » est le modèle de ${model.role === 'transcription' ? 'transcription' : 'discussion'} actif.`,
         previous ? { label: 'Annuler', onClick: () => void activate(previous) } : undefined,
       );
     } catch (error) {
@@ -161,7 +170,7 @@ export function ModelsPage() {
     <div className="ui-rise">
       <PageHeader
         title="Modèles d’IA"
-        description="Le modèle actif répond à l’assistant, sans redémarrage."
+        description="Un modèle de discussion répond à l’assistant et un modèle de transcription transcrit la voix, sans redémarrage."
         actions={
           <Button leadingIcon={<Plus aria-hidden="true" className="size-5" />} onClick={() => editor.show({ kind: 'new' })} disabled={!models}>
             Ajouter un modèle
@@ -189,7 +198,7 @@ export function ModelsPage() {
               key={model.id}
               model={model}
               busy={busyId === model.id}
-              onActivate={() => void activate(model, models.find((m) => m.active))}
+              onActivate={() => void activate(model, models.find((item) => item.id !== model.id && item.active && sameRole(item, model)))}
               onEdit={() => editor.show({ kind: 'edit', model })}
               onDelete={() => removal.show(model)}
             />
