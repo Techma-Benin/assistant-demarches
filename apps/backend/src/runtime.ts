@@ -136,6 +136,7 @@ export async function loadRuntime(
       ? (userRef) =>
           new XroadClient(process.env.XROAD_URL!, () => tokens.get("xroad:apply")).cases(userRef, "?limit=20")
       : undefined,
+    files,
   );
   return { runtime, agent, tokens };
 }

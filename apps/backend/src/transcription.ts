@@ -1,6 +1,8 @@
+import type { Pool } from "pg";
 import { approvedMcpUrl, Problem } from "./domain.js";
 import { logFailure, providerReason } from "./diagnostics.js";
 import type { Files } from "./files.js";
+import { readModelSecret } from "./secrets.js";
 
 export interface TranscriptionPort {
   transcribe(fileId: string, userRef: string): Promise<string>;
@@ -46,12 +48,15 @@ export type TranscriptionOptions = {
   allowedEndpoints?: ReadonlySet<string>;
   /** Explicit constructor opt-in for a synthetic HTTP provider on localhost. */
   allowLocalhost?: boolean;
+  /** Stored secret. When set, it is used instead of `apiKeyEnv`. */
+  apiKey?: string;
 };
 
 export class HttpTranscription implements TranscriptionPort {
   private endpoint: string;
   private model: string;
   private apiKeyEnv: string;
+  private apiKey?: string;
   private timeoutMs: number;
 
   constructor(
@@ -72,6 +77,7 @@ export class HttpTranscription implements TranscriptionPort {
     this.apiKeyEnv = options.apiKeyEnv ?? "GROQ_API_KEY";
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(this.apiKeyEnv))
       throw new Error("Invalid transcription secret reference.");
+    this.apiKey = options.apiKey?.trim() || undefined;
     this.timeoutMs = options.timeoutMs ?? 30000;
     if (!Number.isInteger(this.timeoutMs) || this.timeoutMs < 1 || this.timeoutMs > 60000)
       throw new Error("Transcription timeout must be between 1 and 60000 milliseconds.");
@@ -88,7 +94,7 @@ export class HttpTranscription implements TranscriptionPort {
       throw new Problem(413, "FILE_TOO_LARGE", "Fichier audio supérieur à 10 Mio.");
     if (!hasAudioHeader(bytes, file.mimeType))
       throw new Problem(415, "UNSUPPORTED_MEDIA_TYPE", "Le contenu ne correspond pas au format audio déclaré.");
-    const apiKey = this.environment[this.apiKeyEnv];
+    const apiKey = this.apiKey ?? this.environment[this.apiKeyEnv];
     if (!apiKey)
       throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Transcription audio non configurée.");
     const form = new FormData();
@@ -181,5 +187,35 @@ export function transcriberFromEnvironment(
     model: environment.TRANSCRIPTION_MODEL ?? defaultModel,
     apiKeyEnv,
     timeoutMs: environment.TRANSCRIPTION_TIMEOUT_MS === undefined ? undefined : Number(environment.TRANSCRIPTION_TIMEOUT_MS),
+  }, environment);
+}
+
+type ModelBody = { id?: string; baseUrl?: string; model?: string; apiKeyRef?: string; role?: string };
+
+/** Active transcription model for one administration. Undefined leaves the env transcriber in place. */
+export async function transcriberFromActiveModel(
+  db: Pick<Pool, "query">,
+  administrationId: string,
+  files: Pick<Files, "readOwned">,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<TranscriptionPort | undefined> {
+  const row = (
+    await db.query(
+      "SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource='models' AND body->>'active'='true' AND body->>'role'='transcription' ORDER BY resource_id LIMIT 1",
+      [administrationId],
+    )
+  ).rows[0] as { body?: ModelBody } | undefined;
+  const config = row?.body;
+  if (!config?.id || !config.baseUrl || !config.model || !config.apiKeyRef) return undefined;
+  const endpoint = new URL("audio/transcriptions", config.baseUrl.replace(/\/?$/, "/")).href;
+  const stored = await readModelSecret(db, administrationId, config.id);
+  const host = new URL(endpoint).hostname;
+  return new HttpTranscription(files, {
+    endpoint,
+    allowedEndpoints: new Set([endpoint]),
+    model: config.model,
+    apiKeyEnv: config.apiKeyRef,
+    ...(stored ? { apiKey: stored } : {}),
+    allowLocalhost: host === "localhost" || host === "127.0.0.1" || host === "[::1]",
   }, environment);
 }

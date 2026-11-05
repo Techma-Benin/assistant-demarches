@@ -18,6 +18,11 @@ const PROTOCOLS = [
   { value: 'responses', label: 'Responses' },
 ] as const;
 
+const ROLES = [
+  { value: 'discussion', label: 'Discussion' },
+  { value: 'transcription', label: 'Transcription' },
+] as const;
+
 export const modelFormTitle = (model?: ModelConfig) => (model ? `Modifier ${model.label}` : 'Ajouter un modèle');
 
 /** Body and footer of the add/edit dialog (the dialog itself provides the title). */
@@ -94,18 +99,14 @@ export function ModelForm({
           options={PROTOCOLS}
           onChange={(e) => set('protocol')(e.target.value as ModelFormValues['protocol'])}
         />
-        <TextField
-          label="Température"
+        <SelectField
+          label="Rôle"
           required
-          type="number"
-          inputMode="decimal"
-          min={0}
-          max={2}
-          step={0.1}
-          hint="Entre 0 (précis) et 2 (créatif)."
-          value={values.temperature}
-          error={errors.temperature}
-          onChange={(e) => set('temperature')(e.target.value)}
+          hint="Discussion répond. Transcription transcrit la voix."
+          value={values.role}
+          error={errors.role}
+          options={ROLES}
+          onChange={(e) => set('role')(e.target.value as ModelFormValues['role'])}
         />
         <div className="sm:col-span-2">
           <TextField
