@@ -2,7 +2,7 @@
 
 import { ArrowRight, MessageSquare } from 'lucide-react';
 import { useRef, useState, type CSSProperties } from 'react';
-import { Chip, FlagGlyph, cn } from '@techma/ui';
+import { BrandMark, Chip, FlagGlyph, ThemeToggle, cn } from '@techma/ui';
 import { Composer } from '@/components/chat/Composer';
 import { useStagedFiles } from '@/hooks/use-staged-files';
 import { CONTRACT_MIME_TYPES } from '@/lib/files';
@@ -18,7 +18,6 @@ import { Bridge } from './Bridge';
 import { CATALOGUE_PHOTO_CREDITS, CatalogueSection } from './CatalogueSection';
 import { GuidedStart } from './GuidedStart';
 import { LiveSearch } from './LiveSearch';
-import { StickyNav, type NavLink } from './StickyNav';
 import { useReveal } from './use-reveal';
 
 export type FrontDoorProps = {
@@ -30,7 +29,8 @@ export type FrontDoorProps = {
   resume?: { title: string | null; at: string; onResume: () => void };
 };
 
-const SECTIONS: NavLink[] = [
+const SECTIONS: { id: string; label: string }[] = [
+  { id: 'documents', label: 'Exemples' },
   { id: 'fonctionnement', label: 'Comment ça marche' },
   { id: 'themes', label: 'Trouver ma démarche' },
   { id: 'garanties', label: 'Vos garanties' },
@@ -108,7 +108,22 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
   return (
     <div data-home="" className="relative min-h-screen overflow-x-clip bg-canvas font-sans text-ink">
-      <div className="flex min-h-[100svh] flex-col pt-16 md:pt-[72px]">
+      <div className="flex min-h-[100svh] flex-col">
+      <header className="mx-auto flex w-full max-w-[1320px] items-center justify-between gap-x-4 px-5 py-3 md:px-8 md:py-4">
+        <a href="#top" className="inline-flex min-h-11 items-center no-underline">
+          <BrandMark showFlag={brandFlag} />
+        </a>
+        <div className="flex min-w-0 items-center gap-1">
+          <nav aria-label="Navigation principale" className="hidden items-center gap-1 md:flex">
+            {SECTIONS.map((section) => (
+              <a key={section.id} href={`#${section.id}`} className="inline-flex min-h-11 items-center px-3 text-[16px] font-medium text-ink no-underline hover:underline">
+                {section.label}
+              </a>
+            ))}
+          </nav>
+          <ThemeToggle />
+        </div>
+      </header>
 
       <section id="top" aria-labelledby="hero-title" className="flex flex-1 flex-col">
         <div className="px-5 text-center md:px-10">
@@ -183,6 +198,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
         </section>
 
         <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
+          <p className="mx-auto mb-3 w-full max-w-[1320px] px-5 text-[14px] font-semibold uppercase tracking-[0.08em] text-trust-text md:px-8">Exemples</p>
           <div className="mx-auto mb-8 flex max-w-[1320px] flex-wrap items-end justify-between gap-x-8 gap-y-2 px-5 md:mb-10 md:px-8">
             <h2 {...rv(0)} id="documents-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
               Un document ? Voici comment l’obtenir.
@@ -363,7 +379,6 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
         </div>
       </footer>
 
-      <StickyNav links={SECTIONS} brandFlag={brandFlag} onAsk={goToQuestion} />
 
       <PromptDock
         anchor={heroPrompt}
