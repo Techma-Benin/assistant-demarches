@@ -142,7 +142,21 @@ export type ReplyEvidence = {
   sources: Schemas["Source"][];
   requests: Schemas["Request"][];
   procedures?: Schemas["Procedure"][];
+  /** The reply reports the user's own cases, read from the connector: amounts and dates need no catalogue source. */
+  connectorData?: boolean;
 };
+
+/** Without a stated fact, only the latest fiche read backs the reply; a stated fact keeps every distinct source observed. */
+function observedFor(text: string, sources: Schemas["Source"][]): Schemas["Source"][] {
+  if (!hasAdministrativeFact(text)) return sources.slice(-1);
+  const seen = new Set<string>();
+  return sources.filter((source) => {
+    const identity = sourceIdentity(source) ?? source.url;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
 
 export const PAYMENT_CONFIRM_PREFIX = "payment.confirm.";
 export const PREPARE_REQUEST_PREFIX = "request.prepare.";
@@ -188,8 +202,8 @@ export function presentModelReply(replyText: string, evidence: ReplyEvidence): S
           ? cited.map((source: unknown) => bindObservedSource(source, evidence.sources))
           : evidence.sources.length && !NOT_FOUND.test(cleaned.text)
             // A reply written after reading a fiche rests on it, even when the wording escapes ADMIN_FACT.
-            ? evidence.sources
-            : hasAdministrativeFact(cleaned.text)
+            ? observedFor(cleaned.text, evidence.sources)
+            : hasAdministrativeFact(cleaned.text) && !evidence.connectorData
               ? reject("admin_fact_without_source", "Fait administratif sans source.")
               : [];
         return { ...block, text: redact(cleaned.text), sources };

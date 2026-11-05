@@ -624,3 +624,20 @@ test("a reply written after reading a fiche keeps its source, even without a sta
   assert.deepEqual(presentModelReply(reply("Je n’ai pas trouvé de démarche validée."), evidence)[0].sources, []);
   assert.deepEqual(presentModelReply(reply("Les documents à fournir incluent notamment un formulaire."), { sources: [], requests: [] })[0].sources, []);
 });
+
+test("sources kept without a stated fact are limited to the latest fiche, and repeated ones are dropped", async () => {
+  const { presentModelReply } = await import("../dist/apps/backend/src/model-reply.js");
+  const a = { procedureId: "PS00373", url: "https://service-public.bj/a", retrievedAt: "2026-11-01T00:00:00.000Z" };
+  const b = { procedureId: "PS00260", url: "https://service-public.bj/b", retrievedAt: "2026-11-01T00:00:00.000Z" };
+  const reply = (text) => JSON.stringify({ blocks: [{ type: "text", text, sources: [] }] });
+  const evidence = { sources: [a, b, a], requests: [] };
+  assert.deepEqual(presentModelReply(reply("Connectez-vous pour continuer."), evidence)[0].sources, [a]);
+  assert.deepEqual(presentModelReply(reply("Le coût est de 1 900 FCFA."), evidence)[0].sources, [a, b]);
+});
+
+test("a reply reporting the user's own cases may state an amount without a catalogue source", async () => {
+  const { presentModelReply, ModelReplyError } = await import("../dist/apps/backend/src/model-reply.js");
+  const reply = JSON.stringify({ blocks: [{ type: "text", text: "Votre demande attend le paiement de 1 900 FCFA.", sources: [] }] });
+  assert.deepEqual(presentModelReply(reply, { sources: [], requests: [], connectorData: true })[0].sources, []);
+  assert.throws(() => presentModelReply(reply, { sources: [], requests: [] }), (error) => error instanceof ModelReplyError && error.reason === "admin_fact_without_source");
+});

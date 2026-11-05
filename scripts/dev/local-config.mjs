@@ -23,6 +23,9 @@ export const URLS = {
 };
 const database = (name) => `postgres://${POSTGRES.user}:${POSTGRES.password}@127.0.0.1:${PORTS.postgres}/${name}`;
 
+/** Switches that the Backend and the Interface must agree on: a value set in `.env` wins over the default below. */
+export const SHARED_SWITCHES = new Set(['NPI_SIMULATED_LOGIN']);
+
 /** Per-service defaults for `pnpm dev`. Shared keys (DATABASE_URL, OIDC_CLIENT_ID, …) never leak from `.env` to another service. */
 export const SERVICES = {
   backend: {
@@ -41,6 +44,7 @@ export const SERVICES = {
       XROAD_URL: URLS.xroad,
       CORS_ORIGINS: URLS.interface,
       MCP_ALLOWED_URLS: `${URLS.tooling}/mcp`,
+      NPI_SIMULATED_LOGIN: 'on',
     },
   },
   tooling: {
@@ -75,6 +79,7 @@ export const SERVICES = {
       OIDC_CLIENT_ID: 'interface',
       OIDC_CLIENT_SECRET: 'interface-local-secret',
       SESSION_SECRET_FILE: `${LOCAL}keys/interface-session.key`,
+      NPI_SIMULATED_LOGIN: 'on',
     },
   },
 };

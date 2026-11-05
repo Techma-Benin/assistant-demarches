@@ -1,4 +1,4 @@
-import { PORTS } from './local-config.mjs';
+import { PORTS, SHARED_SWITCHES } from './local-config.mjs';
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
@@ -53,7 +53,7 @@ export function serviceEnv(name, processEnv, services) {
       delete env[key];
       continue;
     }
-    env[key] = names.length > 1 ? scoped[key] : (env[key] || scoped[key]);
+    env[key] = names.length > 1 && !SHARED_SWITCHES.has(key) ? scoped[key] : (env[key] || scoped[key]);
   }
   if (!env.NODE_ENV) env.NODE_ENV = 'development';
   return env;

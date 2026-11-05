@@ -43,6 +43,22 @@ export function needsCatalogueLookup(text: string): boolean {
   return CATALOGUE_LOOKUP.test(text);
 }
 
+const CASE_LIST_QUESTION = /o[uù]\s+en\s+(?:est|sont)\s+(?:ma|mes|mon)\b|statuts?\s+(?:de|d['’]?)\s*(?:ma|mes|mon|l['’]?)\s*(?:demandes?|dossiers?)|\bmes\s+(?:demandes|dossiers)\b|(?:mon|ma)\s+(?:dossier|demande)\s+en\s+est\s+o[uù]|suivi\s+de\s+(?:ma|mes|mon)\s+(?:demandes?|dossiers?)/i;
+
+/** The user asks where their requests stand: answered from their case list, never from memory. */
+export function needsCaseList(text: string): boolean {
+  return CASE_LIST_QUESTION.test(text);
+}
+
+/** Backend tool without MCP server: lists the signed-in user's cases through X-Road. */
+export const CASES_LIST_TOOL: ToolDefinition = {
+  name: "cases.list",
+  description: "Liste les dossiers de l’usager connecté (référence, intitulé, statut, paiement, dernière mise à jour). À appeler pour savoir où en sont ses demandes, y compris dans une nouvelle conversation.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  _meta: { "bj.techma/kind": "read", "bj.techma/requiresLogin": true },
+};
+const CASE_CARDS = 3;
+
 export function needsProcedureDetails(text: string): boolean {
   return PROCEDURE_DETAILS.test(text);
 }
@@ -99,6 +115,7 @@ function modelData(value: unknown): string {
     "requestId",
     "procedureId",
     "fileId",
+    "reference",
     "url",
     "officialLink",
     "version",
@@ -179,6 +196,8 @@ type State = {
   openRequest?: { id: string; procedureId: string; fieldNames: string[] };
   /** Procedure of the latest request shown in this conversation, whatever its status. */
   activeProcedureId?: string;
+  /** cases.list ran in this turn: the reply may report what the connector returned. */
+  connectorData?: boolean;
   /** requestId the user confirmed paying with the payment button. */
   paymentConfirmed?: string;
   /** procedureId the user chose to prepare with the Backend's prepare button. */
@@ -193,6 +212,7 @@ export class Agent {
     private tooling: ToolingPort,
     private consent?: Consent,
     private transcriber?: TranscriptionPort,
+    private listCases?: (userRef: string) => Promise<unknown>,
   ) {}
   watch(signal: AbortSignal): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -596,6 +616,7 @@ export class Agent {
         advertised.push({...definition,name});
       }
     }
+    if (this.listCases) advertised.push(CASES_LIST_TOOL);
     // Deltas go out while the model generates; every path below settles them before writing message.sent.
     const live = new LiveReply(this.conversations, conversation.id, state.assistantMessageId, traceparent);
     try {
@@ -654,6 +675,12 @@ export class Agent {
         if (cached) result = cached.result;
         else {
           try {
+            // cases.list has no MCP binding: the Backend answers it from X-Road, scoped to the conversation's user.
+            if (call.name === CASES_LIST_TOOL.name && this.listCases) {
+              if (!conversation.authenticated)
+                throw new Problem(401, "LOGIN_REQUIRED", "Connexion requise pour cette action.");
+              result = await this.runCasesList(state, conversation.userRef);
+            } else {
             const binding=bindings.get(call.name);
             if (!binding)
               throw new Problem(403, "FORBIDDEN", "Outil non activé.");
@@ -767,6 +794,7 @@ export class Agent {
               state.successfulActions ??= [];
               state.successfulActions.push({ fingerprint, operationKey });
             }
+            }
           } catch (error) {
             if (!(error instanceof Problem) || error.status >= 500) throw error;
             result = {
@@ -835,7 +863,7 @@ export class Agent {
           if (code === "LOGIN_REQUIRED")
             this.pushBlock(state, {
               type: "loginRequired",
-              reason: "Connectez-vous pour préparer ou déposer cette démarche.",
+              reason: call.name === CASES_LIST_TOOL.name ? "Connectez-vous pour consulter vos demandes." : "Connectez-vous pour préparer ou déposer cette démarche.",
             });
           else if (code === "MANDATE_MISSING" || code === "MANDATE_EXPIRED")
             await this.appendConsent(state, conversation, selected, call.arguments, operationKey, traceparent);
@@ -892,6 +920,32 @@ export class Agent {
     } finally {
       await live.close();
     }
+  }
+  /** Calls X-Road for the user's cases; shows the latest ones as cards and hands the model a short summary. */
+  private async runCasesList(state: State, userRef: string): Promise<ToolResult> {
+    const page = (await this.listCases!(userRef)) as { items?: unknown };
+    const cases: Schemas["Case"][] = [];
+    for (const item of Array.isArray(page?.items) ? page.items : []) {
+      try {
+        validate("Case", item);
+        cases.push(item as Schemas["Case"]);
+      } catch { /* Anything that is not a full Case never becomes a card. */ }
+    }
+    cases.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    state.connectorData = true;
+    const latest = cases.slice(0, CASE_CARDS);
+    for (const item of latest) this.pushBlock(state, { type: "caseCard", case: item });
+    const summary = {
+      total: cases.length,
+      cases: latest.map((item) => ({
+        reference: item.reference,
+        title: item.title,
+        status: item.status,
+        payment: { status: item.payment.status, amountFcfa: item.payment.amountFcfa },
+        updatedAt: item.updatedAt,
+      })),
+    };
+    return { structuredContent: summary, content: [{ type: "text", text: JSON.stringify(summary) }] };
   }
   private withSystem(state: State, blocks: Schemas["AgentMessage"]["blocks"]) {
     return mergeSystemBlocks(blocks, state.systemBlocks ?? []);
@@ -1030,6 +1084,8 @@ export class Agent {
       return { reply: { text: "", calls: [{ id: identifier("call"), name: payName, arguments: JSON.stringify({ requestId: state.paymentConfirmed }) }] } };
     if (state.prepareProcedure && createName && !calledTool(state, createName))
       return { reply: { text: "", calls: [{ id: identifier("call"), name: createName, arguments: JSON.stringify({ procedureId: state.prepareProcedure }) }] } };
+    if (tools.some((tool) => tool.name === CASES_LIST_TOOL.name) && needsCaseList(question) && !calledTool(state, CASES_LIST_TOOL.name))
+      return { reply: { text: "", calls: [{ id: identifier("call"), name: CASES_LIST_TOOL.name, arguments: "{}" }] } };
     const piece = parseReceivedPiece(question);
     if (piece && attachName && !calledTool(state, attachName)) {
       return {
@@ -1175,6 +1231,8 @@ export class Agent {
   }
   private honestFallback(state: State): Schemas["AgentMessage"]["blocks"] | undefined {
     const system = state.systemBlocks ?? [];
+    if (state.connectorData && system.some((block) => block.type === "caseCard"))
+      return [{ type: "text", text: "Voici où en sont vos demandes.", sources: [] }];
     const evidence = state.sources.length > 0 || state.requests.length > 0 || state.history.some((turn) => turn.role === "tool");
     if (!hasActionSystemBlocks(system) || !evidence) return undefined;
     return honestReplyFromSystemBlocks(system);
