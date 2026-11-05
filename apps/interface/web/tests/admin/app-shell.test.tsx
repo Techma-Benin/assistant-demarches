@@ -128,17 +128,21 @@ describe('AppShell navigation', () => {
     expect(grip.className).toContain('right-0.5');
     expect(grip.closest('aside')).toBeTruthy();
     expect(container.querySelector('[data-rail-shadow]')).toHaveAttribute('data-rail-cutout', '');
-    expect(screen.queryByRole('button', { name: 'Replier le menu latéral' })).toBeNull();
+    expect(container.querySelector('aside')!.className).toContain('surface-glass');
+    const fold = screen.getByRole('button', { name: 'Replier le menu latéral' });
+    expect(fold.querySelector('svg.lucide-chevrons-left')).toBeTruthy();
 
     grip.focus();
     await ui.keyboard('{ArrowLeft}');
     expect(localStorage.getItem('admin-nav-collapsed')).toBe('true');
-    expect(screen.queryByRole('button', { name: 'Déplier le menu latéral' })).toBeNull();
+    const unfold = screen.getByRole('button', { name: 'Déplier le menu latéral' });
+    const unfoldIcon = unfold.querySelector('svg.lucide-chevrons-right') as SVGElement;
+    expect(unfoldIcon.getAttribute('class')).toContain('opacity-0');
+    expect(unfoldIcon.getAttribute('class')).toContain('group-hover:opacity-100');
     expect(container.querySelectorAll('svg[width="28"]')).toHaveLength(1);
-    expect(container.querySelector('aside svg.lucide-chevrons-left, aside svg.lucide-chevrons-right')).toBeNull();
     const shell = screen.getByText('contenu').closest('.min-h-dvh') as HTMLElement;
     expect(shell.style.getPropertyValue('--rail-width')).toBe(RAIL_COLLAPSED);
-    expect(container.querySelector('[data-rail-shadow]')).not.toHaveAttribute('data-rail-cutout');
+    expect(container.querySelector('[data-rail-shadow]')).toHaveAttribute('data-rail-cutout', '');
     expect(screen.getByRole('main').className).not.toContain('shadow-rail');
     expect(shell).toHaveAttribute('data-collapsed', '');
     const topCorner = container.querySelector('[data-nav-corner="top"] span') as HTMLElement;
@@ -170,8 +174,8 @@ describe('AppShell navigation', () => {
     fireEvent.pointerUp(grip, { clientX: 100, pointerId: 1 });
     expect(shell).toHaveAttribute('data-collapsed', '');
     expect(shell.style.getPropertyValue('--rail-width')).toBe(RAIL_COLLAPSED);
-    expect(shell.querySelector('[data-rail-shadow]')).not.toHaveAttribute('data-rail-cutout');
-    expect(screen.queryByRole('button', { name: 'Déplier le menu latéral' })).toBeNull();
+    expect(shell.querySelector('[data-rail-shadow]')).toHaveAttribute('data-rail-cutout', '');
+    expect(screen.getByRole('button', { name: 'Déplier le menu latéral' })).toBeInTheDocument();
 
     fireEvent.pointerDown(grip, { button: 0, clientX: 0, pointerId: 1 });
     fireEvent.pointerMove(grip, { clientX: 180, pointerId: 1 });

@@ -84,9 +84,9 @@ describe('operator layout gate', () => {
     const topCorner = indicator.querySelector('[data-nav-corner="top"] span') as HTMLElement;
     const bottomCorner = indicator.querySelector('[data-nav-corner="bottom"] span') as HTMLElement;
     expect(topCorner.className).toContain('rounded-br-full');
-    expect(topCorner.className).toContain('bg-shell-rail');
+    expect(topCorner.className).toContain('surface-glass');
     expect(bottomCorner.className).toContain('rounded-tr-full');
-    expect(bottomCorner.className).toContain('bg-shell-rail');
+    expect(bottomCorner.className).toContain('surface-glass');
     expect(indicator.style.transform).toContain('var(--nav-active-index');
     const statutIcon = screen.getByRole('link', { name: 'Statut' }).querySelector('svg')!;
     const connexionsIcon = activeLink.querySelector('svg')!;
@@ -97,7 +97,8 @@ describe('operator layout gate', () => {
     expect(screen.getByRole('link', { name: 'Modèles' })).toHaveAttribute('href', '/operateur/modeles');
     expect(activeLink).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Statut' })).not.toHaveAttribute('aria-current');
-    expect(screen.queryByRole('button', { name: 'Replier le menu latéral' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Replier le menu latéral' }).querySelector('svg.lucide-chevrons-left')).toBeTruthy();
+    expect(container.querySelector('aside')!.className).toContain('surface-glass');
     const account = screen.getByRole('button', { name: 'Opérateur' });
     expect(account).toHaveAttribute('aria-haspopup', 'menu');
     expect(account).toHaveAttribute('aria-expanded', 'false');
@@ -153,11 +154,13 @@ describe('operator layout gate', () => {
     grip.focus();
     await ui.keyboard('{ArrowLeft}');
     expect(localStorage.getItem(OPERATOR_NAV_COLLAPSED_KEY)).toBe('true');
-    expect(screen.queryByRole('button', { name: 'Déplier le menu latéral' })).toBeNull();
+    const unfold = screen.getByRole('button', { name: 'Déplier le menu latéral' });
+    const unfoldIcon = unfold.querySelector('svg.lucide-chevrons-right') as SVGElement;
+    expect(unfoldIcon.getAttribute('class')).toContain('opacity-0');
+    expect(unfoldIcon.getAttribute('class')).toContain('group-hover:opacity-100');
     expect(screen.queryByRole('button', { name: 'Replier le menu latéral' })).toBeNull();
     expect(container.querySelectorAll('aside svg[width="28"]')).toHaveLength(2);
-    expect(container.querySelector('aside svg.lucide-chevrons-left, aside svg.lucide-chevrons-right')).toBeNull();
-    expect(container.querySelector('[data-rail-shadow]')).not.toHaveAttribute('data-rail-cutout');
+    expect(container.querySelector('[data-rail-shadow]')).toHaveAttribute('data-rail-cutout', '');
     const shell = screen.getByText('contenu').closest('.min-h-dvh') as HTMLElement;
     expect(shell.style.getPropertyValue('--rail-width')).toBe(RAIL_COLLAPSED);
     expect(shell).toHaveAttribute('data-collapsed', '');
@@ -174,7 +177,7 @@ describe('operator layout gate', () => {
     expect(indicator.className).toContain('inset-x-0');
     const statutLink = screen.getByRole('link', { name: 'Statut' });
     expect(statutLink.className.split(' ')).not.toContain('bg-canvas');
-    expect(container.querySelector('aside')!.className).toContain('bg-shell-rail');
+    expect(container.querySelector('aside')!.className).toContain('surface-glass');
     expect(screen.getByRole('button', { name: 'Opérateur' })).toBeInTheDocument();
   });
 
