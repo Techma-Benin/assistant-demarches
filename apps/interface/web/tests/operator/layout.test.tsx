@@ -73,6 +73,12 @@ describe('operator layout gate', () => {
     expect(indicator).toBeTruthy();
     expect(indicator.className).toContain('inset-x-0');
     expect(indicator.innerHTML).toContain('bg-canvas');
+    const activeBar = indicator.querySelector('[data-nav-active-bar]') as HTMLElement;
+    expect(activeBar).toBeTruthy();
+    expect(activeBar.className).toContain('rounded-none');
+    expect(activeBar.className).toContain('left-0');
+    expect(activeBar.className).toContain('w-0.5');
+    expect(activeBar.className).toContain('bg-ink-subtle');
     expect(indicator.style.transform).toContain('var(--nav-active-index');
     const statutIcon = screen.getByRole('link', { name: 'Statut' }).querySelector('svg')!;
     const connexionsIcon = activeLink.querySelector('svg')!;

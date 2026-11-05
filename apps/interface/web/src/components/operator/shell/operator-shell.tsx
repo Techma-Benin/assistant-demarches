@@ -273,6 +273,10 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                 }}
               >
                 <span className="absolute inset-0 rounded-none bg-canvas" />
+                <span
+                  data-nav-active-bar=""
+                  className="absolute inset-y-0 left-0 w-0.5 rounded-none bg-ink-subtle"
+                />
               </div>
               <ul ref={listRef} className="relative z-10 flex gap-1 md:flex-col md:gap-1">
                 {NAV.map(({ href, label, icon }) => {
