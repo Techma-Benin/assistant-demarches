@@ -774,6 +774,13 @@ export interface components {
             detail: string;
             traceId: string;
         };
+        TranscriptionInput: {
+            fileId: components["schemas"]["FileId"];
+        };
+        Transcription: {
+            /** @description Texte transcrit du vocal, à relire et corriger par l’usager avant envoi. */
+            text: string;
+        };
     };
     responses: never;
     parameters: never;

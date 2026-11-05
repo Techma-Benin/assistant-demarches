@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Écran opérateur — Backend → Interface",
-    "version": "2.2.0",
+    "version": "2.3.0",
     "description": "Jeton Keycloak avec le rôle realm operator. Configuration globale du modèle et des serveurs MCP ; aucune donnée de dossier."
   },
   "servers": [

@@ -7,6 +7,7 @@ export const examples: Record<string, any> = {
   AttachInput: { guestToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.guest" },
   ConsentInput: { challengeId: `chl_${suffix}`, accepted: true },
   NpiChallengeInput: { npi: "1234567890" },
+  TranscriptionInput: { fileId: `fil_${suffix}` },
   NpiVerifyInput: { challengeToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.challenge", code: "123456" },
 };
 
@@ -31,6 +32,7 @@ export const operationHelp: Record<string, Help> = {
   grantMandate: help("1. Enregistrer un accord explicite", "Consentement", owner + " Usager connecté (non invité). Challenge créé par le Backend sur MANDATE_MISSING, non expiré. Contrôle Tooling opérationnel.", "Remplacer challengeId par le id du challenge reçu dans le bloc consent. accepted doit être true. Connexion Keycloak citizen obligatoire.", "201 : MandateGrant. Le Tooling reste l’autorité sur le mandat ; conserver son identifiant pour une révocation.", "Continuer le parcours agent. Pour retirer l’accord, appeler revokeMandate.", "401 : invité ; 403 : challenge incompatible/expiré/consommé ; 503 : contrôle Tooling ou signature indisponible."),
   revokeMandate: help("3. Retirer une autorisation", "Consentement", owner + " Mandat réel de cette conversation, contrôle Tooling disponible.", "Renseigner conversationId et mandateId retournés lors de l’accord, puis une nouvelle Idempotency-Key. Pas de corps JSON.", "200 : résultat de révocation.", "Consulter les événements.", "403/404 : mauvais propriétaire ou mandat ; 503 : contrôle Tooling indisponible."),
   uploadFile: help("Déposer une pièce jointe", "Fichiers", user + " Stockage configuré.", "Choisir un fichier de 10 Mio maximum. Corps binaire application/octet-stream. X-File-Mime-Type parmi les valeurs proposées. Nouvelle clé d’idempotence.", "201 : File, son identifiant et sa date d’expiration.", "Envoyer un MessageInput avec content {type: file, fileId: <id reçu>}.", "413 : plus de 10 Mio ; 415 : mauvais type/MIME déclaré ; 503 : stockage indisponible."),
+  transcribeAudio: help("Transcrire un vocal sans l’envoyer", "Fichiers", user + " Stockage et transcription configurés.", "Déposer d’abord un fichier audio avec uploadFile, puis renseigner son fileId dans le corps JSON. Aucune clé d’idempotence requise.", "200 : Transcription {text}. Aucun message n’est créé et le modèle n’est pas appelé.", "Relire et corriger le texte, puis envoyer un MessageInput avec content {type: text}.", "404 : fichier inconnu ou d’un autre usager ; 413 : fichier ou transcription trop long ; 415 : fichier non audio ; 503 : transcription indisponible ou non configurée."),
 };
 
 const intro = `**Avant le premier essai :** Swagger envoie de vraies requêtes, y compris les modifications. [Lire le guide complet et les cinq scénarios](/docs/guide).
