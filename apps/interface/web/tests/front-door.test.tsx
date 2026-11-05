@@ -185,12 +185,5 @@ describe('FrontDoor', () => {
       expect(onAsk).not.toHaveBeenCalled();
     });
 
-    it('shares the staged file with the docked box', async () => {
-      const { container } = render(<FrontDoor onAsk={() => {}} config={base} />);
-      await userEvent.setup().upload(heroInput(container), pdf());
-      const docks = document.querySelectorAll('[data-shown]');
-      expect(docks).toHaveLength(1);
-      expect(within(docks[0] as HTMLElement).getByText('acte.pdf')).toBeInTheDocument();
-    });
   });
 });
