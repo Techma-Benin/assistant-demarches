@@ -23,6 +23,7 @@ beforeEach(() => {
   usePathname.mockReset();
   usePathname.mockReturnValue('/operateur/mcp');
   localStorage.clear();
+  delete document.documentElement.dataset.theme;
 });
 
 describe('operator layout gate', () => {
@@ -79,6 +80,12 @@ describe('operator layout gate', () => {
     expect(activeBar.className).toContain('left-0');
     expect(activeBar.className).toContain('w-0.5');
     expect(activeBar.className).toContain('bg-ink-subtle');
+    const topCorner = indicator.querySelector('[data-nav-corner="top"] span') as HTMLElement;
+    const bottomCorner = indicator.querySelector('[data-nav-corner="bottom"] span') as HTMLElement;
+    expect(topCorner.className).toContain('rounded-br-full');
+    expect(topCorner.className).toContain('bg-shell-rail');
+    expect(bottomCorner.className).toContain('rounded-tr-full');
+    expect(bottomCorner.className).toContain('bg-shell-rail');
     expect(indicator.style.transform).toContain('var(--nav-active-index');
     const statutIcon = screen.getByRole('link', { name: 'Statut' }).querySelector('svg')!;
     const connexionsIcon = activeLink.querySelector('svg')!;
@@ -90,8 +97,11 @@ describe('operator layout gate', () => {
     expect(activeLink).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Statut' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: 'Replier le menu latéral' })).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('button', { name: 'Se déconnecter' }).closest('form')).toHaveAttribute('action', '/auth/logout');
-    expect(screen.getByRole('button', { name: 'Thème' })).toBeInTheDocument();
+    const account = screen.getByRole('button', { name: 'Opérateur' });
+    expect(account).toHaveAttribute('aria-haspopup', 'menu');
+    expect(account).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: 'Se déconnecter' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Thème' })).toBeNull();
     const shell = container.firstElementChild!;
     expect(shell.className).toContain('md:grid-cols-[15rem_minmax(0,1fr)]');
     const main = screen.getByRole('main');
@@ -139,5 +149,30 @@ describe('operator layout gate', () => {
     const statutLink = screen.getByRole('link', { name: 'Statut' });
     expect(statutLink.className.split(' ')).not.toContain('bg-canvas');
     expect(container.querySelector('aside')!.className).toContain('bg-shell-rail');
+    expect(screen.getByRole('button', { name: 'Opérateur' })).toBeInTheDocument();
+  });
+
+  it('opens the account menu for the theme and sign-out', async () => {
+    readSession.mockResolvedValue(user(['operator']));
+    const ui = userEvent.setup();
+    render(await OperatorLayout({ children: <p>contenu</p> }));
+    const account = screen.getByRole('button', { name: 'Opérateur' });
+    await ui.click(account);
+    expect(account).toHaveAttribute('aria-expanded', 'true');
+    const menu = screen.getByRole('menu', { name: 'Compte' });
+    expect(within(menu).getByText('Opérateur')).toBeInTheDocument();
+    const theme = within(menu).getByRole('menuitem', { name: 'Thème : système' });
+    await ui.click(theme);
+    expect(within(menu).getByRole('menuitem', { name: 'Thème : clair' })).toBeInTheDocument();
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(localStorage.getItem('techma-theme')).toBe('light');
+    const logout = within(menu).getByRole('menuitem', { name: 'Se déconnecter' });
+    const form = logout.closest('form')!;
+    expect(form).toHaveAttribute('method', 'post');
+    expect(form).toHaveAttribute('action', '/auth/logout');
+    await ui.keyboard('{Escape}');
+    expect(account).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('menu', { name: 'Compte' })).toBeNull();
+    expect(account).toHaveFocus();
   });
 });
