@@ -2,7 +2,7 @@
 
 import { ArrowRight, MessageSquare } from 'lucide-react';
 import { useRef, useState, type CSSProperties } from 'react';
-import { BrandMark, Chip, FlagGlyph, ThemeToggle, cn } from '@techma/ui';
+import { Chip, FlagGlyph, cn } from '@techma/ui';
 import { Composer } from '@/components/chat/Composer';
 import { useStagedFiles } from '@/hooks/use-staged-files';
 import { CONTRACT_MIME_TYPES } from '@/lib/files';
@@ -31,10 +31,8 @@ export type FrontDoorProps = {
 };
 
 const SECTIONS: NavLink[] = [
-  { id: 'commencer', label: 'Commencer' },
-  { id: 'documents', label: 'Exemples' },
   { id: 'fonctionnement', label: 'Comment ça marche' },
-  { id: 'themes', label: 'Toutes les démarches' },
+  { id: 'themes', label: 'Trouver ma démarche' },
   { id: 'garanties', label: 'Vos garanties' },
 ];
 
@@ -56,7 +54,6 @@ const STEPS = [
   { name: 'Vous gardez la main', text: 'Rien ne part sans votre accord. Selon la démarche, vous validez sur le portail officiel ou l’assistant dépose le dossier pour vous.' },
 ];
 
-const navLink = 'inline-flex min-h-11 items-center px-3 text-[16px] font-medium text-ink no-underline hover:underline';
 const sectionPad = 'py-16 md:py-24';
 const h2Class = 'm-0 font-display font-extrabold leading-[1.02] tracking-[-0.04em]';
 
@@ -111,22 +108,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
   return (
     <div data-home="" className="relative min-h-screen overflow-x-clip bg-canvas font-sans text-ink">
-      <div className="flex min-h-[100svh] flex-col">
-      <header className="mx-auto flex w-full max-w-[1320px] items-center justify-between gap-x-4 px-5 py-3 md:px-8 md:py-4">
-          <a href="#top" className="inline-flex min-h-11 items-center no-underline">
-            <BrandMark showFlag={brandFlag} />
-          </a>
-          <div className="flex min-w-0 items-center gap-1">
-            <nav aria-label="Navigation principale" className="hidden items-center gap-1 md:flex">
-              {SECTIONS.slice(0, 4).map((s) => (
-                <a key={s.id} href={`#${s.id}`} className={navLink}>
-                  {s.label}
-                </a>
-              ))}
-            </nav>
-            <ThemeToggle />
-          </div>
-        </header>
+      <div className="flex min-h-[100svh] flex-col pt-16 md:pt-[72px]">
 
       <section id="top" aria-labelledby="hero-title" className="flex flex-1 flex-col">
         <div className="px-5 text-center md:px-10">
@@ -219,6 +201,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
         <section id="fonctionnement" ref={howRef} aria-labelledby="how-title" className={cn(sectionPad, 'lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
           <div className="mx-auto max-w-[1320px] px-5 md:px-8">
+            <p className="m-0 mb-3 text-[14px] font-semibold uppercase tracking-[0.08em] text-trust-text">Comment ça marche</p>
             <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-10">
               <h2 {...rv(0)} id="how-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
                 Trois étapes. Vous décidez à chaque fois.
@@ -326,13 +309,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
             <nav aria-label="Sur cette page" className="min-w-0 md:col-span-4">
               <p className="m-0 text-[13px] font-semibold uppercase tracking-[0.08em] text-on-action/60">Sur cette page</p>
               <ul className="m-0 mt-3 list-none p-0">
-                {[
-                  ['#commencer', 'Trouver ma démarche'],
-                  ['#documents', 'Documents'],
-                  ['#fonctionnement', 'Comment ça marche'],
-                  ['#themes', 'Toutes les démarches'],
-                  ['#garanties', 'Vos garanties'],
-                ].map(([href, label]) => (
+                {SECTIONS.map((section) => [`#${section.id}`, section.label]).map(([href, label]) => (
                   <li key={href}>
                     <a href={href} className="inline-flex min-h-11 items-center text-[16px] font-medium text-on-action no-underline hover:underline">
                       {label}

@@ -195,12 +195,14 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
         </div>
 
         <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-end lg:gap-x-8">
-          <h2 id="themes-title" className="sr-only">
-            Toutes les démarches
-          </h2>
-          <p {...rv(2)} className="m-0 text-[clamp(17px,1.5vw,20px)] leading-normal text-on-action/85 lg:col-span-12">
-            Trouvez la vôtre en un clic, d’après les fiches officielles du service public.
-          </p>
+          <div {...rv(2)} className="lg:col-span-12">
+            <h2 id="themes-title" className="m-0 mb-2 text-[14px] font-semibold uppercase tracking-[0.08em] text-(--home-field-green)">
+              Trouver ma démarche
+            </h2>
+            <p className="m-0 text-[clamp(17px,1.5vw,20px)] leading-normal text-on-action/85">
+              Trouvez la vôtre en un clic, d’après les fiches officielles du service public.
+            </p>
+          </div>
         </div>
 
         <div className="mt-8 grid grid-cols-1 gap-8 lg:mt-8 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:gap-x-12 lg:gap-y-6">
