@@ -283,7 +283,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
                       aria-current={active ? 'page' : undefined}
                       data-nav-active={active ? 'true' : undefined}
                       className={cn(
-                        'flex min-h-12 w-full items-center justify-center gap-2 rounded-none px-2 py-3 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:min-h-12 md:justify-start md:gap-3 md:px-3 md:py-3.5',
+                        'flex min-h-12 w-full items-center justify-center gap-2 rounded-none px-2 py-3 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:h-[51px] md:min-h-[51px] md:justify-start md:gap-3 md:px-3 md:py-3.5',
                         active
                           ? 'text-ink max-md:bg-canvas md:bg-transparent'
                           : 'text-ink-muted hover:bg-sunken/80 hover:text-ink dark:hover:bg-sunken/60',

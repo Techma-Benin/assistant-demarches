@@ -68,6 +68,12 @@
     outline: 2px solid var(--ui-focus);
     outline-offset: 2px;
   }
+
+  /* Text fields already have a border; the black focus ring sits outside it. */
+  :is(input, textarea, select):focus,
+  :is(input, textarea, select):focus-visible {
+    outline: none;
+  }
 }
 
 @keyframes ui-typing {

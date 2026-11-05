@@ -62,7 +62,7 @@ describe('operator layout gate', () => {
     expect(activeLink.className).toContain('w-full');
     expect(activeLink.className).toContain('md:bg-transparent');
     expect(activeLink.className.split(' ')).not.toContain('md:bg-canvas');
-    expect(activeLink.className).toContain('md:min-h-12');
+    expect(activeLink.className).toContain('md:h-[51px]');
     expect(activeLink.className).toContain('md:py-3.5');
     const aside = container.querySelector('aside')!;
     expect(aside.className).not.toMatch(/border-r/);
@@ -123,7 +123,7 @@ describe('operator layout gate', () => {
     expect(activeLink.className).toContain('md:bg-transparent');
     expect(activeLink.className.split(' ')).not.toContain('bg-canvas');
     expect(activeLink.className).toContain('md:w-full');
-    expect(activeLink.className).toContain('md:min-h-12');
+    expect(activeLink.className).toContain('md:h-[51px]');
     expect(activeLink.className).not.toContain('md:aspect-square');
     expect(activeLink.className).not.toContain('md:size-12');
     expect(activeLink.className).not.toContain('md:mx-auto');
