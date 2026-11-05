@@ -358,4 +358,78 @@ test("simulated NPI login: routes, identity, attach and cases.list", async (t) =
     assert.deepEqual(advertised, []);
     assert.equal(listed.length, 1);
   });
+
+  const payCase = (n, status) => ({ ...caseAt(n, "2026-11-04T10:00:00Z"), status, requestId: "req_01JD00000000000000000000" + String(10 + n), payment: { ...fixtures.schemas.Case.payment, amountFcfa: 1900, status: status === "awaiting_payment" ? "pending" : "paid", ...(status === "awaiting_payment" ? { reference: null, paidAt: null } : {}) } });
+  const PAY_HINT = "Pour payer, rouvrez la conversation de cette demande depuis « Mes démarches », puis écrivez « je veux payer ».";
+  const payBlocks = (blocks) => blocks.filter((block) => block.type === "text" && block.text === PAY_HINT);
+  const payButtons = (blocks) => blocks.filter((block) => block.type === "buttons" && block.items.some((item) => item.id.startsWith("payment.confirm.")));
+
+  await t.test("cases.list in a new chat: a case awaiting payment elsewhere gets nextStep and one text after the cards, no button", async () => {
+    listed.length = 0;
+    casePages = [{ items: [payCase(7, "awaiting_payment"), payCase(8, "completed")], nextCursor: null }];
+    const { session } = await login(NPI);
+    const { cid } = await newChat(session.token, "Où en est ma demande ?");
+    let seen;
+    await agentWith({ async generate(_config, history) { seen = JSON.parse(history.findLast((item) => item.role === "tool").content).result; return final("Votre dossier attend le paiement."); } }).process(cid);
+    const byReference = Object.fromEntries(seen.cases.map((item) => [item.reference, item]));
+    assert.match(byReference["SIM-ACJ-2026-000017"].nextStep, /conversation d’origine/);
+    assert.equal("nextStep" in byReference["SIM-ACJ-2026-000018"], false, "a paid case carries no nextStep");
+    const blocks = await lastBlocks(cid);
+    assert.equal(payBlocks(blocks).length, 1);
+    assert.ok(blocks.findLastIndex((block) => block.type === "caseCard") < blocks.findIndex((block) => block.text === PAY_HINT), "the text follows the cards");
+    assert.equal(payButtons(blocks).length, 0);
+    assert.equal((await pool.query("SELECT 1 FROM backend_tool_results WHERE conversation_id=$1 AND tool_name='request.pay'", [cid])).rows.length, 0);
+  });
+
+  await t.test("cases.list: a paid or finished case from another conversation gets neither nextStep nor text", async () => {
+    casePages = [{ items: [payCase(9, "completed"), payCase(10, "in_review")], nextCursor: null }];
+    const { session } = await login(NPI);
+    const { cid } = await newChat(session.token, "Où en est ma demande ?");
+    let seen;
+    await agentWith({ async generate(_config, history) { seen = history.findLast((item) => item.role === "tool").content; return final("Voici vos demandes."); } }).process(cid);
+    assert.equal(seen.includes("nextStep"), false);
+    assert.equal(payBlocks(await lastBlocks(cid)).length, 0);
+  });
+
+  await t.test("\u00ab je veux payer \u00bb in a new chat, signed in: cases.list is forced once, same result", async () => {
+    listed.length = 0;
+    casePages = [{ items: [payCase(11, "awaiting_payment")], nextCursor: null }];
+    const { session } = await login(NPI);
+    const { cid } = await newChat(session.token, "je veux payer");
+    let turn = 0;
+    await agentWith({ async generate(_config, history) { turn += 1; assert.ok(history.some((item) => item.role === "tool")); return final("Votre dossier attend le paiement."); } }).process(cid);
+    assert.equal(turn, 1);
+    assert.equal(listed.length, 1);
+    const blocks = await lastBlocks(cid);
+    assert.equal(payBlocks(blocks).length, 1);
+    assert.equal(payButtons(blocks).length, 0);
+  });
+
+  await t.test("\u00ab je veux payer \u00bb in a new chat, guest: login asked, then cases.list replayed", async () => {
+    listed.length = 0;
+    casePages = [{ items: [payCase(12, "awaiting_payment")], nextCursor: null }];
+    const guest = await request("/v1/guest-sessions", { method: "POST" });
+    const { cid } = await newChat(guest.value.token, "je veux payer");
+    await agentWith({ async generate() { return final("Connectez-vous pour continuer."); } }).process(cid);
+    assert.equal(listed.length, 0);
+    assert.ok((await lastBlocks(cid)).some((block) => block.type === "loginRequired"));
+    const { session } = await login(NPI);
+    const attached = await request("/v1/conversations/" + cid + "/attach", { method: "POST", body: { guestToken: guest.value.token }, bearer: session.token });
+    assert.equal(attached.status, 200, attached.text);
+    await agentWith({ async generate() { return final("Votre dossier attend le paiement."); } }).process(cid);
+    assert.equal(listed.length, 1);
+    const blocks = await lastBlocks(cid);
+    assert.equal(payBlocks(blocks).length, 1);
+    assert.equal(payButtons(blocks).length, 0);
+  });
+
+  await t.test("\u00ab je veux payer \u00bb with no case at all: no error, no extra text", async () => {
+    casePages = [{ items: [], nextCursor: null }];
+    const { session } = await login(NPI);
+    const { cid } = await newChat(session.token, "je veux payer");
+    await agentWith({ async generate() { return final("Vous n’avez aucun dossier à payer."); } }).process(cid);
+    const blocks = await lastBlocks(cid);
+    assert.equal(payBlocks(blocks).length, 0);
+    assert.equal(payButtons(blocks).length, 0);
+  });
 });

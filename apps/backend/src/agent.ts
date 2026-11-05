@@ -222,6 +222,8 @@ type State = {
   paymentConfirmed?: string;
   /** Request of this conversation whose latest known case card awaits payment. */
   payableRequest?: string;
+  /** cases.list showed a case awaiting payment that belongs to another conversation: the Backend tells where to pay. */
+  payElsewhere?: boolean;
   /** procedureId the user chose to prepare with the Backend's prepare button. */
   prepareProcedure?: string;
   /** requestId the user chose to file with the Backend's submit button. */
@@ -698,6 +700,7 @@ export class Agent {
         if (!reply) {
           if (isGenericRefusal(blocks))
             await this.unanswered(conversation.id, input.id, administrationId, state.toolFailed ? "tool_failure" : state.sources.length > 0 || blocks !== UNAVAILABLE_BLOCKS ? "invalid_reply" : "missing_source");
+          this.offerPayElsewhere(state);
           await this.finish(conversation, input, this.withSystem(state, blocks!), traceparent, false, state.assistantMessageId);
           return;
         }
@@ -712,6 +715,7 @@ export class Agent {
           else if (state.toolFailed && blocks!.some(block => block.type === "text" && /L[’']outil n[’']a pas pu|Action refusée/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "tool_failure");
           const offered = this.offerForm(state, blocks!);
           this.offerPayment(state);
+          this.offerPayElsewhere(state);
           this.offerSubmit(state);
           const sent = this.withSystem(state, this.offerPreparation(state, offered));
           await this.finish(conversation, input, sent, traceparent, false, state.assistantMessageId);
@@ -1012,6 +1016,9 @@ export class Agent {
     state.connectorData = true;
     const latest = cases.slice(0, CASE_CARDS);
     for (const item of latest) this.pushBlock(state, { type: "caseCard", case: item });
+    // request.pay is bound to the conversation the request was made in: elsewhere, the user is sent back there.
+    const elsewhere = (item: Schemas["Case"]) => item.status === "awaiting_payment" && !state.requestProcedures?.[item.requestId];
+    if (latest.some(elsewhere)) state.payElsewhere = true;
     const summary = {
       total: cases.length,
       cases: latest.map((item) => ({
@@ -1020,6 +1027,7 @@ export class Agent {
         status: item.status,
         payment: { status: item.payment.status, amountFcfa: item.payment.amountFcfa },
         updatedAt: item.updatedAt,
+        ...(elsewhere(item) ? { nextStep: "Le paiement se fait dans la conversation d’origine de cette demande, à rouvrir depuis Mes démarches." } : {}),
       })),
     };
     return { structuredContent: summary, content: [{ type: "text", text: JSON.stringify(summary) }] };
@@ -1074,6 +1082,11 @@ export class Agent {
         { id: PAYMENT_LATER_PREFIX + card.case.requestId, label: "Plus tard" },
       ],
     });
+  }
+  /** A case awaiting payment in another conversation cannot be paid here: the Backend says where to go, once. */
+  private offerPayElsewhere(state: State) {
+    if (!state.payElsewhere) return;
+    this.pushBlock(state, { type: "text", text: "Pour payer, rouvrez la conversation de cette demande depuis « Mes démarches », puis écrivez « je veux payer ».", sources: [] });
   }
   /** A complete request that was not filed in this turn is never left hanging: the Backend asks, the click files. */
   private offerSubmit(state: State) {
@@ -1222,7 +1235,9 @@ export class Agent {
       return { reply: { text: "", calls: [{ id: identifier("call"), name: submitName, arguments: JSON.stringify({ requestId: state.submitRequest }) }] } };
     if (state.prepareProcedure && createName && !calledTool(state, createName))
       return { reply: { text: "", calls: [{ id: identifier("call"), name: createName, arguments: JSON.stringify({ procedureId: state.prepareProcedure }) }] } };
-    if (tools.some((tool) => tool.name === CASES_LIST_TOOL.name) && needsCaseList(question) && !calledTool(state, CASES_LIST_TOOL.name))
+    // "I want to pay" in a chat with no request of its own: the case list tells whether a payment waits in another conversation.
+    const payFromNewChat = needsPayment(question) && !state.payableRequest && !state.requests.length && !state.activeProcedureId;
+    if (tools.some((tool) => tool.name === CASES_LIST_TOOL.name) && (needsCaseList(question) || payFromNewChat) && !calledTool(state, CASES_LIST_TOOL.name))
       return { reply: { text: "", calls: [{ id: identifier("call"), name: CASES_LIST_TOOL.name, arguments: "{}" }] } };
     const piece = parseReceivedPiece(question);
     if (piece && attachName && !calledTool(state, attachName)) {

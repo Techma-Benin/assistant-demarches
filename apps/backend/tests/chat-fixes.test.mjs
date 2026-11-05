@@ -817,6 +817,27 @@ test("G: a case from another conversation never gets a payment button", async (t
   assert.equal((await h.lastBlocks(second.id)).some((block) => block.type === "buttons"), false);
 });
 
+test("G: cases.list in the conversation of the request: payable here, so no nextStep and no pay-elsewhere text, usual button", async (t) => {
+  const h = await harness(t);
+  const { conversation, card } = await h.withCard(h.user);
+  await h.mandate(conversation.id);
+  await h.send(h.user, conversation.id, { type: "text", text: "Où en est ma demande ?" });
+  const listCases = async () => ({ items: [{ ...caseOf(card.id, "awaiting_payment"), updatedAt: new Date().toISOString() }], nextCursor: null });
+  let seen;
+  const model = { async generate(_config, history) {
+    const tool = history.findLast((item) => item.role === "tool");
+    if (!tool) return toolCall("cases.list");
+    seen = tool.content;
+    return final("Votre dossier attend le paiement.");
+  } };
+  await new Agent(h.pool, h.conversations, model, h.tooling, undefined, undefined, listCases).process(conversation.id);
+  assert.equal(seen.includes("nextStep"), false);
+  const blocks = await h.lastBlocks(conversation.id);
+  assert.equal(blocks.some((block) => block.type === "text" && block.text.startsWith("Pour payer, rouvrez")), false);
+  assert.equal(blocks.some((block) => block.type === "buttons" && block.items.some((item) => item.id === "payment.confirm." + card.id)), true);
+  assert.equal(h.called("request.pay").length, 0);
+});
+
 // ---------------------------------------------------------------- H. a file and the text that follows it
 
 /** A conversation with one pending fileRequest; `h.tooling` answers documents.attach with the request and its document. */
