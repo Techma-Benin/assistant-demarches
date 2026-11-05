@@ -179,7 +179,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
   };
 
   return (
-    <section id="themes" ref={ref} aria-labelledby="themes-title" className={cn(sectionPad, 'overflow-x-clip bg-action text-on-action lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-10')}>
+    <section id="themes" ref={ref} data-theme="light" aria-labelledby="themes-title" className={cn(sectionPad, 'overflow-x-clip bg-action text-on-action lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-10')}>
       <div className="mx-auto max-w-[1320px] px-5 md:px-8">
         {/* Decorative: the chosen theme's photo shows through the letters, fixed to the screen while the page scrolls. */}
         <div {...rv(0)}>
@@ -272,6 +272,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
             {...rv(4)}
             role="tabpanel"
             id="theme-panel"
+            data-theme="light"
             aria-labelledby={`theme-tab-${selected}`}
             className="min-w-0 overflow-hidden rounded-[24px] bg-canvas text-ink lg:col-span-8 lg:col-start-5 lg:row-span-2 lg:row-start-1"
           >
