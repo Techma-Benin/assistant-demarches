@@ -1,10 +1,11 @@
 'use client';
 
-import { BrandMark, Button, THEME_STORAGE_KEY, Tooltip, cn } from '@techma/ui';
-import { Activity, ChevronsLeft, ChevronsRight, Cpu, LogOut, Monitor, Moon, Plug, Sun, type LucideIcon } from 'lucide-react';
+import { BrandMark, Tooltip, cn } from '@techma/ui';
+import { Activity, ChevronsLeft, ChevronsRight, Cpu, Plug, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { OperatorAccountMenu } from './operator-account-menu';
 import { OperatorLogomark } from './operator-logomark';
 
 export const OPERATOR_NAV_COLLAPSED_KEY = 'operator-nav-collapsed';
@@ -17,15 +18,6 @@ const NAV: readonly { href: string; label: string; icon: LucideIcon }[] = [
 
 const NAV_DRAWER_MS = 220;
 
-type ThemePreference = 'system' | 'light' | 'dark';
-const THEME_ORDER: ThemePreference[] = ['system', 'light', 'dark'];
-const THEME_LABELS: Record<ThemePreference, string> = {
-  system: 'Thème : système',
-  light: 'Thème : clair',
-  dark: 'Thème : sombre',
-};
-const THEME_ICONS = { system: Monitor, light: Sun, dark: Moon } as const;
-
 function isActive(href: string, pathname: string): boolean {
   return href === '/operateur' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -33,15 +25,6 @@ function isActive(href: string, pathname: string): boolean {
 function navActiveIndex(pathname: string): number {
   const index = NAV.findIndex(({ href }) => isActive(href, pathname));
   return index >= 0 ? index : 0;
-}
-
-function readStoredTheme(): ThemePreference {
-  try {
-    const value = window.localStorage.getItem(THEME_STORAGE_KEY);
-    return value === 'light' || value === 'dark' ? value : 'system';
-  } catch {
-    return 'system';
-  }
 }
 
 function readStoredCollapsed(): boolean {
@@ -56,80 +39,19 @@ function NavIcon({ icon: Icon }: { icon: LucideIcon }) {
   return <Icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.75} fill="none" />;
 }
 
-function ShellThemeControl({ collapsed }: { collapsed: boolean }) {
-  const [preference, setPreference] = useState<ThemePreference>('system');
-
-  useEffect(() => setPreference(readStoredTheme()), []);
-
-  function cycle() {
-    const next = THEME_ORDER[(THEME_ORDER.indexOf(preference) + 1) % THEME_ORDER.length];
-    setPreference(next);
-    if (next === 'system') delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = next;
-    try {
-      if (next === 'system') window.localStorage.removeItem(THEME_STORAGE_KEY);
-      else window.localStorage.setItem(THEME_STORAGE_KEY, next);
-    } catch {
-      // Storage unavailable: the choice only lasts for this page.
-    }
-  }
-
-  const Icon = THEME_ICONS[preference];
-  const control = (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      aria-label={collapsed ? THEME_LABELS[preference] : undefined}
-      onClick={cycle}
-      leadingIcon={<Icon key={preference} aria-hidden="true" className="ui-swap ui-theme-icon size-5 shrink-0" />}
-      className={cn(
-        'min-h-10 w-full justify-start gap-3 rounded-none px-3 text-[15px] font-semibold text-ink-muted hover:bg-sunken hover:text-ink',
-        collapsed && 'md:justify-center md:px-0',
-      )}
-    >
-      <span className={cn('transition-opacity duration-[220ms] ease-(--ui-ease-drawer)', collapsed && 'md:sr-only')}>
-        Thème
-      </span>
-    </Button>
-  );
-
-  if (!collapsed) return control;
+/** Inverse corners: rail scoops around a canvas hole, same treatment as the administration nav. */
+function NavActiveNotch() {
   return (
-    <Tooltip label={THEME_LABELS[preference]} side="right">
-      {control}
-    </Tooltip>
-  );
-}
-
-function ShellLogoutControl({ collapsed }: { collapsed: boolean }) {
-  const button = (
-    <Button
-      type="submit"
-      variant="ghost"
-      size="sm"
-      leadingIcon={<LogOut aria-hidden="true" className="size-5 shrink-0" />}
-      className={cn(
-        'min-h-10 w-full justify-start gap-3 rounded-none px-3 text-[15px] font-semibold text-ink-muted hover:bg-sunken hover:text-ink',
-        collapsed && 'md:justify-center md:px-0',
-      )}
-    >
-      <span className={cn('transition-opacity duration-[220ms] ease-(--ui-ease-drawer)', collapsed && 'md:sr-only')}>
-        Se déconnecter
+    <>
+      <span className="absolute inset-0 rounded-none bg-canvas" />
+      <span data-nav-active-bar="" className="absolute inset-y-0 left-0 w-0.5 rounded-none bg-ink-subtle" />
+      <span data-nav-corner="top" className="absolute right-0 bottom-[calc(100%-1px)] h-[17px] w-4 bg-canvas">
+        <span className="absolute top-0 right-0 size-4 rounded-br-full bg-shell-rail" />
       </span>
-    </Button>
-  );
-
-  return (
-    <form method="post" action="/auth/logout" className="w-full">
-      {collapsed ? (
-        <Tooltip label="Se déconnecter" side="right">
-          {button}
-        </Tooltip>
-      ) : (
-        button
-      )}
-    </form>
+      <span data-nav-corner="bottom" className="absolute top-[calc(100%-1px)] right-0 h-[17px] w-4 bg-canvas">
+        <span className="absolute right-0 bottom-0 size-4 rounded-tr-full bg-shell-rail" />
+      </span>
+    </>
   );
 }
 
@@ -257,26 +179,21 @@ export function OperatorShell({ children }: { children: ReactNode }) {
               data-operator-nav-track=""
               data-nav-active-index={activeIndex}
               style={navTrackStyle}
-              className="relative w-full max-md:px-3 max-md:pt-2"
+              className="relative w-full overflow-visible max-md:px-3 max-md:pt-2"
             >
               <div
                 aria-hidden="true"
                 data-nav-indicator=""
                 className={cn(
-                  'pointer-events-none absolute inset-x-0 z-0 hidden md:block motion-reduce:transition-none',
-                  indicatorTransition &&
-                    'transition-[transform,height] duration-[220ms] ease-(--ui-ease-drawer)',
+                  'pointer-events-none absolute inset-x-0 z-0 hidden overflow-visible md:block motion-reduce:transition-none',
+                  indicatorTransition && 'transition-[transform,height] duration-[220ms] ease-(--ui-ease-drawer)',
                 )}
                 style={{
                   height: 'var(--nav-item-height, 0px)',
                   transform: 'translateY(calc(var(--nav-active-index, 0) * var(--nav-item-step, 0px)))',
                 }}
               >
-                <span className="absolute inset-0 rounded-none bg-canvas" />
-                <span
-                  data-nav-active-bar=""
-                  className="absolute inset-y-0 left-0 w-0.5 rounded-none bg-ink-subtle"
-                />
+                <NavActiveNotch />
               </div>
               <ul ref={listRef} className="relative z-10 flex gap-1 md:flex-col md:gap-1">
                 {NAV.map(({ href, label, icon }) => {
@@ -325,9 +242,8 @@ export function OperatorShell({ children }: { children: ReactNode }) {
             </div>
           </nav>
 
-          <div className="flex w-full items-center gap-1 border-line-subtle px-3 max-md:pb-1 md:mt-auto md:flex-col md:gap-0 md:border-t md:px-0 md:pt-0">
-            <ShellLogoutControl collapsed={collapsed} />
-            <ShellThemeControl collapsed={collapsed} />
+          <div className="w-full px-2 pt-2 pb-3 md:mt-auto">
+            <OperatorAccountMenu collapsed={collapsed} />
           </div>
         </div>
       </aside>
