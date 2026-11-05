@@ -1,6 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BlockRenderer, type BlockRendererProps } from '@/components/blocks/BlockRenderer';
 import { navigate } from '@/lib/navigate';
 import { noopConsent } from '@/lib/consent';
@@ -142,10 +142,18 @@ describe('fileRequest block', () => {
 });
 
 describe('loginRequired block', () => {
-  it('shows the reason and navigates to the login with the current path and the conversation', async () => {
+  const session = (body: unknown, delayed = false) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => (delayed ? new Promise<Response>(() => {}) : Promise.resolve(new Response(JSON.stringify(body), { status: 200 })))),
+    );
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('Keycloak: shows the reason and navigates to the login with the current path and the conversation', async () => {
+    session({ user: null, signIn: 'oidc' });
     show(loginRequiredBlock);
     expect(screen.getByText('Connectez-vous pour déposer ce dossier.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Se connecter pour continuer' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Se connecter pour continuer' }));
     expect(navigate).toHaveBeenCalledTimes(1);
     const url = new URL(vi.mocked(navigate).mock.calls[0][0], 'http://localhost');
     expect(url.pathname).toBe('/auth/login');
@@ -153,10 +161,44 @@ describe('loginRequired block', () => {
     expect(url.searchParams.get('conversationId')).toBe(CONVERSATION_ID);
   });
 
-  it('omits the conversation id when there is none', async () => {
+  it('Keycloak: omits the conversation id when there is none', async () => {
+    session({ user: null, signIn: 'oidc' });
     show(loginRequiredBlock, { conversationId: null });
-    await userEvent.click(screen.getByRole('button', { name: 'Se connecter pour continuer' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Se connecter pour continuer' }));
     expect(new URL(vi.mocked(navigate).mock.calls[0][0], 'http://localhost').searchParams.has('conversationId')).toBe(false);
+  });
+
+  it('NPI: shows the reason then the sign-in form instead of the Keycloak button', async () => {
+    session({ user: null, signIn: 'npi' });
+    show(loginRequiredBlock);
+    expect(screen.getByText('Connectez-vous pour déposer ce dossier.')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Votre NPI')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Se connecter pour continuer' })).toBeNull();
+  });
+
+  it('already signed in: only « Connexion effectuée. », no form and no button', async () => {
+    session({ user: { name: 'Usager', roles: ['citizen'] }, signIn: 'npi' });
+    show(loginRequiredBlock);
+    expect(await screen.findByText('Connexion effectuée.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Votre NPI')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('while the session loads: no form and no button', () => {
+    session(null, true);
+    show(loginRequiredBlock);
+    expect(screen.getByText('Connectez-vous pour déposer ce dossier.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Votre NPI')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('an older block shows no form and no button', async () => {
+    session({ user: null, signIn: 'npi' });
+    show(loginRequiredBlock, { interactive: false });
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByLabelText('Votre NPI')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });
 

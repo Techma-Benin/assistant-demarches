@@ -51,7 +51,7 @@ export function BlockRenderer({
       case 'fileRequest':
         return <FileRequestBlock block={block} interactive={interactive || fileRequestActive} received={fileRequestReceived} onFiles={onFiles} />;
       case 'loginRequired':
-        return <LoginRequiredBlock block={block} conversationId={conversationId} />;
+        return <LoginRequiredBlock block={block} conversationId={conversationId} interactive={interactive} />;
       case 'consent':
         return <ConsentCard challenge={block.challenge} consent={consent} interactive={interactive} />;
       case 'requestCard':

@@ -54,7 +54,7 @@ describe('Mes démarches', () => {
     const client = { listCases: vi.fn(), listConversations: vi.fn() };
     render(<MyCases client={client as unknown as C1Client} />);
     expect(await screen.findByText('Connectez-vous pour retrouver vos démarches et vos conversations')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Se connecter' })).toHaveAttribute('href', '/auth/login?returnTo=%2Fdemarches');
+    expect(screen.getByRole('link', { name: 'Se connecter' })).toHaveAttribute('href', '/connexion?returnTo=%2Fdemarches');
     expect(client.listCases).not.toHaveBeenCalled();
     expect(client.listConversations).not.toHaveBeenCalled();
   });
@@ -100,7 +100,7 @@ describe('Mes démarches, detail', () => {
   it('asks a guest to log in, and says when the case does not exist', async () => {
     const { unmount } = render(<CaseDetail caseId="cas_x" client={{ getCase: vi.fn(async () => Promise.reject(new C1Error(401))) } as unknown as C1Client} />);
     expect(await screen.findByText('Connectez-vous pour retrouver vos démarches et vos conversations')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Se connecter' })).toHaveAttribute('href', '/auth/login?returnTo=%2Fdemarches%2Fcas_x');
+    expect(screen.getByRole('link', { name: 'Se connecter' })).toHaveAttribute('href', '/connexion?returnTo=%2Fdemarches%2Fcas_x');
     unmount();
     render(<CaseDetail caseId="cas_x" client={{ getCase: vi.fn(async () => Promise.reject(new C1Error(404))) } as unknown as C1Client} />);
     expect(await screen.findByText('Cette démarche est introuvable.')).toBeInTheDocument();

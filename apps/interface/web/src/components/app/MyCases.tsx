@@ -8,7 +8,6 @@ import { CaseCard, CaseReference } from '@/components/blocks/CaseCardBlock';
 import { AccountMenu } from '@/components/app/AccountMenu';
 import { ConversationList } from '@/components/app/ConversationList';
 import { useSessionUser } from '@/hooks/use-session-user';
-import { loginHref } from '@/lib/auth-links';
 import { C1Client, C1Error } from '@/lib/c1-client';
 import { CASE_STATUS_LABELS, CASE_STATUS_PILL, administrationLabel, formatDateFr, type Case } from '@/lib/cases';
 
@@ -47,7 +46,7 @@ function GuestPrompt({ returnTo }: { returnTo: string }) {
     <div className="flex flex-col items-start gap-4 rounded-card bg-sunken p-6">
       <p className="m-0 text-[17px] font-semibold">Connectez-vous pour retrouver vos démarches et vos conversations</p>
       <Button asChild size="lg" className="min-h-[52px] px-7 font-bold">
-        <a href={loginHref(returnTo)}>Se connecter</a>
+        <a href={`/connexion?${new URLSearchParams({ returnTo })}`}>Se connecter</a>
       </Button>
     </div>
   );

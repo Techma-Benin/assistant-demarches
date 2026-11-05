@@ -53,7 +53,7 @@ describe('NeverShowcase', () => {
       expect(screen.getByText(/Pas ici\. Vous vous identifiez/)).toBeInTheDocument();
       expect(screen.getByText('JAMAIS')).toBeInTheDocument();
       advance(SCENE_MS);
-      expect(screen.getByText(/Surtout pas/)).toBeInTheDocument();
+      expect(screen.getByText(/Pas dans la conversation/)).toBeInTheDocument();
       expect(screen.getByText('JAMAIS')).toBeInTheDocument();
       advance(SCENE_MS);
       expect(screen.getByText(/tarif de la fiche officielle/)).toBeInTheDocument();
