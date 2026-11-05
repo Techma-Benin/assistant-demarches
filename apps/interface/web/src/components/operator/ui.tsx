@@ -65,7 +65,7 @@ export function SelectField({ label, hint, error, required, options, className, 
         {label}
         {required ? (
           <>
-            <span aria-hidden="true"> *</span>
+            <span aria-hidden="true" className="text-danger"> *</span>
             <VisuallyHidden> (obligatoire)</VisuallyHidden>
           </>
         ) : null}

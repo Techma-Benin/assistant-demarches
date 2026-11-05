@@ -85,6 +85,7 @@ describe('TextField', () => {
     const describedBy = input.getAttribute('aria-describedby') ?? '';
     expect(document.getElementById(describedBy.split(' ')[1])).toHaveTextContent('Champ invalide');
     expect(screen.getByText('(obligatoire)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('*', { exact: false })).toHaveClass('text-danger');
   });
 
   it('has no aria-invalid without error', () => {

@@ -21,7 +21,7 @@ function FieldShell({ id, label, hint, error, required, children }: FieldShellPr
         {label}
         {required && (
           <>
-            <span aria-hidden="true"> *</span>
+            <span aria-hidden="true" className="text-danger"> *</span>
             <VisuallyHidden> (obligatoire)</VisuallyHidden>
           </>
         )}
