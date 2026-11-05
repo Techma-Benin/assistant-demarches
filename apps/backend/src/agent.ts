@@ -29,7 +29,7 @@ import {
 } from "./tooling.js";
 import { redact, type ModelPort, type ModelReply, type Turn } from "./model.js";
 import type { Consent } from "./consent.js";
-import { presentModelReply, mergeSystemBlocks, PAYMENT_CONFIRM_PREFIX, PREPARE_REQUEST_PREFIX, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS, FORMAT_REMINDER, ModelReplyError, logRejectedReply, hasActionSystemBlocks, isGenericRefusal, honestReplyFromSystemBlocks, bindUploadedFile, fileReceivedInstruction, parseReceivedPiece } from "./model-reply.js";
+import { presentModelReply, mergeSystemBlocks, PAYMENT_CONFIRM_PREFIX, PREPARE_REQUEST_PREFIX, PAYMENT_LATER_PREFIX, SUBMIT_REQUEST_PREFIX, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS, FORMAT_REMINDER, ModelReplyError, logRejectedReply, hasActionSystemBlocks, isGenericRefusal, honestReplyFromSystemBlocks, bindUploadedFile, fileReceivedInstruction, parseReceivedPiece } from "./model-reply.js";
 import type { TranscriptionPort } from "./transcription.js";
 import { LiveReply } from "./live-reply.js";
 import { visibleText } from "./text-deltas.js";
@@ -48,6 +48,13 @@ const CASE_LIST_QUESTION = /o[uù]\s+en\s+(?:est|sont)\s+(?:ma|mes|mon)\b|statut
 /** The user asks where their requests stand: answered from their case list, never from memory. */
 export function needsCaseList(text: string): boolean {
   return CASE_LIST_QUESTION.test(text);
+}
+
+const PAYMENT_QUESTION = /\bpayer\b|\bje\s+paie\b|\br[ée]gler\b|\bpaiement\b/i;
+
+/** The user says they want to pay: the Backend answers with the confirmation button, never with a payment. */
+export function needsPayment(text: string): boolean {
+  return PAYMENT_QUESTION.test(text);
 }
 
 /** Backend tool without MCP server: lists the signed-in user's cases through X-Road. */
@@ -85,6 +92,10 @@ function calledTool(state: State, name: string | undefined): boolean {
 
 function requestUpdateName(tools: ToolDefinition[]): string | undefined {
   return tools.find((tool) => tool.name === "request.update" || tool.name.endsWith(".request.update"))?.name;
+}
+
+function requestSubmitName(tools: ToolDefinition[]): string | undefined {
+  return tools.find((tool) => tool.name === "request.submit" || tool.name.endsWith(".request.submit"))?.name;
 }
 
 function requestPayName(tools: ToolDefinition[]): string | undefined {
@@ -169,6 +180,15 @@ function toolErrorDetail(result: ToolResult): string {
 function formatFcfa(amount: number): string {
   return Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f") + "\u00a0FCFA";
 }
+const PAYMENT_BUTTON_LABEL_MAX = 24;
+/** Label of the payment confirmation button: the amount when it fits the contract limit, a generic one otherwise. */
+function paymentButtonLabel(amount: unknown): string {
+  if (Number.isInteger(amount) && (amount as number) >= 0) {
+    const label = "Confirmer " + formatFcfa(amount as number);
+    if (label.length <= PAYMENT_BUTTON_LABEL_MAX) return label;
+  }
+  return "Confirmer le paiement";
+}
 const BLOCKING_CODES = new Set(["LOGIN_REQUIRED", "MANDATE_MISSING", "MANDATE_EXPIRED"]);
 type State = {
   history: Turn[];
@@ -200,8 +220,14 @@ type State = {
   connectorData?: boolean;
   /** requestId the user confirmed paying with the payment button. */
   paymentConfirmed?: string;
+  /** Request of this conversation whose latest known case card awaits payment. */
+  payableRequest?: string;
   /** procedureId the user chose to prepare with the Backend's prepare button. */
   prepareProcedure?: string;
+  /** requestId the user chose to file with the Backend's submit button. */
+  submitRequest?: string;
+  /** request.submit succeeded in this turn: no submit question is asked again. */
+  submitted?: boolean;
   paymentPrompt?: { requestId: string; label: string };
 };
 export class Agent {
@@ -465,31 +491,65 @@ export class Agent {
       );
       return;
     }
+    if (
+      input.content.type === "interaction" &&
+      input.content.actionId.startsWith(PAYMENT_LATER_PREFIX)
+    ) {
+      // "Later" pays nothing and needs no model: the request stays awaiting payment.
+      await this.finish(
+        conversation,
+        input,
+        [
+          {
+            type: "text",
+            text: "D’accord, rien n’a été payé. Votre dossier reste en attente de paiement. Quand vous serez prêt, écrivez « je veux payer » dans cette conversation.",
+            sources: [],
+          },
+        ],
+        traceparent,
+      );
+      return;
+    }
     let formValues: Record<string, unknown> | undefined;
     let confirmedPayment: string | undefined;
     let preparedProcedure: string | undefined;
+    let submittedRequest: string | undefined;
     if (input.content.type === "interaction") {
       formValues = parseFormValues(input.content.value);
       if (input.content.actionId.startsWith(PAYMENT_CONFIRM_PREFIX))
         confirmedPayment = input.content.actionId.slice(PAYMENT_CONFIRM_PREFIX.length);
       if (input.content.actionId.startsWith(PREPARE_REQUEST_PREFIX))
         preparedProcedure = input.content.actionId.slice(PREPARE_REQUEST_PREFIX.length);
+      if (input.content.actionId.startsWith(SUBMIT_REQUEST_PREFIX))
+        submittedRequest = input.content.actionId.slice(SUBMIT_REQUEST_PREFIX.length);
       input = {
         ...input,
         content: { type: "text", text: interactionPrompt(input.content) },
       };
     }
+    let mergedNoteId: string | undefined;
     if (input.content.type === "file") {
       // Composer often sends documentType null; bind to the oldest unmet fileRequest when one is pending.
       const bound = await this.bindFileUpload(conversation.id, input.id, input.content.documentType ?? null);
-      if (bound)
+      if (bound) {
+        // The Interface posts "a file + a text" as two messages: answer them in one turn, one message.sent.
+        const note = await this.attachedNote(conversation.id, input.id, input.sentAt);
+        if (note) mergedNoteId = note.id;
+        // A form answer sent right after the piece is answered in the same turn.
+        if (note?.values) formValues = note.values;
         input = {
           ...input,
           content: {
             type: "text",
-            text: fileReceivedInstruction(bound.requestId, bound.documentType, input.content.fileId),
+            text: fileReceivedInstruction(bound.requestId, bound.documentType, input.content.fileId) + (note?.text ? "\nMessage joint par l’usager : " + redact(note.text) : ""),
           },
         };
+        if (note)
+          await this.pool.query(
+            "UPDATE backend_messages SET processed_at=now() WHERE conversation_id=$1 AND id=$2 AND processed_at IS NULL",
+            [conversation.id, note.id],
+          );
+      }
     }
     if (input.content.type !== "text") {
       await this.finish(
@@ -529,8 +589,8 @@ export class Agent {
         );
       const previous = (
         await this.pool.query(
-          "SELECT e.body,m.body AS input FROM backend_conversation_events e LEFT JOIN backend_messages m ON m.conversation_id=e.conversation_id AND m.id=e.body->'data'->>'messageId' WHERE e.conversation_id=$1 AND e.expires_at>now() AND (e.body->'data'->>'kind'='message.sent' OR (e.body->'data'->>'kind'='message.received' AND m.id<>$2)) ORDER BY e.seq DESC LIMIT 20",
-          [conversation.id, input.id],
+          "SELECT e.body,m.body AS input FROM backend_conversation_events e LEFT JOIN backend_messages m ON m.conversation_id=e.conversation_id AND m.id=e.body->'data'->>'messageId' WHERE e.conversation_id=$1 AND e.expires_at>now() AND (e.body->'data'->>'kind'='message.sent' OR (e.body->'data'->>'kind'='message.received' AND m.id<>ALL($2::text[]))) ORDER BY e.seq DESC LIMIT 20",
+          [conversation.id, mergedNoteId ? [input.id, mergedNoteId] : [input.id]],
         )
       ).rows.reverse();
       const history: Turn[] = previous
@@ -570,7 +630,18 @@ export class Agent {
       };
       if (formValues) state.formValues = formValues;
       if (confirmedPayment) state.paymentConfirmed = confirmedPayment;
+      // Latest known status per request, from the case cards of this conversation: a newer card cancels an older one.
+      const caseStatus = new Map<string, string>();
+      for (const row of previous)
+        if (row.body.data.kind === "message.sent")
+          for (const block of row.body.data.message.blocks as Schemas["AgentMessage"]["blocks"])
+            if (block.type === "caseCard" && state.requestProcedures?.[block.case.requestId]) {
+              caseStatus.delete(block.case.requestId);
+              caseStatus.set(block.case.requestId, block.case.status);
+            }
+      state.payableRequest = [...caseStatus].reverse().find(([, status]) => status === "awaiting_payment")?.[0];
       if (preparedProcedure) state.prepareProcedure = preparedProcedure;
+      if (submittedRequest) state.submitRequest = submittedRequest;
       const cards = new Map<string, NonNullable<State["openRequest"]> & { status: string }>();
       for (const row of previous)
         if (row.body.data.kind === "message.sent")
@@ -639,7 +710,10 @@ export class Agent {
         if (!reply.calls.length) {
           if (blocks!.some(block => block.type === "text" && /Je n[’']ai pas trouvé de démarche validée|Je ne peux répondre qu[’']aux questions sur les démarches administratives|Aucune action disponible/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "missing_source");
           else if (state.toolFailed && blocks!.some(block => block.type === "text" && /L[’']outil n[’']a pas pu|Action refusée/.test(block.text))) await this.unanswered(conversation.id, input.id, administrationId, "tool_failure");
-          const sent = this.withSystem(state, this.offerPreparation(state, blocks!));
+          const offered = this.offerForm(state, blocks!);
+          this.offerPayment(state);
+          this.offerSubmit(state);
+          const sent = this.withSystem(state, this.offerPreparation(state, offered));
           await this.finish(conversation, input, sent, traceparent, false, state.assistantMessageId);
           return;
         }
@@ -762,9 +836,8 @@ export class Agent {
                   const read = await this.tooling.call(statusReader.server.url, statusReader.server.auth, statusReader.name, { requestId: argumentsValue.requestId }, { ...context, external: statusReader.server.policy !== "techma" }, operationKey + "-amount", statusReader.definition);
                   const amount = read.isError ? undefined : (read.structuredContent as any)?.payment?.amountFcfa;
                   if (Number.isInteger(amount) && amount >= 0) {
-                    const text = formatFcfa(amount);
-                    detail = `Montant à payer : ${text}. Annoncez-le à l’usager et invitez-le à confirmer avec le bouton.`;
-                    if (("Confirmer " + text).length <= 24) label = "Confirmer " + text;
+                    detail = `Montant à payer : ${formatFcfa(amount)}. Annoncez-le à l’usager et invitez-le à confirmer avec le bouton.`;
+                    label = paymentButtonLabel(amount);
                   }
                 } catch { /* The prompt stays generic when the amount cannot be read. */ }
               }
@@ -834,6 +907,7 @@ export class Agent {
           });
         }
         const selected=bindings.get(call.name);
+        if (selected?.name === "request.submit" && !result.isError) state.submitted = true;
         if (selected && selected.definition._meta?.["bj.techma/kind"] !== "read" && !result.isError) {
           try {
             const fingerprint = canonical({ name: call.name, arguments: JSON.parse(call.arguments) });
@@ -857,7 +931,10 @@ export class Agent {
             if (typeof requestId === "string")
               this.pushBlock(state, {
                 type: "buttons",
-                items: [{ id: PAYMENT_CONFIRM_PREFIX + requestId, label: state.paymentPrompt?.requestId === requestId ? state.paymentPrompt.label : "Confirmer le paiement" }],
+                items: [
+                  { id: PAYMENT_CONFIRM_PREFIX + requestId, label: state.paymentPrompt?.requestId === requestId ? state.paymentPrompt.label : "Confirmer le paiement" },
+                  { id: PAYMENT_LATER_PREFIX + requestId, label: "Plus tard" },
+                ],
               });
           }
           if (code === "LOGIN_REQUIRED")
@@ -949,6 +1026,62 @@ export class Agent {
   }
   private withSystem(state: State, blocks: Schemas["AgentMessage"]["blocks"]) {
     return mergeSystemBlocks(blocks, state.systemBlocks ?? []);
+  }
+  /** A draft with empty fields always comes with its form: the Backend builds it, the model's own forms are dropped. */
+  private offerForm(state: State, blocks: Schemas["AgentMessage"]["blocks"]): Schemas["AgentMessage"]["blocks"] {
+    const request = state.requests.at(-1);
+    if (!request || (request.status !== "draft" && request.status !== "ready")) return blocks;
+    if (state.systemBlocks?.some((block) => block.type === "loginRequired" || block.type === "consent")) return blocks;
+    const empty = request.fields.filter((field) => field.value === null || field.value === undefined || (typeof field.value === "string" && field.value.trim() === ""));
+    if (!empty.length) return blocks;
+    const schema = state.procedures?.find((item) => item.id === request.procedureId)?.filing?.formSchema as { properties?: Record<string, { type?: unknown; format?: unknown } | undefined>; required?: unknown } | undefined;
+    const required = Array.isArray(schema?.required) ? schema.required : undefined;
+    const fieldType = (name: string): "text" | "number" | "date" => {
+      const property = schema?.properties?.[name];
+      const types = Array.isArray(property?.type) ? property.type : [property?.type];
+      if (types.includes("integer") || types.includes("number")) return "number";
+      return property?.format === "date" ? "date" : "text";
+    };
+    this.pushBlock(state, {
+      type: "form",
+      id: "request.form." + request.id,
+      fields: empty.map((field) => ({
+        name: field.name.slice(0, 100),
+        label: (field.label || field.name).slice(0, 200),
+        required: schema ? Boolean(required?.includes(field.name)) : true,
+        type: fieldType(field.name),
+      })),
+    });
+    return blocks.filter((block) => block.type !== "form");
+  }
+  /** A case awaiting payment in this conversation always comes with the question and two buttons; only the confirmation click pays. */
+  private offerPayment(state: State) {
+    const card = [...(state.systemBlocks ?? [])].reverse().find((block) => block.type === "caseCard" && block.case.status === "awaiting_payment");
+    if (card?.type !== "caseCard" || !state.requestProcedures?.[card.case.requestId]) return;
+    if (state.systemBlocks?.some((block) => block.type === "buttons" && block.items.some((item) => item.id.startsWith(PAYMENT_CONFIRM_PREFIX)))) return;
+    const amount = card.case.payment.amountFcfa;
+    this.pushBlock(state, {
+      type: "text",
+      text: Number.isInteger(amount) && (amount as number) >= 0
+        ? `Il reste à payer ${formatFcfa(amount as number)}. Voulez-vous payer maintenant ?`
+        : "Il reste des frais à payer. Voulez-vous payer maintenant ?",
+      sources: [],
+    });
+    this.pushBlock(state, {
+      type: "buttons",
+      items: [
+        { id: PAYMENT_CONFIRM_PREFIX + card.case.requestId, label: paymentButtonLabel(amount) },
+        { id: PAYMENT_LATER_PREFIX + card.case.requestId, label: "Plus tard" },
+      ],
+    });
+  }
+  /** A complete request that was not filed in this turn is never left hanging: the Backend asks, the click files. */
+  private offerSubmit(state: State) {
+    const request = state.requests.at(-1);
+    if (!request || request.status !== "ready" || request.missing.length > 0 || state.submitted) return;
+    if (state.systemBlocks?.some((block) => block.type === "loginRequired" || block.type === "consent")) return;
+    this.pushBlock(state, { type: "text", text: "Votre dossier est complet. Voulez-vous le déposer ?", sources: [] });
+    this.pushBlock(state, { type: "buttons", items: [{ id: SUBMIT_REQUEST_PREFIX + request.id, label: "Déposer mon dossier" }] });
   }
   /** Only the Backend knows whether a procedure can be filed: it offers the prepare button itself. */
   private offerPreparation(state: State, blocks: Schemas["AgentMessage"]["blocks"]): Schemas["AgentMessage"]["blocks"] {
@@ -1082,6 +1215,11 @@ export class Agent {
     const payName = requestPayName(tools);
     if (state.paymentConfirmed && payName && !calledTool(state, payName))
       return { reply: { text: "", calls: [{ id: identifier("call"), name: payName, arguments: JSON.stringify({ requestId: state.paymentConfirmed }) }] } };
+    if (state.payableRequest && payName && needsPayment(question) && !calledTool(state, payName))
+      return { reply: { text: "", calls: [{ id: identifier("call"), name: payName, arguments: JSON.stringify({ requestId: state.payableRequest }) }] } };
+    const submitName = requestSubmitName(tools);
+    if (state.submitRequest && submitName && !calledTool(state, submitName))
+      return { reply: { text: "", calls: [{ id: identifier("call"), name: submitName, arguments: JSON.stringify({ requestId: state.submitRequest }) }] } };
     if (state.prepareProcedure && createName && !calledTool(state, createName))
       return { reply: { text: "", calls: [{ id: identifier("call"), name: createName, arguments: JSON.stringify({ procedureId: state.prepareProcedure }) }] } };
     if (tools.some((tool) => tool.name === CASES_LIST_TOOL.name) && needsCaseList(question) && !calledTool(state, CASES_LIST_TOOL.name))
@@ -1236,6 +1374,35 @@ export class Agent {
     const evidence = state.sources.length > 0 || state.requests.length > 0 || state.history.some((turn) => turn.role === "tool");
     if (!hasActionSystemBlocks(system) || !evidence) return undefined;
     return honestReplyFromSystemBlocks(system);
+  }
+  /**
+   * The text or form answer sent right after a file (next message of the conversation, processed or not, so a replay finds it too).
+   * Waits up to 1 s for it, as the Interface posts it once the file is accepted; another file ends the wait.
+   */
+  private async attachedNote(conversationId: string, messageId: string, sentAt: string): Promise<{ id: string; text?: string; values?: Record<string, unknown> } | undefined> {
+    const current = (await this.pool.query("SELECT seq FROM backend_messages WHERE conversation_id=$1 AND id=$2", [conversationId, messageId])).rows[0];
+    if (!current) return undefined;
+    for (let waited = 0; ; waited += 200) {
+      const next = (
+        await this.pool.query(
+          "SELECT id, body FROM backend_messages WHERE conversation_id=$1 AND seq>$2 ORDER BY seq ASC LIMIT 1",
+          [conversationId, current.seq],
+        )
+      ).rows[0];
+      if (next) {
+        const content = next.body?.content;
+        const gap = Math.abs(Date.parse(next.body?.sentAt) - Date.parse(sentAt));
+        const text = content?.type === "text" && typeof content.text === "string" ? content.text : "";
+        // A form answer (interaction carrying a JSON object) merges as well; a bare button click keeps its own turn.
+        const values = content?.type === "interaction" ? parseFormValues(content.value) : undefined;
+        if (!(gap < 5000)) return undefined;
+        if (values) return { id: next.id, values };
+        if (!text.trim() || text === RESUME_AFTER_CONSENT || text === RESUME_AFTER_LOGIN) return undefined;
+        return { id: next.id, text };
+      }
+      if (waited >= 1000) return undefined;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
   }
   private async bindFileUpload(conversationId: string, messageId: string, documentType: string | null) {
     const requests = (

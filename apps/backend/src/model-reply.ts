@@ -160,6 +160,9 @@ function observedFor(text: string, sources: Schemas["Source"][]): Schemas["Sourc
 
 export const PAYMENT_CONFIRM_PREFIX = "payment.confirm.";
 export const PREPARE_REQUEST_PREFIX = "request.prepare.";
+export const PAYMENT_LATER_PREFIX = "payment.later.";
+export const SUBMIT_REQUEST_PREFIX = "request.submit.";
+const RESERVED_BUTTON_PREFIXES = [PAYMENT_CONFIRM_PREFIX, PREPARE_REQUEST_PREFIX, PAYMENT_LATER_PREFIX, SUBMIT_REQUEST_PREFIX];
 const NOT_FOUND = /Je n[’']ai pas trouvé/;
 const MODEL_BUTTON_LABEL_MAX = 24;
 const BACKEND_BLOCK_TYPES = new Set(["fileRequest", "loginRequired", "consent", "requestCard", "caseCard"]);
@@ -209,10 +212,10 @@ export function presentModelReply(replyText: string, evidence: ReplyEvidence): S
         return { ...block, text: redact(cleaned.text), sources };
       }
       // Payment confirmation buttons are built by the Backend only: a model copy could pay behind any label.
-      // The prepare button is built by the Backend only, from Procedure.filing: a model copy is dropped too.
+      // The prepare, "pay later" and submit buttons are built by the Backend only (the prepare one from Procedure.filing): a model copy is dropped too.
       // A label over the contract limit loses the button, not the whole reply.
       if (block.type === "buttons" && Array.isArray(block.items))
-        return { ...block, items: block.items.filter((item: { id?: unknown; label?: unknown }) => !(typeof item?.id === "string" && (item.id.startsWith(PAYMENT_CONFIRM_PREFIX) || item.id.startsWith(PREPARE_REQUEST_PREFIX))) && !(typeof item?.label === "string" && item.label.length > MODEL_BUTTON_LABEL_MAX)) };
+        return { ...block, items: block.items.filter((item: { id?: unknown; label?: unknown }) => !(typeof item?.id === "string" && RESERVED_BUTTON_PREFIXES.some((prefix) => (item.id as string).startsWith(prefix))) && !(typeof item?.label === "string" && item.label.length > MODEL_BUTTON_LABEL_MAX)) };
       return block;
     }).filter((block: any) => block.type !== "buttons" || !Array.isArray(block.items) || block.items.length > 0) as Schemas["AgentMessage"]["blocks"];
     if (!blocks.length) reject("empty_reply", "Réponse modèle vide après retrait des actions réservées.");
