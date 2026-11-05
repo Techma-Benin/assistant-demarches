@@ -25,16 +25,13 @@ describe('FrontDoor', () => {
     },
   );
 
-  it('selecting a showcase document then asking sends its question', async () => {
+  it('moving the document carousel then asking sends the centred document’s question', async () => {
     const onAsk = vi.fn();
     render(<FrontDoor onAsk={onAsk} config={base} />);
     const user = userEvent.setup();
-    const passport = screen.getByRole('button', { name: 'Passeport' });
-    expect(passport).toHaveAttribute('aria-pressed', 'false');
-    await user.click(passport);
-    expect(passport).toHaveAttribute('aria-pressed', 'true');
-    // The showcase button comes first; the catalogue has its own.
-    await user.click(screen.getAllByRole('button', { name: 'Demander à l’assistant' })[0]!);
+    await user.click(screen.getAllByRole('button', { name: 'Document suivant' })[0]!);
+    await user.click(screen.getAllByRole('button', { name: 'Document suivant' })[0]!);
+    await user.click(screen.getByRole('button', { name: 'Poser cette question à l’assistant : Comment renouveler mon passeport ?' }));
     expect(onAsk).toHaveBeenCalledExactlyOnceWith('Comment renouveler mon passeport ?');
   });
 
@@ -50,7 +47,6 @@ describe('FrontDoor', () => {
   it('lists the residence certificate in the showcase and the catalogue', async () => {
     const onAsk = vi.fn();
     render(<FrontDoor onAsk={onAsk} config={base} />);
-    // The catalogue shows the Identité theme first.
     expect(screen.getAllByRole('button', { name: /Certificat de résidence/ }).length).toBeGreaterThanOrEqual(2);
     await userEvent.setup().click(screen.getAllByRole('button', { name: /Certificat de résidence/ }).at(-1)!);
     expect(onAsk).toHaveBeenCalledExactlyOnceWith('Comment obtenir un certificat de résidence ?');
@@ -58,7 +54,7 @@ describe('FrontDoor', () => {
 
   it('shows the trust board', () => {
     render(<FrontDoor onAsk={() => {}} config={base} />);
-    expect(screen.getByText('Voir votre NPI')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Voir votre NPI' })).toBeInTheDocument();
     expect(screen.getAllByText(/Chaque information administrative cite sa fiche officielle/).length).toBeGreaterThan(0);
   });
 
@@ -77,7 +73,7 @@ describe('FrontDoor', () => {
       expect(screen.getByLabelText('Votre question')).toHaveFocus();
     });
 
-    it('the closing button does the same', async () => {
+    it('the closing button without a WhatsApp number does the same', async () => {
       render(<FrontDoor onAsk={() => {}} config={base} />);
       const buttons = screen.getAllByRole('button', { name: 'Poser ma question' });
       await userEvent.setup().click(buttons.at(-1)!);
@@ -101,6 +97,7 @@ describe('FrontDoor', () => {
     expect(onResume).toHaveBeenCalledOnce();
   });
 
+
   it('does nothing when disabled', async () => {
     const onAsk = vi.fn();
     render(<FrontDoor onAsk={onAsk} disabled config={base} />);
@@ -108,18 +105,18 @@ describe('FrontDoor', () => {
     await user.click(screen.getByRole('button', { name: 'Renouveler mon passeport' }));
     await user.click(screen.getByRole('tab', { name: /Justice/ }));
     await user.click(screen.getByRole('button', { name: /Légalisation de signature/ }));
-    expect(screen.getAllByRole('button', { name: 'Demander à l’assistant' }).every((b) => b.hasAttribute('disabled'))).toBe(true);
+    expect(screen.getByRole('button', { name: 'Demander à l’assistant' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Légalisation de signature/ })).toBeDisabled();
     await user.type(screen.getByLabelText('Votre question'), 'abc{Enter}');
     expect(onAsk).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Envoyer' })).toBeDisabled();
   });
 
-  it('no longer mentions WhatsApp, whatever the config', () => {
+  it('leaves WhatsApp out of the page, even when a number is configured', () => {
     render(<FrontDoor onAsk={() => {}} config={{ ...base, whatsappNumber: '+229 01 02 03 04' }} />);
     expect(document.body.textContent).not.toContain('WhatsApp');
-    expect(document.querySelector('#whatsapp')).toBeNull();
-    expect(document.querySelector('#commencer')).not.toBeNull();
+    expect(document.body.textContent).not.toContain('+229');
+    expect(screen.queryByRole('link', { name: /WhatsApp/ })).toBeNull();
   });
 
   it('renders report/privacy links only when configured', () => {
@@ -144,18 +141,19 @@ describe('FrontDoor', () => {
     expect(container.querySelector('header a svg')).toBeNull();
   });
 
-  it('keeps the mandatory footer lines', () => {
+  it('keeps the page anonymous and without the AI disclaimer', () => {
     render(<FrontDoor onAsk={() => {}} config={base} />);
-    expect(screen.getByText('L’IA peut se tromper.')).toBeInTheDocument();
-    expect(screen.getByText(/Assistant Démarches est une proposition de Techma Bénin/)).toBeInTheDocument();
+    expect(screen.queryByText(/L’IA peut se tromper/)).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Techma/i);
+    expect(screen.getByText('© 2026 Assistant Démarches')).toBeInTheDocument();
   });
 
   it('credits every photo in the footer', () => {
     render(<FrontDoor onAsk={() => {}} config={base} />);
     const footer = document.querySelector('footer') as HTMLElement;
-    expect(within(footer).getByText('Crédits photos').closest('details')).not.toHaveAttribute('open');
+    expect(within(footer).getByText('Crédits photos')).toBeInTheDocument();
     const links = within(footer).getAllByRole('link', { name: /^«.*»$/ });
-    expect(links).toHaveLength(4);
+    expect(links).toHaveLength(6);
     expect(links[0]).toHaveAttribute('href', 'https://commons.wikimedia.org/wiki/File:Le_monument_de_l%27Amazone.jpg');
   });
 

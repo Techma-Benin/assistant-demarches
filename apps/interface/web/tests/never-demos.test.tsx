@@ -1,92 +1,34 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
 import { NeverShowcase } from '@/components/home/NeverDemos';
 
-function mockEnv(reduce: boolean) {
-  vi.stubGlobal('matchMedia', (query: string) => ({
-    matches: reduce && query.includes('reduce'),
-    media: query,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-  vi.stubGlobal(
-    'IntersectionObserver',
-    class {
-      constructor(private cb: (e: { isIntersecting: boolean }[]) => void) {}
-      observe() {
-        this.cb([{ isIntersecting: true }]);
-      }
-      disconnect() {}
-    },
-  );
-}
-
-const advance = (ms: number) => {
-  for (let t = 0; t < ms; t += 25) act(() => void vi.advanceTimersByTime(25));
-};
-const SCENE_MS = 6000;
+const card = (title: RegExp) => screen.getByRole('heading', { level: 3, name: title }).closest('li') as HTMLElement;
 
 describe('NeverShowcase', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.useRealTimers();
+  it('shows the four promises at once, each with what you do instead', () => {
+    render(<NeverShowcase />);
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Ce que l’assistant ne fera jamais.');
+    for (const t of ['Voir votre NPI', 'Vous demander un code SMS', 'Répondre sans source', 'Agir sans votre accord'])
+      expect(screen.getByRole('heading', { level: 3, name: t })).toBeInTheDocument();
+    expect(within(card(/Voir votre NPI/)).getByText(/connexion sécurisée/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Essayez' })).toHaveLength(4);
   });
 
-  describe('animated', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-      mockEnv(false);
-    });
-
-    it('lists the refusals and the citation line, chat is hidden and inert', () => {
-      const { container } = render(<NeverShowcase />);
-      for (const t of ['Voir votre NPI', 'Vous demander un code SMS', 'Répondre sans source', 'Agir sans votre accord'])
-        expect(screen.getByRole('button', { name: new RegExp(t) })).toBeInTheDocument();
-      expect(screen.getByText(/Chaque information administrative cite sa fiche officielle/)).toBeInTheDocument();
-      const chat = container.querySelector('[aria-hidden="true"][inert]');
-      expect(chat).not.toBeNull();
-    });
-
-    it('plays scene 1, then advances through 2, 3, 4 and loops', () => {
-      render(<NeverShowcase />);
-      advance(3000);
-      expect(screen.getByText(/Pas ici\. Vous vous identifiez/)).toBeInTheDocument();
-      expect(screen.getByText('JAMAIS')).toBeInTheDocument();
-      advance(SCENE_MS);
-      expect(screen.getByText(/Pas dans la conversation/)).toBeInTheDocument();
-      expect(screen.getByText('JAMAIS')).toBeInTheDocument();
-      advance(SCENE_MS);
-      expect(screen.getByText(/tarif de la fiche officielle/)).toBeInTheDocument();
-      advance(SCENE_MS);
-      expect(screen.getByText(/L’assistant peut agir sur votre demande/)).toBeInTheDocument();
-      expect(screen.getByText(/ACCORD\s+REQUIS/)).toBeInTheDocument();
-      advance(SCENE_MS);
-      expect(screen.getByText(/Pas ici\. Vous vous identifiez/)).toBeInTheDocument();
-    });
-
-    it('jumps to a scene on click', () => {
-      render(<NeverShowcase />);
-      fireEvent.click(screen.getByRole('button', { name: /Répondre sans source/ }));
-      expect(screen.getByRole('button', { name: /Répondre sans source/ })).toHaveAttribute('aria-pressed', 'true');
-      advance(3000);
-      expect(screen.getByText(/tarif de la fiche officielle/)).toBeInTheDocument();
-    });
+  it('plays the exchange under the cards on « Essayez », one at a time', () => {
+    render(<NeverShowcase />);
+    expect(screen.queryByText('Je vous donne mon NPI pour aller plus vite ?')).toBeNull();
+    fireEvent.click(within(card(/Voir votre NPI/)).getByRole('button', { name: 'Essayez' }));
+    expect(screen.getByText('Je vous donne mon NPI pour aller plus vite ?')).toBeInTheDocument();
+    expect(screen.getByText(/je ne vois jamais votre NPI/)).toBeInTheDocument();
+    expect(within(card(/Voir votre NPI/)).getByRole('button', { name: 'Revoir' })).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(within(card(/Agir sans votre accord/)).getByRole('button', { name: 'Essayez' }));
+    expect(screen.queryByText('Je vous donne mon NPI pour aller plus vite ?')).toBeNull();
+    expect(screen.getByText('D’abord votre accord : je ne fais rien sans lui.')).toBeInTheDocument();
+    expect(within(document.getElementById('promise-stage')!).getByText(/L’assistant peut agir sur votre demande/)).toBeInTheDocument();
   });
 
-  describe('reduced motion', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-      mockEnv(true);
-    });
-
-    it('shows the final frame, never advances, and switches on click', () => {
-      render(<NeverShowcase />);
-      expect(screen.getByText(/Pas ici\. Vous vous identifiez/)).toBeInTheDocument();
-      advance(SCENE_MS * 2);
-      expect(screen.getByText(/Pas ici\. Vous vous identifiez/)).toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: /Agir sans votre accord/ }));
-      expect(screen.getByText(/L’assistant peut agir sur votre demande/)).toBeInTheDocument();
-      expect(screen.getByText(/ACCORD\s+REQUIS/)).toBeInTheDocument();
-    });
+  it('keeps the citation line and the proof elements', () => {
+    render(<NeverShowcase />);
+    expect(screen.getByText(/chaque réponse cite sa fiche officielle/)).toBeInTheDocument();
   });
 });

@@ -1,91 +1,178 @@
 'use client';
 
-import { ArrowUpRight } from 'lucide-react';
+import {
+  Baby,
+  BookUser,
+  DoorClosed,
+  FilePenLine,
+  Fingerprint,
+  Flag,
+  FileSignature,
+  Flower,
+  Landmark,
+  Gavel,
+  Hash,
+  Map as MapIcon,
+  PlaneTakeoff,
+  Repeat,
+  ShieldCheck,
+  TicketCheck,
+  UserRound,
+  HardHat,
+  HeartHandshake,
+  IdCard,
+  LandPlot,
+  MapPinHouse,
+  Scale,
+  Signature,
+  Stamp as StampIcon,
+  Store,
+  type LucideIcon,
+} from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { Button, cn } from '@techma/ui';
-import { DocumentArt, type DocumentKind } from './DocumentArt';
+import { DocumentArt, Stamp, type DocumentKind } from './DocumentArt';
+import { Bridge } from './Bridge';
+import { FitWord } from './FitWord';
 import { useReveal } from './use-reveal';
 
-type Theme = {
+export type Audience = 'particulier' | 'entreprise' | 'diaspora';
+
+export type CatalogueTheme = {
+  audiences: Audience[];
   title: string;
   description: string;
   kind: DocumentKind;
-  items: { name: string; question: string; kind?: DocumentKind }[];
+  backdrop: { src: string; size: string; y: string };
+  items: { name: string; about: string; question: string; icon: LucideIcon; kind?: DocumentKind }[];
 };
 
-const CATALOGUE: Theme[] = [
+export const CATALOGUE: CatalogueTheme[] = [
   {
     title: 'Identité',
-    description: 'Carte d’identité, certificats de résidence et de nationalité : les pièces qui prouvent qui vous êtes.',
+    audiences: ['particulier'],
+    backdrop: { src: '/photos/fond-identite.jpg', size: 'cover', y: '50%' },
+    description: 'Prouver qui vous êtes, votre nationalité et votre lieu de résidence.',
     kind: 'cni',
     items: [
-      { name: 'Carte d’identité', question: 'Comment obtenir ma carte d’identité ?' },
-      { name: 'Certificat de résidence', question: 'Comment obtenir un certificat de résidence ?', kind: 'residence' },
-      { name: 'Certificat d’identification personnelle', question: 'Comment obtenir mon certificat d’identification personnelle ?' },
-      { name: 'Certificat de nationalité', question: 'Comment obtenir un certificat de nationalité ?' },
+      { name: 'Carte d’identité', about: 'Votre pièce d’identité nationale, pour vous identifier partout au Bénin.', question: 'Comment obtenir ma carte d’identité ?', icon: IdCard },
+      { name: 'Certificat de résidence', about: 'Prouve votre adresse, souvent demandé dans un dossier administratif.', question: 'Comment obtenir un certificat de résidence ?', kind: 'residence', icon: MapPinHouse },
+      { name: 'Certificat d’identification personnelle', about: 'Atteste votre identité à partir de votre numéro personnel d’identification.', question: 'Comment obtenir mon certificat d’identification personnelle ?', icon: Fingerprint },
+      { name: 'Certificat de nationalité', about: 'Prouve que vous êtes de nationalité béninoise.', question: 'Comment obtenir un certificat de nationalité ?', icon: Flag },
     ],
   },
   {
     title: 'État civil',
-    description: 'Naissance, mariage, décès : les actes à demander, et comment les obtenir.',
+    audiences: ['particulier', 'diaspora'],
+    backdrop: { src: '/photos/esplanade-statue-bande.jpg', size: 'cover', y: '50%' },
+    description: 'Les grands moments de la vie de famille, enregistrés et prouvés.',
     kind: 'acte-naissance',
     items: [
-      { name: 'Acte de naissance', question: 'Comment obtenir un acte de naissance ?' },
-      { name: 'Acte de mariage', question: 'Comment obtenir un acte de mariage ?' },
-      { name: 'Acte de décès', question: 'Comment obtenir un acte de décès ?' },
+      { name: 'Acte de naissance', about: 'Le premier acte d’état civil, demandé dans presque tous les dossiers.', question: 'Comment obtenir un acte de naissance ?', icon: Baby },
+      { name: 'Acte de mariage', about: 'Prouve votre mariage, pour un dossier familial ou administratif.', question: 'Comment obtenir un acte de mariage ?', icon: HeartHandshake },
+      { name: 'Acte de décès', about: 'Constate un décès, nécessaire pour une succession ou une pension.', question: 'Comment obtenir un acte de décès ?', icon: Flower },
+      { name: 'Certificat de coutume et de célibat', about: 'Prouve que vous êtes libre de vous marier.', question: 'Comment obtenir un certificat de coutume et de célibat ?', icon: UserRound },
     ],
   },
   {
     title: 'Voyage',
-    description: 'Passeport et visa : les pièces, le coût et le délai avant de partir.',
+    audiences: ['particulier', 'diaspora'],
+    backdrop: { src: '/photos/pirogue-ganvie.jpg', size: 'auto 200svh', y: '100%' },
+    description: 'Quitter le territoire et y revenir avec les bons documents.',
     kind: 'passeport',
     items: [
-      { name: 'Passeport', question: 'Comment renouveler mon passeport ?' },
-      { name: 'Visa', question: 'Comment demander un visa ?' },
+      { name: 'Passeport', about: 'Le document pour voyager à l’étranger.', question: 'Comment renouveler mon passeport ?', icon: BookUser },
+      { name: 'Visa', about: 'L’autorisation d’entrer au Bénin pour un visiteur étranger.', question: 'Comment demander un visa ?', icon: StampIcon },
+      { name: 'Laissez-passer', about: 'Un titre de voyage temporaire, quand le passeport manque.', question: 'Comment obtenir un laissez-passer ?', icon: TicketCheck },
+      { name: 'Sortie d’un mineur', about: 'L’autorisation pour qu’un enfant quitte le territoire.', question: 'Comment obtenir une autorisation de sortie du territoire pour un mineur ?', icon: PlaneTakeoff },
     ],
   },
   {
     title: 'Entreprise',
-    description: 'Créer, modifier ou fermer une entreprise, étape par étape.',
+    audiences: ['entreprise'],
+    backdrop: { src: '/photos/vieux-pont-grand-popo.jpg', size: 'auto 200svh', y: '70%' },
+    description: 'Donner une existence légale à votre activité, puis la faire évoluer.',
     kind: 'entreprise',
     items: [
-      { name: 'Créer une entreprise', question: 'Comment créer mon entreprise ?' },
-      { name: 'Modifier une entreprise', question: 'Comment modifier mon entreprise ?' },
-      { name: 'Fermer une entreprise', question: 'Comment fermer mon entreprise ?' },
+      { name: 'Créer une entreprise', about: 'Immatriculer votre activité pour lui donner une existence légale.', question: 'Comment créer mon entreprise ?', icon: Store },
+      { name: 'Modifier une entreprise', about: 'Changer le siège, l’activité ou les dirigeants de votre entreprise.', question: 'Comment modifier mon entreprise ?', icon: FilePenLine },
+      { name: 'Fermer une entreprise', about: 'Mettre fin à votre activité de façon régulière.', question: 'Comment fermer mon entreprise ?', icon: DoorClosed },
+      { name: 'Numéro IFU', about: 'Votre identifiant fiscal unique, pour déclarer et payer vos impôts.', question: 'Comment obtenir mon numéro IFU ?', icon: Hash },
     ],
   },
   {
     title: 'Justice',
-    description: 'Casier judiciaire et légalisation de signature, sans aller-retour inutile.',
+    audiences: ['particulier', 'entreprise'],
+    backdrop: { src: '/photos/porte-non-retour-ouidah.jpg', size: 'auto 200svh', y: '62%' },
+    description: 'Prouver votre situation devant la loi et obtenir les actes du tribunal.',
     kind: 'casier',
     items: [
-      { name: 'Casier judiciaire', question: 'Comment obtenir un extrait de casier judiciaire ?' },
-      { name: 'Légalisation de signature', question: 'Comment faire légaliser une signature ?' },
+      { name: 'Casier judiciaire', about: 'Indique si vous avez des condamnations, souvent demandé pour un emploi.', question: 'Comment obtenir un extrait de casier judiciaire ?', icon: Scale },
+      { name: 'Légalisation de signature', about: 'Certifie que votre signature est authentique.', question: 'Comment faire légaliser une signature ?', icon: Signature },
+      { name: 'Attestation de non-faillite', about: 'Prouve que votre entreprise n’est pas en faillite, utile pour un marché public.', question: 'Comment obtenir une attestation de non-faillite ?', icon: ShieldCheck },
+      { name: 'Copie d’une décision de justice', about: 'Une copie officielle d’un jugement.', question: 'Comment obtenir la copie d’une décision de justice ?', icon: Gavel },
     ],
   },
   {
     title: 'Foncier et logement',
-    description: 'Titre foncier et permis de construire : savoir quoi préparer avant de déposer.',
+    audiences: ['particulier', 'entreprise'],
+    backdrop: { src: '/photos/tata-somba-nadoba.jpg', size: 'auto 200svh', y: '22%' },
+    description: 'Sécuriser votre terrain et construire en règle.',
     kind: 'permis',
     items: [
-      { name: 'Titre foncier', question: 'Comment obtenir un titre foncier ?' },
-      { name: 'Permis de construire', question: 'Comment obtenir un permis de construire ?' },
+      { name: 'Titre foncier', about: 'Le document qui prouve que le terrain vous appartient.', question: 'Comment obtenir un titre foncier ?', icon: LandPlot },
+      { name: 'Permis de construire', about: 'L’autorisation de construire sur votre terrain.', question: 'Comment obtenir un permis de construire ?', icon: HardHat },
+      { name: 'Mutation de titre foncier', about: 'Inscrire le nouveau propriétaire après une vente ou une succession.', question: 'Comment faire la mutation d’un titre foncier ?', icon: Repeat },
+      { name: 'Extrait de plan cadastral', about: 'Le plan officiel qui situe votre parcelle.', question: 'Comment obtenir l’extrait de plan cadastral d’une parcelle ?', icon: MapIcon },
+    ],
+  },
+  {
+    title: 'Services consulaires',
+    audiences: ['diaspora'],
+    backdrop: { src: '/photos/porte-non-retour-ouidah.jpg', size: 'auto 200svh', y: '62%' },
+    description: 'Vos démarches depuis l’étranger, avec votre consulat.',
+    kind: 'passeport',
+    items: [
+      { name: 'Carte consulaire', about: 'Votre carte d’identification auprès du consulat du Bénin.', question: 'Comment obtenir ou renouveler ma carte consulaire ?', icon: IdCard },
+      { name: 'Immatriculation consulaire', about: 'Vous faire connaître du consulat de votre pays de résidence.', question: 'Comment m’immatriculer au consulat ?', icon: Landmark },
+      { name: 'Procuration', about: 'Charger un proche d’une démarche au Bénin à votre place.', question: 'Comment faire une procuration depuis l’étranger ?', icon: FileSignature },
+      { name: 'Autorisation parentale', about: 'Autoriser une démarche pour votre enfant depuis l’étranger.', question: 'Comment obtenir une autorisation parentale depuis l’étranger ?', icon: UserRound },
     ],
   },
 ];
 
-const sectionPad = 'py-24 md:py-40';
-const h2Class = 'm-0 font-display font-extrabold leading-[1.02] tracking-[-0.04em]';
+const sectionPad = 'py-16 md:py-24';
 
 /** Staggered entrance step: pass the order of the element inside its section. */
 const rv = (i: number) => ({ 'data-r': '', style: { '--r': i } as CSSProperties });
 
+export const CATALOGUE_PHOTO_CREDITS = [
+  {
+    src: '/photos/tata-somba-nadoba.jpg',
+    title: 'Tata Somba de Nadoba',
+    author: 'Step may',
+    licence: 'CC BY-SA 4.0',
+    page: 'https://commons.wikimedia.org/wiki/File:Tata_Somba_de_Nadoba.jpg',
+  },
+];
+
+const AUDIENCES: { key: Audience | null; label: string }[] = [
+  { key: null, label: 'Tous' },
+  { key: 'particulier', label: 'Particulier' },
+  { key: 'entreprise', label: 'Entreprise' },
+  { key: 'diaspora', label: 'Diaspora' },
+];
+
 const FAN_ROTATIONS = ['-rotate-[8deg]', 'rotate-0', 'rotate-[8deg]'];
 
 /** « Toutes les démarches »: themes on the left, the selected theme as one detail card on the right. */
-export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: boolean; onAsk: (q: string) => void; onAskOther: () => void }) {
+export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk: (q: string) => void }) {
   const ref = useReveal<HTMLElement>();
+  const [audience, setAudience] = useState<Audience | null>(null);
   const [selected, setSelected] = useState(0);
+  const visible = audience ? CATALOGUE.filter((t) => t.audiences.includes(audience)) : CATALOGUE;
+  const [lifted, setLifted] = useState<number | null>(null);
+  const [pointed, setPointed] = useState<number | null>(null);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   // Vertical list from lg up, horizontal scroll row below: the tablist orientation follows the layout.
   const [vertical, setVertical] = useState(true);
@@ -97,15 +184,24 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
     mq.addEventListener?.('change', sync);
     return () => mq.removeEventListener?.('change', sync);
   }, []);
-  const theme = CATALOGUE[selected]!;
+  const theme = visible[selected]!;
   const fan = theme.items.slice(0, 3);
 
-  const move = (next: number) => {
+  const choose = (next: number) => {
     setSelected(next);
+    setLifted(null);
+    setPointed(null);
+  };
+  const point = (i: number | null) => {
+    setPointed(i);
+    setLifted(i !== null && i < fan.length ? i : null);
+  };
+  const move = (next: number) => {
+    choose(next);
     tabs.current[next]?.focus();
   };
   const onKey = (e: KeyboardEvent) => {
-    const last = CATALOGUE.length - 1;
+    const last = visible.length - 1;
     let next: number;
     if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = selected === last ? 0 : selected + 1;
     else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = selected === 0 ? last : selected - 1;
@@ -117,37 +213,64 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
   };
 
   return (
-    <section id="themes" ref={ref} aria-labelledby="themes-title" className={cn(sectionPad, 'overflow-x-clip bg-action text-on-action')}>
+    <section id="themes" ref={ref} data-theme="light" aria-labelledby="themes-title" className={cn(sectionPad, 'overflow-x-clip bg-action text-on-action lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-8')}>
       <div className="mx-auto max-w-[1320px] px-5 md:px-8">
-        {/* Decorative: the photo shows through the letters and drifts slowly. */}
-        <div
-          {...rv(0)}
-          aria-hidden="true"
-          style={{ ...rv(0).style, backgroundImage: 'url(/photos/esplanade-amazone-lever-soleil.jpg)' }}
-          className="select-none whitespace-nowrap bg-cover bg-clip-text bg-[position:50%_50%] pt-[0.1em] font-display text-[clamp(48px,15vw,240px)] font-extrabold uppercase leading-[0.85] tracking-[-0.05em] text-transparent motion-safe:animate-[home-pan_30s_ease-in-out_infinite_alternate]"
-        >
-          Démarches
+        {/* Decorative: the chosen theme's photo shows through the letters, fixed to the screen while the page scrolls. */}
+        <div {...rv(0)}>
+          <FitWord
+            word="DÉMARCHES"
+            max={240}
+            maxScreenHeight={0.17}
+            fills={visible.map((t) => ({ backgroundImage: `url(${t.backdrop.src})`, backgroundSize: t.backdrop.size, backgroundPosition: `50% ${t.backdrop.y}` }))}
+            active={selected}
+            className="type-photo bg-fixed"
+          />
         </div>
 
-        <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-x-8">
-          <h2 {...rv(1)} id="themes-title" className={cn(h2Class, 'text-[clamp(36px,4vw,52px)] lg:col-span-6')}>
-            Toutes les démarches.
-          </h2>
-          <p {...rv(2)} className="m-0 max-w-[48ch] text-[18px] leading-normal lg:col-span-5 lg:col-start-8">
-            Six thèmes, d’après les fiches officielles du service public. Choisissez une démarche : l’assistant vous dit quoi fournir et vous accompagne.
-          </p>
+        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-end lg:gap-x-8">
+          <div {...rv(2)} className="lg:col-span-12">
+            <h2 id="themes-title" className="sr-only">
+              Trouver ma démarche
+            </h2>
+            <p className="m-0 text-[clamp(17px,1.5vw,20px)] leading-normal text-on-action/85">
+              Trouvez la vôtre en un clic, d’après les fiches officielles du service public.
+            </p>
+          </div>
         </div>
 
-        <div className="mt-12 grid grid-cols-1 gap-10 lg:mt-16 lg:grid-cols-12 lg:gap-x-8">
-          <div {...rv(3)} className="flex min-w-0 flex-col gap-10 lg:col-span-4">
+        <div className="mt-8 grid grid-cols-1 gap-8 lg:mt-8 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:gap-x-12 lg:gap-y-6">
+          <div {...rv(3)} className="min-w-0 lg:col-span-4">
+            <p className="m-0 mb-2 text-[14px] font-semibold text-on-action/70">Vous êtes</p>
+            <div role="group" aria-label="Vous êtes" className="mb-4 flex flex-wrap items-center gap-1.5">
+              {AUDIENCES.map((a) => {
+                const on = audience === a.key;
+                return (
+                  <button
+                    key={a.label}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => {
+                      setAudience(a.key);
+                      choose(0);
+                    }}
+                    className={cn(
+                      'ui-press inline-flex min-h-10 items-center rounded-pill border px-3 text-[14px] font-semibold transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-on-action',
+                      on ? 'border-on-action bg-on-action text-action' : 'border-on-action/30 text-on-action/80 hover:border-on-action hover:text-on-action',
+                    )}
+                  >
+                    {a.label}
+                  </button>
+                );
+              })}
+            </div>
             <div
               role="tablist"
               aria-label="Thèmes de démarches"
               aria-orientation={vertical ? 'vertical' : 'horizontal'}
               onKeyDown={onKey}
-              className="ui-scrollbar-none -mx-5 flex overflow-x-auto px-5 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0"
+              className="ui-scrollbar-none -mx-5 flex gap-2 overflow-x-auto px-5 pb-1 lg:mx-0 lg:flex-col lg:gap-0 lg:overflow-visible lg:border-t lg:border-on-action/20 lg:px-0 lg:pb-0"
             >
-              {CATALOGUE.map((t, i) => {
+              {visible.map((t, i) => {
                 const active = i === selected;
                 return (
                   <button
@@ -161,21 +284,25 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
                     aria-selected={active}
                     aria-controls="theme-panel"
                     tabIndex={active ? 0 : -1}
-                    onClick={() => setSelected(i)}
+                    onClick={() => choose(i)}
+                    onMouseEnter={() => choose(i)}
+                    onFocus={() => choose(i)}
                     className={cn(
-                      'ui-press relative flex shrink-0 items-baseline justify-between gap-6 whitespace-nowrap px-4 py-3 text-left font-display text-[20px] leading-[1.15] tracking-[-0.03em] lg:border-t lg:border-on-action/20 lg:px-0 lg:text-[clamp(22px,2vw,30px)]',
-                      i === CATALOGUE.length - 1 && 'lg:border-b',
-                      active ? 'font-extrabold text-on-action' : 'font-semibold text-on-action/60 hover:text-on-action',
+                      'ui-press relative flex min-h-11 shrink-0 items-center justify-between gap-6 whitespace-nowrap rounded-pill border px-4 text-left text-[15px] font-semibold transition-colors duration-200',
+                      'lg:rounded-none lg:border-0 lg:border-b lg:border-on-action/20 lg:px-0 lg:py-[clamp(5px,0.9svh,11px)] lg:font-display lg:text-[clamp(20px,1.7vw,26px)] lg:leading-[1.15] lg:tracking-[-0.03em]',
+                      active
+                        ? 'border-on-action bg-on-action text-action lg:bg-transparent lg:font-extrabold lg:text-on-action'
+                        : 'border-on-action/25 text-on-action/75 hover:text-on-action lg:text-on-action/60',
                     )}
                   >
                     {t.title}
-                    <span aria-hidden="true" className="hidden font-mono text-[13px] font-normal text-on-action/60 lg:inline">
+                    <span aria-hidden="true" className={cn('hidden font-mono text-[13px] font-normal transition-colors duration-200 lg:inline', active ? 'text-(--home-field-green)' : 'text-on-action/60')}>
                       {String(i + 1).padStart(2, '0')}
                     </span>
                     <span
                       aria-hidden="true"
                       className={cn(
-                        'absolute inset-x-0 bottom-0 h-0.5 origin-left bg-(--home-field-green) transition-transform duration-300 motion-reduce:transition-none',
+                        'absolute inset-x-0 -bottom-px hidden h-0.5 origin-left bg-(--home-field-green) transition-transform duration-500 ease-out lg:block',
                         active ? 'scale-x-100' : 'scale-x-0',
                       )}
                     />
@@ -183,74 +310,102 @@ export function CatalogueSection({ disabled, onAsk, onAskOther }: { disabled: bo
                 );
               })}
             </div>
-
-            <div className="flex max-w-[34ch] flex-col items-start gap-2 text-[16px] leading-normal">
-              <p className="m-0 font-semibold">Une autre démarche ?</p>
-              <p className="m-0 text-on-action/75">Posez votre question : l’assistant cherche dans toutes les fiches du service public.</p>
-              <button
-                type="button"
-                onClick={onAskOther}
-                className="ui-press inline-flex min-h-11 items-center font-semibold text-on-action underline underline-offset-4 hover:no-underline"
-              >
-                Poser ma question
-              </button>
-            </div>
           </div>
+
+          <p
+            key={`${selected}-${pointed}`}
+            aria-live="polite"
+            className="chat-fade-in order-first m-0 max-w-[36ch] text-[17px] leading-normal text-on-action/85 lg:order-none lg:col-span-4 lg:row-start-2"
+          >
+            {pointed !== null && theme.items[pointed] ? (
+              <>
+                <span className="font-semibold text-on-action">{theme.items[pointed].name} : </span>
+                {theme.items[pointed].about}
+              </>
+            ) : (
+              theme.description
+            )}
+          </p>
 
           <div
             {...rv(4)}
             role="tabpanel"
             id="theme-panel"
+            data-theme="light"
             aria-labelledby={`theme-tab-${selected}`}
-            className="min-w-0 overflow-hidden rounded-[24px] bg-canvas text-ink lg:col-span-8"
+            className="min-w-0 overflow-hidden rounded-[24px] bg-canvas text-ink lg:col-span-8 lg:col-start-5 lg:row-span-2 lg:row-start-1"
           >
-            {/* Re-mounted on tab change so the fan and the text enter again. */}
-            <div key={selected}>
-              <div aria-hidden="true" className="relative flex h-[200px] items-end justify-center overflow-hidden bg-sunken lg:h-[240px]">
-                {fan.map((item, i) => (
-                  <div
-                    key={item.name}
-                    style={{ animationDelay: `${i * 80}ms` }}
-                    className={cn(
-                      'relative h-[88%] translate-y-[8%] aspect-[3/4] motion-safe:animate-[home-rise_600ms_var(--ui-ease-out)_both]',
-                      i > 0 && '-ml-[6%]',
-                      FAN_ROTATIONS[fan.length === 2 && i === 1 ? 2 : i],
-                    )}
-                  >
-                    <DocumentArt kind={item.kind ?? theme.kind} className="size-full drop-shadow-md" />
-                  </div>
-                ))}
+            <div className="grid min-h-full grid-cols-1 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+              <div aria-hidden="true" className="relative h-[220px] overflow-hidden bg-sunken md:h-auto md:min-h-[clamp(300px,40svh,420px)]">
+                {visible.map((t, ti) => {
+                  const shown = ti === selected;
+                  const docs = t.items.slice(0, 3);
+                  return (
+                    <div
+                      key={t.title}
+                      className={cn('absolute inset-0 flex items-center justify-center px-4 transition-opacity duration-700 ease-in-out', shown ? 'opacity-100' : 'opacity-0')}
+                    >
+                      {docs.map((item, i) => (
+                        <div
+                          key={item.name}
+                          className={cn(
+                            'relative aspect-[3/4] h-[62%] transition-[translate,scale] duration-300 ease-out md:h-[58%]',
+                            i > 0 && '-ml-[14%]',
+                            FAN_ROTATIONS[i],
+                            i === 1 && 'z-[1]',
+                            shown && lifted === i ? 'z-10 -translate-y-[6%] scale-[1.08]' : 'translate-y-0',
+                          )}
+                        >
+                          <div style={{ animationDelay: `${i * 700}ms` }} className="relative size-full">
+                            <DocumentArt kind={item.kind ?? t.kind} className="size-full drop-shadow-md" />
+                            {i === 1 && shown && <Stamp key={selected} className="doc-stamp absolute -right-[10%] bottom-[10%] size-[46%] -rotate-12" />}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
-              <div className="chat-fade-in grid grid-cols-1 gap-8 p-6 md:grid-cols-2 md:gap-10 md:p-8">
-                <div className="flex flex-col items-start gap-4">
-                  <h3 className="m-0 font-display text-[28px] font-extrabold leading-[1.1] tracking-[-0.03em]">{theme.title}</h3>
-                  <p className="m-0 text-[16px] leading-normal text-ink-muted">{theme.description}</p>
-                  <Button disabled={disabled} onClick={() => onAsk(theme.items[0]!.question)}>
-                    Demander à l’assistant
-                  </Button>
-                </div>
-                <div className="flex flex-col gap-3">
-                  <p className="m-0 text-[13px] font-semibold uppercase tracking-[0.08em] text-(--home-field-green)">Les démarches</p>
-                  <ul className="m-0 flex list-none flex-col p-0">
-                    {theme.items.map((item) => (
-                      <li key={item.name} className="border-t border-line last:border-b">
+              <div key={selected} className="chat-fade-in flex flex-col justify-center gap-5 p-6 md:p-8">
+                <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 sm:grid-cols-2">
+                  {theme.items.map((item, i) => {
+                    const Icon = item.icon;
+                    return (
+                      <li key={item.name}>
                         <button
                           type="button"
                           disabled={disabled}
                           onClick={() => onAsk(item.question)}
-                          className="ui-press group flex min-h-12 w-full items-center justify-between gap-4 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                          onMouseEnter={() => point(i)}
+                          onMouseLeave={() => point(null)}
+                          onFocus={() => point(i)}
+                          onBlur={() => point(null)}
+                          className="ui-press group flex h-full min-h-16 w-full items-center gap-3 rounded-[16px] border border-line bg-surface p-3 text-left transition-colors duration-200 hover:border-(--home-field-green) disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          <span className="text-[16px] font-semibold group-enabled:group-hover:underline">{item.name}</span>
-                          <ArrowUpRight aria-hidden="true" className="size-5 shrink-0" />
+                          <span
+                            aria-hidden="true"
+                            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-trust-soft text-trust-text transition-colors duration-200 group-enabled:group-hover:bg-(--home-field-green) group-enabled:group-hover:text-on-trust group-focus-visible:bg-(--home-field-green) group-focus-visible:text-on-trust"
+                          >
+                            <Icon className="size-5" strokeWidth={1.75} />
+                          </span>
+                          <span className="min-w-0 flex-1 text-[15px] font-semibold leading-snug">{item.name}</span>
                         </button>
                       </li>
-                    ))}
-                  </ul>
+                    );
+                  })}
+                </ul>
+                <div className="flex justify-center pt-1">
+                  <Button disabled={disabled} onClick={() => onAsk(theme.items[0]!.question)}>
+                    Demander à l’assistant
+                  </Button>
                 </div>
               </div>
             </div>
           </div>
         </div>
+        <Bridge to="garanties" className="mt-6 text-on-action">
+          Et vos données, dans tout ça ?
+        </Bridge>
       </div>
     </section>
   );
