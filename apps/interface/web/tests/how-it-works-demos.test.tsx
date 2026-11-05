@@ -43,7 +43,7 @@ describe('How it works demos', () => {
     expect(root).toHaveAttribute('inert');
   });
 
-  it('AskDemo types, sends, consults, then loops back to empty', () => {
+  it('AskDemo types, sends, consults, then holds that frame', () => {
     render(<AskDemo />);
     expect(screen.getByText('Posez votre question…')).toBeInTheDocument();
     expect(screen.queryByText('Reçu')).not.toBeInTheDocument();
@@ -52,28 +52,28 @@ describe('How it works demos', () => {
     expect(screen.getByText('Reçu')).toBeInTheDocument();
     advance(1300);
     expect(screen.getByText('Je consulte la fiche officielle…')).toBeInTheDocument();
-    advance(3400 + 500 + 100);
-    expect(screen.queryByText('Reçu')).not.toBeInTheDocument();
-    expect(screen.getByText('Posez votre question…')).toBeInTheDocument();
+    advance(20000);
+    expect(screen.getByText('Reçu')).toBeInTheDocument();
+    expect(screen.getByText('Je consulte la fiche officielle…')).toBeInTheDocument();
   });
 
-  it('PrepareDemo reaches the created request, then restarts', () => {
+  it('PrepareDemo reaches the created request, then holds it', () => {
     render(<PrepareDemo />);
     expect(screen.queryByText('Demande créée')).not.toBeInTheDocument();
     advance(400 + 2060 + 800 + 800 + 800 + 400 + 100);
     expect(screen.getByText('Demande créée')).toBeInTheDocument();
     expect(screen.getByText('Dossier reçu')).toBeInTheDocument();
-    advance(3400 + 500 + 600 + 100);
-    expect(screen.queryByText('Demande créée')).not.toBeInTheDocument();
+    advance(20000);
+    expect(screen.getByText('Demande créée')).toBeInTheDocument();
   });
 
-  it('ValidateDemo ends on Déposée, then restarts', () => {
+  it('ValidateDemo ends on Déposée, then holds it', () => {
     render(<ValidateDemo />);
     expect(screen.getByText('Prêt à valider')).toBeInTheDocument();
     advance(900 + 800 + 350 + 1000 + 100);
     expect(screen.getByText('Déposée')).toBeInTheDocument();
-    advance(3200 + 500 + 400);
-    expect(screen.getByText('Prêt à valider')).toBeInTheDocument();
+    advance(20000);
+    expect(screen.getByText('Déposée')).toBeInTheDocument();
   });
 
   it('still plays under reduced motion', () => {

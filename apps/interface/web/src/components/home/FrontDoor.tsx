@@ -16,7 +16,6 @@ import { NeverShowcase } from './NeverDemos';
 import { PromptDock } from './PromptDock';
 import { Bridge } from './Bridge';
 import { CATALOGUE_PHOTO_CREDITS, CatalogueSection } from './CatalogueSection';
-import { GuidedStart } from './GuidedStart';
 import { LiveSearch } from './LiveSearch';
 import { useReveal } from './use-reveal';
 
@@ -145,7 +144,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
             <Composer
               variant="compact"
               label="Votre question"
-              placeholder="Posez votre question, par exemple : comment obtenir un casier judiciaire ?"
+              placeholder="Posez votre question ou tapez un mot-clé : passeport, casier, titre foncier…"
               value={draft}
               onValueChange={setDraft}
               onSend={submitDraft}
@@ -159,7 +158,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
           </div>
         </div>
 
-        <HeroSlideshow className="min-h-[260px] flex-1 lg:min-h-[360px] lg:max-w-[1200px]" />
+        <HeroSlideshow className="min-h-[260px] flex-1 lg:min-h-[220px] lg:max-w-[1200px]" />
 
         <div className="flex flex-col items-center gap-2 pb-4 pt-3 text-center md:px-10 md:pb-5">
           {resume && <ResumeLine {...resume} />}
@@ -182,21 +181,6 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
       </div>
 
       <main>
-        <section id="commencer" aria-labelledby="start-title" className="bg-sunken py-12 md:py-16">
-          <div className="mx-auto max-w-[1320px] px-5 md:px-8">
-            <div className="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-8">
-              <h2 id="start-title" className={cn(h2Class, 'text-[clamp(28px,3vw,42px)]')}>
-                Pas sûr de quoi demander ?
-              </h2>
-              <p className="m-0 text-[17px] text-ink-muted">Trouvez votre démarche en trois clics.</p>
-            </div>
-            <GuidedStart disabled={disabled} onAsk={ask} />
-            <Bridge to="documents" className="mt-6 text-ink">
-              Ou voyez les documents les plus demandés
-            </Bridge>
-          </div>
-        </section>
-
         <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
           <p className="mx-auto mb-3 w-full max-w-[1320px] px-5 text-[14px] font-semibold uppercase tracking-[0.08em] text-trust-text md:px-8">Exemples</p>
           <div className="mx-auto mb-8 flex max-w-[1320px] flex-wrap items-end justify-between gap-x-8 gap-y-2 px-5 md:mb-10 md:px-8">
