@@ -1,7 +1,7 @@
 'use client';
 
 import { BrandMark, Button, FlagGlyph, IconButton, InlineAlert, Tooltip, cn } from '@techma/ui';
-import { ChevronsLeft, ChevronsRight, Menu, X } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
@@ -9,6 +9,7 @@ import { adminApi, type CaseStatus } from '@/lib/admin/api';
 import { useConsole } from '../console/console-context';
 import { AccountMenu } from './account-menu';
 import { ActiveCaseStatusProvider } from './active-case-status';
+import { NavActiveNotch, RAIL_CONTENT_CLASS, RailCollapseControl, RailEdgeShadow, RailGrip, railFrameClass, useSharedRailWidth } from '@/components/shell/rail-resize';
 import { BUSINESS_NAV, PROFILE_NAV, USERS_NAV, isActive, type NavItem } from './nav-items';
 
 const DESKTOP_QUERY = '(min-width: 768px)';
@@ -56,6 +57,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [indicatorTransition, setIndicatorTransition] = useState(true);
   const [navMetrics, setNavMetrics] = useState<{ height: number; step: number } | null>(null);
+  const [trackTop, setTrackTop] = useState<number | null>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const desktop = useSyncExternalStore(subscribeDesktop, isDesktop, () => false);
   const { profile, administrationId, scopeId, isSuperAdmin, can, loading, error, reload } = useConsole();
@@ -71,9 +74,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const syncNavMetrics = useCallback(() => {
     const list = listRef.current;
+    const shell = shellRef.current;
     if (!list) return;
     const firstItem = list.querySelector('li');
     if (!firstItem) return;
+    if (shell) {
+      const top = Math.round(firstItem.getBoundingClientRect().top - shell.getBoundingClientRect().top);
+      setTrackTop((prev) => (prev === top ? prev : top));
+    }
     const height = firstItem.getBoundingClientRect().height;
     if (height <= 0) return;
     const gap = Number.parseFloat(getComputedStyle(list).rowGap || getComputedStyle(list).gap) || 0;
@@ -100,68 +108,61 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('resize', onResize);
   }, [syncNavMetrics]);
 
-  function toggleCollapsed() {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try {
-        if (next) window.localStorage.setItem(NAV_COLLAPSED_KEY, 'true');
-        else window.localStorage.removeItem(NAV_COLLAPSED_KEY);
-      } catch {
-        // Storage unavailable: the choice only lasts for this page.
-      }
-      return next;
-    });
-  }
+  const commitCollapsed = useCallback((next: boolean) => {
+    setCollapsed(next);
+    try {
+      if (next) window.localStorage.setItem(NAV_COLLAPSED_KEY, 'true');
+      else window.localStorage.removeItem(NAV_COLLAPSED_KEY);
+    } catch {
+      // Storage unavailable: the choice only lasts for this page.
+    }
+  }, []);
+  const rail = useSharedRailWidth(collapsed, commitCollapsed);
 
-  const navTrackStyle = {
+  const navVars = {
     '--nav-active-index': Math.max(activeIndex, 0),
+    ...(trackTop != null ? { '--nav-track-top': `${trackTop}px` } : {}),
     ...(navMetrics
       ? {
           '--nav-item-height': `${navMetrics.height}px`,
           '--nav-item-step': `${navMetrics.step}px`,
         }
       : {}),
+    '--rail-cut-top': 'calc(var(--nav-track-top, 0px) + var(--nav-active-index, 0) * var(--nav-item-step, 0px))',
   } as CSSProperties;
 
-  const collapseToggle = (
-    <button
-      type="button"
-      onClick={toggleCollapsed}
-      aria-expanded={!collapsed}
-      aria-label={collapsed ? 'Déplier le menu latéral' : 'Replier le menu latéral'}
-      className="hidden size-9 shrink-0 cursor-pointer items-center justify-center rounded-none text-ink-muted transition-colors duration-(--ui-dur-press) hover:bg-sunken hover:text-ink md:inline-flex"
-    >
-      {collapsed ? (
-        <ChevronsRight aria-hidden="true" className="size-4" strokeWidth={2} />
-      ) : (
-        <ChevronsLeft aria-hidden="true" className="size-4" strokeWidth={2} />
-      )}
-    </button>
-  );
+  const navTrackStyle = navVars;
 
   return (
     <ActiveCaseStatusProvider onStatus={setCaseStatus}>
       <div
+        ref={shellRef}
         data-collapsed={collapsed ? '' : undefined}
-        className={cn(
-          'min-h-dvh md:grid md:transition-[grid-template-columns] md:duration-[220ms] md:ease-(--ui-ease-drawer)',
-          collapsed ? 'md:grid-cols-[4.25rem_minmax(0,1fr)]' : 'md:grid-cols-[15rem_minmax(0,1fr)]',
-        )}
+        style={{ '--rail-width': rail.column, ...navVars } as CSSProperties}
+        className={railFrameClass(rail.dragging)}
       >
-      <aside className="relative bg-shell-rail md:sticky md:top-0 md:h-dvh">
+      <aside className="surface-glass relative md:sticky md:top-0 md:h-dvh">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-3 md:flex md:h-full md:flex-col md:flex-nowrap md:items-stretch md:justify-start md:gap-0 md:p-0">
           <div
             className={cn(
-              'flex w-full shrink-0 items-center justify-between gap-2 px-3 pt-3 md:pt-4',
+              'flex w-full shrink-0 items-center justify-between gap-2 px-3 pt-3 md:gap-1.5 md:px-2 md:pt-3',
               collapsed && 'md:flex-col md:items-center md:gap-2 md:px-0 md:pb-1',
             )}
           >
-            <div className={cn('min-w-0 flex-1', collapsed && 'md:hidden')}>
-              <BrandMark />
-              <p className="mt-1 text-xs leading-tight font-semibold text-ink-muted">Console d’administration</p>
-            </div>
-            {collapsed ? <FlagGlyph decorative width={28} height={21} className="hidden shrink-0 md:inline-block" /> : null}
-            {collapseToggle}
+            {collapsed ? (
+              <span className="md:hidden">
+                <BrandMark />
+              </span>
+            ) : (
+              <div className="min-w-0 flex-1">
+                <BrandMark />
+              </div>
+            )}
+            <RailCollapseControl
+              collapsed={collapsed}
+              onToggle={() => commitCollapsed(!collapsed)}
+              mark={<FlagGlyph decorative width={28} height={21} className="shrink-0" />}
+            />
             <IconButton
               label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
               variant="ghost"
@@ -184,7 +185,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 : 'pointer-events-none invisible -translate-y-2 opacity-0 duration-(--ui-dur-exit)',
             )}
           >
-            <nav aria-label="Navigation principale" className="w-full md:pt-8">
+            <nav aria-label="Navigation principale" className="w-full md:pt-4">
               <div
                 data-admin-nav-track=""
                 data-nav-active-index={activeIndex}
@@ -196,7 +197,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     aria-hidden="true"
                     data-nav-indicator=""
                     className={cn(
-                      'pointer-events-none absolute inset-x-0 z-0 hidden overflow-visible md:block motion-reduce:transition-none',
+                      'pointer-events-none absolute inset-x-0 z-[1] hidden overflow-visible md:block motion-reduce:transition-none',
                       indicatorTransition && 'transition-[transform,height] duration-[220ms] ease-(--ui-ease-drawer)',
                     )}
                     style={{
@@ -221,13 +222,22 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </ul>
               </div>
             </nav>
-            <div className="mt-auto px-2 pt-2 pb-3 md:px-2 md:pb-3">
+            <div className="mt-auto px-2 pt-2 pb-3 md:mt-auto md:px-2 md:pb-3">
               <AccountMenu collapsed={collapsed} />
             </div>
           </div>
         </div>
+        <RailGrip
+          collapsed={collapsed}
+          width={rail.width}
+          max={rail.max}
+          onProposed={rail.applyProposed}
+          onNudge={rail.nudge}
+          onDraggingChange={rail.setDragging}
+        />
       </aside>
-      <main className="min-w-0 w-full px-4 py-6 md:px-8 md:py-8 xl:px-10">
+      <RailEdgeShadow cutout={activeIndex >= 0 && trackTop != null} />
+      <main className={RAIL_CONTENT_CLASS}>
         {error ? (
           <div className="flex max-w-xl flex-col items-start gap-4">
             <InlineAlert>{error}</InlineAlert>
@@ -247,22 +257,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
       </div>
     </ActiveCaseStatusProvider>
-  );
-}
-
-/** Inverse corners: rail scoops around a canvas hole. White square overlaps the block 1px; the 16px rail radius sits on the block edge. */
-function NavActiveNotch() {
-  return (
-    <>
-      <span className="absolute inset-0 rounded-none bg-canvas" />
-      <span data-nav-active-bar="" className="absolute inset-y-0 left-0 w-0.5 rounded-none bg-ink-subtle" />
-      <span data-nav-corner="top" className="absolute right-0 bottom-[calc(100%-1px)] h-[17px] w-4 bg-canvas">
-        <span className="absolute top-0 right-0 size-4 rounded-br-full bg-shell-rail" />
-      </span>
-      <span data-nav-corner="bottom" className="absolute top-[calc(100%-1px)] right-0 h-[17px] w-4 bg-canvas">
-        <span className="absolute right-0 bottom-0 size-4 rounded-tr-full bg-shell-rail" />
-      </span>
-    </>
   );
 }
 
@@ -288,9 +282,11 @@ function NavLink({
       aria-label={count ? `${label}, ${count} à traiter` : undefined}
       data-nav-active={active ? 'true' : undefined}
       className={cn(
-        'flex min-h-12 w-full items-center gap-3 rounded-none px-3 py-3 text-[15px] font-semibold transition-colors duration-(--ui-dur-press) md:h-[51px] md:min-h-[51px] md:py-3.5',
+        'flex min-h-12 w-full items-center gap-3 rounded-none px-3 py-3 text-[15px] font-semibold transition-colors duration-(--ui-dur-press)',
+        collapsed
+          ? 'md:h-[51px] md:min-h-[51px] md:justify-center md:px-0 md:py-3.5'
+          : 'md:h-16 md:min-h-16 md:gap-2.5 md:px-2.5 md:py-2',
         active ? 'text-ink max-md:bg-canvas md:bg-transparent' : 'text-ink-muted hover:bg-sunken/80 hover:text-ink dark:hover:bg-sunken/60',
-        collapsed && 'md:justify-center md:px-0',
       )}
     >
       <Icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.75} fill="none" />

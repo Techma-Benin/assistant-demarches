@@ -27,6 +27,10 @@ describe('Modèles', () => {
     expect(within(items[1]).queryByText('Actif')).not.toBeInTheDocument();
     expect(within(items[1]).getByRole('button', { name: 'Activer Mistral Small' })).toBeInTheDocument();
     expect(within(items[0]).getByText('Groq Llama')).toBeInTheDocument();
+    expect(within(items[0]).queryByText('Discussion')).not.toBeInTheDocument();
+    expect(within(items[1]).queryByText('Discussion')).not.toBeInTheDocument();
+    expect(items[0].querySelector('[data-model-mark="discussion"] svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(items[1].querySelector('[data-model-mark="discussion"] svg')).toBeTruthy();
     expect(within(items[0]).getByText('llama-3.3-70b-versatile')).toBeInTheDocument();
   });
 
@@ -55,6 +59,8 @@ describe('Modèles', () => {
     const dialog = screen.getByRole('dialog', { name: 'Modifier Groq Llama' });
     expect(within(dialog).getByLabelText(/Adresse du service/)).toHaveValue('https://api.groq.com/openai/v1');
     expect(within(dialog).getByLabelText(/Protocole/)).toHaveValue('chat-completions');
+    expect(within(dialog).getByLabelText(/Rôle/)).toHaveValue('discussion');
+    expect(within(dialog).queryByLabelText(/Température/)).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText(/Clé d’accès/)).toHaveValue('');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -78,7 +84,7 @@ describe('Modèles', () => {
     render(<ModelsPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'Ajouter un modèle' }));
     const form = screen.getByRole('form', { name: 'Ajouter un modèle' });
-    expect(within(form).getByText('La clé est enregistrée chiffrée. Elle ne sera plus visible ensuite.')).toBeInTheDocument();
+    expect(within(form).queryByText(/chiffrée|conserver la clé|Discussion répond|le plus courant|compatible OpenAI/)).not.toBeInTheDocument();
     await userEvent.type(within(form).getByLabelText(/^Nom/), 'Mistral Été');
     await userEvent.type(within(form).getByLabelText(/Adresse du service/), 'https://api.mistral.ai/v1');
     await userEvent.selectOptions(within(form).getByLabelText(/Protocole/), 'responses');
@@ -86,8 +92,9 @@ describe('Modèles', () => {
     const key = within(form).getByLabelText(/Clé d’accès/);
     expect(key).toHaveAttribute('type', 'password');
     await userEvent.type(key, 'sk-test-operator-key');
-    await userEvent.clear(within(form).getByLabelText(/Température/));
-    await userEvent.type(within(form).getByLabelText(/Température/), '0.5');
+    expect(within(form).queryByLabelText(/Température/)).not.toBeInTheDocument();
+    expect(within(form).getByLabelText(/Rôle/)).toHaveValue('discussion');
+    await userEvent.selectOptions(within(form).getByLabelText(/Rôle/), 'transcription');
     await userEvent.click(within(form).getByRole('button', { name: 'Enregistrer' }));
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
     const post = calls.find((c) => c.method === 'POST')!;
@@ -100,7 +107,8 @@ describe('Modèles', () => {
       model: 'mistral-small-latest',
       apiKeyRef: 'MDL_MISTRAL_ETE',
       apiKey: 'sk-test-operator-key',
-      temperature: 0.5,
+      temperature: 0,
+      role: 'transcription',
       active: false,
     });
     const { apiKey, ...config } = post.body as { apiKey: string };
@@ -133,14 +141,13 @@ describe('Modèles', () => {
     render(<ModelsPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'Modifier Groq Llama' }));
     const form = screen.getByRole('form', { name: 'Modifier Groq Llama' });
-    const temperature = within(form).getByLabelText(/Température/);
-    await userEvent.clear(temperature);
-    await userEvent.type(temperature, '1.2');
+    expect(within(form).queryByLabelText(/Température/)).not.toBeInTheDocument();
+    await userEvent.selectOptions(within(form).getByLabelText(/Rôle/), 'transcription');
     await userEvent.click(within(form).getByRole('button', { name: 'Enregistrer' }));
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
     const put = calls.find((c) => c.method === 'PUT')!;
     expect(put.path).toBe('/models/groq-llama');
-    expect(put.body).toEqual({ ...groq, temperature: 1.2 });
+    expect(put.body).toEqual({ ...groq, role: 'transcription' });
     assertContract('ModelConfig', put.body);
   });
 
@@ -178,10 +185,11 @@ describe('Modèles', () => {
       expect(within(items[1]).getByText('Actif')).toBeInTheDocument();
       expect(within(items[0]).queryByText('Actif')).not.toBeInTheDocument();
     });
-    expect(screen.getByText('« Mistral Small » est le modèle actif.')).toBeInTheDocument();
+    expect(screen.getByText('« Mistral Small » est le modèle de discussion actif.')).toBeInTheDocument();
   });
 
-  it('offers to undo an activation by putting the previous model back', async () => {
+  it('offers to undo an activation by putting the previous model of the same role back', async () => {
+    const whisper = { ...groq, id: 'whisper', label: 'Whisper', model: 'whisper-large-v3-turbo', role: 'transcription' as const, active: true };
     let activeId = 'groq-llama';
     const calls = stubOperator(
       (call) => {
@@ -191,16 +199,50 @@ describe('Modèles', () => {
         }
       },
       (call) =>
-        call.method === 'GET' ? json({ items: [groq, mistral].map((m) => ({ ...m, active: m.id === activeId })), nextCursor: null }) : undefined,
+        call.method === 'GET'
+          ? json({
+              items: [whisper, ...[groq, mistral].map((m) => ({ ...m, active: m.id === activeId }))],
+              nextCursor: null,
+            })
+          : undefined,
     );
     render(<ModelsPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'Activer Mistral Small' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Annuler' }));
     await waitFor(() => expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(2));
-    const undo = calls.filter((c) => c.method === 'PUT')[1];
-    expect(undo.path).toBe('/models/groq-llama');
-    expect(undo.body).toEqual({ ...groq, active: true });
-    expect(await screen.findByText('« Groq Llama » est le modèle actif.')).toBeInTheDocument();
+    const puts = calls.filter((c) => c.method === 'PUT');
+    expect(puts[0].body).toEqual({ ...mistral, active: true });
+    expect(puts[1].path).toBe('/models/groq-llama');
+    expect(puts[1].body).toEqual({ ...groq, active: true });
+    expect(puts.every((call) => (call.body as { id: string }).id !== 'whisper')).toBe(true);
+    expect(await screen.findByText('« Groq Llama » est le modèle de discussion actif.')).toBeInTheDocument();
+  });
+
+  it('activates a transcription model without clearing the discussion model', async () => {
+    const whisper = { ...groq, id: 'whisper', label: 'Whisper', model: 'whisper-large-v3-turbo', role: 'transcription' as const, active: false };
+    let voiceActive = false;
+    const calls = stubOperator(
+      (call) => {
+        if (call.method === 'PUT') {
+          voiceActive = (call.body as { id: string }).id === 'whisper';
+          return json(call.body);
+        }
+      },
+      (call) =>
+        call.method === 'GET' ? json({ items: [groq, { ...whisper, active: voiceActive }], nextCursor: null }) : undefined,
+    );
+    render(<ModelsPage />);
+    const voiceRow = (await screen.findAllByRole('listitem')).find((item) => within(item).queryByText('Whisper'))!;
+    expect(within(voiceRow).getByRole('heading', { name: 'Whisper' })).toBeInTheDocument();
+    expect(within(voiceRow).queryByText('Transcription')).not.toBeInTheDocument();
+    expect(voiceRow.querySelector('[data-model-mark="transcription"] svg')).toHaveAttribute('aria-hidden', 'true');
+    await userEvent.click(await screen.findByRole('button', { name: 'Activer Whisper' }));
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(1));
+    expect(calls.find((c) => c.method === 'PUT')!.body).toEqual({ ...whisper, active: true });
+    const rows = screen.getAllByRole('listitem');
+    expect(within(rows[0]).getByText('Actif')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('Actif')).toBeInTheDocument();
+    expect(screen.getByText('« Whisper » est le modèle de transcription actif.')).toBeInTheDocument();
   });
 
   it('asks for confirmation before deleting, and can cancel', async () => {

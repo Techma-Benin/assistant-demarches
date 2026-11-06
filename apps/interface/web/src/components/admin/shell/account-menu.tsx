@@ -234,7 +234,7 @@ export function AccountMenu({ collapsed }: { collapsed: boolean }) {
               aria-label="Compte"
               onKeyDown={onAccountKeyDown}
               style={{ transformOrigin: 'bottom left' }}
-              className="ui-pop w-[260px] rounded-xl border border-line-subtle bg-surface p-1.5 shadow-(--ui-shadow-pop)"
+              className="surface-glass ui-pop w-[260px] rounded-xl p-1.5 shadow-(--ui-shadow-pop)"
             >
               {canSwitch ? (
                 <button
@@ -292,7 +292,7 @@ export function AccountMenu({ collapsed }: { collapsed: boolean }) {
                 aria-label="Changer d’administration"
                 onKeyDown={onPickerKeyDown}
                 style={{ transformOrigin: 'bottom left' }}
-                className="ui-pop flex w-[280px] flex-col rounded-xl border border-line-subtle bg-surface p-1.5 shadow-(--ui-shadow-pop)"
+                className="surface-glass ui-pop flex w-[280px] flex-col rounded-xl p-1.5 shadow-(--ui-shadow-pop)"
               >
                 <label className="mb-1 flex items-center gap-2 rounded-lg border border-line-subtle px-2.5 py-2">
                   <Search aria-hidden="true" className="size-4 shrink-0 text-ink-subtle" />

@@ -1,10 +1,11 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConsoleProvider } from '@/components/admin/console/console-context';
 import { PageHeader } from '@/components/admin/page-header';
 import { ReportActiveCaseStatus } from '@/components/admin/shell/active-case-status';
 import { AppShell } from '@/components/admin/shell/app-shell';
+import { RAIL_COLLAPSED, RAIL_WIDTH_KEY } from '@/components/shell/rail-resize';
 import type { CaseStatus } from '@/lib/admin/api';
 import { ADMIN, AGENT, ANIP, JUSTICE, SANTE, SUPER, SUPER_ME, me, stubConsole } from './helpers/fixtures';
 
@@ -16,6 +17,7 @@ beforeEach(() => {
   pathname = '/admin';
   router.push.mockClear();
   router.refresh.mockClear();
+  localStorage.clear();
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -111,6 +113,78 @@ describe('AppShell navigation', () => {
     renderShell();
     expect(await screen.findByText('Impossible de charger votre profil. Réessayez.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
+  });
+
+  it('drops the administration subtitle and collapses to one flag', async () => {
+    stubConsole({ me: me(AGENT) });
+    const ui = userEvent.setup();
+    const { container } = renderShell();
+    expect(await screen.findByText('Démarches')).toBeInTheDocument();
+    expect(screen.queryByText('Console d’administration')).toBeNull();
+    const account = await screen.findByRole('button', { name: 'Agent Justice' });
+    expect(account.parentElement).toHaveClass('md:mt-auto');
+    const grip = screen.getByRole('separator', { name: 'Redimensionner le menu latéral' });
+    expect(grip.className).toContain('top-1/2');
+    expect(grip.className).toContain('right-0.5');
+    expect(grip.closest('aside')).toBeTruthy();
+    expect(container.querySelector('[data-rail-shadow]')).toHaveAttribute('data-rail-cutout', '');
+    expect(container.querySelector('aside')!.className).toContain('surface-glass');
+    const fold = screen.getByRole('button', { name: 'Replier le menu latéral' });
+    expect(fold.querySelector('svg.lucide-chevrons-left')).toBeTruthy();
+
+    grip.focus();
+    await ui.keyboard('{ArrowLeft}');
+    expect(localStorage.getItem('admin-nav-collapsed')).toBe('true');
+    const unfold = screen.getByRole('button', { name: 'Déplier le menu latéral' });
+    const unfoldIcon = unfold.querySelector('svg.lucide-chevrons-right') as SVGElement;
+    expect(unfoldIcon.getAttribute('class')).toContain('opacity-0');
+    expect(unfoldIcon.getAttribute('class')).toContain('group-hover:opacity-100');
+    expect(container.querySelectorAll('svg[width="28"]')).toHaveLength(1);
+    const shell = screen.getByText('contenu').closest('.min-h-dvh') as HTMLElement;
+    expect(shell.style.getPropertyValue('--rail-width')).toBe(RAIL_COLLAPSED);
+    expect(container.querySelector('[data-rail-shadow]')).toHaveAttribute('data-rail-cutout', '');
+    expect(screen.getByRole('main').className).not.toContain('shadow-rail');
+    expect(shell).toHaveAttribute('data-collapsed', '');
+    const topCorner = container.querySelector('[data-nav-corner="top"] span') as HTMLElement;
+    const bottomCorner = container.querySelector('[data-nav-corner="bottom"] span') as HTMLElement;
+    expect(topCorner.className).toContain('rounded-br-full');
+    expect(bottomCorner.className).toContain('rounded-tr-full');
+    expect(screen.getByRole('button', { name: 'Agent Justice' }).parentElement).toHaveClass('md:mt-auto');
+    expect(screen.queryByText('Console d’administration')).toBeNull();
+  });
+
+  it('resizes the same shared rail width and collapses under the minimum', async () => {
+    stubConsole({ me: me(AGENT) });
+    localStorage.setItem(RAIL_WIDTH_KEY, '264');
+    const ui = userEvent.setup();
+    renderShell();
+    const shell = (await screen.findByText('contenu')).closest('.min-h-dvh') as HTMLElement;
+    const grip = screen.getByRole('separator', { name: 'Redimensionner le menu latéral' });
+    expect(grip.querySelectorAll('[data-rail-stroke]')).toHaveLength(2);
+    expect(grip.className).toContain('cursor-col-resize');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe('264px');
+    expect(screen.queryByText('Console d’administration')).toBeNull();
+    expect(screen.getByRole('main').className).toContain('z-10');
+
+    grip.focus();
+    await ui.keyboard('{ArrowLeft}');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe('248px');
+    fireEvent.pointerDown(grip, { button: 0, clientX: 248, pointerId: 1 });
+    fireEvent.pointerMove(grip, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerUp(grip, { clientX: 100, pointerId: 1 });
+    expect(shell).toHaveAttribute('data-collapsed', '');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe(RAIL_COLLAPSED);
+    expect(shell.querySelector('[data-rail-shadow]')).toHaveAttribute('data-rail-cutout', '');
+    expect(screen.getByRole('button', { name: 'Déplier le menu latéral' })).toBeInTheDocument();
+
+    fireEvent.pointerDown(grip, { button: 0, clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(grip, { clientX: 180, pointerId: 1 });
+    fireEvent.pointerUp(grip, { clientX: 180, pointerId: 1 });
+    expect(shell).not.toHaveAttribute('data-collapsed');
+    expect(shell.style.getPropertyValue('--rail-width')).toBe('248px');
+    expect(localStorage.getItem(RAIL_WIDTH_KEY)).toBe('248');
+    expect(await screen.findByRole('button', { name: 'Agent Justice' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Agent Justice' }).parentElement).toHaveClass('md:mt-auto');
   });
 
   it('toggles the mobile menu with aria-expanded', async () => {

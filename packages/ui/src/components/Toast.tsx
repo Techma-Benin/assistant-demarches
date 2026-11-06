@@ -29,7 +29,7 @@ export function Toast({ message, onDismiss, duration, action, className }: Toast
       role="status"
       aria-live="polite"
       className={cn(
-        'ui-rise inline-flex items-center gap-2.5 max-w-[460px] rounded-2xl bg-action px-4 py-3 text-[14px] font-semibold text-on-action',
+        'surface-glass ui-rise inline-flex items-center gap-2.5 max-w-[460px] rounded-2xl px-4 py-3 text-[14px] font-semibold text-ink',
         className,
       )}
     >
@@ -38,7 +38,7 @@ export function Toast({ message, onDismiss, duration, action, className }: Toast
       {action ? (
         <button
           type="button"
-          className="-my-1 -mr-2 ml-1 shrink-0 cursor-pointer rounded-pill px-3 py-1 font-bold underline underline-offset-2 transition-colors duration-(--ui-dur-press) hover:bg-on-action/15"
+          className="-my-1 -mr-2 ml-1 shrink-0 cursor-pointer rounded-pill px-3 py-1 font-bold underline underline-offset-2 transition-colors duration-(--ui-dur-press) hover:bg-ink/10"
           onClick={() => {
             action.onClick();
             onDismiss();

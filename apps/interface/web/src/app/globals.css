@@ -285,6 +285,62 @@ html:has([data-home]) {
   }
 }
 
+/* Shared frost for floating surfaces and the queue filter.
+   Flat gray, no border, no tint. Grain sits on the surface only.
+   `position` stays in the components layer so `absolute` / `fixed` utilities still win. */
+@layer components {
+  .surface-glass {
+    position: relative;
+  }
+}
+.surface-glass {
+  background: rgb(226 229 233 / 0.36);
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
+  border: none;
+}
+.surface-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.18;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  mix-blend-mode: overlay;
+}
+[data-theme='dark'] .surface-glass {
+  background: rgb(38 41 46 / 0.36);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .surface-glass {
+    background: rgb(38 41 46 / 0.36);
+  }
+}
+
+/* Queue filter only: the dim is a shadow, not a layer behind the glass, so backdrop-filter samples the page. */
+.queue-filter-glass {
+  color: var(--ui-text);
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.2);
+  animation: queue-filter-in 220ms var(--ui-ease-drawer);
+}
+.queue-filter-glass input[type='date']:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+@keyframes queue-filter-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .queue-filter-glass {
+    animation: none;
+  }
+}
+
 @keyframes bridge-nudge {
   0%,
   100% {

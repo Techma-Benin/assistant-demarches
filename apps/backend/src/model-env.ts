@@ -7,15 +7,23 @@ export function modelsLockKey(administrationId: string): string {
   return canonical([administrationId, "models"]);
 }
 
-/** Leaves `exceptId` as the only active model in the administration. */
+export type ModelRole = "discussion" | "transcription";
+
+/** Missing or legacy role counts as discussion. */
+export function modelRole(body: { role?: unknown } | null | undefined): ModelRole {
+  return body?.role === "transcription" ? "transcription" : "discussion";
+}
+
+/** Clears `active` on the other models of the same role. `exceptId` stays as the caller left it. */
 export async function deactivateOtherModels(
   db: Db,
   administrationId: string,
   exceptId: string,
+  role: ModelRole,
 ): Promise<void> {
   await db.query(
-    "UPDATE backend_configurations SET body=jsonb_set(body,'{active}','false'::jsonb), updated_at=now() WHERE administration_id=$1 AND resource='models' AND resource_id<>$2 AND body->>'active'='true'",
-    [administrationId, exceptId],
+    "UPDATE backend_configurations SET body=jsonb_set(body,'{active}','false'::jsonb), updated_at=now() WHERE administration_id=$1 AND resource='models' AND resource_id<>$2 AND body->>'active'='true' AND CASE WHEN body->>'role'='transcription' THEN 'transcription' ELSE 'discussion' END=$3",
+    [administrationId, exceptId, role],
   );
 }
 
@@ -54,6 +62,7 @@ export function resolveModelFromEnv(env: NodeJS.ProcessEnv = process.env): Model
     model,
     apiKeyRef: "MODEL_API_KEY",
     temperature: 0.2,
+    role: "discussion",
     active: true,
   };
 }
@@ -69,7 +78,7 @@ export async function syncEnvModel(pool: Pool, env: NodeJS.ProcessEnv = process.
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
       modelsLockKey("global"),
     ]);
-    await deactivateOtherModels(client, "global", model.id);
+    await deactivateOtherModels(client, "global", model.id, modelRole(model));
     await client.query(
       "INSERT INTO backend_configurations(administration_id,resource,resource_id,body) VALUES('global','models',$1,$2) ON CONFLICT(administration_id,resource,resource_id) DO UPDATE SET body=excluded.body, updated_at=now()",
       [model.id, model],

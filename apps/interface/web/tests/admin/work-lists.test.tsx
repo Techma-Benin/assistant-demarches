@@ -1,6 +1,6 @@
 process.env.TZ = 'UTC';
 
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkList } from '@/components/admin/work/work-list';
@@ -204,11 +204,15 @@ describe('queue chrome', () => {
     expect(within(card).queryByRole('button', { name: 'Rechercher un dossier' })).toBeNull();
     expect(within(card).queryByRole('textbox', { name: 'Rechercher un dossier' })).toBeNull();
     const search = within(pageHeader).getByRole('button', { name: 'Rechercher un dossier' });
+    const filter = within(pageHeader).getByRole('button', { name: 'Filtrer les dossiers' });
     const tous = within(pageHeader).getByRole('button', { name: 'Tous' });
+    expect(search.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(filter.compareDocumentPosition(tous) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(pageHeader).getByRole('button', { name: 'Reçu' })).toBeInTheDocument();
     expect(within(pageHeader).getByRole('button', { name: 'En vérification' })).toBeInTheDocument();
     expect(within(pageHeader).getByRole('button', { name: 'Complément demandé' })).toBeInTheDocument();
     expect(search.compareDocumentPosition(tous) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(card).queryByRole('button', { name: 'Filtrer les dossiers' })).toBeNull();
     expect(screen.queryByRole('textbox', { name: 'Rechercher un dossier' })).toBeNull();
 
     expect(heading.className).toContain('items-center');
@@ -256,6 +260,185 @@ describe('queue chrome', () => {
     await user.click(screen.getByRole('button', { name: 'Effacer la recherche' }));
     expect(screen.queryByRole('textbox', { name: 'Rechercher un dossier' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Rechercher un dossier' })).toBeInTheDocument();
+  });
+
+  it('filters every queue from the glass panel by channel, status and update date', async () => {
+    stubFetch(() =>
+      page([
+        caseItem({
+          id: 'cas_01JD0000000000000000000071',
+          title: 'WhatsApp reçu',
+          channel: 'whatsapp',
+          status: 'received',
+          createdAt: '2026-10-01T09:00:00Z',
+          updatedAt: '2026-11-01T09:00:00Z',
+        }),
+        caseItem({
+          id: 'cas_01JD0000000000000000000072',
+          title: 'Web en cours',
+          channel: 'web',
+          status: 'in_review',
+          createdAt: '2026-11-03T08:00:00Z',
+          updatedAt: '2026-11-03T09:00:00Z',
+        }),
+        caseItem({
+          id: 'cas_01JD0000000000000000000073',
+          title: 'Web complément',
+          channel: 'web',
+          status: 'information_requested',
+          createdAt: '2026-11-01T09:00:00Z',
+          updatedAt: '2026-11-05T09:00:00Z',
+        }),
+      ]),
+    );
+    render(<WorkList view="pending" />);
+    await screen.findByRole('link', { name: 'WhatsApp reçu' });
+    const user = userEvent.setup();
+    const header = screen.getByRole('heading', { level: 1 }).closest('header')!;
+    const search = within(header).getByRole('button', { name: 'Rechercher un dossier' });
+    const filter = within(header).getByRole('button', { name: 'Filtrer les dossiers' });
+    expect(search.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.click(filter);
+    const dialog = screen.getByRole('dialog', { name: 'Filtres' });
+    expect(dialog).toHaveClass('queue-filter-glass');
+    expect(dialog).toHaveAttribute('data-glass', 'liquid');
+    expect(dialog).toHaveAttribute('data-tint', 'gray');
+    expect(dialog.className).toContain('z-10');
+    const backdrop = document.querySelector('[data-filter-backdrop]')!;
+    expect(backdrop.contains(dialog)).toBe(false);
+    expect(dialog.contains(backdrop)).toBe(false);
+    expect(backdrop.className).not.toContain('bg-black');
+    for (let ancestor = dialog.parentElement; ancestor; ancestor = ancestor.parentElement) {
+      expect(String(ancestor.className)).not.toContain('bg-black');
+    }
+    expect(dialog).toHaveFocus();
+    expect(within(dialog).queryByRole('button', { name: 'Tous' })).toBeNull();
+    expect(within(dialog).queryByRole('radio')).toBeNull();
+    expect(within(dialog).queryByText(/réception/i)).toBeNull();
+    expect(within(dialog).queryByText(/pris en charge/i)).toBeNull();
+
+    await user.tab({ shift: true });
+    expect(within(dialog).getByLabelText('Au')).toHaveFocus();
+
+    const channel = within(dialog).getByRole('group', { name: 'Canal' });
+    const whatsapp = within(channel).getByRole('button', { name: 'WhatsApp' });
+    const web = within(channel).getByRole('button', { name: 'Web' });
+    expect(whatsapp).toHaveAttribute('aria-pressed', 'false');
+    expect(web.className).not.toContain('bg-action');
+    await user.click(whatsapp);
+    expect(whatsapp).toHaveAttribute('aria-pressed', 'true');
+    expect(whatsapp.className).toContain('bg-action');
+    expect(whatsapp.className).toContain('text-on-action');
+    expect(web).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('link', { name: 'WhatsApp reçu' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Web en cours' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Web complément' })).toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: /En attente\s*1/ })).toBeInTheDocument();
+
+    await user.click(web);
+    expect(screen.getByRole('link', { name: 'Web en cours' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Web complément' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /En attente\s*3/ })).toBeInTheDocument();
+
+    await user.click(whatsapp);
+    await user.click(web);
+    const statut = within(dialog).getByRole('group', { name: 'Type de statut' });
+    const inReview = within(statut).getByRole('button', { name: 'En vérification' });
+    const received = within(statut).getByRole('button', { name: 'Reçu' });
+    await user.click(inReview);
+    expect(within(header).getByRole('button', { name: 'En vérification' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('link', { name: 'Web en cours' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'WhatsApp reçu' })).toBeNull();
+
+    await user.click(received);
+    expect(inReview).toHaveAttribute('aria-pressed', 'true');
+    expect(received).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('link', { name: 'WhatsApp reçu' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Web en cours' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Web complément' })).toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: /En attente\s*2/ })).toBeInTheDocument();
+
+    await user.click(inReview);
+    await user.click(received);
+    const dates = within(dialog).getByRole('group', { name: 'Date de mise à jour' });
+    fireEvent.change(within(dates).getByLabelText('Du'), { target: { value: '2026-11-04' } });
+    expect(screen.getByRole('link', { name: 'Web complément' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Web en cours' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'WhatsApp reçu' })).toBeNull();
+
+    fireEvent.change(within(dates).getByLabelText('Du'), { target: { value: '2026-11-01' } });
+    fireEvent.change(within(dates).getByLabelText('Au'), { target: { value: '2026-11-01' } });
+    expect(screen.getByRole('link', { name: 'WhatsApp reçu' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Web complément' })).toBeNull();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Réinitialiser' }));
+    expect(screen.getByRole('link', { name: 'Web en cours' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /En attente\s*3/ })).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Filtres' })).toBeNull();
+    expect(filter).toHaveFocus();
+
+    await user.click(filter);
+    await user.click(document.querySelector('[data-filter-backdrop]')!);
+    expect(screen.queryByRole('dialog', { name: 'Filtres' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Filtrer les dossiers' }));
+    await user.click(screen.getByRole('button', { name: 'Fermer' }));
+    expect(screen.queryByRole('dialog', { name: 'Filtres' })).toBeNull();
+  });
+
+  it.each([
+    ['completed', 'Complété', 'completed'],
+    ['rejected', 'Rejeté', 'rejected'],
+  ] as const)('puts the same filter on the %s list and applies it to those rows', async (view, title, status) => {
+    stubFetch(() =>
+      page([
+        caseItem({
+          id: 'cas_01JD0000000000000000000081',
+          title: 'Par le web',
+          channel: 'web',
+          status,
+          updatedAt: '2026-11-02T09:00:00Z',
+        }),
+        caseItem({
+          id: 'cas_01JD0000000000000000000082',
+          title: 'Par WhatsApp',
+          channel: 'whatsapp',
+          status,
+          updatedAt: '2026-11-04T09:00:00Z',
+        }),
+      ]),
+    );
+    render(<WorkList view={view} />);
+    await screen.findByRole('link', { name: 'Par le web' });
+    const header = screen.getByRole('heading', { level: 1, name: new RegExp(title) }).closest('header')!;
+    const search = within(header).getByRole('button', { name: 'Rechercher un dossier' });
+    const filter = within(header).getByRole('button', { name: 'Filtrer les dossiers' });
+    expect(search.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const user = userEvent.setup();
+    await user.click(filter);
+    const dialog = screen.getByRole('dialog', { name: 'Filtres' });
+    expect(dialog).toHaveClass('queue-filter-glass');
+    expect(dialog).toHaveAttribute('data-tint', 'gray');
+    expect(within(dialog).getByRole('group', { name: 'Canal' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('group', { name: 'Type de statut' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('group', { name: 'Date de mise à jour' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: title })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(dialog).queryByRole('button', { name: 'Tous' })).toBeNull();
+    expect(within(dialog).queryByText(/réception/i)).toBeNull();
+    expect(within(dialog).queryByText(/pris en charge/i)).toBeNull();
+
+    const whatsapp = within(within(dialog).getByRole('group', { name: 'Canal' })).getByRole('button', { name: 'WhatsApp' });
+    await user.click(whatsapp);
+    expect(screen.queryByRole('link', { name: 'Par le web' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Par WhatsApp' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: new RegExp(`${title}\\s*1`) })).toBeInTheDocument();
+    await user.click(whatsapp);
+    expect(whatsapp).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('link', { name: 'Par le web' })).toBeInTheDocument();
   });
 });
 

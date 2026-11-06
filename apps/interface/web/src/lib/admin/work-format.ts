@@ -133,6 +133,47 @@ export const PAYMENT_LABELS: Record<string, string> = {
 
 export const CHANNEL_LABELS: Record<string, string> = { whatsapp: 'WhatsApp', web: 'Web' };
 
+/** Local calendar day (`YYYY-MM-DD`) of an ISO timestamp, for the update-date filter. */
+export function calendarDay(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+export type CaseListFilters = {
+  /** Empty means every channel. */
+  channels: Case['channel'][];
+  /** Empty means every status. */
+  statuses: CaseStatus[];
+  /** Inclusive local calendar day, or empty when that bound is open. */
+  updatedFrom: string;
+  updatedTo: string;
+};
+
+export const EMPTY_CASE_FILTERS: CaseListFilters = {
+  channels: [],
+  statuses: [],
+  updatedFrom: '',
+  updatedTo: '',
+};
+
+/** Channel, status and update day. An empty channel or status list adds no constraint. */
+export function matchesCaseFilters(
+  item: Pick<Case, 'channel' | 'status' | 'updatedAt'>,
+  filter: CaseListFilters,
+): boolean {
+  if (filter.channels.length > 0 && !filter.channels.includes(item.channel)) return false;
+  if (filter.statuses.length > 0 && !filter.statuses.includes(item.status)) return false;
+  if (filter.updatedFrom || filter.updatedTo) {
+    const day = calendarDay(item.updatedAt);
+    if (filter.updatedFrom && day < filter.updatedFrom) return false;
+    if (filter.updatedTo && day > filter.updatedTo) return false;
+  }
+  return true;
+}
+
 export const ACTOR_LABELS: Record<CaseStep['actor'], string> = {
   assistant: 'Assistant',
   applicant: 'Usager',

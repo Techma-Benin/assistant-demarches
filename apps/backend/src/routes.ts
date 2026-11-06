@@ -17,7 +17,7 @@ import { Conversations, type Event } from "./conversations.js";
 import { Consent } from "./consent.js";
 import type { ToolingPort } from "./tooling.js";
 import { Files } from "./files.js";
-import type { TranscriptionPort } from "./transcription.js";
+import { transcriberFromActiveModel, type TranscriptionPort } from "./transcription.js";
 import { Problem, validate, type Schemas } from "./domain.js";
 import { idempotencyKey } from "./transactions.js";
 import type { CryptoKey } from "jose";
@@ -308,9 +308,13 @@ export class ConversationController {
   async transcribe(@Req() req: Request, @Body() body: unknown) {
     const principal = await user(this.runtime, req);
     validate("TranscriptionInput", body);
-    if (!this.runtime.transcriber)
+    const configured = this.runtime.files
+      ? await transcriberFromActiveModel(this.runtime.pool, "global", this.runtime.files)
+      : undefined;
+    const transcriber = configured ?? this.runtime.transcriber;
+    if (!transcriber)
       throw new Problem(503, "UPSTREAM_UNAVAILABLE", "Transcription audio non configurée.");
-    const text = await this.runtime.transcriber.transcribe(
+    const text = await transcriber.transcribe(
       (body as Schemas["TranscriptionInput"]).fileId,
       principal.userRef,
     );

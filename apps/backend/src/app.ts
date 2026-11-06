@@ -32,6 +32,7 @@ import {
   configId,
 } from "./domain.js";
 import { McpConnections, type McpServer } from "./mcp-connections.js";
+import { modelRole } from "./model-env.js";
 import { Settings, takeModelWrite } from "./settings.js";
 import { idempotencyKey } from "./transactions.js";
 import {
@@ -153,8 +154,9 @@ class AdminController {
   async status(@Req() req: AdminRequest) {
     const principal = await this.principal(req);
     const models = await this.settings.list(principal, "models", 100);
-    const active = (models.items as { id: string; label?: string; model?: string; active?: boolean }[]).find((item) => item.active)
-      ?? (models.items as { id: string; label?: string; model?: string }[])[0];
+    const discussion = (models.items as { id: string; label?: string; model?: string; active?: boolean; role?: string }[])
+      .filter((item) => modelRole(item) === "discussion");
+    const active = discussion.find((item) => item.active) ?? discussion[0];
     const servers = await this.mcp.list(principal.administrationId, 100);
     const mcpServers = [];
     for (const server of servers.items) {

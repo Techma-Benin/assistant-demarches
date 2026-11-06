@@ -30,10 +30,11 @@ import {
 import { redact, type ModelPort, type ModelReply, type Turn } from "./model.js";
 import type { Consent } from "./consent.js";
 import { presentModelReply, mergeSystemBlocks, PAYMENT_CONFIRM_PREFIX, PREPARE_REQUEST_PREFIX, PAYMENT_LATER_PREFIX, SUBMIT_REQUEST_PREFIX, MODEL_UNAVAILABLE_BLOCKS, UNAVAILABLE_BLOCKS, FORMAT_REMINDER, ModelReplyError, logRejectedReply, hasActionSystemBlocks, isGenericRefusal, honestReplyFromSystemBlocks, bindUploadedFile, fileReceivedInstruction, parseReceivedPiece } from "./model-reply.js";
-import type { TranscriptionPort } from "./transcription.js";
+import { transcriberFromActiveModel, type TranscriptionPort } from "./transcription.js";
 import { LiveReply } from "./live-reply.js";
 import { visibleText } from "./text-deltas.js";
 import { readModelSecret } from "./secrets.js";
+import type { Files } from "./files.js";
 import { coerceFieldValue, parseFormValues } from "./form-values.js";
 
 const MODEL_REPLY_ATTEMPTS = 3;
@@ -242,6 +243,7 @@ export class Agent {
     private consent?: Consent,
     private transcriber?: TranscriptionPort,
     private listCases?: (userRef: string) => Promise<unknown>,
+    private audioFiles?: Pick<Files, "readOwned">,
   ) {}
   watch(signal: AbortSignal): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -372,6 +374,13 @@ export class Agent {
       lock.release();
     }
   }
+  private async audioTranscriber(administrationId: string): Promise<TranscriptionPort | undefined> {
+    if (this.audioFiles) {
+      const selected = await transcriberFromActiveModel(this.pool, administrationId, this.audioFiles);
+      if (selected) return selected;
+    }
+    return this.transcriber;
+  }
   private async run(
     conversation: OwnedConversation,
     input: MessageInput,
@@ -379,13 +388,14 @@ export class Agent {
     administrationId: string,
   ) {
     if (input.content.type === "audio") {
-      if (!this.transcriber) {
+      const transcriber = await this.audioTranscriber(administrationId);
+      if (!transcriber) {
         // No MODEL_API_KEY / TRANSCRIPTION_API_KEY_ENV: say so instead of a generic failure.
         await this.finish(conversation, input, [{ type: "text", text: "La transcription des messages vocaux n’est pas disponible pour le moment. Veuillez décrire votre demande par écrit.", sources: [] }], traceparent);
         return;
       }
       try {
-        const text = await this.transcriber.transcribe(input.content.fileId, conversation.userRef);
+        const text = await transcriber.transcribe(input.content.fileId, conversation.userRef);
         if (text && text.trim().length > 4000) {
           await this.finish(conversation, input, [{ type: "text", text: "Le message vocal est trop long. Veuillez envoyer un audio plus court ou préciser votre demande par écrit.", sources: [] }], traceparent);
           return;
@@ -580,7 +590,7 @@ export class Agent {
     else {
       const configs = (
         await this.pool.query(
-          "SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource='models' AND body->>'active'='true' ORDER BY resource_id",
+          "SELECT body FROM backend_configurations WHERE administration_id=$1 AND resource='models' AND body->>'active'='true' AND CASE WHEN body->>'role'='transcription' THEN 'transcription' ELSE 'discussion' END='discussion' ORDER BY resource_id",
           [administrationId],
         )
       ).rows;
