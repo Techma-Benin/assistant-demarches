@@ -3,13 +3,15 @@ import EmbeddedPostgres from 'embedded-postgres';
 import { DATABASES, LOCAL, PORTS, POSTGRES } from './local-config.mjs';
 
 /** Starts the local PostgreSQL instance (real binaries from npm, no Docker) and creates one database per service. */
-export async function startPostgres(log) {
-  const databaseDir = `${LOCAL}postgres`;
+export async function startPostgres(log, {
+  local = LOCAL, port = PORTS.postgres, databases = DATABASES, postgres = POSTGRES,
+} = {}) {
+  const databaseDir = `${local}postgres`;
   const pg = new EmbeddedPostgres({
     databaseDir,
-    port: PORTS.postgres,
-    user: POSTGRES.user,
-    password: POSTGRES.password,
+    port,
+    user: postgres.user,
+    password: postgres.password,
     persistent: true,
     autoRehydrateSymlinks: true,
     onLog: () => {},
@@ -24,10 +26,10 @@ export async function startPostgres(log) {
   await client.connect();
   try {
     const existing = new Set((await client.query('SELECT datname FROM pg_database')).rows.map((row) => row.datname));
-    for (const name of DATABASES) if (!existing.has(name)) await pg.createDatabase(name);
+    for (const name of databases) if (!existing.has(name)) await pg.createDatabase(name);
   } finally {
     await client.end();
   }
-  log(`prête sur le port ${PORTS.postgres} (bases : ${DATABASES.join(', ')})`);
+  log(`prête sur le port ${port} (bases : ${databases.join(', ')})`);
   return () => pg.stop();
 }

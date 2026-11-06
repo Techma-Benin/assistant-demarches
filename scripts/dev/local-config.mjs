@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const LOCAL = fileURLToPath(new URL('../../.local/', import.meta.url));
+export const PREVIEW_DOMAIN = process.env.REPLIT_DEV_DOMAIN?.trim();
 
 // KEYCLOAK_PORT (shell variable): for machines where 8080 is taken, by an Oracle or EnterpriseDB service on Windows for example.
 export const PORTS = { interface: 3000, backend: 4010, tooling: 4030, xroad: 4040, keycloak: Number(process.env.KEYCLOAK_PORT ?? 8080), postgres: 54329 };
@@ -13,13 +14,23 @@ export const DATABASES = ['backend', 'tooling', 'xroad'];
 export const POSTGRES = { user: 'techma', password: 'techma' };
 
 const url = (port) => `http://127.0.0.1:${port}`;
+const previewUrl = (port) => PREVIEW_DOMAIN
+  ? `https://${PREVIEW_DOMAIN}${port ? `:${port}` : ''}`
+  : undefined;
+const publicKeycloak = PREVIEW_DOMAIN
+  ? `${previewUrl()}/keycloak`
+  : url(PORTS.keycloak);
+const publicInterface = previewUrl() ?? url(PORTS.interface);
 export const URLS = {
-  interface: url(PORTS.interface),
+  interface: publicInterface,
   backend: url(PORTS.backend),
+  backendPublic: previewUrl() ?? url(PORTS.backend),
   tooling: url(PORTS.tooling),
   xroad: url(PORTS.xroad),
   keycloak: url(PORTS.keycloak),
-  issuer: `${url(PORTS.keycloak)}/realms/techma`,
+  keycloakPublic: publicKeycloak,
+  issuer: `${publicKeycloak}/realms/techma`,
+  issuerInternal: `${url(PORTS.keycloak)}/realms/techma`,
 };
 const database = (name) => `postgres://${POSTGRES.user}:${POSTGRES.password}@127.0.0.1:${PORTS.postgres}/${name}`;
 
@@ -31,8 +42,10 @@ export const SERVICES = {
   backend: {
     package: '@techma/backend',
     env: {
+      // Browser traffic is proxied by Next; never expose a second public server.
+      HOST: '127.0.0.1',
       PORT: String(PORTS.backend),
-      PUBLIC_URL: URLS.backend,
+      PUBLIC_URL: URLS.backendPublic,
       DATABASE_URL: database('backend'),
       OIDC_ISSUER: URLS.issuer,
       OIDC_CLIENT_ID: 'backend',

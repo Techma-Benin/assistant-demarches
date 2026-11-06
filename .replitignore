@@ -1,0 +1,10 @@
+/.local/postgres/
+/generated-artifacts/
+/.local/keys/
+/.local/files/
+/.local/showcase-data/
+/.local/java/
+/.local/keycloak-*/
+/.backend-files/
+/.env
+/.env.*
