@@ -1,4 +1,4 @@
-import { DiagnosticProblem, providerReason, safeProviderIdentifier } from "./diagnostics.js";
+import { DiagnosticProblem, providerHint, providerReason, safeProviderIdentifier, safeProviderParameter } from "./diagnostics.js";
 import { readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { Problem, approvedMcpUrl, type ModelConfig } from "./domain.js";
@@ -18,7 +18,7 @@ function openaiStrictToolHost(baseUrl?: string): boolean {
   }
 }
 
-function providerError(upstream: unknown): { code?: unknown; type?: unknown; status?: unknown; message?: unknown; status_code?: unknown } | undefined {
+function providerError(upstream: unknown): { code?: unknown; type?: unknown; param?: unknown; status?: unknown; message?: unknown; status_code?: unknown } | undefined {
   const record = Array.isArray(upstream) ? upstream[0] : upstream;
   if (!isRecord(record)) return undefined;
   const err = isRecord(record.error) ? record.error : record;
@@ -314,6 +314,17 @@ export class HttpModels implements ModelPort {
     const base = provider.baseUrl.endsWith("/")
       ? provider.baseUrl
       : provider.baseUrl + "/";
+    // What was asked, never the content: enough to compare a refused call with one that worked.
+    const requestContext = {
+      configId: config.id,
+      protocol: responses ? "responses" : "chat-completions",
+      endpoint: responses ? "responses" : "chat/completions",
+      stream: Boolean(onTextDelta),
+      tools: tools.length,
+      turns: history.length,
+      structured: structuredKind || false,
+      toolChoice: typeof body.tool_choice === "string" ? body.tool_choice : body.tool_choice ? "function" : undefined,
+    };
     let res: Response;
     try {
     res = await fetch(
@@ -331,7 +342,7 @@ export class HttpModels implements ModelPort {
     );
     } catch (error) {
       throw new DiagnosticProblem("Connexion au fournisseur IA impossible ou expirée.", {
-        stage: "model.request", provider: providerName, model: config.model,
+        stage: "model.request", provider: providerName, model: config.model, ...requestContext,
         reason: "provider_network_error", causeCode: safeProviderIdentifier((error as any)?.cause?.code) ?? safeProviderIdentifier((error as any)?.name),
       });
     }
@@ -357,11 +368,14 @@ export class HttpModels implements ModelPort {
       } catch { /* HTTP status remains useful even for a non-JSON response. */ }
       const err = providerError(upstream);
       throw new DiagnosticProblem("Appel au fournisseur IA refusé (HTTP " + res.status + ").", {
-        stage: "model.response", provider: providerName, model: config.model,
+        stage: "model.response", provider: providerName, model: config.model, ...requestContext,
         upstreamStatus: res.status,
         httpFailure: true,
         upstreamCode: safeProviderIdentifier(err?.code ?? err?.status),
         upstreamType: safeProviderIdentifier(err?.type ?? err?.status),
+        // Names the refused field (e.g. `tools`), not its value.
+        upstreamParam: safeProviderParameter(err?.param),
+        upstreamHint: providerHint(res.status, err?.message, err?.code),
         upstreamRequestId: safeProviderIdentifier(res.headers.get("x-request-id") ?? res.headers.get("request-id")),
         reason: res.status === 400 && new URL(provider.baseUrl).hostname === "api.groq.com" && err?.code === "tool_use_failed"
           ? "provider_tool_generation_invalid"
@@ -416,6 +430,8 @@ export class HttpModels implements ModelPort {
       upstreamStatus: status,
       upstreamCode: safeProviderIdentifier(upstream?.code),
       upstreamType: safeProviderIdentifier(upstream?.type),
+      upstreamParam: safeProviderParameter(upstream?.param),
+      upstreamHint: providerHint(status, upstream?.message, upstream?.code),
       reason: status === 400 && providerName === "api.groq.com" && upstream?.code === "tool_use_failed"
         ? "provider_tool_generation_invalid"
         : providerReason(status, upstream?.message),
