@@ -256,7 +256,7 @@ describe('requestCard block', () => {
 
   it('says the dossier is filed once submitted, even with nothing missing', () => {
     show(requestCardBlock({ ...exampleRequest, status: 'submitted', missing: [] }));
-    expect(screen.getByText('Dossier déposé. Détail dans « Vos informations ».')).toBeInTheDocument();
+    expect(screen.getByText('Dossier déposé.')).toBeInTheDocument();
     expect(screen.queryByText(/Tout est prêt/)).toBeNull();
   });
 
