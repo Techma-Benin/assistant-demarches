@@ -267,24 +267,6 @@ html:has([data-home]) {
   transform: translateX(1.5%);
 }
 
-@supports (animation-timeline: view()) {
-  .cta-zoom .footer-cta {
-    animation: cta-zoom linear both;
-    animation-timeline: view();
-    animation-range: entry 0% cover 45%;
-  }
-}
-@keyframes cta-zoom {
-  from {
-    transform: scale(0.72);
-    opacity: 0.35;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 /* Shared frost for floating surfaces and the queue filter.
    Flat gray, no border, no tint. Grain sits on the surface only.
    `position` stays in the components layer so `absolute` / `fixed` utilities still win. */

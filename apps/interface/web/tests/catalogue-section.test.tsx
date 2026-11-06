@@ -50,16 +50,17 @@ describe('CatalogueSection', () => {
     expect(onAsk).toHaveBeenCalledExactlyOnceWith('Comment obtenir un certificat de nationalité ?');
   });
 
-  it('« Demander à l’assistant » asks the first item of the theme', async () => {
-    const { user, onAsk } = setup();
+  it('shows the theme photo with its démarches on it, without a generic ask button', async () => {
+    const { user } = setup();
     await user.click(screen.getByRole('tab', { name: /Justice/ }));
-    await user.click(screen.getByRole('button', { name: 'Demander à l’assistant' }));
-    expect(onAsk).toHaveBeenCalledExactlyOnceWith('Comment obtenir un extrait de casier judiciaire ?');
+    const panel = screen.getByRole('tabpanel');
+    expect(panel).toHaveTextContent('Justice');
+    expect(panel.querySelectorAll('li button')).toHaveLength(4);
+    expect(screen.queryByRole('button', { name: 'Demander à l’assistant' })).toBeNull();
   });
 
   it('disabled blocks the asks but not the tabs', async () => {
     const { user, onAsk } = setup(true);
-    expect(screen.getByRole('button', { name: 'Demander à l’assistant' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Carte d’identité/ })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /Carte d’identité/ }));
     await user.click(screen.getByRole('tab', { name: /Voyage/ }));

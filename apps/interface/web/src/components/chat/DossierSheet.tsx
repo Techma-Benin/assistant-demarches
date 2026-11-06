@@ -6,7 +6,7 @@ import { X } from 'lucide-react';
 
 const CLOSE_MS = 150;
 
-/** Native modal `<dialog>` holding the dossier panels: bottom sheet on phones, right drawer from md. Content only exists while open. */
+/** Native modal `<dialog>` holding the dossier panels below 1024px: bottom sheet on phones, right drawer from md. Content only exists while open. */
 export function DossierSheet({
   open,
   onClose,
@@ -31,7 +31,7 @@ export function DossierSheet({
       setClosing(false);
       if (typeof dialog.showModal === 'function') dialog.showModal();
       else dialog.setAttribute('open', '');
-    }
+    } else if (!open && dialog.open && typeof dialog.close === 'function') dialog.close();
   }, [open]);
 
   useEffect(() => {
@@ -62,7 +62,7 @@ export function DossierSheet({
       }}
       className={
         drawer
-          ? 'chat-drawer fixed inset-y-0 left-auto right-0 m-0 h-dvh max-h-none w-[360px] max-w-full overflow-y-auto border-l border-line bg-canvas p-0 text-ink min-[1440px]:hidden'
+          ? 'chat-drawer fixed inset-y-0 left-auto right-0 m-0 h-dvh max-h-none w-[360px] max-w-full overflow-y-auto border-l border-line bg-canvas p-0 text-ink lg:hidden'
           : 'chat-sheet fixed inset-x-0 bottom-0 top-auto m-0 max-h-[85dvh] w-full max-w-none overflow-y-auto rounded-t-card border border-b-0 border-line bg-canvas p-0 text-ink'
       }
     >

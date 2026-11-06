@@ -1,7 +1,7 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Schemas } from '@techma/contracts-ts';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConversationView } from '@/components/chat/ConversationView';
 import { turnDelivery, userTurns, type UserEntry as UserEntryT } from '@/components/chat/UserEntryParts';
 import { WAITING_LABEL, initialState, type ConversationState, type LiveDraft, type TimelineEntry } from '@/lib/conversation-state';
@@ -97,7 +97,7 @@ describe('ConversationView', () => {
     expect(retry).toHaveBeenCalledWith('u1');
   });
 
-  it('shows the sources of the last text block in the side panel', () => {
+  it('shows the sources of the last text block in the panel', async () => {
     view(
       build({
         timeline: [
@@ -111,6 +111,7 @@ describe('ConversationView', () => {
         ],
       }),
     );
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Afficher les sources' }));
     const panel = screen.getByRole('heading', { name: 'Sources' }).closest('section')!;
     expect(within(panel).getByText('casier-judiciaire')).toBeInTheDocument();
     expect(within(panel).getByText('service-public.example')).toBeInTheDocument();
@@ -124,7 +125,7 @@ describe('ConversationView', () => {
     expect(screen.queryByRole('heading', { name: 'Sources' })).toBeNull();
   });
 
-  it('shows « Vos informations » from the latest requestCard, and a header pill opening it on small screens', async () => {
+  it('shows « Vos informations » from the latest requestCard once the panel is open', async () => {
     const older = { ...exampleRequest, missing: ['Extrait d’acte de naissance'], documents: [{ ...exampleRequest.documents[0], fileId: null }] };
     view(
       build({
@@ -136,6 +137,7 @@ describe('ConversationView', () => {
         ],
       }),
     );
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Afficher vos informations' }));
     const panel = screen.getByRole('heading', { name: 'Vos informations', level: 2 }).closest('section')!;
     // Latest card wins: nothing is missing any more.
     expect(within(panel).queryByText('Il manque encore')).toBeNull();
@@ -143,46 +145,148 @@ describe('ConversationView', () => {
     expect(within(panel).getByText('Cotonou, Akpakpa')).toBeInTheDocument();
     expect(within(panel).getAllByText('Votre réponse').length).toBeGreaterThan(0);
     expect(within(panel).getByText(/Extrait d'acte de naissance sécurisé ou légalisé/)).toBeInTheDocument();
-    const pill = screen.getByRole('button', { name: 'Vos informations' });
-    await userEvent.setup().click(pill);
-    expect(screen.getAllByText('Adresse du domicile')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: 'Fermer' })).toBeInTheDocument();
   });
 
-  it('lists what is missing in the panel', () => {
+  it('lists what is missing in the panel', async () => {
     view(build({ timeline: [user('u1', 'Q'), agent('a1', requestCardBlock({ ...exampleRequest, status: 'draft', missing: ['Profession'] }))] }));
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Afficher vos informations' }));
     const panel = screen.getByRole('heading', { name: 'Vos informations', level: 2 }).closest('section')!;
     expect(within(panel).getByText('Il manque encore')).toBeInTheDocument();
     expect(within(within(panel).getByText('Il manque encore').parentElement!).getByText('Profession')).toBeInTheDocument();
   });
 
-  it('offers a Sources (n) header button when there is no request, opening the sources dialog', async () => {
-    view(build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [source('casier', 'https://a.example/c')] })] }));
-    expect(screen.queryByRole('button', { name: 'Vos informations' })).toBeNull();
-    expect(screen.getAllByText('casier')).toHaveLength(2);
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Sources (1)' }));
-    expect(screen.getAllByText('casier')).toHaveLength(3);
-    expect(screen.getByRole('button', { name: 'Fermer' })).toBeInTheDocument();
-  });
-
-  it('opens the panels in a right drawer from md up', async () => {
+  describe('side panel', () => {
+    const withSources = () =>
+      build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [source('casier', 'https://a.example/c')] })] });
+    const withRequest = (missing: string[]) =>
+      build({ timeline: [user('u1', 'Q'), agent('a1', requestCardBlock({ ...exampleRequest, status: 'draft', missing }))] });
     const original = window.matchMedia;
-    window.matchMedia = ((query: string) => ({
-      matches: true,
-      media: query,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    })) as unknown as typeof window.matchMedia;
-    try {
-      view(build({ timeline: [user('u1', 'Q'), agent('a1', { type: 'text', text: 'R', sources: [source('casier', 'https://a.example/c')] })] }));
-      await userEvent.setup().click(screen.getByRole('button', { name: 'Sources (1)' }));
+
+    /** Fakes `matchMedia` for a window `width` px wide (understands `(min-width: Npx)` only). */
+    const setWidth = (width: number) => {
+      window.matchMedia = ((query: string) => ({
+        matches: width >= Number(/min-width:\s*(\d+)px/.exec(query)?.[1] ?? Infinity),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      })) as unknown as typeof window.matchMedia;
+    };
+
+    beforeEach(() => window.localStorage.clear());
+    afterEach(() => {
+      window.matchMedia = original;
+      vi.restoreAllMocks();
+    });
+
+    it('is closed by default and has no button without anything to show', () => {
+      setWidth(1280);
+      view(withSources());
+      expect(screen.getByRole('button', { name: 'Afficher les sources' })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.queryByRole('complementary')).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Sources' })).toBeNull();
+    });
+
+    it('opens inline from 1024px, then closes with the header button and with the X', async () => {
+      setWidth(1280);
+      const user = userEvent.setup();
+      view(withRequest(['Profession']));
+      await user.click(screen.getByRole('button', { name: 'Afficher vos informations' }));
+      expect(screen.getByRole('complementary')).toBeInTheDocument();
+      expect(document.querySelector('dialog[open]')).toBeNull();
+      expect(screen.getByRole('heading', { name: 'Vos informations', level: 2 })).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Masquer vos informations' }));
+      expect(screen.queryByRole('complementary')).toBeNull();
+
+      await user.click(screen.getByRole('button', { name: 'Afficher vos informations' }));
+      await user.click(screen.getByRole('button', { name: 'Masquer le panneau' }));
+      expect(screen.queryByRole('complementary')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Afficher vos informations' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('exposes aria-pressed and a label that follows the state', async () => {
+      setWidth(1280);
+      const user = userEvent.setup();
+      view(withSources());
+      const button = screen.getByRole('button', { name: 'Afficher les sources' });
+      expect(button).toHaveAttribute('aria-pressed', 'false');
+      await user.click(button);
+      expect(screen.getByRole('button', { name: 'Masquer les sources' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('shows the red dot only when something is missing', () => {
+      setWidth(1280);
+      const { unmount } = view(withRequest(['Profession']));
+      expect(screen.getByRole('button', { name: 'Afficher vos informations' }).querySelector('.bg-danger')).not.toBeNull();
+      unmount();
+      view(withRequest([]));
+      expect(screen.getByRole('button', { name: 'Afficher vos informations' }).querySelector('.bg-danger')).toBeNull();
+    });
+
+    it('opens a right drawer from 768px to 1023px', async () => {
+      setWidth(900);
+      view(withSources());
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Afficher les sources' }));
       const drawer = document.querySelector('dialog.chat-drawer') as HTMLDialogElement;
       expect(drawer).not.toBeNull();
       expect(within(drawer).getByText('casier')).toBeInTheDocument();
       expect(document.querySelector('dialog.chat-sheet')).toBeNull();
-    } finally {
-      window.matchMedia = original;
-    }
+      expect(screen.queryByRole('complementary')).toBeNull();
+    });
+
+    it('opens a bottom sheet below 768px', async () => {
+      setWidth(400);
+      view(withSources());
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Afficher les sources' }));
+      expect(document.querySelector('dialog.chat-sheet')).not.toBeNull();
+      expect(document.querySelector('dialog.chat-drawer')).toBeNull();
+    });
+
+    it('remembers the choice only for wide screens', async () => {
+      setWidth(1280);
+      const user = userEvent.setup();
+      view(withSources());
+      await user.click(screen.getByRole('button', { name: 'Afficher les sources' }));
+      expect(window.localStorage.getItem('assistant.panel-open')).toBe('1');
+      await user.click(screen.getByRole('button', { name: 'Masquer les sources' }));
+      expect(window.localStorage.getItem('assistant.panel-open')).toBe('0');
+
+      window.localStorage.clear();
+      cleanup();
+      setWidth(900);
+      view(withSources());
+      await user.click(screen.getByRole('button', { name: 'Afficher les sources' }));
+      expect(window.localStorage.getItem('assistant.panel-open')).toBeNull();
+    });
+
+    it('restores the remembered open state after mount on a wide screen', async () => {
+      setWidth(1280);
+      window.localStorage.setItem('assistant.panel-open', '1');
+      view(withSources());
+      expect(await screen.findByRole('complementary')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Masquer les sources' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('does not reopen a remembered panel as a drawer on a narrow screen', () => {
+      setWidth(900);
+      window.localStorage.setItem('assistant.panel-open', '1');
+      view(withSources());
+      expect(screen.getByRole('button', { name: 'Afficher les sources' })).toHaveAttribute('aria-pressed', 'false');
+      expect(document.querySelector('dialog[open]')).toBeNull();
+    });
+
+    it('still works when localStorage throws', async () => {
+      setWidth(1280);
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
+      view(withSources());
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Afficher les sources' }));
+      expect(screen.getByRole('complementary')).toBeInTheDocument();
+    });
   });
 
   it('hides the dossier panel and pill on a simple Q&A', () => {

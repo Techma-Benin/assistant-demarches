@@ -1,6 +1,6 @@
 import type { Conversations } from "./conversations.js";
 import type { Schemas } from "./domain.js";
-import { draftCitesOutside, hasStreamingAdminFact, looksLikeJsonEnvelope, stripForeignUrls } from "./model-reply.js";
+import { draftCitesOutside, hasStreamingAdminFact, hasTrailingEnvelope, looksLikeJsonEnvelope, stripForeignUrls } from "./model-reply.js";
 import { redact } from "./model.js";
 import { TextDeltaExtractor } from "./text-deltas.js";
 
@@ -173,6 +173,11 @@ export class LiveReply {
       complete: (replyText) => {
         if (muted || !this.open || typeof replyText !== "string") return;
         if (!looksLikeJsonEnvelope(replyText)) {
+          // The envelope is parsed later; agent.ts publishes the validated text through publishVisible.
+          if (hasTrailingEnvelope(replyText)) {
+            muted = true;
+            return;
+          }
           incoming = replyText;
           raw = replyText;
           if (!(cleanedFact(replyText) && observed.length === 0)) stage(raw, true);

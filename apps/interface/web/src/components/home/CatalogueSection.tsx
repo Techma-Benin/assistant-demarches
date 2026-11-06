@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ArrowUpRight,
   Baby,
   BookUser,
   DoorClosed,
@@ -29,10 +30,9 @@ import {
   Store,
   type LucideIcon,
 } from 'lucide-react';
+import Image from 'next/image';
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import { Button, cn } from '@techma/ui';
-import { DocumentArt, Stamp, type DocumentKind } from './DocumentArt';
-import { Bridge } from './Bridge';
+import { cn } from '@techma/ui';
 import { FitWord } from './FitWord';
 import { useReveal } from './use-reveal';
 
@@ -42,9 +42,8 @@ export type CatalogueTheme = {
   audiences: Audience[];
   title: string;
   description: string;
-  kind: DocumentKind;
   backdrop: { src: string; size: string; y: string };
-  items: { name: string; about: string; question: string; icon: LucideIcon; kind?: DocumentKind }[];
+  items: { name: string; about: string; question: string; icon: LucideIcon }[];
 };
 
 export const CATALOGUE: CatalogueTheme[] = [
@@ -53,10 +52,9 @@ export const CATALOGUE: CatalogueTheme[] = [
     audiences: ['particulier'],
     backdrop: { src: '/photos/fond-identite.jpg', size: 'cover', y: '50%' },
     description: 'Prouver qui vous êtes, votre nationalité et votre lieu de résidence.',
-    kind: 'cni',
     items: [
       { name: 'Carte d’identité', about: 'Votre pièce d’identité nationale, pour vous identifier partout au Bénin.', question: 'Comment obtenir ma carte d’identité ?', icon: IdCard },
-      { name: 'Certificat de résidence', about: 'Prouve votre adresse, souvent demandé dans un dossier administratif.', question: 'Comment obtenir un certificat de résidence ?', kind: 'residence', icon: MapPinHouse },
+      { name: 'Certificat de résidence', about: 'Prouve votre adresse, souvent demandé dans un dossier administratif.', question: 'Comment obtenir un certificat de résidence ?', icon: MapPinHouse },
       { name: 'Certificat d’identification personnelle', about: 'Atteste votre identité à partir de votre numéro personnel d’identification.', question: 'Comment obtenir mon certificat d’identification personnelle ?', icon: Fingerprint },
       { name: 'Certificat de nationalité', about: 'Prouve que vous êtes de nationalité béninoise.', question: 'Comment obtenir un certificat de nationalité ?', icon: Flag },
     ],
@@ -66,7 +64,6 @@ export const CATALOGUE: CatalogueTheme[] = [
     audiences: ['particulier', 'diaspora'],
     backdrop: { src: '/photos/esplanade-statue-bande.jpg', size: 'cover', y: '50%' },
     description: 'Les grands moments de la vie de famille, enregistrés et prouvés.',
-    kind: 'acte-naissance',
     items: [
       { name: 'Acte de naissance', about: 'Le premier acte d’état civil, demandé dans presque tous les dossiers.', question: 'Comment obtenir un acte de naissance ?', icon: Baby },
       { name: 'Acte de mariage', about: 'Prouve votre mariage, pour un dossier familial ou administratif.', question: 'Comment obtenir un acte de mariage ?', icon: HeartHandshake },
@@ -79,7 +76,6 @@ export const CATALOGUE: CatalogueTheme[] = [
     audiences: ['particulier', 'diaspora'],
     backdrop: { src: '/photos/pirogue-ganvie.jpg', size: 'auto 200svh', y: '100%' },
     description: 'Quitter le territoire et y revenir avec les bons documents.',
-    kind: 'passeport',
     items: [
       { name: 'Passeport', about: 'Le document pour voyager à l’étranger.', question: 'Comment renouveler mon passeport ?', icon: BookUser },
       { name: 'Visa', about: 'L’autorisation d’entrer au Bénin pour un visiteur étranger.', question: 'Comment demander un visa ?', icon: StampIcon },
@@ -92,7 +88,6 @@ export const CATALOGUE: CatalogueTheme[] = [
     audiences: ['entreprise'],
     backdrop: { src: '/photos/vieux-pont-grand-popo.jpg', size: 'auto 200svh', y: '70%' },
     description: 'Donner une existence légale à votre activité, puis la faire évoluer.',
-    kind: 'entreprise',
     items: [
       { name: 'Créer une entreprise', about: 'Immatriculer votre activité pour lui donner une existence légale.', question: 'Comment créer mon entreprise ?', icon: Store },
       { name: 'Modifier une entreprise', about: 'Changer le siège, l’activité ou les dirigeants de votre entreprise.', question: 'Comment modifier mon entreprise ?', icon: FilePenLine },
@@ -105,7 +100,6 @@ export const CATALOGUE: CatalogueTheme[] = [
     audiences: ['particulier', 'entreprise'],
     backdrop: { src: '/photos/porte-non-retour-ouidah.jpg', size: 'auto 200svh', y: '62%' },
     description: 'Prouver votre situation devant la loi et obtenir les actes du tribunal.',
-    kind: 'casier',
     items: [
       { name: 'Casier judiciaire', about: 'Indique si vous avez des condamnations, souvent demandé pour un emploi.', question: 'Comment obtenir un extrait de casier judiciaire ?', icon: Scale },
       { name: 'Légalisation de signature', about: 'Certifie que votre signature est authentique.', question: 'Comment faire légaliser une signature ?', icon: Signature },
@@ -118,7 +112,6 @@ export const CATALOGUE: CatalogueTheme[] = [
     audiences: ['particulier', 'entreprise'],
     backdrop: { src: '/photos/tata-somba-nadoba.jpg', size: 'auto 200svh', y: '22%' },
     description: 'Sécuriser votre terrain et construire en règle.',
-    kind: 'permis',
     items: [
       { name: 'Titre foncier', about: 'Le document qui prouve que le terrain vous appartient.', question: 'Comment obtenir un titre foncier ?', icon: LandPlot },
       { name: 'Permis de construire', about: 'L’autorisation de construire sur votre terrain.', question: 'Comment obtenir un permis de construire ?', icon: HardHat },
@@ -129,9 +122,8 @@ export const CATALOGUE: CatalogueTheme[] = [
   {
     title: 'Services consulaires',
     audiences: ['diaspora'],
-    backdrop: { src: '/photos/porte-non-retour-ouidah.jpg', size: 'auto 200svh', y: '62%' },
+    backdrop: { src: '/photos/aeroport-cotonou-atterrissage.jpg', size: 'cover', y: '45%' },
     description: 'Vos démarches depuis l’étranger, avec votre consulat.',
-    kind: 'passeport',
     items: [
       { name: 'Carte consulaire', about: 'Votre carte d’identification auprès du consulat du Bénin.', question: 'Comment obtenir ou renouveler ma carte consulaire ?', icon: IdCard },
       { name: 'Immatriculation consulaire', about: 'Vous faire connaître du consulat de votre pays de résidence.', question: 'Comment m’immatriculer au consulat ?', icon: Landmark },
@@ -154,6 +146,13 @@ export const CATALOGUE_PHOTO_CREDITS = [
     licence: 'CC BY-SA 4.0',
     page: 'https://commons.wikimedia.org/wiki/File:Tata_Somba_de_Nadoba.jpg',
   },
+  {
+    src: '/photos/aeroport-cotonou-atterrissage.jpg',
+    title: 'Aéroport de Cotonou',
+    author: 'GuillaumeG',
+    licence: 'CC BY-SA 4.0',
+    page: 'https://commons.wikimedia.org/wiki/File:Cadjehoun_Airport_7821.jpg',
+  },
 ];
 
 const AUDIENCES: { key: Audience | null; label: string }[] = [
@@ -163,15 +162,12 @@ const AUDIENCES: { key: Audience | null; label: string }[] = [
   { key: 'diaspora', label: 'Diaspora' },
 ];
 
-const FAN_ROTATIONS = ['-rotate-[8deg]', 'rotate-0', 'rotate-[8deg]'];
-
 /** « Toutes les démarches »: themes on the left, the selected theme as one detail card on the right. */
 export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk: (q: string) => void }) {
   const ref = useReveal<HTMLElement>();
   const [audience, setAudience] = useState<Audience | null>(null);
   const [selected, setSelected] = useState(0);
   const visible = audience ? CATALOGUE.filter((t) => t.audiences.includes(audience)) : CATALOGUE;
-  const [lifted, setLifted] = useState<number | null>(null);
   const [pointed, setPointed] = useState<number | null>(null);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   // Vertical list from lg up, horizontal scroll row below: the tablist orientation follows the layout.
@@ -185,16 +181,10 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
     return () => mq.removeEventListener?.('change', sync);
   }, []);
   const theme = visible[selected]!;
-  const fan = theme.items.slice(0, 3);
 
   const choose = (next: number) => {
     setSelected(next);
-    setLifted(null);
     setPointed(null);
-  };
-  const point = (i: number | null) => {
-    setPointed(i);
-    setLifted(i !== null && i < fan.length ? i : null);
   };
   const move = (next: number) => {
     choose(next);
@@ -214,28 +204,26 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
 
   return (
     <section id="themes" ref={ref} data-theme="light" aria-labelledby="themes-title" className={cn(sectionPad, 'overflow-x-clip bg-action text-on-action lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-8')}>
-      <div className="mx-auto max-w-[1320px] px-5 md:px-8">
+      <div className="mx-auto w-full max-w-[1320px] px-5 md:px-8">
         {/* Decorative: the chosen theme's photo shows through the letters, fixed to the screen while the page scrolls. */}
         <div {...rv(0)}>
           <FitWord
             word="DÉMARCHES"
-            max={240}
-            maxScreenHeight={0.17}
+            max={300}
+            maxScreenHeight={0.21}
             fills={visible.map((t) => ({ backgroundImage: `url(${t.backdrop.src})`, backgroundSize: t.backdrop.size, backgroundPosition: `50% ${t.backdrop.y}` }))}
             active={selected}
             className="type-photo bg-fixed"
           />
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-end lg:gap-x-8">
-          <div {...rv(2)} className="lg:col-span-12">
-            <h2 id="themes-title" className="sr-only">
-              Trouver ma démarche
-            </h2>
-            <p className="m-0 text-[clamp(17px,1.5vw,20px)] leading-normal text-on-action/85">
-              Trouvez la vôtre en un clic, d’après les fiches officielles du service public.
-            </p>
-          </div>
+        <div {...rv(2)} className="mt-5 text-center">
+          <h2 id="themes-title" className="sr-only">
+            Trouver ma démarche
+          </h2>
+          <p className="m-0 mx-auto max-w-[64ch] text-balance text-[clamp(17px,1.5vw,20px)] leading-normal text-on-action/85">
+            Trouvez la vôtre en un clic, d’après les fiches officielles du service public.
+          </p>
         </div>
 
         <div className="mt-8 grid grid-cols-1 gap-8 lg:mt-8 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:gap-x-12 lg:gap-y-6">
@@ -289,7 +277,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
                     onFocus={() => choose(i)}
                     className={cn(
                       'ui-press relative flex min-h-11 shrink-0 items-center justify-between gap-6 whitespace-nowrap rounded-pill border px-4 text-left text-[15px] font-semibold transition-colors duration-200',
-                      'lg:rounded-none lg:border-0 lg:border-b lg:border-on-action/20 lg:px-0 lg:py-[clamp(5px,0.9svh,11px)] lg:font-display lg:text-[clamp(20px,1.7vw,26px)] lg:leading-[1.15] lg:tracking-[-0.03em]',
+                      'lg:rounded-none lg:border-0 lg:border-b lg:border-on-action/20 lg:px-0 lg:py-[clamp(6px,1.1svh,12px)] lg:font-display lg:text-[clamp(22px,1.9vw,28px)] lg:leading-[1.15] lg:tracking-[-0.03em]',
                       active
                         ? 'border-on-action bg-on-action text-action lg:bg-transparent lg:font-extrabold lg:text-on-action'
                         : 'border-on-action/25 text-on-action/75 hover:text-on-action lg:text-on-action/60',
@@ -315,7 +303,7 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
           <p
             key={`${selected}-${pointed}`}
             aria-live="polite"
-            className="chat-fade-in order-first m-0 max-w-[36ch] text-[17px] leading-normal text-on-action/85 lg:order-none lg:col-span-4 lg:row-start-2"
+            className="chat-fade-in order-first m-0 max-w-[36ch] text-[18px] leading-normal text-on-action/85 min-h-[4.5em] lg:order-none lg:col-span-4 lg:row-start-2 lg:min-h-[6em]"
           >
             {pointed !== null && theme.items[pointed] ? (
               <>
@@ -331,81 +319,57 @@ export function CatalogueSection({ disabled, onAsk }: { disabled: boolean; onAsk
             {...rv(4)}
             role="tabpanel"
             id="theme-panel"
-            data-theme="light"
             aria-labelledby={`theme-tab-${selected}`}
-            className="min-w-0 overflow-hidden rounded-[24px] bg-canvas text-ink lg:col-span-8 lg:col-start-5 lg:row-span-2 lg:row-start-1"
+            className="relative isolate flex min-h-[460px] min-w-0 flex-col overflow-hidden rounded-[28px] bg-black text-white md:h-[clamp(440px,58svh,560px)] lg:h-[clamp(460px,62svh,600px)] lg:col-span-8 lg:col-start-5 lg:row-span-2 lg:row-start-1"
           >
-            <div className="grid min-h-full grid-cols-1 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-              <div aria-hidden="true" className="relative h-[220px] overflow-hidden bg-sunken md:h-auto md:min-h-[clamp(300px,40svh,420px)]">
-                {visible.map((t, ti) => {
-                  const shown = ti === selected;
-                  const docs = t.items.slice(0, 3);
+            {visible.map((t, ti) => (
+              <Image
+                key={t.title}
+                src={t.backdrop.src}
+                alt=""
+                fill
+                sizes="(min-width: 1320px) 840px, (min-width: 1024px) 64vw, 100vw"
+                quality={75}
+                style={{ objectPosition: `50% ${t.backdrop.y}` }}
+                className={cn('-z-10 object-cover transition-opacity duration-700 ease-in-out', ti === selected ? 'opacity-100' : 'opacity-0')}
+              />
+            ))}
+            <div aria-hidden="true" className="absolute inset-0 -z-10 bg-[linear-gradient(to_top,rgb(0_0_0/0.82)_0%,rgb(0_0_0/0.45)_48%,rgb(0_0_0/0.1)_100%)]" />
+            <div key={selected} className="chat-fade-in flex flex-1 flex-col justify-between gap-6 p-5 md:p-7">
+              <p className="m-0 font-display text-[clamp(28px,3vw,40px)] font-extrabold leading-none tracking-[-0.035em] [text-shadow:0_2px_18px_rgb(0_0_0/0.35)]">
+                {theme.title}
+              </p>
+              <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 sm:grid-cols-2">
+                {theme.items.map((item, i) => {
+                  const Icon = item.icon;
                   return (
-                    <div
-                      key={t.title}
-                      className={cn('absolute inset-0 flex items-center justify-center px-4 transition-opacity duration-700 ease-in-out', shown ? 'opacity-100' : 'opacity-0')}
-                    >
-                      {docs.map((item, i) => (
-                        <div
-                          key={item.name}
-                          className={cn(
-                            'relative aspect-[3/4] h-[62%] transition-[translate,scale] duration-300 ease-out md:h-[58%]',
-                            i > 0 && '-ml-[14%]',
-                            FAN_ROTATIONS[i],
-                            i === 1 && 'z-[1]',
-                            shown && lifted === i ? 'z-10 -translate-y-[6%] scale-[1.08]' : 'translate-y-0',
-                          )}
+                    <li key={item.name}>
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onAsk(item.question)}
+                        onMouseEnter={() => setPointed(i)}
+                        onMouseLeave={() => setPointed(null)}
+                        onFocus={() => setPointed(i)}
+                        onBlur={() => setPointed(null)}
+                        className="ui-press group flex h-full min-h-16 w-full items-center gap-3 rounded-[16px] border border-white/25 bg-white/12 p-3 text-left text-white backdrop-blur-md transition-colors duration-200 enabled:hover:border-white enabled:hover:bg-white enabled:hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-white/20 text-white transition-colors duration-200 group-enabled:group-hover:bg-(--home-field-green) group-enabled:group-hover:text-white"
                         >
-                          <div style={{ animationDelay: `${i * 700}ms` }} className="relative size-full">
-                            <DocumentArt kind={item.kind ?? t.kind} className="size-full drop-shadow-md" />
-                            {i === 1 && shown && <Stamp key={selected} className="doc-stamp absolute -right-[10%] bottom-[10%] size-[46%] -rotate-12" />}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                          <Icon className="size-5" strokeWidth={1.75} />
+                        </span>
+                        <span className="min-w-0 flex-1 text-[15px] font-semibold leading-snug">{item.name}</span>
+                        <ArrowUpRight aria-hidden="true" className="size-4 shrink-0 opacity-60 transition-opacity duration-200 group-hover:opacity-100" />
+                      </button>
+                    </li>
                   );
                 })}
-              </div>
-              <div key={selected} className="chat-fade-in flex flex-col justify-center gap-5 p-6 md:p-8">
-                <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 sm:grid-cols-2">
-                  {theme.items.map((item, i) => {
-                    const Icon = item.icon;
-                    return (
-                      <li key={item.name}>
-                        <button
-                          type="button"
-                          disabled={disabled}
-                          onClick={() => onAsk(item.question)}
-                          onMouseEnter={() => point(i)}
-                          onMouseLeave={() => point(null)}
-                          onFocus={() => point(i)}
-                          onBlur={() => point(null)}
-                          className="ui-press group flex h-full min-h-16 w-full items-center gap-3 rounded-[16px] border border-line bg-surface p-3 text-left transition-colors duration-200 hover:border-(--home-field-green) disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <span
-                            aria-hidden="true"
-                            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-trust-soft text-trust-text transition-colors duration-200 group-enabled:group-hover:bg-(--home-field-green) group-enabled:group-hover:text-on-trust group-focus-visible:bg-(--home-field-green) group-focus-visible:text-on-trust"
-                          >
-                            <Icon className="size-5" strokeWidth={1.75} />
-                          </span>
-                          <span className="min-w-0 flex-1 text-[15px] font-semibold leading-snug">{item.name}</span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <div className="flex justify-center pt-1">
-                  <Button disabled={disabled} onClick={() => onAsk(theme.items[0]!.question)}>
-                    Demander à l’assistant
-                  </Button>
-                </div>
-              </div>
+              </ul>
             </div>
           </div>
         </div>
-        <Bridge to="garanties" className="mt-6 text-on-action">
-          Et vos données, dans tout ça ?
-        </Bridge>
       </div>
     </section>
   );
