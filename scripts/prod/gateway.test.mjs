@@ -62,6 +62,7 @@ test('only Techma identity routes are public, including during startup', async (
 
 test('WebSocket upgrades preserve Origin, ticket and cursor on the same public port', async (t) => {
   let observed;
+  const events = [];
   const backend = createServer();
   const wss = new WebSocketServer({ noServer: true });
   backend.on('upgrade', (req, socket, head) => {
@@ -70,7 +71,10 @@ test('WebSocket upgrades preserve Origin, ticket and cursor on the same public p
     wss.handleUpgrade(req, socket, head, (ws) => ws.on('message', (message) => ws.send(message)));
   });
   const backendPort = await listen(backend);
-  const gateway = createGateway({ origin: 'https://showcase.example', ports: { backend: backendPort } });
+  const gateway = createGateway({
+    origin: 'https://showcase.example', ports: { backend: backendPort },
+    diagnostics: (event, fields) => events.push({ event, ...fields }),
+  });
   const port = await listen(gateway);
   t.after(async () => {
     for (const client of wss.clients) client.terminate();
@@ -82,6 +86,7 @@ test('WebSocket upgrades preserve Origin, ticket and cursor on the same public p
   const echo = new Promise((resolve) => ws.once('message', (message) => resolve(message.toString())));
   ws.send('event');
   assert.equal(await echo, 'event');
+  assert.equal(gateway.diagnosticsSnapshot().openWebSockets, 1);
   assert.equal(observed.url, '/v1/stream?ticket=valid&cursor=replay');
   assert.equal(observed.headers.origin, 'https://showcase.example');
   await new Promise((resolve) => { ws.once('close', resolve); ws.close(); });
@@ -90,4 +95,8 @@ test('WebSocket upgrades preserve Origin, ticket and cursor on the same public p
   assert.equal(await new Promise((resolve) => rejected.once('unexpected-response', (_req, res) => {
     res.resume(); rejected.terminate(); resolve(res.statusCode);
   })), 401);
+  assert.ok(events.some((event) => event.event === 'websocket.open'));
+  assert.ok(events.some((event) => event.outcome === 'rejected' && event.status === 401));
+  assert.ok(!JSON.stringify(events).includes('ticket='));
+  assert.ok(!JSON.stringify(events).includes('cursor='));
 });

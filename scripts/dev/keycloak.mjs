@@ -137,7 +137,7 @@ async function configurePreviewClient(urls, enabled) {
 
 export async function startKeycloak(log, {
   local = LOCAL, ports = PORTS, urls = URLS, publicDomain = PREVIEW_DOMAIN,
-  productionDatabase, startupTimeoutMs = 180_000, streamLogs = false,
+  productionDatabase, startupTimeoutMs = 180_000, streamLogs = false, onProcess,
 } = {}) {
   mkdirSync(local, { recursive: true });
   const { javaHome, keycloakDir } = await prepareKeycloak(log, local);
@@ -160,6 +160,7 @@ export async function startKeycloak(log, {
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: windows,
   });
+  onProcess?.(child);
   const lines = [];
   for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk) => {
     if (streamLogs) log(String(chunk));

@@ -63,7 +63,65 @@ republishing can reset demo records, uploads, keys, and sessions. This setup int
 does not migrate the project's existing database to a different database service.
 Workspace database files, uploads, and keys are excluded from the deployment source upload.
 
-## Scope
+## Production diagnostics
+
+Production logs include structured JSON records with a shared `bootId`, a process
+`pid`, and a `source` (`gateway`, `interface`, `backend`, `tooling`, or `xroad`).
+This instrumentation is loaded only by the production launcher; development
+commands, login behavior, model calls, and business payloads are unchanged.
+
+- Every gateway HTTP request records a generated `requestId`, method, redacted
+  route label, upstream connection/request/header phases, status, elapsed time,
+  and completion or cancellation. The ID is returned as `X-Request-ID` and
+  forwarded to the private Node service.
+- Native Node diagnostic channels trace requests inside the compiled services
+  and outgoing HTTP/native-fetch calls. Incoming gateway/service records share
+  the request ID. Outgoing calls have their own IDs and source/timing; they do
+  not claim automatic parent-span correlation.
+- `request.pending` reports requests still open after 30 seconds, with their
+  current phase and target. An open streaming response can also be long-running;
+  this event alone is not proof of a deadlock.
+- Gateway and Node-service heartbeats run every 15 seconds. They report process
+  memory, CPU measured as a percentage of one core, event-loop delay, active
+  requests, and bounded logger backlog/drop counters. The gateway also samples
+  descendant process names/RSS/thread counts and cgroup memory/OOM counters when
+  the host exposes them. Process arguments are never collected.
+- Independent, two-second HTTP probes run every 30 seconds against Backend,
+  Tooling, X-Road, Keycloak discovery, and the signed-out interface session route.
+  These probes have no browser cookies and do not call the model.
+- Startup stages, readiness durations, child PIDs, exit codes/signals, shutdown
+  signals, and unexpected runtime failures are recorded. Existing service output
+  continues alongside these diagnostic records.
+- `/health/live` responds directly from the gateway without querying another
+  service. It returns liveness, the current readiness flag, and its request ID;
+  `/health/ready` remains the distinct application-startup readiness check.
+
+The new diagnostic records exclude headers, cookies, authorization, query strings,
+request/response bodies, raw error messages/stacks, arbitrary filenames/IDs, SQL,
+and WebSocket payloads. Routes keep only known static segments; other segments
+become `:value`. Logs go to stdout, not a growing application-disk log file.
+The output queue is bounded; dropped-log counts are exposed rather than building
+an unlimited memory backlog. Full per-request logging increases log volume.
+
+To interpret an incident:
+
+- Heartbeats continue, but a public probe has no matching `request.start`: the
+  request was not observed at the gateway; investigate public routing/ingress.
+- A matching gateway request waits on `interface` and the interface probe fails:
+  investigate that service's heartbeat and outbound-call records.
+- A Node-service heartbeat shows pending outbound calls to `public_origin`,
+  `keycloak`, `backend`, or `openai`: use those timings to locate the dependency
+  wait without exposing its credentials or payload.
+- A heartbeat gap/high event-loop delay or an unexpected process exit provides
+  different evidence from a single slow request.
+
+These diagnostics are not themselves a fix for the previously reported freeze.
+They cannot log while a process is completely blocked/killed, and no matching
+entry alone cannot prove a routing fault if the log collector is delayed or
+dropping output. Backend health probes are not exhaustive business/dependency
+checks, and browser-only JavaScript errors are not captured here.
+
+## Simulation scope
 
 The changes support publishing a simulation through one port. They do not remove demo
 credentials, replace simulated identity checks with real SMS, set an OpenAI spending cap,
