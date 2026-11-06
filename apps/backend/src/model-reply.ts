@@ -43,6 +43,14 @@ export function looksLikeJsonEnvelope(text: string): boolean {
   return payload.startsWith("{") || payload.startsWith("[");
 }
 
+// Start of an envelope the model appended after prose, with its optional code fence.
+const EMBEDDED_ENVELOPE = /(?:```(?:json)?\s*)?\{\s*"blocks"\s*:/i;
+
+/** True when free prose is followed by the model's JSON envelope. */
+export function hasTrailingEnvelope(text: string): boolean {
+  return !looksLikeJsonEnvelope(text) && EMBEDDED_ENVELOPE.test(text);
+}
+
 export function logRejectedReply(reason: string, context: Record<string, string | number | boolean | undefined> = {}) {
   console.error(JSON.stringify({
     timestamp: new Date().toISOString(),
@@ -172,7 +180,16 @@ function parseOrWrap(replyText: string): unknown[] {
   const trimmed = replyText.trim();
   if (!trimmed) reject("empty_reply", "Réponse modèle vide ou hors contrat JSON.");
   if (!looksLikeJsonEnvelope(trimmed)) {
-    return [{ type: "text", text: trimmed, sources: [] }];
+    const start = trimmed.search(EMBEDDED_ENVELOPE);
+    if (start < 0) return [{ type: "text", text: trimmed, sources: [] }];
+    // The envelope carries the sources and buttons, so it wins over the prose before it.
+    try {
+      return parseModelBlocks(trimmed.slice(start));
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      // Broken envelope: keep the prose, never show the JSON.
+      return [{ type: "text", text: trimmed.slice(0, start).trim(), sources: [] }];
+    }
   }
   try {
     return parseModelBlocks(replyText);
