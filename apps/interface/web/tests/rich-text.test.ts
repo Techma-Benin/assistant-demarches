@@ -86,4 +86,17 @@ describe('parseBlocks', () => {
       { kind: 'paragraph', text: 'Sous', heading: true },
     ]);
   });
+
+  it('keeps the written number of a list split by bullets', () => {
+    expect(parseBlocks('1. **A**\n - x\n\n2. **B**\n - y')).toEqual([
+      { kind: 'list', ordered: true, items: ['**A**'] },
+      { kind: 'list', ordered: false, items: ['x'] },
+      { kind: 'list', ordered: true, items: ['**B**'], start: 2 },
+      { kind: 'list', ordered: false, items: ['y'] },
+    ]);
+  });
+
+  it('ignores an out-of-range written number', () => {
+    expect(parseBlocks('2026. Texte')).toEqual([{ kind: 'list', ordered: true, items: ['Texte'] }]);
+  });
 });

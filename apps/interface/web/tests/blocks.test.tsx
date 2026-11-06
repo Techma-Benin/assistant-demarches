@@ -75,6 +75,19 @@ describe('text block', () => {
   });
 });
 
+describe('numbered titles split by bullets', () => {
+  it('numbers the second title 2 and sets start on its list', () => {
+    const { container } = render(
+      <BlockRenderer block={textBlock('1. **A**\n - x\n\n2. **B**\n - y')} interactive onButton={vi.fn()} onForm={vi.fn()} onFiles={vi.fn()} conversationId={CONVERSATION_ID} />,
+    );
+    const lists = container.querySelectorAll('ol');
+    expect(lists).toHaveLength(2);
+    expect(lists[0].hasAttribute('start')).toBe(false);
+    expect(lists[1].getAttribute('start')).toBe('2');
+    expect(lists[1].querySelector('[aria-hidden="true"]')?.textContent).toBe('2');
+  });
+});
+
 describe('buttons block', () => {
   it('sends the clicked item once', async () => {
     const props = show({ type: 'buttons', items: [{ id: 'yes', label: 'Oui' }, { id: 'no', label: 'Non' }] });
