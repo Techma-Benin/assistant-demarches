@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowRight, MessageSquare } from 'lucide-react';
-import { useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 import { BrandMark, Chip, FlagGlyph, ThemeToggle, cn } from '@techma/ui';
 import { AccountMenu } from '@/components/app/AccountMenu';
 import { Composer } from '@/components/chat/Composer';
@@ -17,7 +17,6 @@ import { NeverShowcase } from './NeverDemos';
 import { PromptDock } from './PromptDock';
 import { Bridge } from './Bridge';
 import { CATALOGUE_PHOTO_CREDITS, CatalogueSection } from './CatalogueSection';
-import { GuidedStart } from './GuidedStart';
 import { LiveSearch } from './LiveSearch';
 import { useReveal } from './use-reveal';
 
@@ -120,6 +119,33 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
     ask(text);
     setDraft('');
   };
+  const ctaZoom = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const zoom = ctaZoom.current;
+    const section = zoom?.closest('section');
+    if (!zoom || !section) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const vh = window.innerHeight;
+      const t = Math.min(1, Math.max(0, (vh - section.getBoundingClientRect().top) / (vh * 0.8)));
+      const e = t * t * (3 - 2 * t);
+      zoom.style.transform = `translateY(${((1 - e) * 22).toFixed(2)}%) scale(${(0.3 + 0.7 * e).toFixed(4)})`;
+      zoom.style.opacity = Math.min(1, t * 1.8).toFixed(3);
+      zoom.style.filter = e < 0.98 ? `blur(${((1 - e) * 12).toFixed(2)}px)` : '';
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+    };
+  }, []);
   const showcaseRef = useReveal<HTMLElement>();
   const howRef = useReveal<HTMLElement>();
   const trustRef = useReveal<HTMLElement>();
@@ -201,23 +227,8 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
       </div>
 
       <main>
-        <section id="commencer" aria-labelledby="start-title" className="bg-sunken py-12 md:py-16">
-          <div className="mx-auto max-w-[1320px] px-5 md:px-8">
-            <div className="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-8">
-              <h2 id="start-title" className={cn(h2Class, 'text-[clamp(28px,3vw,42px)]')}>
-                Pas sûr de quoi demander ?
-              </h2>
-              <p className="m-0 text-[17px] text-ink-muted">Trouvez votre démarche en trois clics.</p>
-            </div>
-            <GuidedStart disabled={disabled} onAsk={ask} />
-            <Bridge to="documents" className="mt-6 text-ink">
-              Ou voyez les documents les plus demandés
-            </Bridge>
-          </div>
-        </section>
-
         <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
-          <div className="mx-auto mb-8 flex max-w-[1320px] flex-wrap items-end justify-between gap-x-8 gap-y-2 px-5 md:mb-10 md:px-8">
+          <div className="mx-auto mb-8 flex w-full max-w-[1320px] flex-wrap items-end justify-between gap-x-8 gap-y-2 px-5 md:mb-10 md:px-8">
             <h2 {...rv(0)} id="documents-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
               Un document ? Voici comment l’obtenir.
             </h2>
@@ -234,7 +245,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
         </section>
 
         <section id="fonctionnement" ref={howRef} aria-labelledby="how-title" className={cn(sectionPad, 'lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
-          <div className="mx-auto max-w-[1320px] px-5 md:px-8">
+          <div className="mx-auto w-full max-w-[1320px] px-5 md:px-8">
             <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-10">
               <h2 {...rv(0)} id="how-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
                 Trois étapes. Vous décidez à chaque fois.
@@ -289,7 +300,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
 
       </main>
 
-      <section id="demander" aria-label="Poser ma question" className="cta-zoom overflow-x-clip bg-canvas pb-14 pt-2 md:pb-20">
+      <section id="demander" data-theme="dark" aria-label="Poser ma question" className="overflow-x-clip bg-canvas pb-14 pt-14 text-ink md:pb-20 md:pt-20">
         <div className="mx-auto max-w-[1320px] px-5 md:px-8">
           <button
             type="button"
@@ -298,16 +309,18 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
             aria-label="Poser ma question"
             className="footer-cta group block w-full rounded-[24px] text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="flex items-center justify-between gap-4 text-[clamp(18px,2vw,26px)] font-semibold text-ink-muted">
-              Une démarche en tête ?
-              <span className="hidden text-[16px] font-medium text-ink-subtle md:inline">L’assistant vous répond, d’après la fiche officielle.</span>
+            <span ref={ctaZoom} className="block origin-bottom will-change-transform">
+              <span className="flex items-center justify-between gap-4 text-[clamp(18px,2vw,26px)] font-semibold text-ink-muted">
+                Une démarche en tête ?
+                <span className="hidden text-[16px] font-medium text-ink-subtle md:inline">L’assistant vous répond, d’après la fiche officielle.</span>
+              </span>
+              <FitWord word="Demandez maintenant →" className="footer-word" />
             </span>
-            <FitWord word="Demandez maintenant →" className="footer-word" />
           </button>
         </div>
       </section>
 
-      <footer id="site-footer" className="relative overflow-hidden bg-action text-on-action">
+      <footer id="site-footer" data-theme="light" className="relative overflow-hidden bg-action text-on-action">
         <div className="mx-auto max-w-[1320px] px-5 pt-6 md:px-8 md:pt-10">
           <div className="grid grid-cols-2 gap-x-8 gap-y-10 py-8 md:grid-cols-12 md:py-10">
             <div className="col-span-2 md:col-span-4">

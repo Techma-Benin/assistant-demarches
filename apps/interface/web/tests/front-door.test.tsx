@@ -105,7 +105,6 @@ describe('FrontDoor', () => {
     await user.click(screen.getByRole('button', { name: 'Renouveler mon passeport' }));
     await user.click(screen.getByRole('tab', { name: /Justice/ }));
     await user.click(screen.getByRole('button', { name: /Légalisation de signature/ }));
-    expect(screen.getByRole('button', { name: 'Demander à l’assistant' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Légalisation de signature/ })).toBeDisabled();
     await user.type(screen.getByLabelText('Votre question'), 'abc{Enter}');
     expect(onAsk).not.toHaveBeenCalled();
@@ -153,7 +152,7 @@ describe('FrontDoor', () => {
     const footer = document.querySelector('footer') as HTMLElement;
     expect(within(footer).getByText('Crédits photos')).toBeInTheDocument();
     const links = within(footer).getAllByRole('link', { name: /^«.*»$/ });
-    expect(links).toHaveLength(6);
+    expect(links).toHaveLength(7);
     expect(links[0]).toHaveAttribute('href', 'https://commons.wikimedia.org/wiki/File:Le_monument_de_l%27Amazone.jpg');
   });
 
