@@ -1,8 +1,8 @@
 'use client';
 
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
-import { BrandMark, Button, Chip, FlagGlyph, InlineAlert, SourceList, ThemeToggle, TypingIndicator, cn } from '@techma/ui';
-import { ArrowDown, Plus } from 'lucide-react';
+import { BrandMark, Button, Chip, FlagGlyph, InlineAlert, SourceList, ThemeToggle, Tooltip, TypingIndicator, cn } from '@techma/ui';
+import { ArrowDown, Info, Plus, X } from 'lucide-react';
 import { AccountMenu } from '@/components/app/AccountMenu';
 import { BlockRenderer } from '@/components/blocks/BlockRenderer';
 import { useThreadScroll } from '@/hooks/use-thread-scroll';
@@ -29,10 +29,13 @@ const SUGGESTIONS = ['Quelles démarches pouvez-vous m’expliquer ?', 'Comment 
 
 const PANEL_TITLE = 'font-display text-[20px] font-extrabold tracking-[-0.03em]';
 
+const WIDE_QUERY = '(min-width: 1024px)';
+const PANEL_STORAGE_KEY = 'assistant.panel-open';
+
 type Conversation = ReturnType<typeof useConversation>;
 
 
-/** « Vos informations » + sources panels, shared by the wide-screen side panel, the right drawer and the phone bottom sheet. */
+/** « Vos informations » + sources panels, shared by the inline side panel (from 1024px), the right drawer and the phone bottom sheet. */
 function DossierPanels({ request, sources }: { request: DraftRequest | null; sources: ReturnType<typeof toSourceInfo>[] }) {
   const id = useId();
   return (
@@ -47,17 +50,6 @@ function DossierPanels({ request, sources }: { request: DraftRequest | null; sou
         </section>
       )}
     </>
-  );
-}
-
-/** Wide screens only: lives in the right gutter, outside the centred thread column, and never pushes it. */
-function SidePanel({ request, sources }: { request: DraftRequest | null; sources: ReturnType<typeof toSourceInfo>[] }) {
-  return (
-    <div className="pointer-events-none absolute inset-0 hidden min-[1440px]:block">
-      <aside className="ui-scrollbar-none pointer-events-auto absolute right-6 top-8 flex max-h-[calc(100%-4rem)] w-[300px] flex-col gap-4 overflow-y-auto">
-        <DossierPanels request={request} sources={sources} />
-      </aside>
-    </div>
   );
 }
 
@@ -156,13 +148,31 @@ export function ConversationView({
     if (link) pendingFor.set(link.slot, { name: file.name, size: file.size });
   }
   const [confirmingRestart, setConfirmingRestart] = useState(false);
-  const [sheetOpen, setSheetOpen] = useState(false);
+  // One state for both forms of the panel: inline aside from 1024px, modal drawer / bottom sheet below.
+  const [panelOpen, setPanelOpen] = useState(false);
   const drawerSide = useMediaQuery('(min-width: 768px)') ? 'right' : 'bottom';
-  // From 1440px the panel sits in the gutter: a drawer left open would stay modal while hidden.
-  const panelInGutter = useMediaQuery('(min-width: 1440px)');
+  const wide = useMediaQuery(WIDE_QUERY);
+  // Restore the remembered choice after mount (no hydration mismatch); only a wide screen can reopen it.
   useEffect(() => {
-    if (panelInGutter) setSheetOpen(false);
-  }, [panelInGutter]);
+    if (!window.matchMedia?.(WIDE_QUERY).matches) return;
+    try {
+      if (window.localStorage.getItem(PANEL_STORAGE_KEY) === '1') setPanelOpen(true);
+    } catch {}
+  }, []);
+  // Crossing the 1024px limit with the panel open must not pop the modal drawer by itself.
+  // Reset while rendering: an effect would leave one commit where the narrow drawer opens as a modal.
+  const [wasWide, setWasWide] = useState(wide);
+  if (wasWide !== wide) {
+    setWasWide(wide);
+    if (!wide) setPanelOpen(false);
+  }
+  function togglePanel(open: boolean) {
+    setPanelOpen(open);
+    if (!wide) return;
+    try {
+      window.localStorage.setItem(PANEL_STORAGE_KEY, open ? '1' : '0');
+    } catch {}
+  }
   // Forget links of files removed from the staging area.
   useEffect(() => {
     const keys = new Set(staged.files.map(fileKey));
@@ -254,6 +264,7 @@ export function ConversationView({
   const lastAgent = state.timeline[lastAgentIndex];
   const formActive = lastAgent?.kind === 'agent' && lastAgent.message.blocks.some((b) => b.type === 'form');
   const sources = lastTextSources(state.timeline).map((source, index) => toSourceInfo(source, index, true));
+  const missing = request !== null && request.missing.length > 0;
   const panelLabel = request !== null ? 'Vos informations' : sources.length > 0 ? `Sources (${sources.length})` : null;
 
   const ready = state.status === 'ready';
@@ -264,6 +275,9 @@ export function ConversationView({
     if (holdsDossier(state)) setConfirmingRestart(true);
     else onRestart();
   };
+
+  const infoTooltip = `${panelOpen ? 'Masquer' : 'Afficher'} ${request !== null ? 'vos informations' : 'les sources'}`;
+  const inlinePanel = wide && panelOpen && panelLabel !== null;
 
   const header = (
     <header className="shrink-0 border-b border-line-subtle">
@@ -286,13 +300,21 @@ export function ConversationView({
         </p>
         <div className="ml-auto flex items-center gap-2">
           {panelLabel !== null && (
-            <button
-              type="button"
-              onClick={() => setSheetOpen(true)}
-              className="ui-press inline-flex min-h-11 items-center whitespace-nowrap rounded-pill border border-line bg-surface px-4 text-sm font-semibold text-ink transition-[background-color,transform] duration-(--ui-dur-press) ease-(--ui-ease-out) hover:bg-sunken min-[1440px]:hidden"
-            >
-              {panelLabel}
-            </button>
+            <Tooltip label={infoTooltip} side="bottom">
+              <button
+                type="button"
+                aria-label={infoTooltip}
+                aria-pressed={panelOpen}
+                onClick={() => togglePanel(!panelOpen)}
+                className={cn(
+                  'ui-press relative inline-flex size-11 items-center justify-center rounded-full border border-line transition-[background-color,transform] duration-(--ui-dur-press) ease-(--ui-ease-out)',
+                  panelOpen ? 'bg-action text-on-action' : 'bg-surface text-ink hover:bg-sunken',
+                )}
+              >
+                <Info aria-hidden="true" className="size-5" />
+                {missing && <span aria-hidden="true" className="absolute right-0.5 top-0.5 size-2 rounded-full bg-danger" />}
+              </button>
+            </Tooltip>
           )}
           <Button
             variant="secondary"
@@ -331,8 +353,8 @@ export function ConversationView({
   const separators = daySeparators(groups, new Date());
 
   // Chat layout: the page never scrolls. Header and composer stay put; one full-width region scrolls, so its
-  // scrollbar sits at the window edge. Thread and composer share one centred 760px column. From 1440px the
-  // side panel floats in the right gutter; below, a header button opens it in a right drawer (md) or a bottom sheet.
+  // scrollbar sits at the window edge. Thread and composer share one centred 760px column. From 1024px the
+  // side panel sits in the flow on the right (the chat narrows); below, the header button opens it in a right drawer (md) or a bottom sheet.
   const column = 'mx-auto w-full max-w-[760px] px-4 md:px-6';
   // The root is `relative` so visually hidden (absolute) inputs stay clipped instead of extending the page scroll.
   return (
@@ -349,7 +371,8 @@ export function ConversationView({
           {label}
         </div>
       )}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <div
         ref={scrollRef}
         onScroll={onScroll}
@@ -572,8 +595,6 @@ export function ConversationView({
           </main>
         </div>
       </div>
-      <SidePanel request={request} sources={sources} />
-      </div>
       <div className="relative shrink-0">
         {/* Fade over the thread and the jump button, both aligned on the thread column. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-full h-16 overflow-y-hidden [scrollbar-gutter:stable]">
@@ -606,7 +627,27 @@ export function ConversationView({
           </div>
         </div>
       </div>
-      <DossierSheet side={drawerSide} label={request !== null ? 'Vos informations' : 'Sources'} open={sheetOpen} onClose={() => setSheetOpen(false)}>
+      </div>
+      {inlinePanel && (
+        <aside className="flex w-[320px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-line-subtle p-4">
+          <button
+            type="button"
+            aria-label="Masquer le panneau"
+            onClick={() => togglePanel(false)}
+            className="ui-press flex size-11 items-center justify-center self-end rounded-pill text-ink hover:bg-sunken"
+          >
+            <X aria-hidden="true" className="size-5" />
+          </button>
+          <DossierPanels request={request} sources={sources} />
+        </aside>
+      )}
+      </div>
+      <DossierSheet
+        side={drawerSide}
+        label={request !== null ? 'Vos informations' : 'Sources'}
+        open={panelOpen && !wide && panelLabel !== null}
+        onClose={() => setPanelOpen(false)}
+      >
         <DossierPanels request={request} sources={sources} />
       </DossierSheet>
       {confirmingRestart && <RestartDialog onCancel={() => setConfirmingRestart(false)} onConfirm={onRestart} />}

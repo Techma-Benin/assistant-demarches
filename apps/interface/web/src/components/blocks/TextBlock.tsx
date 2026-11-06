@@ -14,14 +14,14 @@ type Props = {
 
 export type Segment =
   | { kind: 'paragraph'; text: string; heading?: boolean }
-  | { kind: 'list'; ordered: boolean; items: string[] };
+  | { kind: 'list'; ordered: boolean; items: string[]; start?: number };
 
 export type Inline =
   | { kind: 'text'; text: string }
   | { kind: 'strong'; text: string }
   | { kind: 'link'; href: string; label: string };
 
-const ORDERED_ITEM = /^\s*\d+\.\s+(\S.*)$/;
+const ORDERED_ITEM = /^\s*(\d+)\.\s+(\S.*)$/;
 const BULLET_ITEM = /^\s*[-•*]\s+(\S.*)$/;
 const HEADING = /^\s*#{2,3}\s+(\S.*)$/;
 const INLINE = /\*\*([^*\s](?:[^*\n]*[^*\s])?)\*\*|https?:\/\/\S+/g;
@@ -36,17 +36,19 @@ export function parseBlocks(text: string): Segment[] {
     if (paragraph.length > 0) segments.push({ kind: 'paragraph', text: paragraph.join('\n') });
     paragraph = [];
   };
-  const addItem = (ordered: boolean, item: string) => {
+  const addItem = (ordered: boolean, item: string, number?: number) => {
     flush();
     const last = segments.at(-1);
     if (last?.kind === 'list' && last.ordered === ordered) last.items.push(item);
+    // Bullets between two titles split the list: keep the written number (bounded, so "2026." cannot overflow the column).
+    else if (ordered && number !== undefined && number > 1 && number < 100) segments.push({ kind: 'list', ordered, items: [item], start: number });
     else segments.push({ kind: 'list', ordered, items: [item] });
   };
   for (const line of text.split('\n')) {
     const ordered = ORDERED_ITEM.exec(line);
     const bullet = BULLET_ITEM.exec(line);
     const heading = HEADING.exec(line);
-    if (ordered) addItem(true, ordered[1]);
+    if (ordered) addItem(true, ordered[2], Number(ordered[1]));
     else if (bullet) addItem(false, bullet[1]);
     else if (heading) {
       flush();
@@ -180,6 +182,7 @@ export function TextBlock({ block, revealDelay, live }: Props) {
             return (
               <ListTag
                 key={index}
+                {...(segment.ordered && segment.start ? { start: segment.start } : {})}
                 style={paragraphStyle(index)}
                 className={cn(
                   'm-0 flex list-none flex-col p-0',
@@ -196,7 +199,7 @@ export function TextBlock({ block, revealDelay, live }: Props) {
                         aria-hidden="true"
                         className="w-7 shrink-0 font-display text-[26px] font-extrabold leading-none tracking-[-0.04em]"
                       >
-                        {itemIndex + 1}
+                        {(segment.start ?? 1) + itemIndex}
                       </span>
                       <span className="min-w-0 break-words text-[17px] font-medium leading-snug">
                         {inline(item)}
