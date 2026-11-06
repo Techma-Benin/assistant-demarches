@@ -72,17 +72,22 @@ export async function prepareKeycloak(log, local = LOCAL) {
   return { javaHome: findJavaHome(javaDir), keycloakDir };
 }
 
-async function waitForRealm(child, urls) {
-  const deadline = Date.now() + 180_000;
+export async function waitForRealm(child, urls, {
+  timeoutMs = 180_000, requestTimeoutMs = 2000, pollIntervalMs = 1000,
+} = {}) {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error('Keycloak s’est arrêté au démarrage.');
+    if (child.exitCode !== null || child.signalCode != null) throw new Error('Keycloak s’est arrêté au démarrage.');
     try {
-      const response = await fetch(`${urls.issuerInternal}/.well-known/openid-configuration`);
+      const response = await fetch(`${urls.issuerInternal}/.well-known/openid-configuration`, {
+        signal: AbortSignal.timeout(Math.max(1, Math.min(requestTimeoutMs, deadline - Date.now()))),
+      });
       if (response.ok) return;
     } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const remaining = deadline - Date.now();
+    if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remaining)));
   }
-  throw new Error('Keycloak n’a pas répondu en 3 minutes.');
+  throw new Error(`Keycloak n’a pas répondu en ${Math.ceil(timeoutMs / 1000)} secondes.`);
 }
 
 async function configurePreviewClient(urls, enabled) {
@@ -132,7 +137,7 @@ async function configurePreviewClient(urls, enabled) {
 
 export async function startKeycloak(log, {
   local = LOCAL, ports = PORTS, urls = URLS, publicDomain = PREVIEW_DOMAIN,
-  productionDatabase,
+  productionDatabase, startupTimeoutMs = 180_000, streamLogs = false,
 } = {}) {
   mkdirSync(local, { recursive: true });
   const { javaHome, keycloakDir } = await prepareKeycloak(log, local);
@@ -141,7 +146,7 @@ export async function startKeycloak(log, {
   const executable = join(keycloakDir, 'bin', windows ? 'kc.bat' : 'kc.sh');
   const child = spawn(executable, [
     ...(productionDatabase ? [
-      'start', '--http-enabled=true', '--db=postgres',
+      'start', '--optimized', '--http-enabled=true',
       `--db-url=${productionDatabase.url}`,
       `--db-username=${productionDatabase.user}`,
       `--db-password=${productionDatabase.password}`,
@@ -156,12 +161,18 @@ export async function startKeycloak(log, {
     shell: windows,
   });
   const lines = [];
-  for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk) => lines.push(...String(chunk).split('\n').slice(-20)));
+  for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk) => {
+    if (streamLogs) log(String(chunk));
+    else {
+      lines.push(...String(chunk).split('\n'));
+      if (lines.length > 30) lines.splice(0, lines.length - 30);
+    }
+  });
   try {
-    await waitForRealm(child, urls);
+    await waitForRealm(child, urls, { timeoutMs: startupTimeoutMs });
     await configurePreviewClient(urls, Boolean(publicDomain));
   } catch (error) {
-    log(lines.slice(-30).join('\n'));
+    if (!streamLogs) log(lines.join('\n'));
     child.kill('SIGTERM');
     throw error;
   }

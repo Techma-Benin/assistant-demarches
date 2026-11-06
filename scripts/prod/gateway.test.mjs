@@ -44,7 +44,13 @@ test('only Techma identity routes are public, including during startup', async (
   });
   const port = await listen(gateway);
   t.after(async () => { await close(gateway); await close(identity); });
-  assert.equal((await fetch(`http://127.0.0.1:${port}/`)).status, 503);
+  const starting = await fetch(`http://127.0.0.1:${port}/`);
+  assert.equal(starting.status, 200);
+  assert.equal(starting.headers.get('cache-control'), 'no-store');
+  assert.match(await starting.text(), /Starting the simulation/);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/`, { method: 'HEAD' })).status, 200);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/session`)).status, 503);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/auth/logout`, { method: 'POST' })).status, 503);
   assert.equal((await fetch(`http://127.0.0.1:${port}/health/ready`)).status, 503);
   assert.equal(await (await fetch(`http://127.0.0.1:${port}/keycloak/realms/techma/.well-known/openid-configuration`)).text(),
     '/realms/techma/.well-known/openid-configuration');

@@ -1,2 +1,4 @@
 - [Public simulation scope](simulation-scope.md) — the showcase is a simulation for anyone with its link; preserve the existing development startup.
 - [Publishing port mappings](publishing-port-mappings.md) — helper/test runs can leave extra external mappings; audit ports just before publishing.
+- [pnpm bootstrapping](pnpm-bootstrapping.md) — platform pnpm and Corepack are separate; avoid recursive pnpm self-switching while retaining the repository pin.
+- [Production cold starts](production-cold-starts.md) — distinguish gateway liveness from application readiness during slow identity-service initialization.

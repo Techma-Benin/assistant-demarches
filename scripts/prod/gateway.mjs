@@ -27,6 +27,15 @@ export function createGateway({ origin, ports, ready = () => true }) {
       }
       port = ports.keycloak;
       targetPath = req.url.slice('/keycloak'.length);
+    } else if (!ready() && path === '/' && ['GET', 'HEAD'].includes(req.method)) {
+      // The host probes /. A responding gateway is live, but services are not ready yet.
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'retry-after': '3',
+      });
+      return res.end(req.method === 'HEAD' ? undefined : `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="3"><title>Starting the simulation</title></head>
+<body><main><h1>Starting the simulation</h1><p>The demo services are starting. This page refreshes automatically.</p></main></body></html>`);
     } else if (!ready()) {
       res.writeHead(503, { 'retry-after': '3' }); return res.end('Showcase starting');
     }

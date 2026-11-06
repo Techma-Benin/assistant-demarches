@@ -22,9 +22,17 @@ and files are unchanged. In Replit preview, WebSocket traffic now goes through t
   the backend. Only the Techma realm and login resources are proxied under `/keycloak`;
   Keycloak admin/master routes are not public.
 - Internal processes listen on loopback. Backend, Tooling, X-Road, and Next use compiled
-  builds, not development watchers. Keycloak uses `start` with its own PostgreSQL database.
+  builds, not development watchers. Keycloak uses `start --optimized` with its own
+  PostgreSQL database; its optimized image is prepared during the build.
 - Any unexpected application-service exit stops the whole stack so the VM supervisor can restart it.
 - `/health/ready` returns 503 during startup and 200 once the application services respond.
+- During startup, homepage GET/HEAD requests return an explicit, uncached startup
+  page with HTTP 200, allowing the host's root startup probe to reach the gateway.
+  The page refreshes every three seconds. APIs remain unavailable with 503 until
+  the stack is ready; the startup page does not indicate application readiness.
+- Production allows Keycloak ten minutes to initialize/import its demo realm and
+  streams its logs immediately. Individual discovery probes time out after two
+  seconds. Development retains `start-dev` and its three-minute startup allowance.
 
 ## Environment
 

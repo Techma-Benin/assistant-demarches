@@ -93,6 +93,7 @@ try {
   }));
   stops.push(await startKeycloak(log('keycloak'), {
     local: RUNTIME, ports: config.ports, urls: config.urls, publicDomain: true,
+    startupTimeoutMs: 600_000, streamLogs: true,
     productionDatabase: {
       url: `jdbc:postgresql://127.0.0.1:${config.ports.postgres}/keycloak`, user: 'techma', password: 'techma',
     },
