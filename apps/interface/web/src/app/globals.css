@@ -174,15 +174,18 @@
 :root {
   --home-field-green: var(--ui-trust);
   --home-field-sun: #f3d36b;
+  --home-poster-night: #0d0d0f;
 }
 [data-theme='dark'] {
   --home-field-green: #0d6b47;
   --home-field-sun: #6e5614;
+  --home-poster-night: #1e1e22;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --home-field-green: #0d6b47;
     --home-field-sun: #6e5614;
+    --home-poster-night: #1e1e22;
   }
 }
 
@@ -196,6 +199,59 @@
 @supports (-webkit-touch-callout: none) {
   .type-photo {
     background-attachment: scroll;
+  }
+}
+
+@keyframes poster-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes poster-text {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes poster-pop {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes poster-press {
+  50% {
+    transform: scale(0.93);
+  }
+}
+@keyframes poster-dim {
+  to {
+    opacity: 0.3;
+  }
+}
+@keyframes poster-rosette {
+  from {
+    opacity: 0;
+    transform: rotate(-120deg) scale(0.3);
+  }
+  70% {
+    opacity: 1;
+    transform: rotate(8deg) scale(1.08);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 

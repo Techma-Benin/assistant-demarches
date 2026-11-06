@@ -165,12 +165,12 @@ export function NeverShowcase(): ReactNode {
       </div>
       <div {...rv(2)} className="mt-8 flex flex-col gap-4 rounded-[24px] bg-sunken p-5 md:flex-row md:items-center md:justify-between md:p-6">
         <p className="m-0 text-[16px] text-ink-muted md:max-w-[34ch]">
-          Ces promesses sont dans l’interface : chaque réponse cite sa fiche officielle
+          Ces promesses sont dans l’interface{'\u00a0'}: chaque réponse cite sa fiche officielle
           <CitationMark index={1} /> et vous gardez la main sur votre accord.
         </p>
         <div aria-hidden="true" inert className="flex flex-wrap items-center gap-3">
           <SourcePill index={1} title="passeport" domain="fiche officielle" />
-          <div className="min-w-[300px]">
+          <div className="w-full sm:w-auto sm:min-w-[300px]">
             <ActCard />
           </div>
         </div>
