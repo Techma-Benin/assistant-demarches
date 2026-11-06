@@ -17,7 +17,6 @@ import { NeverShowcase } from './NeverDemos';
 import { PromptDock } from './PromptDock';
 import { Bridge } from './Bridge';
 import { CATALOGUE_PHOTO_CREDITS, CatalogueSection } from './CatalogueSection';
-import { GuidedStart } from './GuidedStart';
 import { LiveSearch } from './LiveSearch';
 import { useReveal } from './use-reveal';
 
@@ -228,21 +227,6 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
       </div>
 
       <main>
-        <section id="commencer" aria-labelledby="start-title" className="bg-sunken py-12 md:py-16">
-          <div className="mx-auto max-w-[1320px] px-5 md:px-8">
-            <div className="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-2 md:mb-8">
-              <h2 id="start-title" className={cn(h2Class, 'text-[clamp(28px,3vw,42px)]')}>
-                Pas sûr de quoi demander ?
-              </h2>
-              <p className="m-0 text-[17px] text-ink-muted">Trouvez votre démarche en trois clics.</p>
-            </div>
-            <GuidedStart disabled={disabled} onAsk={ask} />
-            <Bridge to="documents" className="mt-6 text-ink">
-              Ou voyez les documents les plus demandés
-            </Bridge>
-          </div>
-        </section>
-
         <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
           <div className="mx-auto mb-8 flex w-full max-w-[1320px] flex-wrap items-end justify-between gap-x-8 gap-y-2 px-5 md:mb-10 md:px-8">
             <h2 {...rv(0)} id="documents-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
