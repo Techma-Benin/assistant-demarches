@@ -39,11 +39,12 @@ export function ProfileView() {
   if (error) return <InlineAlert>{error}</InlineAlert>;
   if (!profile || !official) return loading ? <p role="status" className="text-sm text-ink-muted">Chargement…</p> : null;
 
+  const currentOfficial = official;
   const displayName = name ?? official.displayName;
   const dirty = displayName.trim() !== official.displayName;
 
   function openEditor() {
-    setName(official.displayName);
+    setName(currentOfficial.displayName);
     setFailure(null);
     setSaved(false);
     setEditing(true);
@@ -63,7 +64,7 @@ export function ProfileView() {
     setFailure(null);
     setSaved(false);
     try {
-      setOfficial(await adminApi.updateMe({ displayName: displayName.trim(), jobTitle: official.jobTitle }));
+      setOfficial(await adminApi.updateMe({ displayName: displayName.trim(), jobTitle: currentOfficial.jobTitle }));
       setName(null);
       setEditing(false);
       setSaved(true);

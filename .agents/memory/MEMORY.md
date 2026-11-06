@@ -1,0 +1,2 @@
+- [Public simulation scope](simulation-scope.md) — the showcase is a simulation for anyone with its link; preserve the existing development startup.
+- [Publishing port mappings](publishing-port-mappings.md) — helper/test runs can leave extra external mappings; audit ports just before publishing.

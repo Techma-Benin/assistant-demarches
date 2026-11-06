@@ -41,8 +41,9 @@ function findJavaHome(directory) {
 }
 
 /** Downloads a portable Java runtime and Keycloak once into .local/, so no system installation is needed. */
-async function install(log) {
-  const javaDir = `${LOCAL}java`;
+export async function prepareKeycloak(log, local = LOCAL) {
+  const javaDir = `${local}java`;
+  mkdirSync(local, { recursive: true });
   if (!installed(javaDir)) {
     let reuse = false;
     try {
@@ -55,15 +56,15 @@ async function install(log) {
     if (!reuse) {
       const os = windows ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux';
       const arch = process.arch === 'arm64' ? 'aarch64' : 'x64';
-      const archive = `${LOCAL}java-download${windows ? '.zip' : '.tar.gz'}`;
+      const archive = `${local}java-download${windows ? '.zip' : '.tar.gz'}`;
       await download(`https://api.adoptium.net/v3/binary/latest/${JAVA_VERSION}/ga/${os}/${arch}/jre/hotspot/normal/eclipse`, archive, log);
       extract(archive, javaDir);
       rmSync(archive);
     }
   }
-  const keycloakDir = `${LOCAL}keycloak-${KEYCLOAK_VERSION}`;
+  const keycloakDir = `${local}keycloak-${KEYCLOAK_VERSION}`;
   if (!installed(keycloakDir)) {
-    const archive = `${LOCAL}keycloak-download.tar.gz`;
+    const archive = `${local}keycloak-download.tar.gz`;
     await download(`https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.tar.gz`, archive, log);
     extract(archive, keycloakDir, 1);
     rmSync(archive);
@@ -71,12 +72,12 @@ async function install(log) {
   return { javaHome: findJavaHome(javaDir), keycloakDir };
 }
 
-async function waitForRealm(child) {
+async function waitForRealm(child, urls) {
   const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error('Keycloak s’est arrêté au démarrage.');
     try {
-      const response = await fetch(`${URLS.issuerInternal}/.well-known/openid-configuration`);
+      const response = await fetch(`${urls.issuerInternal}/.well-known/openid-configuration`);
       if (response.ok) return;
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -84,10 +85,10 @@ async function waitForRealm(child) {
   throw new Error('Keycloak n’a pas répondu en 3 minutes.');
 }
 
-async function configurePreviewClient() {
-  if (!PREVIEW_DOMAIN) return;
+async function configurePreviewClient(urls, enabled) {
+  if (!enabled) return;
 
-  const tokenResponse = await fetch(`${URLS.keycloak}/realms/master/protocol/openid-connect/token`, {
+  const tokenResponse = await fetch(`${urls.keycloak}/realms/master/protocol/openid-connect/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -102,18 +103,18 @@ async function configurePreviewClient() {
   if (!token) throw new Error('Réponse admin Keycloak invalide.');
 
   const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
-  const clientResponse = await fetch(`${URLS.keycloak}/admin/realms/techma/clients?clientId=interface`, { headers });
+  const clientResponse = await fetch(`${urls.keycloak}/admin/realms/techma/clients?clientId=interface`, { headers });
   if (!clientResponse.ok) throw new Error('Impossible de lire le client d’interface Keycloak.');
   const [client] = await clientResponse.json();
   if (!client?.id) throw new Error('Client d’interface introuvable dans Keycloak.');
 
   const redirectUris = new Set(client.redirectUris ?? []);
-  redirectUris.add(`${URLS.interface}/*`);
+  redirectUris.add(`${urls.interface}/*`);
   const webOrigins = new Set(client.webOrigins ?? []);
-  webOrigins.add(URLS.interface);
+  webOrigins.add(urls.interface);
   const logoutUris = new Set((client.attributes?.['post.logout.redirect.uris'] ?? '').split('##').filter(Boolean));
-  logoutUris.add(`${URLS.interface}/*`);
-  const updateResponse = await fetch(`${URLS.keycloak}/admin/realms/techma/clients/${encodeURIComponent(client.id)}`, {
+  logoutUris.add(`${urls.interface}/*`);
+  const updateResponse = await fetch(`${urls.keycloak}/admin/realms/techma/clients/${encodeURIComponent(client.id)}`, {
     method: 'PUT',
     headers,
     body: JSON.stringify({
@@ -129,17 +130,25 @@ async function configurePreviewClient() {
   if (!updateResponse.ok) throw new Error('Impossible d’enregistrer les URL de l’aperçu dans Keycloak.');
 }
 
-export async function startKeycloak(log) {
-  mkdirSync(LOCAL, { recursive: true });
-  const { javaHome, keycloakDir } = await install(log);
+export async function startKeycloak(log, {
+  local = LOCAL, ports = PORTS, urls = URLS, publicDomain = PREVIEW_DOMAIN,
+  productionDatabase,
+} = {}) {
+  mkdirSync(local, { recursive: true });
+  const { javaHome, keycloakDir } = await prepareKeycloak(log, local);
   mkdirSync(join(keycloakDir, 'data', 'import'), { recursive: true });
   copyFileSync(join(ROOT, 'infra', 'keycloak', 'realm-techma.json'), join(keycloakDir, 'data', 'import', 'realm-techma.json'));
   const executable = join(keycloakDir, 'bin', windows ? 'kc.bat' : 'kc.sh');
   const child = spawn(executable, [
-    'start-dev',
-    `--http-port=${PORTS.keycloak}`,
+    ...(productionDatabase ? [
+      'start', '--http-enabled=true', '--db=postgres',
+      `--db-url=${productionDatabase.url}`,
+      `--db-username=${productionDatabase.user}`,
+      `--db-password=${productionDatabase.password}`,
+    ] : ['start-dev']),
+    `--http-port=${ports.keycloak}`,
     '--http-host=127.0.0.1',
-    ...(PREVIEW_DOMAIN ? [`--hostname=${URLS.keycloakPublic}`, '--proxy-headers=xforwarded'] : []),
+    ...(publicDomain ? [`--hostname=${urls.keycloakPublic}`, '--proxy-headers=xforwarded'] : []),
     '--import-realm',
   ], {
     env: { ...process.env, JAVA_HOME: javaHome, KC_BOOTSTRAP_ADMIN_USERNAME: 'admin', KC_BOOTSTRAP_ADMIN_PASSWORD: 'admin' },
@@ -149,13 +158,14 @@ export async function startKeycloak(log) {
   const lines = [];
   for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk) => lines.push(...String(chunk).split('\n').slice(-20)));
   try {
-    await waitForRealm(child);
-    await configurePreviewClient();
+    await waitForRealm(child, urls);
+    await configurePreviewClient(urls, Boolean(publicDomain));
   } catch (error) {
     log(lines.slice(-30).join('\n'));
+    child.kill('SIGTERM');
     throw error;
   }
-  log(`prêt sur ${URLS.keycloak} (realm techma, console admin/admin)`);
+  log(`prêt sur ${urls.keycloak} (realm techma, console admin/admin)`);
   return () => new Promise((resolve) => {
     if (child.exitCode !== null) return resolve();
     child.once('exit', resolve);

@@ -17,7 +17,6 @@ const url = (port) => `http://127.0.0.1:${port}`;
 const previewUrl = (port) => PREVIEW_DOMAIN
   ? `https://${PREVIEW_DOMAIN}${port ? `:${port}` : ''}`
   : undefined;
-const previewBackendPort = 3000;
 const publicKeycloak = PREVIEW_DOMAIN
   ? `${previewUrl()}/keycloak`
   : url(PORTS.keycloak);
@@ -25,7 +24,7 @@ const publicInterface = previewUrl() ?? url(PORTS.interface);
 export const URLS = {
   interface: publicInterface,
   backend: url(PORTS.backend),
-  backendPublic: previewUrl(previewBackendPort) ?? url(PORTS.backend),
+  backendPublic: previewUrl() ?? url(PORTS.backend),
   tooling: url(PORTS.tooling),
   xroad: url(PORTS.xroad),
   keycloak: url(PORTS.keycloak),
@@ -43,7 +42,8 @@ export const SERVICES = {
   backend: {
     package: '@techma/backend',
     env: {
-      HOST: PREVIEW_DOMAIN ? '0.0.0.0' : '127.0.0.1',
+      // Browser traffic is proxied by Next; never expose a second public server.
+      HOST: '127.0.0.1',
       PORT: String(PORTS.backend),
       PUBLIC_URL: URLS.backendPublic,
       DATABASE_URL: database('backend'),

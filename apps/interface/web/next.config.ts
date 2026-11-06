@@ -1,10 +1,15 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  // Production builds must not replace the development server's .next output.
+  distDir: process.env.SHOWCASE_PRODUCTION === '1' ? '.next-showcase' : '.next',
   reactStrictMode: true,
   transpilePackages: ['@techma/ui'],
   async rewrites() {
     return [
+      ...(process.env.SHOWCASE_PRODUCTION === '1' ? [] : [
+        { source: '/v1/stream', destination: 'http://127.0.0.1:4010/v1/stream' },
+      ]),
       { source: '/keycloak/realms/techma/:path*', destination: 'http://127.0.0.1:8081/realms/techma/:path*' },
       { source: '/keycloak/resources/:path*', destination: 'http://127.0.0.1:8081/resources/:path*' },
     ];
