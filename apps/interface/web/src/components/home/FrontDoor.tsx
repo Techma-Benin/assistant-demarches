@@ -12,7 +12,7 @@ import { siteConfig, type SiteConfig } from '@/lib/site-config';
 import { DocumentCarousel, type CarouselItem } from './DocumentCarousel';
 import { FitWord } from './FitWord';
 import { HERO_PHOTOS, HeroSlideshow } from './HeroSlideshow';
-import { AskDemo, PrepareDemo, ValidateDemo } from './HowItWorksDemos';
+import { HowItWorksPoster } from './HowItWorksPoster';
 import { NeverShowcase } from './NeverDemos';
 import { PromptDock } from './PromptDock';
 import { Bridge } from './Bridge';
@@ -49,12 +49,6 @@ const SHOWCASE: CarouselItem[] = [
   { name: 'Certificat de résidence', kind: 'residence', detail: 'Identité', question: 'Comment obtenir un certificat de résidence ?' },
   { name: 'Création d’entreprise', kind: 'entreprise', detail: 'Entreprise', question: 'Comment créer mon entreprise ?' },
   { name: 'Permis de construire', kind: 'permis', detail: 'Foncier et logement', question: 'Comment obtenir un permis de construire ?' },
-];
-
-const STEPS = [
-  { name: 'Vous demandez', text: 'À l’écrit ou à voix haute, avec vos pièces si vous les avez.' },
-  { name: 'L’assistant prépare', text: 'Il trouve la fiche officielle, vous dit quoi fournir et remplit le formulaire avec vous.' },
-  { name: 'Vous gardez la main', text: 'Rien ne part sans votre accord. Selon la démarche, vous validez sur le portail officiel ou l’assistant dépose le dossier pour vous.' },
 ];
 
 const sectionPad = 'py-16 md:py-24';
@@ -181,7 +175,7 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
             <span className="hero-word" style={{ '--d': 180 } as CSSProperties}>simplement.</span>
           </h1>
           <p style={{ '--d': 320 } as CSSProperties} className="hero-in m-0 mt-3 font-display text-[clamp(17px,min(2vw,2.6svh),24px)] font-semibold tracking-[-0.02em] text-ink-muted">
-            Posez votre question : l’assistant vous dit quoi fournir, combien ça coûte et où déposer.
+            Posez votre question{'\u00a0'}: l’assistant vous dit quoi fournir, combien ça coûte et où déposer.
           </p>
         </div>
 
@@ -230,17 +224,17 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
         <section id="documents" ref={showcaseRef} aria-labelledby="documents-title" className={cn(sectionPad, 'overflow-x-clip lg:flex lg:min-h-[100svh] lg:flex-col lg:justify-center lg:py-12')}>
           <div className="mx-auto mb-8 flex w-full max-w-[1320px] flex-wrap items-end justify-between gap-x-8 gap-y-2 px-5 md:mb-10 md:px-8">
             <h2 {...rv(0)} id="documents-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
-              Un document ? Voici comment l’obtenir.
+              Un document{'\u00a0'}? Voici comment l’obtenir.
             </h2>
             <p {...rv(1)} className="m-0 max-w-[40ch] text-[17px] text-ink-muted">
-              Choisissez-en un : l’assistant vous accompagne jusqu’au dépôt.
+              Choisissez-en un{'\u00a0'}: l’assistant vous accompagne jusqu’au dépôt.
             </p>
           </div>
           <div {...rv(2)}>
             <DocumentCarousel items={SHOWCASE} disabled={disabled} onAsk={ask} />
           </div>
           <Bridge to="fonctionnement" className="mt-8 text-ink">
-            Vous savez ce qu’il vous faut ? Voyez comment l’assistant s’en occupe
+            Vous savez ce qu’il vous faut{'\u00a0'}? Voyez comment l’assistant s’en occupe
           </Bridge>
         </section>
 
@@ -250,44 +244,15 @@ export function FrontDoor({ onAsk, onFiles = () => {}, disabled = false, config 
               <h2 {...rv(0)} id="how-title" className={cn(h2Class, 'text-[clamp(30px,3.4vw,48px)]')}>
                 Trois étapes. Vous décidez à chaque fois.
               </h2>
-              <p {...rv(1)} className="m-0 max-w-[40ch] text-[17px] text-ink-muted">
+              <p {...rv(1)} className="m-0 max-w-[26ch] text-balance text-[17px] text-ink-muted lg:text-right">
                 Vous demandez, l’assistant prépare, vous validez.
               </p>
             </div>
-            <ol className="m-0 grid list-none grid-cols-1 gap-x-4 gap-y-8 p-0 md:grid-cols-3">
-              {STEPS.map((step, i) => (
-                <li key={step.name} {...rv(2 + i)} className="flex min-w-0 flex-col">
-                  <div
-                    data-theme={i === 2 ? undefined : 'dark'}
-                    className={cn(
-                      'relative overflow-hidden rounded-card',
-                      ['h-[320px]', 'h-[480px]', 'h-[440px]'][i],
-                      'md:h-[clamp(440px,52svh,520px)]',
-                      i === 2 ? 'bg-(--home-field-green)' : 'bg-sunken text-ink',
-                    )}
-                  >
-                    {[<AskDemo key="d" />, <PrepareDemo key="d" />, <ValidateDemo key="d" />][i]}
-                  </div>
-                  <div className="mt-5 flex items-start gap-3">
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        'inline-flex size-8 shrink-0 items-center justify-center rounded-full text-[15px] font-bold',
-                        i === 2 ? 'bg-(--home-field-green) text-on-trust' : 'bg-ink text-canvas',
-                      )}
-                    >
-                      {i + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="m-0 text-[20px] font-semibold leading-tight">{step.name}</p>
-                      <p className="m-0 mt-1 max-w-[38ch] text-[16px] text-ink-muted">{step.text}</p>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ol>
+            <div {...rv(2)}>
+              <HowItWorksPoster />
+            </div>
             <Bridge to="themes" className="mt-8 text-ink">
-              Prêt ? Trouvez votre démarche
+              Prêt{'\u00a0'}? Trouvez votre démarche
             </Bridge>
           </div>
         </section>
