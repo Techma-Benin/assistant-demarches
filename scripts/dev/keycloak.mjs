@@ -3,7 +3,7 @@ import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, rm
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { JAVA_VERSION, KEYCLOAK_VERSION, LOCAL, PORTS, ROOT, URLS } from './local-config.mjs';
+import { JAVA_VERSION, KEYCLOAK_VERSION, LOCAL, PORTS, PREVIEW_DOMAIN, ROOT, URLS } from './local-config.mjs';
 
 const windows = process.platform === 'win32';
 
@@ -76,12 +76,57 @@ async function waitForRealm(child) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error('Keycloak s’est arrêté au démarrage.');
     try {
-      const response = await fetch(`${URLS.issuer}/.well-known/openid-configuration`);
+      const response = await fetch(`${URLS.issuerInternal}/.well-known/openid-configuration`);
       if (response.ok) return;
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error('Keycloak n’a pas répondu en 3 minutes.');
+}
+
+async function configurePreviewClient() {
+  if (!PREVIEW_DOMAIN) return;
+
+  const tokenResponse = await fetch(`${URLS.keycloak}/realms/master/protocol/openid-connect/token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'password',
+      client_id: 'admin-cli',
+      username: 'admin',
+      password: 'admin',
+    }),
+  });
+  if (!tokenResponse.ok) throw new Error('Impossible de configurer le client Keycloak pour le domaine Replit.');
+  const { access_token: token } = await tokenResponse.json();
+  if (!token) throw new Error('Réponse admin Keycloak invalide.');
+
+  const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const clientResponse = await fetch(`${URLS.keycloak}/admin/realms/techma/clients?clientId=interface`, { headers });
+  if (!clientResponse.ok) throw new Error('Impossible de lire le client d’interface Keycloak.');
+  const [client] = await clientResponse.json();
+  if (!client?.id) throw new Error('Client d’interface introuvable dans Keycloak.');
+
+  const redirectUris = new Set(client.redirectUris ?? []);
+  redirectUris.add(`${URLS.interface}/*`);
+  const webOrigins = new Set(client.webOrigins ?? []);
+  webOrigins.add(URLS.interface);
+  const logoutUris = new Set((client.attributes?.['post.logout.redirect.uris'] ?? '').split('##').filter(Boolean));
+  logoutUris.add(`${URLS.interface}/*`);
+  const updateResponse = await fetch(`${URLS.keycloak}/admin/realms/techma/clients/${encodeURIComponent(client.id)}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      ...client,
+      redirectUris: [...redirectUris],
+      webOrigins: [...webOrigins],
+      attributes: {
+        ...client.attributes,
+        'post.logout.redirect.uris': [...logoutUris].join('##'),
+      },
+    }),
+  });
+  if (!updateResponse.ok) throw new Error('Impossible d’enregistrer les URL de l’aperçu dans Keycloak.');
 }
 
 export async function startKeycloak(log) {
@@ -90,7 +135,13 @@ export async function startKeycloak(log) {
   mkdirSync(join(keycloakDir, 'data', 'import'), { recursive: true });
   copyFileSync(join(ROOT, 'infra', 'keycloak', 'realm-techma.json'), join(keycloakDir, 'data', 'import', 'realm-techma.json'));
   const executable = join(keycloakDir, 'bin', windows ? 'kc.bat' : 'kc.sh');
-  const child = spawn(executable, ['start-dev', `--http-port=${PORTS.keycloak}`, '--http-host=127.0.0.1', '--import-realm'], {
+  const child = spawn(executable, [
+    'start-dev',
+    `--http-port=${PORTS.keycloak}`,
+    '--http-host=127.0.0.1',
+    ...(PREVIEW_DOMAIN ? [`--hostname=${URLS.keycloakPublic}`, '--proxy-headers=xforwarded'] : []),
+    '--import-realm',
+  ], {
     env: { ...process.env, JAVA_HOME: javaHome, KC_BOOTSTRAP_ADMIN_USERNAME: 'admin', KC_BOOTSTRAP_ADMIN_PASSWORD: 'admin' },
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: windows,
@@ -99,6 +150,7 @@ export async function startKeycloak(log) {
   for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk) => lines.push(...String(chunk).split('\n').slice(-20)));
   try {
     await waitForRealm(child);
+    await configurePreviewClient();
   } catch (error) {
     log(lines.slice(-30).join('\n'));
     throw error;

@@ -3,8 +3,14 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@techma/ui'],
+  async rewrites() {
+    return [
+      { source: '/keycloak/realms/techma/:path*', destination: 'http://127.0.0.1:8081/realms/techma/:path*' },
+      { source: '/keycloak/resources/:path*', destination: 'http://127.0.0.1:8081/resources/:path*' },
+    ];
+  },
   // pnpm dev serves the app on 127.0.0.1 (PUBLIC_URL, Keycloak redirect URIs); without this Next blocks its dev scripts there.
-  allowedDevOrigins: ['127.0.0.1'],
+  allowedDevOrigins: ['127.0.0.1', ...(process.env.REPLIT_DEV_DOMAIN ? [process.env.REPLIT_DEV_DOMAIN] : [])],
   // Hero photos are served at quality 85 (Next only allows listed qualities).
   images: {
     qualities: [75, 85],
