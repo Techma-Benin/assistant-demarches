@@ -7,6 +7,8 @@ export class DiagnosticProblem extends Problem {
   }
 }
 const identifier = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : undefined;
+// A provider "param" is a structural path such as `tools[0].function.parameters`: it names a field, never carries user text.
+const parameterPath = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_.:\-[\]]{1,128}$/.test(value) ? value : undefined;
 /** Never serialize arbitrary errors, request bodies, response bodies, headers or credentials. */
 export function describeError(error: unknown): Metadata {
   const value = error as { name?: unknown; code?: unknown; cause?: { code?: unknown } } | undefined;
@@ -33,4 +35,20 @@ export function providerReason(status: number, message: unknown): string {
   if (/tools/.test(text) && /empty|non-empty/.test(text)) return "provider_empty_tools_rejected";
   return "provider_request_rejected";
 }
+
+/**
+ * Finer reading of a refused request, kept apart from `reason` because the fallbacks key on `reason`.
+ * Only a fixed label comes out: the provider text itself is never logged.
+ */
+export function providerHint(status: number, message: unknown, code?: unknown): string | undefined {
+  const text = typeof message === "string" ? message.toLowerCase() : "";
+  const upstreamCode = typeof code === "string" ? code.toLowerCase() : "";
+  if (upstreamCode === "model_not_found" || (status === 404 && /model/.test(text))) return "model_not_found_or_not_allowed";
+  if (upstreamCode === "context_length_exceeded" || /context (length|window)|maximum context|too many tokens/.test(text)) return "context_too_long";
+  if (/^unsupported_(parameter|value)$/.test(upstreamCode) || /unsupported (parameter|value)|not supported (with|for|by) this model/.test(text)) return "unsupported_parameter_for_model";
+  if (/tool|function/.test(text) && /not supported|unsupported|not allowed/.test(text)) return "tools_not_supported_for_model_or_endpoint";
+  if (/api.?key|incorrect key|invalid key/.test(text)) return "api_key_problem";
+  return undefined;
+}
 export function safeProviderIdentifier(value: unknown) { return identifier(value); }
+export function safeProviderParameter(value: unknown) { return parameterPath(value); }

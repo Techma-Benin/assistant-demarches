@@ -1,6 +1,6 @@
 import { modelToolName, type McpServer } from "./mcp-connections.js";
 import { DiagnosticProblem, describeError, logFailure } from "./diagnostics.js";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import {
   canonical,
   validate,
@@ -192,6 +192,28 @@ function paymentButtonLabel(amount: unknown): string {
   return "Confirmer le paiement";
 }
 const BLOCKING_CODES = new Set(["LOGIN_REQUIRED", "MANDATE_MISSING", "MANDATE_EXPIRED"]);
+/** How a reply came about: written by the model, a fallback after the model, abandoned processing, or no model at all. */
+type ReplyOrigin =
+  | { kind: "system"; config?: undefined; detail?: undefined }
+  | { kind: "model"; config: ModelConfig; detail?: undefined }
+  | { kind: "fallback" | "error"; config?: ModelConfig; detail?: Record<string, unknown> };
+
+const FAILURE_KEYS = ["code", "reason", "stage", "provider", "model", "upstreamStatus", "upstreamCode", "upstreamType", "upstreamParam", "upstreamHint", "upstreamRequestId", "protocol", "endpoint", "tools", "turns", "stream", "configId"] as const;
+/** Stable facts of a stored failure; the stored text is a JSON diagnostic, never the provider's own words. */
+function failureSummary(raw: unknown): Record<string, string | number | boolean> {
+  try {
+    const value = JSON.parse(typeof raw === "string" ? raw : "null");
+    if (!value || typeof value !== "object") return {};
+    return Object.fromEntries(FAILURE_KEYS.flatMap((key) => {
+      const field = (value as Record<string, unknown>)[key];
+      return typeof field === "string" || typeof field === "number" || typeof field === "boolean" ? [[key, field]] : [];
+    }));
+  } catch { return {}; }
+}
+function failureSignature(summary: Record<string, unknown>): string | undefined {
+  return Object.keys(summary).length ? JSON.stringify(FAILURE_KEYS.map((key) => summary[key])) : undefined;
+}
+
 type State = {
   history: Turn[];
   step: number;
@@ -315,17 +337,20 @@ export class Agent {
           row.attempts >= 12 ||
           Date.now() - row.created_at.getTime() >= 86400000
         ) {
-          logFailure("agent.processing_exhausted", new Problem(503, "PROCESSING_EXHAUSTED", "Traitement abandonné après la limite de tentatives ou de durée."), {
-            conversationId, messageId: row.id, attempts: row.attempts,
-            traceId: row.traceparent?.split("-")[1], lastError: row.last_error ?? "unknown",
-          });
-          await this.unanswered(row.conversation.id, row.body.id, row.administration_id, "provider_failure");
+          const lastError = failureSummary(row.last_error);
           const checkpoint = (
             await this.pool.query(
-              "SELECT state->>'assistantMessageId' AS id FROM backend_agent_checkpoints WHERE conversation_id=$1 AND message_id=$2",
+              "SELECT state->>'assistantMessageId' AS id, state->'config' AS config FROM backend_agent_checkpoints WHERE conversation_id=$1 AND message_id=$2",
               [conversationId, row.body.id],
             )
           ).rows[0];
+          logFailure("agent.processing_exhausted", new Problem(503, "PROCESSING_EXHAUSTED", "Traitement abandonné après la limite de tentatives ou de durée."), {
+            conversationId, messageId: row.id, attempts: row.attempts,
+            traceId: row.traceparent?.split("-")[1],
+            ...(checkpoint?.id ? { replyMessageId: checkpoint.id } : {}),
+            ...Object.fromEntries(Object.entries(lastError).map(([key, value]) => ["last_" + key, value])),
+          });
+          await this.unanswered(row.conversation.id, row.body.id, row.administration_id, "provider_failure");
           await this.finish(
             row.conversation,
             row.body,
@@ -339,6 +364,7 @@ export class Agent {
             row.traceparent,
             true,
             checkpoint?.id ?? undefined,
+            { kind: "error", config: checkpoint?.config ?? undefined, detail: { ...lastError, attempts: row.attempts } },
           );
           continue;
         }
@@ -355,7 +381,10 @@ export class Agent {
             conversationId, messageId: row.id, attempt: row.attempts + 1,
             traceId: row.traceparent?.split("-")[1],
           };
-          logFailure("agent.processing_failed", error, diagnostic);
+          // The same refusal twelve times is one fact: the first occurrence is logged in full, the abandonment reports the count.
+          const previousSignature = row.attempts > 0 ? failureSignature(failureSummary(row.last_error)) : undefined;
+          if (!previousSignature || previousSignature !== failureSignature(failureSummary(JSON.stringify(diagnostic))))
+            logFailure("agent.processing_failed", error, diagnostic);
           await this.pool.query(
             "UPDATE backend_messages SET attempts=attempts+1,last_error=$3 WHERE conversation_id=$1 AND id=$2",
             [
@@ -712,7 +741,7 @@ export class Agent {
           if (isGenericRefusal(blocks))
             await this.unanswered(conversation.id, input.id, administrationId, state.toolFailed ? "tool_failure" : state.sources.length > 0 || blocks !== UNAVAILABLE_BLOCKS ? "invalid_reply" : "missing_source");
           this.offerPayElsewhere(state);
-          await this.finish(conversation, input, this.withSystem(state, blocks!), traceparent, false, state.assistantMessageId);
+          await this.finish(conversation, input, this.withSystem(state, blocks!), traceparent, false, state.assistantMessageId, { kind: "fallback", config: state.config, detail: { reason: "no_usable_model_reply" } });
           return;
         }
         state.history.push({
@@ -729,7 +758,7 @@ export class Agent {
           this.offerPayElsewhere(state);
           this.offerSubmit(state);
           const sent = this.withSystem(state, this.offerPreparation(state, offered));
-          await this.finish(conversation, input, sent, traceparent, false, state.assistantMessageId);
+          await this.finish(conversation, input, sent, traceparent, false, state.assistantMessageId, { kind: "model", config: state.config });
           return;
         }
         if (
@@ -1008,6 +1037,7 @@ export class Agent {
       traceparent,
       false,
       state.assistantMessageId,
+      { kind: "fallback", config: state.config, detail: { reason: "step_limit_reached" } },
     );
     } finally {
       await live.close();
@@ -1465,6 +1495,32 @@ export class Agent {
       [cid, messageId, state],
     );
   }
+  /** Which model answered, kept next to the reply so a question about a reply never needs the event to be replayed. */
+  private async recordReply(
+    db: PoolClient,
+    conversation: OwnedConversation,
+    input: MessageInput,
+    replyMessageId: string | undefined,
+    origin: ReplyOrigin,
+    traceparent: string,
+  ) {
+    if (!replyMessageId) return;
+    const config = origin.config;
+    let provider: string | undefined;
+    try { provider = config?.baseUrl ? new URL(config.baseUrl).host : undefined; } catch { /* unreadable URL: the model name still tells enough. */ }
+    const administrationId = (await db.query("SELECT administration_id FROM backend_conversations WHERE id=$1", [conversation.id])).rows[0]?.administration_id;
+    await db.query(
+      "INSERT INTO backend_reply_models(conversation_id,reply_message_id,input_message_id,administration_id,origin,config_id,provider,model,protocol,detail) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(conversation_id,reply_message_id) DO NOTHING",
+      [conversation.id, replyMessageId, input.id, administrationId ?? "global", origin.kind, config?.id ?? null, provider ?? null, config?.model ?? null, config?.protocol ?? null, origin.detail ? JSON.stringify(origin.detail) : null],
+    );
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(), level: "info", event: "agent.reply_sent",
+      conversationId: conversation.id, messageId: input.id, replyMessageId,
+      origin: origin.kind, configId: config?.id, provider, model: config?.model, protocol: config?.protocol,
+      traceId: traceparent?.split("-")[1],
+      ...(origin.kind === "error" || origin.kind === "fallback" ? { ...origin.detail } : {}),
+    }));
+  }
   private async finish(
     conversation: OwnedConversation,
     input: MessageInput,
@@ -1472,6 +1528,7 @@ export class Agent {
     traceparent: string,
     preserveError = false,
     messageId?: string,
+    origin: ReplyOrigin = { kind: "system" },
   ) {
     const sent = await transaction(this.pool, async (db) => {
       const event = await this.conversations.complete(
@@ -1483,6 +1540,7 @@ export class Agent {
         preserveError,
         messageId,
       );
+      await this.recordReply(db, conversation, input, (event.data as { message?: { id?: string } }).message?.id ?? messageId, origin, traceparent);
       await db.query(
         "DELETE FROM backend_agent_checkpoints WHERE conversation_id=$1 AND message_id=$2",
         [conversation.id, input.id],

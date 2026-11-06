@@ -73,6 +73,20 @@ Les schémas d’outils envoyés à Groq/Gemini inlinent les `$ref` et omettent 
 
 La transcription est active dès que `MODEL_API_KEY` est présente avec `MODEL_PROVIDER` groq (défaut) ou openai ; pour un autre fournisseur, il faut `GROQ_API_KEY` ou `TRANSCRIPTION_ENDPOINT` avec `TRANSCRIPTION_API_KEY_ENV`, sinon elle est coupée.
 
+Tant que `MODEL_API_KEY` est présente, chaque démarrage du Backend remplace le modèle actif par celui de l’environnement (config `env`) et désactive les autres, y compris celui choisi dans `/operateur/modeles`. Sans cette variable, le modèle de l’opérateur reste actif.
+
+### Savoir quel modèle a répondu, et pourquoi une réponse a échoué
+
+- **Quel modèle.** Chaque `message.sent` a une ligne dans `backend_reply_models` (même transaction que la réponse). Elle donne l’`origin` (`model` : écrite par le modèle ; `fallback` : le modèle n’a rien fourni d’utilisable ; `error` : traitement abandonné après ses tentatives ; `system` : aucun modèle), puis `config_id`, `provider`, `model`, `protocol`. Pour `fallback` et `error`, `detail` porte la raison, le statut HTTP du fournisseur et le nombre de tentatives. La même information sort dans une ligne de journal `agent.reply_sent` par réponse.
+
+  ```sql
+  SELECT created_at, origin, model, protocol, detail
+    FROM backend_reply_models WHERE conversation_id = 'cnv_…' ORDER BY created_at;
+  ```
+
+- **Une erreur du fournisseur** (`agent.processing_failed`) indique le statut (`upstreamStatus`), le code (`upstreamCode`), le champ refusé (`upstreamParam`, par exemple `tools`), un libellé fixe (`upstreamHint`, par exemple `unsupported_parameter_for_model`) et ce qui a été demandé : `configId`, `protocol`, `endpoint`, `stream`, `tools`, `turns`. Le texte du fournisseur n’est jamais journalisé ni stocké : il peut reprendre le message de l’usager.
+- **Une même erreur répétée** n’est journalisée qu’une fois (la première tentative). `agent.processing_exhausted` donne le nombre de tentatives, la dernière erreur (`last_*`) et `replyMessageId`, qui retrouve la ligne de `backend_reply_models`. `backend_messages.last_error` garde le détail complet.
+
 ## Commandes
 
 | Commande | Effet |
