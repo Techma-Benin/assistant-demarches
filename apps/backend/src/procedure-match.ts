@@ -7,7 +7,7 @@ const STOP_WORDS = new Set(
 );
 
 /** Stems of the words that name the kind of paper or the action, not which procedure: "certificat" fits a CIP as well as a nationality certificate. */
-const GENERIC = new Set('certif acte delivr extrai attest copie carte docume papier dossie depose demarc proced ligne servic formul fais'.split(' '));
+const GENERIC = new Set('certif acte delivr extrai attest copie carte docume papier dossie depose demarc proced ligne servic formul fais bonjou bonsoi salut'.split(' '));
 
 /** Lowercase, no accents, no stop words, cut to a 6-letter stem ("renouveler" and "renouvellement" meet). */
 export function requestTerms(text: string): string[] {
@@ -20,10 +20,10 @@ export function requestTerms(text: string): string[] {
     .map((word) => word.slice(0, 6));
 }
 
-/** Whether a sheet title names what the citizen asked: the Backend files only on that, never on a neighbour the model cited. A question with nothing specific left (a follow-up) does not block. */
-export function designates(title: string, question: string): boolean {
-  const wanted = requestTerms(question).filter((term) => !GENERIC.has(term));
-  if (!wanted.length) return true;
+/** Whether a sheet title names what the citizen asked: the Backend files only on that, never on a neighbour the model cited. The whole conversation counts, so a follow-up without the procedure's name ("je souhaite commencer") does not block once an earlier message named it; messages with nothing specific left never block on their own. */
+export function designates(title: string, questions: string[]): boolean {
+  const wanted = questions.map((question) => requestTerms(question).filter((term) => !GENERIC.has(term)));
+  if (wanted.every((terms) => !terms.length)) return true;
   const named = new Set(requestTerms(title));
-  return wanted.some((term) => named.has(term));
+  return wanted.some((terms) => terms.some((term) => named.has(term)));
 }

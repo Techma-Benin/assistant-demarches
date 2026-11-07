@@ -1268,14 +1268,18 @@ const CASIER = "Délivrance du Casier judiciaire (Extrait B3 du casier judiciair
 const DIPLOMA = "Authentification de diplôme du supérieur";
 
 test("J: designates: the title must name what was asked", () => {
-  assert.equal(designates(CIP, "Je veux obtenir un certificat de nationalité"), false);
-  assert.equal(designates(CIP, "Je veux faire mon CIP"), true);
-  assert.equal(designates(CIP, "Je veux ma carte d’identité"), true);
-  assert.equal(designates(BIRTH, "Je veux obtenir un acte de décès"), false);
-  assert.equal(designates(BIRTH, "Je veux obtenir mon acte de naissance sécurisé"), true);
-  assert.equal(designates(CASIER, "Je veux déposer un casier judiciaire"), true);
-  assert.equal(designates(CASIER, "Et comment je fais ?"), true);
-  assert.equal(designates(DIPLOMA, "Je veux faire authentifier mon diplôme"), true);
+  assert.equal(designates(CIP, ["Je veux obtenir un certificat de nationalité"]), false);
+  assert.equal(designates(CIP, ["Je veux faire mon CIP"]), true);
+  assert.equal(designates(CIP, ["Je veux ma carte d’identité"]), true);
+  assert.equal(designates(BIRTH, ["Je veux obtenir un acte de décès"]), false);
+  assert.equal(designates(BIRTH, ["Je veux obtenir mon acte de naissance sécurisé"]), true);
+  assert.equal(designates(CASIER, ["Je veux déposer un casier judiciaire"]), true);
+  assert.equal(designates(CASIER, ["Et comment je fais ?"]), true);
+  assert.equal(designates(CASIER, ["Je veux déposer un casier judiciaire", "Je souhaite commencer"]), true);
+  assert.equal(designates(CIP, ["Je veux obtenir un certificat de nationalité", "Je souhaite commencer"]), false);
+  assert.equal(designates(CASIER, ["Je souhaite commencer"]), false);
+  assert.equal(designates(CASIER, ["Bonjour", "Et comment je fais ?"]), true);
+  assert.equal(designates(DIPLOMA, ["Je veux faire authentifier mon diplôme"]), true);
 });
 
 const cip = { ...sheetOf("PS00392", procedure.filing), title: CIP };
@@ -1304,4 +1308,24 @@ test("J: guest asking for the CIP still gets the login card", async (t) => {
   await h.process(cipReply(), cid);
   assert.equal((await h.lastBlocks(cid)).some((block) => block.type === "loginRequired"), true);
   assert.equal(h.called("request.create").length, 0);
+});
+
+const twoMessages = async (t, first, second, sheet) => {
+  const h = await harness(t);
+  searchReturns(h, [sheet]);
+  const cid = await askAs(h, h.user, first);
+  await h.process(searchesThen("Voici la fiche.", [sheet.source]), cid);
+  await h.send(h.user, cid, { type: "text", text: second });
+  await h.process(searchesThen("Voici la fiche.", [sheet.source]), cid);
+  return prepareButtons(await h.lastBlocks(cid));
+};
+
+test("J: a follow-up without the procedure's name keeps the prepare button once an earlier message named it", async (t) => {
+  const buttons = await twoMessages(t, "Je veux déposer un casier judiciaire", "Je souhaite commencer", fileable);
+  assert.deepEqual(buttons.map((item) => item.id), ["request.prepare." + fileable.id]);
+});
+
+test("J: a follow-up does not give the CIP a prepare button after a nationality certificate request", async (t) => {
+  const buttons = await twoMessages(t, "Je veux obtenir un certificat de nationalité", "Je souhaite commencer", cip);
+  assert.equal(buttons.length, 0);
 });

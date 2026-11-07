@@ -69,13 +69,14 @@ export const CASES_LIST_TOOL: ToolDefinition = {
 };
 const CASE_CARDS = 3;
 
-/** The fileable procedure a reply rests on: the only one cited, or the top search hit when the sources were inferred. Its title must name what the citizen asked. */
-function restingProcedure(state: State, blocks: Schemas["AgentMessage"]["blocks"], question: string): Schemas["Procedure"] | undefined {
+/** The fileable procedure a reply rests on: the only one cited, or the top search hit when the sources were inferred. Its title must name what the citizen asked, in any of their messages. */
+function restingProcedure(state: State, blocks: Schemas["AgentMessage"]["blocks"]): Schemas["Procedure"] | undefined {
   const cited = new Set(blocks.flatMap((block) => block.type === "text" ? block.sources.map((source) => source.procedureId) : []));
   const top = state.procedures?.[0];
   const procedureId = cited.size === 1 ? [...cited][0] : state.sourcesInferred && top && cited.has(top.id) ? top.id : undefined;
   const found = state.procedures?.find((item) => item.id === procedureId && item.filing);
-  return found && designates(found.title, question) ? found : undefined;
+  const asked = state.history.filter((turn) => turn.role === "user" && turn.content).map((turn) => turn.content);
+  return found && designates(found.title, asked) ? found : undefined;
 }
 
 export function needsProcedureDetails(text: string): boolean {
@@ -643,7 +644,7 @@ export class Agent {
         );
       const previous = (
         await this.pool.query(
-          "SELECT e.body,m.body AS input FROM backend_conversation_events e LEFT JOIN backend_messages m ON m.conversation_id=e.conversation_id AND m.id=e.body->'data'->>'messageId' WHERE e.conversation_id=$1 AND e.expires_at>now() AND (e.body->'data'->>'kind'='message.sent' OR (e.body->'data'->>'kind'='message.received' AND m.id<>ALL($2::text[]))) ORDER BY e.seq DESC LIMIT 20",
+          "SELECT e.body,m.body AS input FROM backend_conversation_events e LEFT JOIN backend_messages m ON m.conversation_id=e.conversation_id AND m.id=e.body->'data'->'message'->>'id' WHERE e.conversation_id=$1 AND e.expires_at>now() AND (e.body->'data'->>'kind'='message.sent' OR (e.body->'data'->>'kind'='message.received' AND m.id<>ALL($2::text[]))) ORDER BY e.seq DESC LIMIT 20",
           [conversation.id, mergedNoteId ? [input.id, mergedNoteId] : [input.id]],
         )
       ).rows.reverse();
@@ -1160,8 +1161,7 @@ export class Agent {
     if (state.requests.length || state.openRequest || state.activeProcedureId) return blocks;
     if (hasActionSystemBlocks(state.systemBlocks)) return blocks;
     if (blocks.some((block) => block.type === "form")) return blocks;
-    const question = [...state.history].reverse().find((turn) => turn.role === "user")?.content ?? "";
-    const procedure = restingProcedure(state, blocks, question);
+    const procedure = restingProcedure(state, blocks);
     if (!procedure) return blocks;
     this.pushBlock(state, { type: "buttons", items: [{ id: PREPARE_REQUEST_PREFIX + procedure.id, label: "Préparer ma demande" }] });
     return blocks.filter((block) => block.type !== "buttons");
@@ -1329,7 +1329,7 @@ export class Agent {
       && !state.history.some((turn) => turn.role === "assistant" && turn.calls?.some((call) => call.name === createName))
       && Boolean(state.procedures?.some((item) => item.filing));
     const guestCreate = (blocks: Schemas["AgentMessage"]["blocks"]): Schemas["Procedure"] | undefined =>
-      guestMayCreate() ? restingProcedure(state, blocks, question) : undefined;
+      guestMayCreate() ? restingProcedure(state, blocks) : undefined;
     let requireTool = false;
     for (let attempt = 0; attempt < MODEL_REPLY_ATTEMPTS; attempt++) {
       // No tool is run in this retry loop. Successfully checkpointed tool results
