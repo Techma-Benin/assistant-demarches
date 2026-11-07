@@ -18,6 +18,7 @@ import {
   RESUME_AFTER_CONSENT,
   RESUME_AFTER_LOGIN,
 } from "./conversations.js";
+import { designates } from "./procedure-match.js";
 import { transaction } from "./transactions.js";
 import {
   catalog,
@@ -67,6 +68,16 @@ export const CASES_LIST_TOOL: ToolDefinition = {
   _meta: { "bj.techma/kind": "read", "bj.techma/requiresLogin": true },
 };
 const CASE_CARDS = 3;
+
+/** The fileable procedure a reply rests on: the only one cited, or the top search hit when the sources were inferred. Its title must name what the citizen asked, in any of their messages. */
+function restingProcedure(state: State, blocks: Schemas["AgentMessage"]["blocks"]): Schemas["Procedure"] | undefined {
+  const cited = new Set(blocks.flatMap((block) => block.type === "text" ? block.sources.map((source) => source.procedureId) : []));
+  const top = state.procedures?.[0];
+  const procedureId = cited.size === 1 ? [...cited][0] : state.sourcesInferred && top && cited.has(top.id) ? top.id : undefined;
+  const found = state.procedures?.find((item) => item.id === procedureId && item.filing);
+  const asked = state.history.filter((turn) => turn.role === "user" && turn.content).map((turn) => turn.content);
+  return found && designates(found.title, asked) ? found : undefined;
+}
 
 export function needsProcedureDetails(text: string): boolean {
   return PROCEDURE_DETAILS.test(text);
@@ -215,6 +226,8 @@ function failureSignature(summary: Record<string, unknown>): string | undefined 
 }
 
 type State = {
+  /** Set by presentModelReply: the last reply's sources were inferred from the turn. */
+  sourcesInferred?: boolean;
   history: Turn[];
   step: number;
   pending?: {
@@ -631,7 +644,7 @@ export class Agent {
         );
       const previous = (
         await this.pool.query(
-          "SELECT e.body,m.body AS input FROM backend_conversation_events e LEFT JOIN backend_messages m ON m.conversation_id=e.conversation_id AND m.id=e.body->'data'->>'messageId' WHERE e.conversation_id=$1 AND e.expires_at>now() AND (e.body->'data'->>'kind'='message.sent' OR (e.body->'data'->>'kind'='message.received' AND m.id<>ALL($2::text[]))) ORDER BY e.seq DESC LIMIT 20",
+          "SELECT e.body,m.body AS input FROM backend_conversation_events e LEFT JOIN backend_messages m ON m.conversation_id=e.conversation_id AND m.id=e.body->'data'->'message'->>'id' WHERE e.conversation_id=$1 AND e.expires_at>now() AND (e.body->'data'->>'kind'='message.sent' OR (e.body->'data'->>'kind'='message.received' AND m.id<>ALL($2::text[]))) ORDER BY e.seq DESC LIMIT 20",
           [conversation.id, mergedNoteId ? [input.id, mergedNoteId] : [input.id]],
         )
       ).rows.reverse();
@@ -836,6 +849,12 @@ export class Agent {
                 for (const field of argumentsValue.fields as { name?: unknown; value?: unknown }[])
                   if (field && typeof field.name === "string" && Object.hasOwn(properties, field.name))
                     field.value = coerceFieldValue(field.value, properties[field.name]);
+            }
+            // A sheet without filing cannot be filed: no sign-in or consent would ever lead anywhere.
+            if (binding.name === "request.create" && typeof argumentsValue.procedureId === "string") {
+              const target = argumentsValue.procedureId;
+              if (state.procedures?.some((item) => item.id === target) && !state.procedures.some((item) => item.id === target && item.filing))
+                throw new Problem(409, "NOT_ASSISTED", "Dépôt par l’assistant non disponible pour cette démarche : voir la fiche officielle.");
             }
             if (requiresLogin && !conversation.authenticated)
               throw new Problem(401, "LOGIN_REQUIRED", "Connexion requise pour cette action.");
@@ -1142,11 +1161,9 @@ export class Agent {
     if (state.requests.length || state.openRequest || state.activeProcedureId) return blocks;
     if (hasActionSystemBlocks(state.systemBlocks)) return blocks;
     if (blocks.some((block) => block.type === "form")) return blocks;
-    const cited = new Set(blocks.flatMap((block) => block.type === "text" ? block.sources.map((source) => source.procedureId) : []));
-    if (cited.size !== 1) return blocks;
-    const [procedureId] = [...cited];
-    if (!state.procedures?.some((item) => item.id === procedureId && item.filing)) return blocks;
-    this.pushBlock(state, { type: "buttons", items: [{ id: PREPARE_REQUEST_PREFIX + procedureId, label: "Préparer ma demande" }] });
+    const procedure = restingProcedure(state, blocks);
+    if (!procedure) return blocks;
+    this.pushBlock(state, { type: "buttons", items: [{ id: PREPARE_REQUEST_PREFIX + procedure.id, label: "Préparer ma demande" }] });
     return blocks.filter((block) => block.type !== "buttons");
   }
   private pushBlock(state: State, block: Schemas["AgentMessage"]["blocks"][number]) {
@@ -1302,19 +1319,17 @@ export class Agent {
     });
     const forcedGet = (): ModelReply | undefined => {
       if (!getName || !needsProcedureDetails(question) || !state.procedures?.length || calledTool(state, getName)) return undefined;
-      const procedureId = (state.procedures.find((item) => item.filing) ?? state.procedures[0]).id;
+      const procedureId = state.procedures[0].id;
       return { text: "", calls: [{ id: identifier("call"), name: getName, arguments: JSON.stringify({ procedureId }) }] };
     };
-    const guestCreate = (): Schemas["Procedure"] | undefined => {
-      const procedure = state.procedures?.find((item) => item.filing) ?? state.procedures?.[0];
-      return !conversation.authenticated
-        && createName
-        && procedure
-        && wantsFiling(question)
-        && !state.history.some((turn) => turn.role === "assistant" && turn.calls?.some((call) => call.name === createName))
-        ? procedure
-        : undefined;
-    };
+    const guestMayCreate = (): boolean =>
+      !conversation.authenticated
+      && Boolean(createName)
+      && wantsFiling(question)
+      && !state.history.some((turn) => turn.role === "assistant" && turn.calls?.some((call) => call.name === createName))
+      && Boolean(state.procedures?.some((item) => item.filing));
+    const guestCreate = (blocks: Schemas["AgentMessage"]["blocks"]): Schemas["Procedure"] | undefined =>
+      guestMayCreate() ? restingProcedure(state, blocks) : undefined;
     let requireTool = false;
     for (let attempt = 0; attempt < MODEL_REPLY_ATTEMPTS; attempt++) {
       // No tool is run in this retry loop. Successfully checkpointed tool results
@@ -1324,7 +1339,7 @@ export class Agent {
         { role: "user", content: FORMAT_REMINDER },
       ];
       // Text that is certain to be dropped for a forced call stays silent from the start.
-      const listener = await live.attempt(state.sources, { hold: needsCatalogue || Boolean(forcedGet()) || Boolean(guestCreate()) || Boolean(missingFiche()) });
+      const listener = await live.attempt(state.sources, { hold: needsCatalogue || Boolean(forcedGet()) || guestMayCreate() || Boolean(missingFiche()) });
       // json_schema + tools makes Groq/Gemini skip or reject function calls (400 / prose without tools).
       const structuredOutput = !tools.length;
       let reply: ModelReply;
@@ -1379,7 +1394,7 @@ export class Agent {
       }
       try {
         const blocks = presentModelReply(reply.text, state);
-        const procedure = guestCreate();
+        const procedure = guestCreate(blocks);
         if (procedure && createName) {
           listener.reject();
           return {

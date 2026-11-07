@@ -152,6 +152,8 @@ export type ReplyEvidence = {
   procedures?: Schemas["Procedure"][];
   /** The reply reports the user's own cases, read from the connector: amounts and dates need no catalogue source. */
   connectorData?: boolean;
+  /** Set by presentModelReply: a text block got its sources from the turn, not from the model. */
+  sourcesInferred?: boolean;
 };
 
 /** Without a stated fact, only the latest fiche read backs the reply; a stated fact keeps every distinct source observed. */
@@ -202,6 +204,7 @@ function parseOrWrap(replyText: string): unknown[] {
 /** Throws on malformed output or fabricated evidence so the caller can retry safely. */
 export function presentModelReply(replyText: string, evidence: ReplyEvidence): Schemas["AgentMessage"]["blocks"] {
   let removedUrls = 0;
+  evidence.sourcesInferred = false;
   try {
     const parsed = parseOrWrap(replyText);
     // The history shows the model the Backend's own cards, and it may copy them: they are dropped, never trusted.
@@ -218,11 +221,15 @@ export function presentModelReply(replyText: string, evidence: ReplyEvidence): S
         removedUrls += cleaned.removed;
         if (!cleaned.text.trim()) reject("empty_reply", "Réponse modèle vide après retrait des liens.");
         if (draftCitesOutside(cleaned.text, evidence.sources)) reject("unobserved_source", "Source non observée.");
+        const inferred = (list: Schemas["Source"][]) => {
+          if (list.length) evidence.sourcesInferred = true;
+          return list;
+        };
         const sources = cited.length
           ? cited.map((source: unknown) => bindObservedSource(source, evidence.sources))
           : evidence.sources.length && !NOT_FOUND.test(cleaned.text)
             // A reply written after reading a fiche rests on it, even when the wording escapes ADMIN_FACT.
-            ? observedFor(cleaned.text, evidence.sources)
+            ? inferred(observedFor(cleaned.text, evidence.sources))
             : hasAdministrativeFact(cleaned.text) && !evidence.connectorData
               ? reject("admin_fact_without_source", "Fait administratif sans source.")
               : [];

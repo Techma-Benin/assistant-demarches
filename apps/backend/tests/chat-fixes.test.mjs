@@ -9,6 +9,7 @@ import { Agent } from "../dist/apps/backend/src/agent.js";
 import { identifier } from "../dist/apps/backend/src/domain.js";
 import { catalog } from "../dist/apps/backend/src/tooling.js";
 import { LiveReply } from "../dist/apps/backend/src/live-reply.js";
+import { designates } from "../dist/apps/backend/src/procedure-match.js";
 import { coerceFieldValue, parseFormValues } from "../dist/apps/backend/src/form-values.js";
 import {
   hasAdministrativeFact,
@@ -1111,4 +1112,220 @@ test("I: a piece followed by an interaction without JSON value keeps its own tur
   assert.equal(h.called("documents.attach").length, 1);
   assert.equal(h.called("request.update").length, 0);
   assert.ok(await s.processedAt(click.id));
+});
+
+// ---------------------------------------------------------------- G. non-fileable procedures
+
+const sheetOf = (id, filing) => ({ ...procedure, id, filing, source: { ...procedure.source, procedureId: id, url: "https://service-public.bj/public/services/service/" + id } });
+const infoOnly = sheetOf("PS00701", null);
+const fileable = sheetOf("PS00702", procedure.filing);
+
+/** The catalogue returns these hits, in this order, for any search. */
+const searchReturns = (h, hits) => {
+  const base = h.tooling.call;
+  h.tooling.call = async (url, auth, name, args, ...rest) => {
+    const result = await base(url, auth, name, args, ...rest);
+    if (name === "procedures.search") return { ...result, structuredContent: { items: hits, nextCursor: null }, content: [{ type: "text", text: "{}" }] };
+    if (name === "procedures.get") { const hit = hits.find((item) => item.id === args.procedureId); return hit ? { ...result, structuredContent: hit } : result; }
+    return result;
+  };
+};
+/** Searches, then answers with the given text and sources. */
+const searchesThen = (text, sources) => {
+  let turn = 0;
+  return { async generate() {
+    turn++;
+    return turn === 1 ? toolCall("procedures.search", { query: "démarche" }) : { text: JSON.stringify({ blocks: [{ type: "text", text, sources }] }), calls: [] };
+  } };
+};
+const askAs = async (h, owner, text) => {
+  const conversation = await h.conversations.create(owner, { locale: "fr" }, identifier("key"));
+  await h.send(owner, conversation.id, { type: "text", text });
+  return conversation.id;
+};
+const noDeadEnd = (h, blocks) => {
+  assert.equal(blocks.some((block) => block.type === "loginRequired"), false);
+  assert.equal(blocks.some((block) => block.type === "consent"), false);
+  assert.equal(h.called("request.create").length, 0);
+};
+
+test("G: a guest asking for a procedure without filing is not sent to sign in", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [infoOnly]);
+  const cid = await askAs(h, h.guest, "Je veux faire mon passeport");
+  await h.process(searchesThen("Voici la fiche du passeport.", [infoOnly.source]), cid);
+  const blocks = await h.lastBlocks(cid);
+  noDeadEnd(h, blocks);
+  assert.equal(blocks.some((block) => block.items?.some((item) => item.id.startsWith("request.prepare."))), false);
+});
+
+test("G: the reply cites the procedure asked for, not the fileable neighbour", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [infoOnly, fileable]);
+  const cid = await askAs(h, h.guest, "Je veux obtenir un acte de décès");
+  await h.process(searchesThen("Voici la fiche de l’acte de décès.", [infoOnly.source]), cid);
+  noDeadEnd(h, await h.lastBlocks(cid));
+});
+
+test("G: no matching sheet, the honest sentence, no source and no sign-in", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [infoOnly, fileable]);
+  const cid = await askAs(h, h.guest, "Je veux obtenir un acte de décès");
+  const sentence = "Je n’ai pas trouvé de démarche validée pour cette demande.";
+  await h.process(searchesThen(sentence, []), cid);
+  const blocks = await h.lastBlocks(cid);
+  noDeadEnd(h, blocks);
+  const text = blocks.find((block) => block.type === "text");
+  assert.ok(text);
+  assert.deepEqual(text.sources, []);
+});
+
+test("G: a guest asking for the single fileable procedure cited still gets the login card", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [fileable]);
+  const cid = await askAs(h, h.guest, "Je veux faire mon casier judiciaire");
+  await h.process(searchesThen("Voici la démarche.", [fileable.source]), cid);
+  assert.equal((await h.lastBlocks(cid)).some((block) => block.type === "loginRequired"), true);
+  assert.equal(h.called("request.create").length, 0);
+});
+
+for (const [label, owner] of [["guest", "guest"], ["signed in", "user"]]) {
+  test("G: the model creating a request on a procedure without filing gets NOT_ASSISTED (" + label + ")", async (t) => {
+    const h = await harness(t);
+    searchReturns(h, [infoOnly]);
+    const cid = await askAs(h, h[owner], "Parlez-moi du passeport");
+    let turn = 0;
+    let seen;
+    const model = { async generate(_config, history) {
+      turn++;
+      if (turn === 1) return toolCall("procedures.search", { query: "passeport" });
+      if (turn === 2) return toolCall("request.create", { procedureId: infoOnly.id });
+      seen = history.filter((entry) => entry.role === "tool").at(-1)?.content;
+      return { text: JSON.stringify({ blocks: [{ type: "text", text: "Voici la fiche.", sources: [infoOnly.source] }] }), calls: [] };
+    } };
+    await h.process(model, cid);
+    noDeadEnd(h, await h.lastBlocks(cid));
+    assert.match(JSON.stringify(seen), /NOT_ASSISTED/);
+  });
+}
+
+for (const [label, owner] of [["guest", "guest"], ["signed in", "user"]]) {
+  test("G: the forced procedures.get targets the first search hit (" + label + ")", async (t) => {
+    const h = await harness(t);
+    searchReturns(h, [infoOnly, fileable]);
+    const cid = await askAs(h, h[owner], "Quels documents faut-il pour un acte de décès ?");
+    await h.process(searchesThen("Voici la fiche.", [infoOnly.source]), cid);
+    assert.equal(h.called("procedures.get")[0]?.args.procedureId, infoOnly.id);
+  });
+}
+
+// ---------------------------------------------------------------- H. sources inferred, none cited
+
+const fact = "Les frais sont de 1000 FCFA.";
+const searchesThenUncited = (text) => {
+  let turn = 0;
+  return { async generate() {
+    turn++;
+    return turn === 1 ? toolCall("procedures.search", { query: "démarche" }) : { text: JSON.stringify({ blocks: [{ type: "text", text }] }), calls: [] };
+  } };
+};
+const prepareButtons = (blocks) => blocks.flatMap((block) => block.items ?? []).filter((item) => item.id.startsWith("request.prepare."));
+
+test("H: guest, uncited reply, top hit fileable: the login card still appears", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [fileable, infoOnly]);
+  const cid = await askAs(h, h.guest, "Je veux déposer un casier judiciaire");
+  await h.process(searchesThenUncited(fact), cid);
+  assert.equal((await h.lastBlocks(cid)).some((block) => block.type === "loginRequired"), true);
+  assert.equal(h.called("request.create").length, 0);
+});
+
+test("H: signed in, uncited reply, top hit fileable: the prepare button targets it", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [fileable, infoOnly]);
+  const cid = await askAs(h, h.user, "Je veux déposer un casier judiciaire");
+  await h.process(searchesThenUncited(fact), cid);
+  assert.deepEqual(prepareButtons(await h.lastBlocks(cid)).map((item) => item.id), ["request.prepare." + fileable.id]);
+});
+
+for (const owner of ["guest", "user"]) {
+  test("H: uncited reply, top hit without filing: no prepare button, no login card (" + owner + ")", async (t) => {
+    const h = await harness(t);
+    searchReturns(h, [infoOnly, fileable]);
+    const cid = await askAs(h, h[owner], "Je veux déposer un casier judiciaire");
+    await h.process(searchesThenUncited(fact), cid);
+    const blocks = await h.lastBlocks(cid);
+    assert.equal(prepareButtons(blocks).length, 0);
+    noDeadEnd(h, blocks);
+  });
+}
+
+// ---------------------------------------------------------------- J. filing only on a sheet whose title names the request
+
+const CIP = "Délivrance du Certificat d’Identification Personnelle (CIP)";
+const BIRTH = "Délivrance d’acte de naissance sécurisé";
+const CASIER = "Délivrance du Casier judiciaire (Extrait B3 du casier judiciaire)";
+const DIPLOMA = "Authentification de diplôme du supérieur";
+
+test("J: designates: the title must name what was asked", () => {
+  assert.equal(designates(CIP, ["Je veux obtenir un certificat de nationalité"]), false);
+  assert.equal(designates(CIP, ["Je veux faire mon CIP"]), true);
+  assert.equal(designates(CIP, ["Je veux ma carte d’identité"]), true);
+  assert.equal(designates(BIRTH, ["Je veux obtenir un acte de décès"]), false);
+  assert.equal(designates(BIRTH, ["Je veux obtenir mon acte de naissance sécurisé"]), true);
+  assert.equal(designates(CASIER, ["Je veux déposer un casier judiciaire"]), true);
+  assert.equal(designates(CASIER, ["Et comment je fais ?"]), true);
+  assert.equal(designates(CASIER, ["Je veux déposer un casier judiciaire", "Je souhaite commencer"]), true);
+  assert.equal(designates(CIP, ["Je veux obtenir un certificat de nationalité", "Je souhaite commencer"]), false);
+  assert.equal(designates(CASIER, ["Je souhaite commencer"]), false);
+  assert.equal(designates(CASIER, ["Bonjour", "Et comment je fais ?"]), true);
+  assert.equal(designates(DIPLOMA, ["Je veux faire authentifier mon diplôme"]), true);
+});
+
+const cip = { ...sheetOf("PS00392", procedure.filing), title: CIP };
+const cipReply = () => searchesThen("Voici la fiche du CIP.", [cip.source]);
+
+test("J: guest asking for a nationality certificate, reply citing the CIP: no forced request.create, no login card", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [cip]);
+  const cid = await askAs(h, h.guest, "Je veux obtenir un certificat de nationalité");
+  await h.process(cipReply(), cid);
+  noDeadEnd(h, await h.lastBlocks(cid));
+});
+
+test("J: signed in asking for a nationality certificate, reply citing the CIP: no prepare button", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [cip]);
+  const cid = await askAs(h, h.user, "Je veux obtenir un certificat de nationalité");
+  await h.process(cipReply(), cid);
+  assert.equal(prepareButtons(await h.lastBlocks(cid)).length, 0);
+});
+
+test("J: guest asking for the CIP still gets the login card", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [cip]);
+  const cid = await askAs(h, h.guest, "Je veux faire mon CIP");
+  await h.process(cipReply(), cid);
+  assert.equal((await h.lastBlocks(cid)).some((block) => block.type === "loginRequired"), true);
+  assert.equal(h.called("request.create").length, 0);
+});
+
+const twoMessages = async (t, first, second, sheet) => {
+  const h = await harness(t);
+  searchReturns(h, [sheet]);
+  const cid = await askAs(h, h.user, first);
+  await h.process(searchesThen("Voici la fiche.", [sheet.source]), cid);
+  await h.send(h.user, cid, { type: "text", text: second });
+  await h.process(searchesThen("Voici la fiche.", [sheet.source]), cid);
+  return prepareButtons(await h.lastBlocks(cid));
+};
+
+test("J: a follow-up without the procedure's name keeps the prepare button once an earlier message named it", async (t) => {
+  const buttons = await twoMessages(t, "Je veux déposer un casier judiciaire", "Je souhaite commencer", fileable);
+  assert.deepEqual(buttons.map((item) => item.id), ["request.prepare." + fileable.id]);
+});
+
+test("J: a follow-up does not give the CIP a prepare button after a nationality certificate request", async (t) => {
+  const buttons = await twoMessages(t, "Je veux obtenir un certificat de nationalité", "Je souhaite commencer", cip);
+  assert.equal(buttons.length, 0);
 });
