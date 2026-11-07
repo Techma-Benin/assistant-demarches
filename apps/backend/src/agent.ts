@@ -18,6 +18,7 @@ import {
   RESUME_AFTER_CONSENT,
   RESUME_AFTER_LOGIN,
 } from "./conversations.js";
+import { designates } from "./procedure-match.js";
 import { transaction } from "./transactions.js";
 import {
   catalog,
@@ -68,12 +69,13 @@ export const CASES_LIST_TOOL: ToolDefinition = {
 };
 const CASE_CARDS = 3;
 
-/** The fileable procedure a reply rests on: the only one cited, or the top search hit when the sources were inferred. */
-function restingProcedure(state: State, blocks: Schemas["AgentMessage"]["blocks"]): Schemas["Procedure"] | undefined {
+/** The fileable procedure a reply rests on: the only one cited, or the top search hit when the sources were inferred. Its title must name what the citizen asked. */
+function restingProcedure(state: State, blocks: Schemas["AgentMessage"]["blocks"], question: string): Schemas["Procedure"] | undefined {
   const cited = new Set(blocks.flatMap((block) => block.type === "text" ? block.sources.map((source) => source.procedureId) : []));
   const top = state.procedures?.[0];
   const procedureId = cited.size === 1 ? [...cited][0] : state.sourcesInferred && top && cited.has(top.id) ? top.id : undefined;
-  return state.procedures?.find((item) => item.id === procedureId && item.filing);
+  const found = state.procedures?.find((item) => item.id === procedureId && item.filing);
+  return found && designates(found.title, question) ? found : undefined;
 }
 
 export function needsProcedureDetails(text: string): boolean {
@@ -1158,7 +1160,8 @@ export class Agent {
     if (state.requests.length || state.openRequest || state.activeProcedureId) return blocks;
     if (hasActionSystemBlocks(state.systemBlocks)) return blocks;
     if (blocks.some((block) => block.type === "form")) return blocks;
-    const procedure = restingProcedure(state, blocks);
+    const question = [...state.history].reverse().find((turn) => turn.role === "user")?.content ?? "";
+    const procedure = restingProcedure(state, blocks, question);
     if (!procedure) return blocks;
     this.pushBlock(state, { type: "buttons", items: [{ id: PREPARE_REQUEST_PREFIX + procedure.id, label: "Préparer ma demande" }] });
     return blocks.filter((block) => block.type !== "buttons");
@@ -1326,7 +1329,7 @@ export class Agent {
       && !state.history.some((turn) => turn.role === "assistant" && turn.calls?.some((call) => call.name === createName))
       && Boolean(state.procedures?.some((item) => item.filing));
     const guestCreate = (blocks: Schemas["AgentMessage"]["blocks"]): Schemas["Procedure"] | undefined =>
-      guestMayCreate() ? restingProcedure(state, blocks) : undefined;
+      guestMayCreate() ? restingProcedure(state, blocks, question) : undefined;
     let requireTool = false;
     for (let attempt = 0; attempt < MODEL_REPLY_ATTEMPTS; attempt++) {
       // No tool is run in this retry loop. Successfully checkpointed tool results

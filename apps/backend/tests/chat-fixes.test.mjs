@@ -9,6 +9,7 @@ import { Agent } from "../dist/apps/backend/src/agent.js";
 import { identifier } from "../dist/apps/backend/src/domain.js";
 import { catalog } from "../dist/apps/backend/src/tooling.js";
 import { LiveReply } from "../dist/apps/backend/src/live-reply.js";
+import { designates } from "../dist/apps/backend/src/procedure-match.js";
 import { coerceFieldValue, parseFormValues } from "../dist/apps/backend/src/form-values.js";
 import {
   hasAdministrativeFact,
@@ -1258,3 +1259,49 @@ for (const owner of ["guest", "user"]) {
     noDeadEnd(h, blocks);
   });
 }
+
+// ---------------------------------------------------------------- J. filing only on a sheet whose title names the request
+
+const CIP = "Délivrance du Certificat d’Identification Personnelle (CIP)";
+const BIRTH = "Délivrance d’acte de naissance sécurisé";
+const CASIER = "Délivrance du Casier judiciaire (Extrait B3 du casier judiciaire)";
+const DIPLOMA = "Authentification de diplôme du supérieur";
+
+test("J: designates: the title must name what was asked", () => {
+  assert.equal(designates(CIP, "Je veux obtenir un certificat de nationalité"), false);
+  assert.equal(designates(CIP, "Je veux faire mon CIP"), true);
+  assert.equal(designates(CIP, "Je veux ma carte d’identité"), true);
+  assert.equal(designates(BIRTH, "Je veux obtenir un acte de décès"), false);
+  assert.equal(designates(BIRTH, "Je veux obtenir mon acte de naissance sécurisé"), true);
+  assert.equal(designates(CASIER, "Je veux déposer un casier judiciaire"), true);
+  assert.equal(designates(CASIER, "Et comment je fais ?"), true);
+  assert.equal(designates(DIPLOMA, "Je veux faire authentifier mon diplôme"), true);
+});
+
+const cip = { ...sheetOf("PS00392", procedure.filing), title: CIP };
+const cipReply = () => searchesThen("Voici la fiche du CIP.", [cip.source]);
+
+test("J: guest asking for a nationality certificate, reply citing the CIP: no forced request.create, no login card", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [cip]);
+  const cid = await askAs(h, h.guest, "Je veux obtenir un certificat de nationalité");
+  await h.process(cipReply(), cid);
+  noDeadEnd(h, await h.lastBlocks(cid));
+});
+
+test("J: signed in asking for a nationality certificate, reply citing the CIP: no prepare button", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [cip]);
+  const cid = await askAs(h, h.user, "Je veux obtenir un certificat de nationalité");
+  await h.process(cipReply(), cid);
+  assert.equal(prepareButtons(await h.lastBlocks(cid)).length, 0);
+});
+
+test("J: guest asking for the CIP still gets the login card", async (t) => {
+  const h = await harness(t);
+  searchReturns(h, [cip]);
+  const cid = await askAs(h, h.guest, "Je veux faire mon CIP");
+  await h.process(cipReply(), cid);
+  assert.equal((await h.lastBlocks(cid)).some((block) => block.type === "loginRequired"), true);
+  assert.equal(h.called("request.create").length, 0);
+});
